@@ -5,6 +5,7 @@ import { authMode } from "@/lib/auth/providers";
 import { maySignIn } from "@/lib/auth/access";
 import { isTestMode } from "@/lib/test-mode";
 import { testSignIn } from "./actions";
+import { KIT_EMAIL_DOMAIN } from "@/lib/kit/catalog";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -22,13 +23,18 @@ function MicrosoftMark() {
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
   const { next, error } = await searchParams;
   const testMode = authMode() === "test";
-  const otherTestUsers = testMode
+  const testUsers = testMode
     ? await prisma.user.findMany({
-        where: { isTestUser: true, active: true, email: { notIn: ["test.admin@gdfi.ph", "test.la@gdfi.ph"] } },
-        include: { role: true },
+        where: { isTestUser: true, active: true },
+        include: { role: true, branches: { include: { branch: true } } },
         orderBy: { name: "asc" },
       }).then((us) => us.filter((u) => maySignIn(u, u.role, isTestMode()))) // includes custom-role test users in test mode
     : [];
+  // The Manual Test Kit's sample accounts (@example.test): one button each, with the role and branches.
+  const kitAccounts = testUsers.filter((u) => u.email.endsWith(KIT_EMAIL_DOMAIN));
+  const FIXED = [["test.admin@gdfi.ph", "Continue as Admin", "login-btn-secondary"], ["test.la@gdfi.ph", "Continue as Loan Associate", "login-btn-primary"]] as const;
+  const fixed = FIXED.filter(([email]) => testUsers.some((u) => u.email === email));
+  const otherTestUsers = testUsers.filter((u) => !kitAccounts.includes(u) && !FIXED.some(([email]) => email === u.email));
   // Test Document Processor and Test Finance get their own buttons, only when TEST_MODE is on.
   const QUICK = [["test.dp@gdfi.ph", "Continue as Test Document Processor"], ["test.finance@gdfi.ph", "Continue as Test Finance"]] as const;
   const quick = isTestMode() ? QUICK.filter(([email]) => otherTestUsers.some((u) => u.email === email)) : [];
@@ -78,21 +84,32 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
                 That test user is not available. It may be inactive.
               </p>
             )}
+            {kitAccounts.length > 0 && (
+              <ul aria-label="Sample accounts" className="mt-3 grid gap-2 sm:grid-cols-2" data-kit-accounts>
+                {kitAccounts.map((u) => (
+                  <li key={u.id}>
+                    <form action={testSignIn}>
+                      <input type="hidden" name="email" value={u.email} />
+                      <input type="hidden" name="next" value={next ?? ""} />
+                      <button type="submit" className="login-btn-secondary flex h-auto min-h-14 w-full flex-col items-start gap-0.5 py-2 text-left">
+                        <span className="font-semibold">Continue as {u.name}</span>
+                        <span className="text-xs font-normal text-ink-2">{u.role.name} · {u.branches.map((b) => b.branch.name).sort().join(", ") || "No branch"}</span>
+                      </button>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <form action={testSignIn}>
-                <input type="hidden" name="email" value="test.admin@gdfi.ph" />
-                <input type="hidden" name="next" value={next ?? ""} />
-                <button type="submit" className="login-btn-secondary w-full">
-                  Continue as Admin
-                </button>
-              </form>
-              <form action={testSignIn}>
-                <input type="hidden" name="email" value="test.la@gdfi.ph" />
-                <input type="hidden" name="next" value={next ?? ""} />
-                <button type="submit" className="login-btn-primary w-full">
-                  Continue as Loan Associate
-                </button>
-              </form>
+              {fixed.map(([email, label, cls]) => (
+                <form key={email} action={testSignIn}>
+                  <input type="hidden" name="email" value={email} />
+                  <input type="hidden" name="next" value={next ?? ""} />
+                  <button type="submit" className={`${cls} w-full`}>
+                    {label}
+                  </button>
+                </form>
+              ))}
               {quick.map(([email, label]) => (
                 <form key={email} action={testSignIn}>
                   <input type="hidden" name="email" value={email} />

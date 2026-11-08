@@ -1,0 +1,31 @@
+﻿area,permission,key,Loan Associate,Admin,Document Processor / Collateral & Mortgage,Finance,Vault Custodian,Digital Records,QA,"Approvers, Records, Compliance"
+Loans,See loan files,loans:view,Yes,Yes,Yes,Yes,Yes,Yes,Yes,Yes
+Loans,Find a loan,loans:search,Yes,Yes,No,No,No,No,No,No
+Loans,Open a loan file,loans:open,Yes,No,No,No,No,No,No,No
+Loans,Export loans (CSV),loans:export,No,Yes,No,No,No,No,No,No
+Loans,Change an automatic result,rules:override,No,Yes,No,No,No,No,No,No
+Check documents,Tick papers,checklist:tick,Yes,No,No,No,No,No,No,No
+Check documents,Print labels,labels:print,Yes,No,No,No,No,No,No,No
+Check documents,Add a transaction,transactions:add,Yes,No,No,No,No,No,No,No
+Check documents,Mark as done,transactions:complete,Yes,No,No,No,No,No,No,No
+Processing,Send to a processor,processing:send,Yes,No,No,No,No,No,No,No
+Processing,Receive and process transactions,processing:receive,No,No,Yes,No,No,No,No,No
+Processing,Accept returned papers,processing:accept_returns,Yes,No,No,No,No,No,No,No
+Settings,Change branches,settings:branches,No,Yes,No,No,No,No,No,No
+Settings,Change loan types,settings:loan_types,No,Yes,No,No,No,No,No,No
+Settings,Change transaction types,settings:transaction_types,No,Yes,No,No,No,No,No,No
+Settings,Change document types,settings:document_types,No,Yes,No,No,No,No,No,No
+Settings,Change checklist items,settings:checklist,No,Yes,No,No,No,No,No,No
+Settings,Change turnaround times,settings:tat,No,Yes,No,No,No,No,No,No
+Settings,Change holidays,settings:holidays,No,Yes,No,No,No,No,No,No
+Settings,Change cash-advance rules,settings:cash_advance,No,Yes,No,No,No,No,No,No
+Settings,Change LTO offices,settings:lto,No,Yes,No,No,No,No,No,No
+Settings,Change system switches,settings:system,No,Yes,No,No,No,No,No,No
+Settings,Import data,settings:import,No,Yes,No,No,No,No,No,No
+People and access,See users,users:view,No,Yes,No,No,No,No,No,No
+People and access,Add or edit users,users:edit,No,Yes,No,No,No,No,No,No
+People and access,Manage roles and access,roles:manage,No,Yes,No,No,No,No,No,No
+Reports and audit,See the audit log,audit:view,No,Yes,No,No,No,No,No,No
+Test tools,Use the test simulator,simulator:use,No,Yes,No,No,No,No,No,No
+Test tools,Reset test data,testdata:reset,No,Yes,No,No,No,No,No,No
+Branch access,All branches,branch_access,No,Yes,No,No,No,No,No,No

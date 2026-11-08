@@ -29,10 +29,26 @@ This order is the same everywhere:
 - **Console scripts** (`npm run db:seed`, `db:seed:reference`, `email:test`, `email:reminders`, `myloans:sync`) use `tsx --env-file-if-exists=.env --env-file-if-exists=.env.local`, where the later file wins. They also run the startup check.
 - **Vitest** (`vitest.config.mts`) uses the same order (a value set in the shell is kept, not replaced by a file's), with three exceptions:
   - Tests always run as `APP_ENV=local`.
+  - `DATABASE_URL` and `DIRECT_URL` always point at the test database, `gdfi_dms_test` (see Two local databases).
   - The `GRAPH_*` values are blanked, so no test can send a real email.
   - The database helpers refuse any database that is not on this PC.
 - **Playwright database helpers** (`tests/e2e/db.ts`) use the same loader (the shell wins, then `.env.local`, then `.env`) and the same `DATABASE_URL` / `DIRECT_URL` check.
 - **Docker Compose** reads only `.env`, for `POSTGRES_*` and the ports. The ports are bound to 127.0.0.1.
+
+## Two local databases
+
+| Database | For | Who changes it |
+|---|---|---|
+| `gdfi_dms` | Your own data and manual testing (`DATABASE_URL` / `DIRECT_URL`). | You, the dev server (`npm run dev`) and the Manual Test Kit (`npm run kit:*`). |
+| `gdfi_dms_test` | The automated tests: unit tests that use a database, integration, Playwright e2e. | The tests only. |
+
+Create the test database once with `npm run db:create-test`. It works with the existing Docker volume (`CREATE DATABASE` through the container, because an init script only runs on a new volume), applies the migrations and seeds it. It is safe to run again; run it again after a new migration.
+
+How the tests find it: `TEST_DATABASE_URL` if you set one, otherwise `DATABASE_URL` with the database name swapped for `gdfi_dms_test` (`lib/env/test-db.ts`, unit-tested).
+
+- **Vitest** (`vitest.config.mts`) sets `DATABASE_URL` and `DIRECT_URL` to the test database for every test.
+- **Playwright** (`playwright.config.ts`) starts its own `next dev` on port 3100 with the test database and its own build folder (`.next-e2e`; Next.js allows one dev server per folder), so it runs beside your server on port 3000. Before any test, the global setup adds a one-off test user to `gdfi_dms_test` and checks that the server's sign-in page shows it: a server on `gdfi_dms` (for example `E2E_BASE_URL` pointed at port 3000) is refused before anything changes.
+- **The test helpers** (`tests/integration/helpers.ts`, `tests/e2e/db.ts`) refuse any database without `test` in its name, and any database not on this PC. `ALLOW_DESTRUCTIVE=1` does not change that: nothing automated touches `gdfi_dms`.
 
 ## Commands that reset or drop data
 
@@ -41,17 +57,30 @@ These refuse unless every database they would touch has `test` in its name, or y
 | Command | What it does | Guard |
 |---|---|---|
 | `npm run db:reset` | `prisma migrate reset --force`: drops every table, re-applies the migrations and seeds. No question. | `scripts/guard-destructive.ts` runs first |
-| `npm test` (integration files) | Deletes loan files and test settings between tests. | `tests/integration/helpers.ts` |
-| `npm run test:e2e` | Resets the loan files before every test. | `tests/e2e/db.ts` |
 
-For example, `$env:ALLOW_DESTRUCTIVE="1"; npm test` on this PC's own database, or point both `DATABASE_URL` and `DIRECT_URL` at a database such as `gdfi_dms_test`.
+The automated tests follow the stricter rule above (test database only, no override). The Manual Test Kit has its own rule (next section).
 
 Not guarded by this rule, and why:
 
 - `npm run db:seed` and `db:seed:reference` only add missing rows (and refresh the built-in role names); they delete nothing. Production needs `db:seed:reference`, and the seed already refuses test users when `APP_ENV=production`.
 - `npm run db:migrate` (`prisma migrate dev`) asks before resetting a database that has drifted.
 - `npm run db:deploy` applies new migrations only.
-- **Reset test data** (Admin, Settings) is a button with a confirmation, only in test mode, and refused on staging and production.
+- **Reset test data** is gone from Settings: starting over is the Manual Test Kit's Reset (below).
+
+## The Manual Test Kit
+
+`npm run kit:start`, `kit:reset`, `kit:backup -- <name>`, `kit:list`, `kit:restore -- <name>` and `kit:rebuild`, and **Settings > Test kit** (Admin). What they do, the sample accounts and loans, and the test sheet: [`docs/MANUAL-TEST-KIT.md`](MANUAL-TEST-KIT.md).
+
+They run only when all of these hold (`lib/kit/guard.ts`, unit-tested), checked on the server on every call:
+
+- `APP_ENV` is exactly `local` (never staging or production);
+- `TEST_MODE=true`;
+- `MYLOANS_MODE` is `mock` (the sample loans come from the sample MyLoans);
+- `DATABASE_URL` and `DIRECT_URL` both name `gdfi_dms` on this PC (the allow-list; `gdfi_dms_test` is not on it).
+
+Elsewhere the Test kit card is not listed, `/admin/settings?open=test-kit`, `/admin/test-kit` and `/admin/test-kit/sheet` are "not found", and the server actions refuse, even for Admin. The `kit:*` commands blank the `GRAPH_*` values for their own run; the sample accounts use `@example.test`; the email switch is set to Not active after every start, reset and restore.
+
+Files: `storage/kit/` (ignored by Git): `baseline.dump` and `baseline.json`, and `backups/<name>.dump` and `.json`. They are `pg_dump` files, moved in and out of the container with `docker cp`, so a backup can be copied to another PC. Reset and Restore ask for the typed word RESET and take an automatic backup first (`pre-reset-<time>`, the last 5 kept). A save made with other migrations is not restored: after a new migration run `npm run kit:rebuild`.
 
 ## Migration names
 
@@ -94,7 +123,7 @@ Every page shows a "Staging" banner.
 **Test helpers in production:** these return "… is not available in production." on the server, even for Admin:
 
 - the test simulator and its switches;
-- Reset test data;
+- the Manual Test Kit (also refused on staging, and anywhere but `gdfi_dms` on this PC);
 - Simulate a MyLoans change;
 - the sample MyLoans (mock) and its overrides;
 - seeding test users.
@@ -123,6 +152,8 @@ Test mode also reads as off in production.
    - `npm run db:up`
    - `npm run db:migrate`
    - `npm run db:seed`
+   - `npm run db:create-test` (the automated tests' database)
+   - `npm run kit:start` (optional: the sample accounts and loans, see `docs/MANUAL-TEST-KIT.md`)
    - `npm run dev`
 
 PowerShell, a random secret: `[Convert]::ToBase64String((1..36 | ForEach-Object { Get-Random -Maximum 256 }))`

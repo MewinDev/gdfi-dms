@@ -206,7 +206,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     key: "test", label: "Test tools", items: [
       { key: P.SIMULATOR_USE, label: "Use the test simulator", help: "Move sample loans through the processor and vault steps. Only in test mode.", requires: [P.LOANS_VIEW], can: "use the test simulator" },
-      { key: P.TESTDATA_RESET, label: "Reset test data", help: "Remove sample loan files and show data-check samples. Only in test mode.", can: "reset test data" },
+      { key: P.TESTDATA_RESET, label: "Reset test data", help: "Use the Test kit (back to the starting state, backups) and show data-check samples. Only in test mode, on a local test setup.", can: "reset test data" },
     ],
   },
 ];
@@ -338,6 +338,7 @@ export const LIST_PERMISSION: Record<string, Permission> = {
   email: P.EMAIL_MANAGE,
   "myloans-sync": P.SOURCE_MANAGE,
   "test-data": P.TESTDATA_RESET,
+  "test-kit": P.TESTDATA_RESET,
   roles: P.ROLES_MANAGE,
   users: P.USERS_EDIT,
 };

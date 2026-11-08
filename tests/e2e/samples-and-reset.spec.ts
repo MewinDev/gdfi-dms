@@ -45,7 +45,7 @@ test("Find a loan: only the 3 samples are listed; a card fills the box; other mo
   expect(await db.loan.count()).toBe(0);
 });
 
-test("Admin: Show data-check test PNs, then Reset test data", async ({ page }) => {
+test("Admin: Show data-check test PNs; starting over is the Test kit, which is not offered on the test database", async ({ page }) => {
   // Something to reset
   await signIn(page, "la");
   await page.goto("/search?q=PN-0001001");
@@ -74,16 +74,16 @@ test("Admin: Show data-check test PNs, then Reset test data", async ({ page }) =
   await page.goto("/admin/settings?open=test-data");
   await page.locator("form", { hasText: "Show data-check test PNs" }).getByRole("button", { name: "Turn off" }).click();
 
-  // Reset
-  const auditBefore = await db.auditLog.count({ where: { action: "test_data_reset" } });
-  await page.getByRole("button", { name: "Reset test data" }).click();
-  const dialog = page.getByRole("alertdialog", { name: "Reset test data?" });
-  await expect(dialog).toContainText("This cannot be undone.");
-  await dialog.getByRole("button", { name: "Yes, reset" }).click();
-  const notice = page.getByRole("status").filter({ hasText: "Test data reset." });
-  await expect(notice).toBeVisible();
-  await expect(notice).toContainText("Loan files: 1 removed");
-  expect(await db.loan.count()).toBe(0);
-  expect(await db.user.count({ where: { email: "test.la@gdfi.ph" } })).toBe(1);
-  expect(await db.auditLog.count({ where: { action: "test_data_reset" } })).toBe(auditBefore + 1);
+  // Reset test data is replaced by Settings > Test kit (lib/kit). The kit only works on gdfi_dms, so on
+  // this server (the test database) its card is not listed and its addresses are "not found".
+  await expect(page.getByRole("button", { name: "Reset test data" })).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toContainText("npm run kit:reset");
+  await page.goto("/admin/settings");
+  await expect(page.locator("#card-test-data")).toBeVisible();
+  await expect(page.locator("#card-test-kit")).toHaveCount(0);
+  for (const url of ["/admin/settings?open=test-kit", "/admin/test-kit", "/admin/test-kit/sheet"]) {
+    const res = await page.goto(url);
+    expect(res?.status(), url).toBe(404);
+  }
+  expect(await db.loan.count()).toBe(1); // nothing was reset
 });

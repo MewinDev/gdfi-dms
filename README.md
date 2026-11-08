@@ -22,6 +22,8 @@ npm install
 npm run db:up                    # PostgreSQL 16 in Docker (service gdfi-dms-db)
 npm run db:migrate               # applies prisma/migrations
 npm run db:seed                  # reference data + test users
+npm run db:create-test           # the automated tests' own database (gdfi_dms_test)
+npm run kit:start                # optional: sample accounts and loans for testing by hand (docs/MANUAL-TEST-KIT.md)
 npm run dev                      # http://localhost:3000 (Next picks the next free port if 3000 is busy)
 ```
 
@@ -37,11 +39,18 @@ If port 5432 is already used on your PC (for example a native PostgreSQL service
 | `npm run db:seed:reference` | Reference data only (never test users) |
 | `npm run db:reset` | Drop and recreate the local database, then seed. **Destroys local data.** Refused unless the database name contains `test` or `ALLOW_DESTRUCTIVE=1` is set (see `docs/ENVIRONMENT.md`). |
 | `npm run db:studio` | Prisma Studio |
+| `npm run db:create-test` | Create (or bring up to date) `gdfi_dms_test`, the automated tests' database. Safe to run again. |
+| `npm run kit:start`, `kit:reset`, `kit:backup -- <name>`, `kit:list`, `kit:restore -- <name>`, `kit:rebuild` | The Manual Test Kit on `gdfi_dms`: see [`docs/MANUAL-TEST-KIT.md`](docs/MANUAL-TEST-KIT.md) |
+| `npm run test:kit-screens` | Screenshots of the kit (sign-in list, two sample loans, Settings > Test kit) against your own server; run `npm run kit:reset` after |
 | `npm test` | Unit tests (rules, Data Check, stage, business days) |
 | `npm run test:e2e` | Playwright happy path (see below) |
 | `npm run typecheck`, `npm run lint` | TypeScript and ESLint |
 
-### Test accounts (Test sign-in panel on `/login`)
+### Testing by hand: the Manual Test Kit
+
+`npm run kit:start` puts your own database (`gdfi_dms`) in a starting state with sample accounts (one per role, `@example.test`) and one sample loan per case; `npm run kit:reset` puts it back. The test sheet, with each PN, who signs in, what to do and what should happen, is [`docs/MANUAL-TEST-KIT.md`](docs/MANUAL-TEST-KIT.md) (also in the app: Settings > Test kit > Open the test sheet). It replaces the older notes below for testing by hand.
+
+### Test accounts of the seed (Test sign-in panel on `/login`)
 
 | Account | Role | Branches |
 |---|---|---|
@@ -65,19 +74,19 @@ Never set in live. When on:
 - **Sample loans.** Home and Find a loan show three sample cards: PN-0001001, PN-0001003 and PN-0001004. Pressing a card only fills the PN box; the tester still presses Find loan, and nothing is saved until Open loan file. Each card shows "Opened" once a loan file exists, and "Try it" before that. All the other mock PNs still work when typed, but are not listed.
 - **Settings > Test data.**
   - **Show data-check test PNs** (default off) lists the refusal and edge-case PNs as a second group on Find a loan.
-  - **Reset test data** removes every loan file and everything that belongs to it, in one transaction. Users, branches, settings, rules and audit rows stay. It writes one "Test data reset" audit row with the counts. The action refuses unless `TEST_MODE=true` and the user is an Admin.
+  - Starting over is **Settings > Test kit** (the Manual Test Kit), on a local test setup with `gdfi_dms` only.
 - **Seed.** The seed never creates loan files. After `npm run db:reset`, Home shows the empty state.
 
 ### Tests
 
 ```powershell
-$env:ALLOW_DESTRUCTIVE="1"; npm test                  # unit + integration (integration resets loan files in the LOCAL database)
-$env:ALLOW_DESTRUCTIVE="1"; npm run test:e2e           # Playwright at 1440, 820 and 390 px; starts next dev on port 3100
-$env:E2E_BASE_URL="http://localhost:3001"; npm run test:e2e   # or reuse a running dev server
-# Without ALLOW_DESTRUCTIVE=1 they refuse unless DATABASE_URL and DIRECT_URL name a "test" database.
+npm run db:create-test           # once, and after every new migration
+npm test                         # unit + integration, on gdfi_dms_test
+npm run test:e2e                 # Playwright at 1440, 820 and 390 px; starts its own next dev on port 3100 with gdfi_dms_test
+# Your own gdfi_dms is never used by a test run (see docs/ENVIRONMENT.md, "Two local databases").
 ```
 
-The integration tests (`tests/integration`) and the Playwright helpers (`tests/e2e/db.ts`) only run against a database on `localhost`. They **remove all loan files** before each test, the same way Reset test data does. Each test then opens its own loan file. Playwright also adds a Davao fixture, `PN-0009007`, to check that an LA gets 404 for another branch's file.
+The integration tests (`tests/integration`) and the Playwright helpers (`tests/e2e/db.ts`) only run against the test database on `localhost`. They **remove all loan files** there before each test. Each test then opens its own loan file. Playwright also adds a Davao fixture, `PN-0009007`, to check that an LA gets 404 for another branch's file.
 
 ---
 

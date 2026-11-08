@@ -23,6 +23,8 @@ A live copy with the same diagrams is the artifact "DP Workflow Map". This folde
 | [Status and open questions](09-status-and-open-questions.md) | What is built, planned or later, and the open questions. |
 | [Processing stages](10-processing-stages.md) | The default stages of each transaction type, their evidence and targets. |
 
+To walk through these flows by hand, use the [Manual Test Kit](../MANUAL-TEST-KIT.md): sample accounts, one sample loan per case, and a test sheet of who signs in, what to do and what should happen.
+
 ## Colour key
 
 Colour shows who acts in the diagrams.

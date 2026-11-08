@@ -1,8 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
+import { loadEnvFiles } from "./lib/env/load-files";
+import { testDatabaseUrl } from "./lib/env/test-db";
 
-// Run against an already running dev server with:  $env:E2E_BASE_URL="http://localhost:3001"; npm run test:e2e
-// The tests reset the loan files: they refuse unless the database is a "test" one or ALLOW_DESTRUCTIVE=1 is set.
-// Otherwise Playwright starts `next dev` on port 3100. Tests reset the LOCAL database before each test.
+// The e2e tests use the test database (gdfi_dms_test), never the person's own gdfi_dms. Playwright starts
+// its own `next dev` on port 3100 with DATABASE_URL pointed at the test database and its own build folder
+// (.next-e2e), so it runs beside the person's server on port 3000. Create the database once with
+// `npm run db:create-test`. The global setup checks the server really reads the test database, so an
+// E2E_BASE_URL pointing at the person's own server is refused.
+const fromFiles: Record<string, string | undefined> = {};
+loadEnvFiles([".env.local", ".env"], fromFiles);
+const testDb = testDatabaseUrl({ ...fromFiles, ...process.env }) ?? "";
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 
 export default defineConfig({
@@ -23,6 +30,7 @@ export default defineConfig({
     command: "npx next dev --port 3100",
     url: baseURL,
     reuseExistingServer: true,
-    timeout: 180_000,
+    timeout: 300_000,
+    env: { DATABASE_URL: testDb, DIRECT_URL: testDb, NEXT_DIST_DIR: ".next-e2e", APP_BASE_URL: "http://localhost:3100" },
   },
 });
