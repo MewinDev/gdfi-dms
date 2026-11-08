@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const get = (k: string) => sp.get(k) || undefined;
   const rows = await listLoans(user, {
     tab: get("tab") ?? "all", stage: get("stage"), classification: get("classification"), branch: get("branch"),
-    loanType: get("loanType"), tat: get("tat"), needsAction: get("needsAction"), q: get("q"),
+    loanType: get("loanType"), tat: get("tat"), needsAction: get("needsAction"), holdReason: get("holdReason"), q: get("q"),
   });
   const header = ["PN", "Borrower", "Loan Type", "Product", "Branch", "Released at", "Total Released Amount", "Classification", "Stage", "TAT", "Next step", "Open exceptions"];
   const esc = (v: unknown) => {

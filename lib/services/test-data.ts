@@ -1,4 +1,4 @@
-import { refuseInProduction } from "@/lib/env";
+import { appEnv, refuseInProduction } from "@/lib/env";
 import "server-only";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
@@ -14,6 +14,7 @@ import { UserError } from "./errors";
  */
 export async function resetTestData(user: CurrentUser): Promise<ResetCounts> {
   refuseInProduction("Reset test data");
+  if (appEnv() === "staging") throw new UserError("Reset test data is not available on staging.");
   if (!isTestMode()) throw new UserError("Reset test data is only available in test mode.");
   if (!can(user, PERMISSIONS.TESTDATA_RESET)) throw new UserError("Your role does not allow resetting test data.");
   return prisma.$transaction(

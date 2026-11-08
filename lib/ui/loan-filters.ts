@@ -7,7 +7,7 @@ export interface FilterField {
   options: [string, string][];
 }
 
-export const FILTER_NAMES = ["stage", "classification", "branch", "loanType", "tat", "needsAction", "group"] as const;
+export const FILTER_NAMES = ["stage", "classification", "branch", "loanType", "tat", "needsAction", "holdReason", "group"] as const;
 
 export interface Chip { name: string; text: string; removeHref: string }
 

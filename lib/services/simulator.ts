@@ -1,4 +1,5 @@
-import { refuseInProduction } from "@/lib/env";
+import { appEnv, refuseInProduction } from "@/lib/env";
+import { isTestMode } from "@/lib/test-mode";
 import { runSimulated } from "@/lib/email/context";
 import "server-only";
 import { prisma, withLoanLock } from "@/lib/db";
@@ -32,8 +33,19 @@ export type SimAction =
 /** Simulator steps that move a transaction into or through the DP stage. */
 const DP_STEPS: SimAction[] = ["DP_ACCEPT", "DP_PROCESS", "DP_FORWARD"];
 
+/**
+ * The simulator calls the step functions directly (it bypasses the hold lock and the role checks), so
+ * it runs only with TEST_MODE on and never on staging or production.
+ */
+export function assertSimulatorAllowed() {
+  const env = appEnv();
+  if (env === "staging" || env === "production") throw new UserError(`The test simulator is not available on ${env}.`);
+  if (!isTestMode()) throw new UserError("The test simulator runs only in test mode (TEST_MODE=true).");
+}
+
 async function guard(user: CurrentUser) {
   refuseInProduction("The test simulator");
+  assertSimulatorAllowed();
   if (!can(user, PERMISSIONS.SIMULATOR_USE)) throw new UserError("Your role does not allow using the test simulator.");
   if (!(await getSetting("simulator.enabled"))) throw new UserError("Turn on the test simulator in Settings first.");
 }

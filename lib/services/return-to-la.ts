@@ -2,15 +2,13 @@ import "server-only";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { writeAudit } from "@/lib/audit";
-import { notify, branchLaUserIds } from "@/lib/notify";
+import { notify } from "@/lib/notify";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { businessDate } from "@/lib/time";
-import { peso } from "@/lib/funds/rules";
-import { acceptCore, whoOf, withJob } from "./jobs";
+import { acceptCore, forgetJobForDp, sentBackRecipients, whoOf, withJob } from "./jobs";
+import { remarksSchema } from "@/lib/ui/holds";
 import { heldFor } from "./pasuyo";
-import { financeIds, refreshAdvance } from "./funds";
-import { moveDocs, noteDocs } from "./custody";
+import { moveDocs } from "./custody";
 import { recomputeStage } from "./stage";
 import { UserError } from "./errors";
 
@@ -29,14 +27,26 @@ export const returnSchema = z.object({
   reasonId: z.string({ message: "Pick a reason." }).trim().min(1, "Pick a reason."),
   checkIds: z.array(z.string().trim().min(1)).default([]),
   otherPaper: z.string().trim().max(120, "Keep the paper name under 120 characters.").default(""),
-  note: z.string({ message: "Write a short note." }).trim().min(3, "Write a short note (at least 3 characters).").max(500, "Keep the note under 500 characters."),
-  papers: z.enum(["KEEP", "RETURN"]).default("KEEP"),
-  cash: z.enum(["KEEP", "RETURN"]).nullable().default(null),
+  /** The findings: what is wrong or missing (5 to 500 characters, required). */
+  note: remarksSchema,
+  /**
+   * Papers handed over to the LA: every paper the processor holds (received at Accept) must be
+   * ticked; the LA then confirms them back before sending again. There is no "keep the papers" and no
+   * "keep the cash": the job is no longer the processor's.
+   */
+  handedOver: z.array(z.string().trim().min(1)).default([]),
 });
+/** The removed choices are refused, not ignored. */
+const REMOVED = "The return no longer offers \"keep the papers\" or \"keep the cash\".";
+function refuseRemoved(raw: unknown) {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  if (r.papers !== undefined || r.cash !== undefined) throw new UserError(REMOVED);
+}
 export type ReturnInput = z.input<typeof returnSchema>;
 
 export async function returnToLa(u: CurrentUser, assignmentId: string, raw: ReturnInput, now: Date = new Date()) {
   if (!can(u, PERMISSIONS.JOBS_RETURN_TO_LA)) throw new UserError("Your role does not allow returning jobs to the Loan Associate.");
+  refuseRemoved(raw);
   const p = returnSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   const d = p.data;
@@ -51,19 +61,18 @@ export async function returnToLa(u: CurrentUser, assignmentId: string, raw: Retu
     if (named.some((c) => !c)) throw new UserError("Pick papers of this transaction only.", "checkIds");
     if (NEEDS_PAPERS.includes(reason.code) && named.length === 0 && !d.otherPaper) throw new UserError("Pick the papers that are missing or wrong.", "checkIds");
 
-    // Cash held for this job: keep it for the re-send (same line, same person) or return it (Finance confirms).
+    // Cash released for this job stays on the processor's advance as "Cash to settle": the return is
+    // allowed at once and the advance is liquidated beside it (receipts for what was spent, the rest
+    // returned), as for forwarding. New cash for a re-send is requested again like any new job.
     const held = await heldFor(tx, a, u.id);
     const heldCents = held.reduce((s, h) => s + h.balance, 0);
-    if (heldCents > 0 && !d.cash) throw new UserError(`You hold ${peso(heldCents)} for this job. Choose: keep the cash for the re-send, or return the cash.`, "cash");
     const actor = { id: u.id, label: u.name };
-    if (heldCents > 0 && d.cash === "RETURN") {
-      for (const h of held) {
-        await tx.cashReturn.create({ data: { advanceId: h.advanceId, lineId: h.lineId, cents: h.balance, date: businessDate(now), recordedById: u.id } });
-        await refreshAdvance(tx, h.advanceId);
-        await writeAudit(tx, { actor, mode: "MANUAL", action: "cash_returned", entityType: "CashAdvance", entityId: h.advanceId, loanId: a.loanId, pn: a.loan.pn, summary: `${h.number}: ${u.name} returned ${peso(h.balance)} cash when returning ${a.transaction.type.name} to the Loan Associate` });
-      }
-      await notify(tx, { email: { event: "cash_returned", vars: { number: a.loan.pn, who: u.name, status: "cash returned with a returned job", reason: "Confirm receipt." } }, userIds: await financeIds(tx), title: `${a.loan.pn}: cash returned`, body: `${u.name} returned ${peso(heldCents)} when returning a job to the Loan Associate. Confirm receipt.`, link: "/funds?tab=outstanding" });
-    }
+
+    // Papers handed over: every paper with the processor (received at Accept) must be ticked.
+    const withDp = a.transaction.documents.filter((x) => x.stage === "WITH_DP");
+    const handed = new Set(d.handedOver);
+    // (By paper, or by its checklist row: at Accept the received papers are ticked by row.)
+    if (withDp.some((x) => !handed.has(x.id) && !(x.checkId && handed.has(x.checkId)))) throw new UserError("Tick every paper you hand over to the Loan Associate.", "handedOver");
 
     // The papers asked for: the named rows are unticked again (the LA ticks them when they arrive);
     // an "Other paper" becomes a required row of its own.
@@ -92,28 +101,33 @@ export async function returnToLa(u: CurrentUser, assignmentId: string, raw: Retu
     // statusSince is kept: the clock is not reset.
     await tx.dpAssignment.update({
       where: { id: a.id },
-      data: { status: "WITHDRAWN", returnedAt: now, closedAt: now, returnReasonId: reason.id, returnReasons: `${reason.name}${names.length ? ` (${names.join(", ")})` : ""}: ${d.note}` },
+      data: {
+        status: "WITHDRAWN", returnedAt: now, closedAt: now, returnReasonId: reason.id, returnReasons: `${reason.name}${names.length ? ` (${names.join(", ")})` : ""}: ${d.note}`,
+        papersHandedAt: withDp.length ? now : null,
+      },
     });
     await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "RETURNED" } });
 
-    // Custody: the papers come back (in transit to the branch until the LA receives them), or stay with the processor.
-    const withDp = a.transaction.documents.filter((x) => x.stage === "WITH_DP");
-    if (d.papers === "RETURN") {
-      await moveDocs(tx, withDp, { stage: "AT_BRANCH", custodian: null, role: "LA", userId: null, location: `${a.loan.branch.name} branch`, action: "RETURNED_BY_DP" }, { by: actor });
-    } else {
-      await noteDocs(tx, withDp, { action: "KEPT_BY_DP", location: `With DP ${a.dpUser.name}`, remarks: "Kept by the processor for the re-send", by: actor });
+    // Custody: handed over to the LA, in transit until the LA confirms them back (send again waits for that).
+    if (withDp.length) {
+      await moveDocs(tx, withDp, { stage: "IN_TRANSIT", custodian: a.assignedBy.name, role: "LA", userId: null, location: `Handed over by DP ${a.dpUser.name} to ${a.assignedBy.name}`, action: "HANDED_TO_LA" }, { by: actor });
     }
 
     const laName = a.assignedBy.name;
     await writeAudit(tx, {
       actor, mode: "MANUAL", action: "job_returned_to_la", entityType: "DpAssignment", entityId: a.id, loanId: a.loanId, pn: a.loan.pn, journeyStep: "4.1",
       summary: `${u.name} returned ${a.transaction.type.name} to ${laName}: ${reason.name}${names.length ? ` (${names.join(", ")})` : ""}`,
-      details: { reason: reason.code, papers: names, note: d.note, keptPapers: d.papers === "KEEP", cash: heldCents ? d.cash : null },
+      details: { reason: reason.code, papers: names, note: d.note, handedOver: withDp.map((x) => x.label), cashToSettleCents: heldCents },
     });
-    await notify(tx, { email: { event: "returned_to_la", transactionId: a.transactionId, to: [...(await branchLaUserIds(tx, a.loan.branchId)), a.assignedById], vars: { pn: a.loan.pn, transaction: a.transaction.type.name, who: u.name, reason: `${reason.name}${names.length ? ` (${names.join(", ")})` : ""}. ${d.note}` } },
-      userIds: [...(await branchLaUserIds(tx, a.loan.branchId)), a.assignedById, ...(a.secondaryDpUserId && a.secondaryDpUserId !== u.id ? [a.secondaryDpUserId] : []), ...(a.dpUserId !== u.id ? [a.dpUserId] : [])],
+    // Only the LA who sent it is told (in-app, and by email when the switch is on). The DP gets nothing
+    // and their notifications about this job are removed: it is no longer with them.
+    await forgetJobForDp(tx, a);
+    const to = await sentBackRecipients(tx, a);
+    await notify(tx, {
+      ...(to.email ? { email: { event: "returned_to_la" as const, transactionId: a.transactionId, to: to.ids, vars: { pn: a.loan.pn, transaction: a.transaction.type.name, who: u.name, reason: `${reason.name}${names.length ? ` (${names.join(", ")})` : ""}. ${d.note}` } } } : {}),
+      userIds: to.ids,
       loanId: a.loanId, title: `${a.loan.pn}: ${a.transaction.type.name} returned by the processor`,
-      body: `${u.name}: ${reason.name}${names.length ? ` (${names.join(", ")})` : ""}. ${d.note}`, link: `/loans/${a.loan.pn}?tab=todo&tx=${a.transaction.type.code}`,
+      body: `${u.name}: ${reason.name}${names.length ? ` (${names.join(", ")})` : ""}. ${d.note}${withDp.length ? ` Confirm the ${withDp.length} paper${withDp.length === 1 ? "" : "s"} handed over before sending again.` : ""}${to.note}`, link: `/loans/${a.loan.pn}?tab=todo&tx=${a.transaction.type.code}`,
     });
     await recomputeStage(tx, a.loanId);
     return { names, heldCents };
@@ -138,6 +152,10 @@ export async function acceptWithMissing(u: CurrentUser, assignmentId: string, la
     const checks = await tx.checklistCheck.findMany({ where: { transactionId: a.transactionId }, select: { id: true } });
     if ([...missing].some((id) => !checks.some((c) => c.id === id))) throw new UserError("Pick papers of this transaction only.", "checkIds");
     const notHere = a.transaction.documents.filter((d) => d.checkId && missing.has(d.checkId) && d.stage === "IN_TRANSIT");
+    // Check the hand-over before accepting, so a refusal leaves the job exactly as it was.
+    const handed = new Set(p.data.handedOver);
+    const received = a.transaction.documents.filter((d) => (d.stage === "IN_TRANSIT" && !notHere.includes(d)) || d.stage === "WITH_DP");
+    if (received.some((d) => !handed.has(d.id) && !(d.checkId && handed.has(d.checkId)))) throw new UserError("Tick every paper you hand over to the Loan Associate.", "handedOver");
     await acceptCore(tx, { ...a, transaction: { ...a.transaction, documents: a.transaction.documents.filter((d) => !notHere.includes(d)) } }, whoOf(u), true);
     await moveDocs(tx, notHere, { stage: "AT_BRANCH", custodian: null, role: "LA", userId: null, location: `${a.loan.branch.name} branch`, action: "NOT_RECEIVED_BY_DP" }, { by: { id: u.id, label: u.name } });
   });

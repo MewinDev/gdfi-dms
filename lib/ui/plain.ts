@@ -4,7 +4,7 @@
  */
 import { APP_TIMEZONE, businessDate, businessDaysBetween, fmtDate, noonOfBusinessDay, type TatBadge } from "@/lib/time";
 
-export type Tone = "act" | "wait" | "ok" | "bad" | "mute" | "navy";
+export type Tone = "act" | "wait" | "ok" | "bad" | "mute" | "navy" | "hold";
 
 // ---------------------------------------------------------------------------
 // Stages

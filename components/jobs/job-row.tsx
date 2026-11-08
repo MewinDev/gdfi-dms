@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { JobRow as Row } from "@/lib/services/job-queries";
 import { txnName } from "@/lib/ui/plain";
 import { Avatar } from "@/components/ui/basics";
+import { PauseIcon } from "@/components/ui/icons";
+import { holdRowLine } from "@/lib/ui/holds";
 import { FundsChip, TatChip } from "./chips";
 
 /** One job: borrower, PN and transaction; TAT chip; funds; the problem in words. The whole row is a link. */
@@ -21,7 +23,7 @@ export function JobRow({ r, showDp = false }: { r: Row; showDp?: boolean }) {
         {r.replaces && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-ink-2" data-replacement><span className="chip c-navy">Replacement</span>of {r.replaces}: its own turnaround time</span>}
         {r.pasuyo && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-ink-2"><span className="chip c-wait">Pasuyo</span>{r.pasuyo}</span>}
         {r.problem && <span className="block text-[13px] font-semibold text-bad-fg">Problem: {r.problem.reason}{r.problem.outsideControl ? " · Outside our control" : ""}</span>}
-        {r.hold && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-navy" data-hold-chip><span className="chip c-navy">On hold</span>{r.hold.reason}</span>}
+        {r.hold && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-ink" data-hold-chip><span className="chip c-hold h-6 px-2 text-xs"><PauseIcon size={12} strokeWidth={2.6} />On hold</span>{holdRowLine(r.hold.reason, r.hold.days)}</span>}
         {r.incomplete && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-act-fg"><span className="chip c-act">Package incomplete</span>{r.incomplete}</span>}
         {r.returnedHow && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-ink-2" data-returned-chip><span className="chip c-wait">{r.returnedHow}</span></span>}
         {r.stage && <span className="block text-[13px] text-ink-2" data-job-stage>Stage: {r.stage}</span>}

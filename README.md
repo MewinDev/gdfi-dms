@@ -35,7 +35,7 @@ If port 5432 is already used on your PC (for example a native PostgreSQL service
 | `npm run db:deploy` | `prisma migrate deploy` (Supabase / any shared database) |
 | `npm run db:seed` | Reference data + test users (idempotent) |
 | `npm run db:seed:reference` | Reference data only (never test users) |
-| `npm run db:reset` | Drop and recreate the local database, then seed. **Destroys local data.** |
+| `npm run db:reset` | Drop and recreate the local database, then seed. **Destroys local data.** Refused unless the database name contains `test` or `ALLOW_DESTRUCTIVE=1` is set (see `docs/ENVIRONMENT.md`). |
 | `npm run db:studio` | Prisma Studio |
 | `npm test` | Unit tests (rules, Data Check, stage, business days) |
 | `npm run test:e2e` | Playwright happy path (see below) |
@@ -71,9 +71,10 @@ Never set in live. When on:
 ### Tests
 
 ```powershell
-npm test                                               # unit + integration (integration uses the LOCAL database)
-npm run test:e2e                                       # Playwright at 1440, 820 and 390 px; starts next dev on port 3100
+$env:ALLOW_DESTRUCTIVE="1"; npm test                  # unit + integration (integration resets loan files in the LOCAL database)
+$env:ALLOW_DESTRUCTIVE="1"; npm run test:e2e           # Playwright at 1440, 820 and 390 px; starts next dev on port 3100
 $env:E2E_BASE_URL="http://localhost:3001"; npm run test:e2e   # or reuse a running dev server
+# Without ALLOW_DESTRUCTIVE=1 they refuse unless DATABASE_URL and DIRECT_URL name a "test" database.
 ```
 
 The integration tests (`tests/integration`) and the Playwright helpers (`tests/e2e/db.ts`) only run against a database on `localhost`. They **remove all loan files** before each test, the same way Reset test data does. Each test then opens its own loan file. Playwright also adds a Davao fixture, `PN-0009007`, to check that an LA gets 404 for another branch's file.
@@ -128,21 +129,33 @@ Every write runs in one database transaction that locks the Loan row (`SELECT ..
 
 ## UI guide
 
-The Loan Associate screens follow the approved redesign (mockups in `gdfi-dms-design`). Principles: one screen, one job; plain words; cards for daily work; at most one gold button per section; 44px+ touch targets; 15px+ body text.
+The Loan Associate screens follow the approved redesign (mockups in `gdfi-dms-design`). Principles: one screen, one job; plain words; cards for daily work; one solid brand-coloured button per screen (the main action; secondary actions are outline or text); 44px+ touch targets; 15px+ body text.
+
+### Colour rule: the soft status palette
+
+Every pill, status card and highlighted row uses a **soft** colour: a very light background, a dark text colour and a thin border. No full or strong backgrounds: no filled navy pills (Sent, Processing, On hold, Open now), no large blocks of solid colour. Colour is never the only signal: each pill has an icon and a word. Red is for Problem only. Text meets WCAG AA (4.5:1) on every soft background; `lib/ui/design-tokens.test.ts` checks the tokens, and `tests/e2e/on-hold.spec.ts` measures the rendered pills in the browser.
+
+| Status | Tokens (`app/globals.css`) | Background / text | Contrast (text, secondary text) |
+|---|---|---|---|
+| On hold | `--hold-bg` `--hold-fg` `--hold-line` (+ `--hold-stripe`, the left edge of a held card) | `#FFF8E8` / `#774300` | 7.67, 5.82 |
+| Missing paper, needs you | `--missing-*` (`--act-*`) | `#FFF8E8` / `#774300` | 7.67, 5.82 |
+| Problem | `--problem-*` (`--bad-*`) | `#FDF1EF` / `#A8261D` | 6.42, 5.70 |
+| Sent, Processing, waiting on others | `--sent-*` (`--wait-*`) | `#EFF3F8` / `#2B4366` | 8.99, 5.65 |
+| Done, Ready to send | `--done-*` (`--ok-*`) | `#EDF7F1` / `#1C6B42` | 5.93, 5.70 |
+| Neutral, not started | `--neutral-*` (`--mute-*`) | `#F3F5F7` / `#3C4857` | 8.51, 5.71 |
+
+A held card is white with a thin light border and a soft amber stripe on the left (`.hold-card`). The selected transaction ("Open now") has a very light tint and a thin left accent, not a strong fill. The sidebar, the phone top bar, toasts and the selected state of a choice (a ticked box, a picked processor) keep the brand navy: they are not status colours.
 
 ### Tokens (`app/globals.css`, the only place colors are defined)
 
-| Token | Value | Use |
-|---|---|---|
-| `--navy` `--gold` `--cream` `--sand` `--border` `--hover` `--ink` `--ink-2` `--white` | brand set | Unchanged |
-| `--act-bg` / `--act-fg` | `#FDF0D5` / `#7A4B00` | Needs you, Due today, Ready |
-| `--wait-bg` / `--wait-fg` | `#E9EFF8` / `#2F4B78` | Waiting on others |
-| `--ok-bg` / `--ok-fg` | `#E8F3EC` / `#2F6B4A` | Done, days left, ticked papers |
-| `--bad-bg` / `--bad-fg` | `#FBE9E7` / `#B3261E` | Problems |
-| `--mute-bg` / `--mute-fg` | `#EAE5D9` / `#3E4A58` | Not started |
-| `--highlight-border`, `--done-row-bg`, `--done-row-border`, `--box-border`, `--wait-bar` | `#E3C98F`, `#F6FAF7`, `#BFD9C8`, `#8A93A0`, `#3B5A8A` | Small tints taken from the mockups (highlight card border, ticked row, empty checkbox, "Waiting" tile bar) |
+| Token | Use |
+|---|---|
+| `--navy` `--gold` `--cream` `--sand` `--border` `--hover` `--ink` `--ink-2` `--white` | Brand set |
+| The soft status palette above | Every status pill, card and highlighted row |
+| `--act-*`, `--wait-*`, `--ok-*`, `--bad-*`, `--mute-*` (`-bg`, `-fg`, `-line`) | The component names, mapped onto the soft palette |
+| `--highlight-border`, `--done-row-bg`, `--done-row-border`, `--box-border`, `--wait-bar` | Small tints (highlight card border, ticked row, empty checkbox, "Waiting" tile bar) |
 
-Component classes: `.btn-gold` (the one main action), `.btn-navy`, `.btn-ghost`, `.btn-sm` (44px), `.btn-lg` (52px), `.card` (16px radius), `.card-hl`, `.chip` + `.c-act/.c-wait/.c-ok/.c-bad/.c-mute`, `.tag`, `.tab`, `.input` (48px), `.page-title`. The old names `.btn-primary/.btn-accent/.btn-secondary` map to navy/gold/ghost for the Admin screens. The sign-in screen uses frozen `.login-*` classes so it looks exactly as before.
+Component classes: `.btn-gold` (the one main action), `.btn-navy`, `.btn-ghost`, `.btn-sm` (44px), `.btn-lg` (52px), `.card` (16px radius), `.card-hl`, `.hold-card`, `.chip` + `.c-act/.c-hold/.c-wait/.c-ok/.c-bad/.c-mute` (`.c-navy` is kept as an alias of the soft blue-grey), `.tag`, `.tab`, `.input` (48px), `.page-title`. The old names `.btn-primary/.btn-accent/.btn-secondary` map to navy/gold/ghost for the Admin screens. The sign-in screen uses frozen `.login-*` classes so it looks exactly as before.
 
 ### Shared components
 
@@ -157,6 +170,7 @@ Component classes: `.btn-gold` (the one main action), `.btn-navy`, `.btn-ghost`,
 | `WorkCard` (checklist rows, send block, EDST) | `components/loan/work.tsx` | Checklist saves automatically ("Saved just now"); send asks for confirmation |
 | `ReportProblem`, `FixProblem` | `components/loan/work.tsx` | Report a problem sheet; Mark problem as fixed |
 | Plain words | `lib/ui/plain.ts` | Stage words, deadline chips, history sentences, update sentences, message rewording (unit-tested) |
+| `HoldSummary` | `components/jobs/hold-summary.tsx` | The one hold summary (reason, remarks as typed, who and when in PHT, how to continue, Resume). Words in `lib/ui/holds.ts` (unit-tested) |
 
 ### Breakpoints
 

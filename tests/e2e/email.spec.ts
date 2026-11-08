@@ -103,14 +103,27 @@ test("Email card: off by default, turning on asks first, test email, recent emai
   await expect(msg.locator("[data-email-message]")).toContainText("PN-0001003: Notary sent to you");
   await shot(page, "recent-email-message");
   await msg.getByRole("button", { name: "Close" }).last().click();
-  const failed = table.getByRole("row").filter({ hasText: "Returned to the LA" });
-  await failed.getByRole("button", { name: "Resend" }).click();
-  await expect(table.getByRole("row").filter({ hasText: "Returned to the LA" }).getByText("Queued", { exact: true })).toBeVisible();
-  // Filters: Skipped only.
+  // Filters: Skipped only (before Resend, so only the seeded Skipped row can be there).
   await d.getByLabel("Status").selectOption("SKIPPED");
   await d.getByRole("button", { name: "Show", exact: true }).click();
   await expect(page).toHaveURL(/status=SKIPPED/);
   await expect(d.locator("[data-recent-emails]").getByRole("row")).toHaveCount(2);
+
+  // Resend a failed email. Emails are off here, so the background sender turns it from Queued into
+  // Skipped ("Emails were turned off before it was sent") a moment later. That moment is not fixed,
+  // so check what is true either way: it is no longer Failed, its tries start again, and it is audited.
+  await page.goto("/admin/settings?open=email");
+  const outbox = d.locator("[data-recent-emails]");
+  const failedRow = outbox.getByRole("row").filter({ hasText: "Returned to the LA" });
+  await failedRow.getByRole("button", { name: "Resend" }).click();
+  // The row shows its new status (Queued, or already Skipped), and no Resend button any more.
+  await expect(failedRow).toContainText(/(Queued|Skipped)$/);
+  await expect(failedRow.getByRole("button", { name: "Resend" })).toHaveCount(0);
+  const resent = await db.emailOutbox.findFirstOrThrow({ where: { event: "returned_to_la" } });
+  expect(resent.status).not.toBe("FAILED");
+  expect(["QUEUED", "SKIPPED"]).toContain(resent.status);
+  expect(resent.attempts).toBe(0);
+  expect(await db.auditLog.count({ where: { action: "email_resent", entityId: resent.id } })).toBe(1);
 });
 
 test("Edit message: placeholders checked, live preview, discard asks first, reset to default", async ({ page }) => {

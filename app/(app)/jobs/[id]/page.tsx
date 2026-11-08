@@ -13,14 +13,18 @@ import { doneTat, openHold, openProblem, txnFunds, txnTat } from "@/lib/jobs/vie
 import { problemDays } from "@/lib/workflow/tat";
 import { dayText, txnName } from "@/lib/ui/plain";
 import { PageTop } from "@/components/loan/page-top";
-import { Banner, ToneChip } from "@/components/ui/basics";
+import { Banner, PageHeader, ToneChip } from "@/components/ui/basics";
 import { FundsChip, LabelsChip, TatChip } from "@/components/jobs/chips";
 import { AttemptTimeline } from "@/components/jobs/timeline";
 import {
   AttemptForm, CompleteForm, ForwardForm, FundsFlagForm, OutsideControlToggle, RaiseProblemForm, ResolveProblemForm, ReviewForm,
   PasuyoForm, PutOnHoldForm,
 } from "@/components/jobs/forms";
-import { HoldBanner } from "@/components/jobs/hold-panel";
+import { HoldSummary } from "@/components/jobs/hold-summary";
+import { lockedMessage, mayAddDetails, mayResumeHold, holdReasonName } from "@/lib/ui/holds";
+import { LockedArea } from "@/components/ui/locked-area";
+import { mayTransferHold, transferCandidates } from "@/lib/services/holds";
+import { sentBackKind } from "@/lib/ui/rounds";
 import { ReturnToLaForm } from "@/components/jobs/return-to-la-form";
 import { ChangeLtoOfficeForm } from "@/components/loan/sent-actions";
 import { ltoEstimate } from "@/lib/ui/lto";
@@ -42,6 +46,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const { id } = await params;
   const a = await loadAssignment(prisma, id).catch(() => null);
   if (!a || !canSeeJob(user, a)) notFound();
+  // Declined or returned to the LA: it went back to the LA who sent it. A processor never sees it again
+  // (the loan's Journey stays where their role may open the loan file).
+  if (sentBackKind(a) && can(user, PERMISSIONS.JOBS_WORK)) {
+    return (
+      <div className="flex w-full flex-col gap-4" data-no-longer-yours>
+        <LiveToast />
+        <LiveAnnouncer />
+        <PageHeader title="This job is no longer with you." help="It went back to the Loan Associate who sent it. Nothing here needs you." />
+        <p><Link href="/jobs" className="btn-ghost">Go to my jobs</Link></p>
+      </div>
+    );
+  }
   const [t, tats, holidays] = await Promise.all([
     prisma.loanTransaction.findUniqueOrThrow({
       where: { id: a.transactionId },
@@ -67,7 +83,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   // Holds: the DP on their own open job (waiting for acceptance or in process). Admin resumes any.
   const jobOpen = a.status === "PENDING_ACCEPTANCE" || (a.status === "ACCEPTED" && t.status === "IN_PROCESS");
   const mayHold = mine && jobOpen && can(user, PERMISSIONS.HOLDS_RAISE);
-  const mayResume = !!hold && ((mine && can(user, PERMISSIONS.HOLDS_RESOLVE)) || can(user, PERMISSIONS.HOLDS_RESOLVE_ANY));
+  const mayResume = !!hold && mayResumeHold(hold, user); // only the person who put it on hold
   const holdReasons = mayHold && !hold ? await prisma.holdReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, code: true } }) : [];
   const funds = txnFunds(t);
   const tat = a.status === "CLOSED" && a.decidedAt ? doneTat(t.type.code, a.decidedAt, a.forwardedAt ?? a.closedAt ?? now, tats, holidays) : txnTat(t, tats, holidays, now);
@@ -205,7 +221,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
 
       <LiveToast />
       <LiveAnnouncer />
-      {hold && <HoldBanner hold={hold} holidays={holidays} canResume={mayResume} now={now} />}
+      {hold && (
+        <HoldSummary hold={{ holdId: hold.id, reason: holdReasonName(hold), note: hold.note, raisedBy: hold.raisedByLabel, raisedAt: hold.raisedAt.toISOString(), owner: hold.ownerLabel ?? null }}
+          now={now.toISOString()} canResume={mayResume} canAddDetails={mayAddDetails(hold, user)} clockNote
+          transfer={mayTransferHold(user, a.loan.branchId) ? { candidates: await transferCandidates(user, hold.id) } : null} />
+      )}
+
+      {/* On hold: the job is locked (readable, every control disabled) until the holder resumes it. */}
+      <LockedArea locked={hold ? lockedMessage(hold.raisedByLabel, hold.raisedAt, hold.ownerLabel) : null} id="lock-job">
+      <div className="flex min-w-0 flex-col gap-4">
 
       {stages.length > 0 && (
         <section aria-labelledby="stages-h" className="card flex flex-col gap-3 p-4 sm:p-5" data-stages>
@@ -291,6 +315,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                     assignmentId={a.id} laName={a.assignedBy.name} reasons={returnReasons}
                     papers={papers.map((c) => ({ id: c.id, label: c.rule?.label ?? c.otherLabel ?? "Other paper" }))}
                     heldText={returnHeldCents > 0 ? peso(returnHeldCents) : null}
+                    handover={t.documents.filter((d) => d.stage === "WITH_DP").map((d) => ({ id: d.id, label: d.label }))}
                   />
                 )}
                 {!problem && <RaiseProblemForm transactionId={t.id} reasons={reasons} />}
@@ -318,6 +343,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           )}
         </section>
       )}
+      </div>
+      </LockedArea>
 
       {t.status === "FORWARDED" && (
         <Banner tone="wait">Forwarded on {dayText(a.forwardedAt)}. Waiting for the Loan Associate to check the papers.</Banner>
@@ -340,7 +367,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         )}
       </section>
 
-      {pinned && (
+      {pinned && !hold && (
         <>
           <div aria-hidden="true" className="h-16 sm:hidden" />
           <PinnedAction label={pinned.label} targetId={pinned.target} href={pinned.href} />

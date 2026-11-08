@@ -5,6 +5,7 @@
  * Most urgent first: problem, hold, missing paper; then oldest first.
  */
 import { holdDays, problemDays } from "@/lib/workflow/tat";
+import { holdReasonName } from "@/lib/ui/holds";
 
 export type OpenKind = "problem" | "hold" | "missing";
 
@@ -55,7 +56,7 @@ export function openItemsOf(txns: OpenTxnInput[], holidays: ReadonlySet<string>,
       out.push({ ...base, id: p.id, kind: "problem", reason: p.reason.name, since: p.raisedAt, by: p.raisedByLabel, note: p.note, days: Math.max(1, problemDays([p], holidays, now)), outsideControl: p.outsideControl });
     }
     for (const h of t.holds.filter((x) => !x.resumedAt)) {
-      out.push({ ...base, id: h.id, kind: "hold", reason: h.reason.name, since: h.raisedAt, by: h.raisedByLabel, note: h.note, days: Math.max(1, holdDays([h], holidays, now)) });
+      out.push({ ...base, id: h.id, kind: "hold", reason: holdReasonName(h), since: h.raisedAt, by: h.raisedByLabel, note: h.note, days: Math.max(1, holdDays([h], holidays, now)) });
     }
     if (t.request) {
       // The papers asked for that are still not ticked: the stored rows, or (older requests) by name.
@@ -75,9 +76,9 @@ export function openItemsOf(txns: OpenTxnInput[], holidays: ReadonlySet<string>,
 export const OPEN_WORD: Record<OpenKind, string> = { problem: "Problem", hold: "On hold", missing: "Missing paper" };
 
 /** The small chip next to the selected transaction's title: "On hold · 1 day", "Problem · 2 days", "1 paper requested". */
-export function titleChipOf(i: Pick<OpenItem, "kind" | "days" | "papers">): { text: string; tone: "bad" | "navy" } {
+export function titleChipOf(i: Pick<OpenItem, "kind" | "days" | "papers">): { text: string; tone: "bad" | "hold" } {
   const d = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
-  if (i.kind === "hold") return { text: `On hold · ${d(i.days)}`, tone: "navy" };
+  if (i.kind === "hold") return { text: `On hold · ${d(i.days)}`, tone: "hold" };
   if (i.kind === "problem") return { text: `Problem · ${d(i.days)}`, tone: "bad" };
   const n = Math.max(1, i.papers.length);
   return { text: `${n} paper${n === 1 ? "" : "s"} requested`, tone: "bad" };

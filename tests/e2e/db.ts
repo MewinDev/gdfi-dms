@@ -1,17 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 import { resetLoanData } from "../../lib/test-data/reset-core";
+import { databaseUrlMismatch, loadEnvFiles } from "../../lib/env/load-files";
+import { assertDestructiveAllowed } from "../../lib/env/destructive";
 
 /** Test-only database helpers. Refuse anything but a local database. */
-for (const file of [".env.local", ".env"]) {
-  try {
-    process.loadEnvFile(file); // .env.local first, then .env (a variable already set wins)
-  } catch {
-    /* no such file: env already set */
-  }
-}
+loadEnvFiles([".env.local", ".env"]); // the shell wins, then .env.local, then .env
 if (!/@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL ?? "")) {
   throw new Error("E2E database helpers only run against a local database (DATABASE_URL must point to localhost).");
 }
+const mismatch = databaseUrlMismatch();
+if (mismatch) throw new Error(mismatch);
+// The e2e tests reset the loan files: only on a "test" database, or with ALLOW_DESTRUCTIVE=1.
+assertDestructiveAllowed("The Playwright tests (they reset the loan files)");
 
 export const db = new PrismaClient();
 

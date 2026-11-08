@@ -37,15 +37,16 @@ async function openPn3(page: Page) {
 const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code } }, include: { checks: true } });
 /** The Check documents list at this width (side list at 1100+, strip below). */
 const checkList = (page: Page) => (wide(page) ? page.getByRole("region", { name: /^Transactions \(\d+\)$/ }) : page.getByRole("region", { name: "Transactions", exact: true }));
-/** The status line, chip, TAT chip and markers of one row (null when the row has none). */
+/** The one status pill, the short line and the day count (plain text) of one row (null when the row has none). */
 async function texts(_page: Page, row: ReturnType<Page["locator"]>) {
   await expect(row.locator("[data-status-chip]").first()).toBeAttached();
+  // Exactly one status pill per row.
+  await expect(row.locator("[data-status-chip]")).toHaveCount(1);
   const one = async (sel: string) => ((await row.locator(sel).count()) ? ((await row.locator(sel).first().textContent()) ?? "").trim() : null);
   return {
     line: await one("[data-status-line]"),
     chip: await one("[data-status-chip]"),
-    tat: await one("[data-tat-chip]"),
-    markers: (await row.locator("[data-marker]").allTextContents()).map((m) => m.trim()),
+    clock: await one("[data-clock]"),
   };
 }
 
@@ -57,9 +58,8 @@ async function sameWording(page: Page, selected = "NOTARY") {
   await page.goto(`/loans/PN-0001003?tab=todo&tx=${selected}`);
   for (const c of ORDER) {
     const check = await texts(page, checkList(page).locator(`[data-txn=${c}]`));
-    expect.soft(check.chip, `${c} chip`).toBe(todo[c].chip);
-    expect.soft(check.tat, `${c} TAT chip`).toBe(todo[c].tat);
-    expect.soft(check.markers, `${c} markers`).toEqual(todo[c].markers);
+    expect.soft(check.chip, `${c} pill`).toBe(todo[c].chip);
+    expect.soft(check.clock, `${c} day count`).toBe(todo[c].clock);
     // The Next step row leaves its line out (the Next step card says it); every other line matches.
     if (todo[c].line !== null) expect.soft(check.line, `${c} line`).toBe(todo[c].line);
   }
@@ -100,9 +100,12 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   await expect.poll(async () => (await txnOf("PPSR")).status).toBe("READY");
 
   let todo = await sameWording(page);
-  // Sent work says where it is processed (Notary needs LTO processing).
+  // Sent: one short line in the list; who it went to and the LTO office are in the detail only.
   expect(todo.NOTARY.chip).toBe("Sent");
-  expect(todo.NOTARY.line).toMatch(/^Sent to Test Document Processor · waiting to accept · At .+$/);
+  expect(todo.NOTARY.line).toBe("Waiting for the DP to accept");
+  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await expect(page.locator(`section[id^="job-"]`)).toContainText("Sent to Test Document Processor");
+  await expect(page.locator("[data-lto-chip]").filter({ visible: true })).toHaveCount(1);
   expect(todo.MORTGAGE.line ?? "Not started").toBe("Not started");
   expect(todo.PPSR).toMatchObject({ chip: "Ready to send" });
 
@@ -118,13 +121,14 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   await db.loanException.create({ data: { loanId: edst.loanId, transactionId: edst.id, type: "LEGAL_DOCS_COMPLETION", reason: "Missing", raisedByLabel: "E2E", details: { checkIds: [unticked.id], missing: ["x"] } } });
   todo = await sameWording(page, "MORTGAGE");
   expect(todo.NOTARY.chip).toBe("Processing");
-  expect(todo.NOTARY.line).toMatch(/^With Test Document Processor · working on it · At .+$/);
-  expect(todo.PPSR.markers).toEqual(["Problem 1 day"]);
-  expect(todo.MORTGAGE.markers).toEqual(["On hold 1 day"]);
-  expect(todo.EDST.markers).toEqual(["Missing paper"]);
+  expect(todo.NOTARY.line).toBe("The DP is working on it");
+  expect(todo.PPSR.chip).toBe("Problem");
+  expect(todo.MORTGAGE.chip).toBe("On hold");
+  expect(todo.MORTGAGE.line).toBe("On hold: Waiting on borrower · 1 day");
+  expect(todo.EDST.chip).toBe("Missing paper");
   await db.loanTransaction.update({ where: { id: notary.id }, data: { status: "COMPLETED", completedAt: new Date(), statusSince: new Date() } });
   todo = await sameWording(page, "EDST");
-  expect(todo.NOTARY).toMatchObject({ chip: "Done", tat: null });
+  expect(todo.NOTARY).toMatchObject({ chip: "Done", clock: null });
 
   // Selecting rows moves the highlight; the order never changes; the strip keeps the open card in view.
   for (const c of ORDER) {

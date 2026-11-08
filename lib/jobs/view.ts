@@ -6,6 +6,7 @@
 import { fundsStatus, type FundsStatus } from "@/lib/funds/rules";
 import { holdDays, problemDays, stepClock, tatChip, targetOf, txnStepKey, type TatChipData, type TatMap } from "@/lib/workflow/tat";
 import { businessDate } from "@/lib/time";
+import { holdReasonName } from "@/lib/ui/holds";
 
 export interface TxnLike {
   status: string;
@@ -36,7 +37,7 @@ export function txnTat(t: TxnLike, tats: TatMap, holidays: ReadonlySet<string>, 
   return tatChip(
     clock, businessDate(now),
     open ? { open: true, days: problemDays(onStep.filter((p) => !p.resolvedAt), holidays, now), reason: open.reason.name } : null,
-    hold ? { open: true, days: holdDays([hold], holidays, now), reason: hold.reason.name } : null,
+    hold ? { open: true, days: holdDays([hold], holidays, now), reason: holdReasonName(hold) } : null,
   );
 }
 

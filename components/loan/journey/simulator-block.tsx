@@ -6,13 +6,14 @@ import { getSetting } from "@/lib/settings";
 import { SimulatorPanel, type SimButton } from "@/components/loan/forms";
 import { liveAssignment } from "@/lib/ui/plain";
 import { isTestMode } from "@/lib/test-mode";
-import { isProduction } from "@/lib/env";
+import { appEnv, isProduction } from "@/lib/env";
 import { myLoansMode } from "@/lib/myloans";
 import { SimulateSourceChange } from "@/components/loan/source-review";
 
 /** Admin test simulator on the Journey tab (test mode switch on). Every event it makes is labelled Simulated. */
 export async function SimulatorBlock({ loan, user }: { loan: LoanDetail; user: CurrentUser }) {
-  if (isProduction() || !can(user, PERMISSIONS.SIMULATOR_USE)) return null; // never in production (the server refuses too)
+  // Only in test mode, never on staging or production (the server refuses too: assertSimulatorAllowed).
+  if (isProduction() || appEnv() === "staging" || !isTestMode() || !can(user, PERMISSIONS.SIMULATOR_USE)) return null;
   const on = await getSetting("simulator.enabled");
   if (!on) {
     return <p className="card p-3 text-xs text-ink-2">The test simulator is off. Turn it on in <Link href="/admin/settings?open=system" className="underline">Settings</Link>.</p>;

@@ -212,6 +212,7 @@ model User {
   exceptionsRaised   LoanException[]      @relation("ExceptionRaisedBy")
   holdsRaised        Hold[]               @relation("HoldRaisedBy")
   holdsResumed       Hold[]               @relation("HoldResumedBy")
+  holdsOwned         Hold[]               @relation("HoldOwner")
   exceptionsResolved LoanException[]      @relation("ExceptionResolvedBy")
 }
 
@@ -718,6 +719,11 @@ model DpAssignment {
   receivingBranchId   String?
   receivingBranch     Branch?            @relation("DpReceivingBranch", fields: [receivingBranchId], references: [id])
   closedAt            DateTime?
+  /// Return to LA: when the DP handed the papers received at Accept back to the LA.
+  papersHandedAt      DateTime?
+  /// When the LA confirmed the papers back, and who (send again stays blocked until then).
+  papersReceivedAt    DateTime?
+  papersReceivedBy    String?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
@@ -1323,6 +1329,8 @@ model HoldReason {
   name            String
   sortOrder       Int       @default(0)
   active          Boolean   @default(true)
+  /// Seeded default not yet confirmed with the team ("Proposed, to be confirmed with the team"). Cleared when Admin saves the row.
+  proposed        Boolean   @default(false)
   deactivatedAt   DateTime?
   deactivatedById String?
   holds           Hold[]
@@ -1345,6 +1353,8 @@ model Hold {
   transaction      LoanTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   reasonId         String
   reason           HoldReason      @relation(fields: [reasonId], references: [id])
+  /// A copy of the reason's name when the hold started: reports stay right if the name changes later.
+  reasonName       String          @default("")
   note             String          @default("")
   /// Optional "expected to resume on" date, YYYY-MM-DD in Philippine time.
   expectedResumeOn String?
@@ -1352,6 +1362,12 @@ model Hold {
   raisedBy         User?           @relation("HoldRaisedBy", fields: [raisedById], references: [id])
   raisedByLabel    String
   raisedAt         DateTime        @default(now())
+  /// The hold owner: the only person who can resume it. Starts as the person who put it on hold;
+  /// a supervisor or Admin (holds:transfer) can transfer it. Null for an old hold saved without one.
+  ownerId          String?
+  owner            User?           @relation("HoldOwner", fields: [ownerId], references: [id])
+  ownerLabel       String?
+  transfers        HoldTransfer[]
   resumedById      String?
   resumedBy        User?           @relation("HoldResumedBy", fields: [resumedById], references: [id])
   resumedByLabel   String?
@@ -1364,6 +1380,26 @@ model Hold {
 
   @@index([transactionId, resumedAt])
   @@index([loanId])
+}
+
+/**
+ * A hold given to another owner (holds:transfer). Append-only: who it went from and to, who did it,
+ * why and when. The hold's reason, remarks, start and "put on hold by" never change.
+ */
+model HoldTransfer {
+  id        String   @id @default(cuid())
+  holdId    String
+  hold      Hold     @relation(fields: [holdId], references: [id], onDelete: Cascade)
+  fromId    String?
+  fromLabel String
+  toId      String
+  toLabel   String
+  byId      String
+  byLabel   String
+  note      String
+  at        DateTime @default(now())
+
+  @@index([holdId])
 }
 
 /**

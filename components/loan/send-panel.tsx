@@ -28,6 +28,8 @@ export interface SendOptions {
   defaultBranchId: string;
   /** Re-send after the processor returned it for papers: the same processor, pre-selected. */
   previousDpId?: string | null;
+  /** Sent again after the DP declined or returned it (a new round): the processor is chosen again, nothing pre-selected. */
+  resend?: boolean;
   pastDay2: boolean;
   deadlineText: string;
   /** The LA's funds flag so far (UNANSWERED until Send). */
@@ -42,6 +44,8 @@ export interface SendOptions {
   next: { href: string; name: string } | null;
   /** A MyLoans change under Admin review holds this transaction ("MyLoans changed this loan. Admin is reviewing."). */
   sourceBlock?: string | null;
+  /** Returned with papers handed over: "Confirm you received the papers ... first" until the LA confirms them. */
+  papersBlock?: string | null;
 }
 
 export interface SendPanelProps {
@@ -102,7 +106,7 @@ export function SendPanel(p: SendPanelProps) {
     () => o.dps.filter((d) => d.branchIds.includes(branchId)).sort((a, b) => Number(b.id === rec) - Number(a.id === rec) || a.open - b.open || a.name.localeCompare(b.name)),
     [o.dps, branchId, rec],
   );
-  const dpId = chosen && dpsHere.some((d) => d.id === chosen) ? chosen : rec ?? "";
+  const dpId = chosen && dpsHere.some((d) => d.id === chosen) ? chosen : o.resend ? "" : rec ?? "";
   const dp = o.dps.find((d) => d.id === dpId) ?? null;
   const shown = showAll ? dpsHere : [...dpsHere.slice(0, 3), ...dpsHere.slice(3).filter((d) => d.id === dpId)];
   // From the type's "Needs LTO processing" setting (no type is special-cased).
@@ -117,6 +121,7 @@ export function SendPanel(p: SendPanelProps) {
   // The first thing missing, in order. Shown beside the locked Send button.
   const papersLeft = p.missing.length;
   const reason = o.sourceBlock ? o.sourceBlock
+    : o.papersBlock ? o.papersBlock
     : !p.ready ? `Tick ${papersLeft} more required paper${papersLeft === 1 ? "" : "s"}`
     : p.waitingForSave ? "Saving your ticks..."
     : !funds ? "Answer the funds question"
@@ -171,10 +176,10 @@ export function SendPanel(p: SendPanelProps) {
         <p className="text-[13px] text-ink-2">{p.name} · {p.borrower}</p>
       </div>
       {/* A decline is shown here; a return for papers already says what is needed above (not a problem). */}
-      {p.status === "RETURNED" && !o.previousDpId && <p className="rounded-xl bg-bad-bg px-4 py-2.5 text-[15px] text-bad-fg">The processor sent this back. Fix what they asked for, then send it again.</p>}
 
       {/* 1. Ready check */}
       <ul aria-label="Ready to send?" className="flex flex-wrap gap-2">
+        {o.papersBlock && <Check ok={false} icon={<ChecklistIcon size={16} />} okText="" badText="Papers back not confirmed" onGo={() => document.getElementById("papers-back")?.scrollIntoView({ behavior: "smooth", block: "center" })} />}
         <Check ok={p.ready} icon={<ChecklistIcon size={16} />} okText={`Papers ${p.requiredDone} of ${p.requiredTotal}`} badText={`Papers ${p.requiredDone} of ${p.requiredTotal}`} onGo={() => go("papers")} />
         <Check ok={fundsOk} icon={<CoinsIcon size={16} />} okText={funds === "YES" ? "Needs funds" : "No funds needed"} badText={funds === "YES" ? "Pick what the funds are for" : "Funds not answered"} onGo={() => go("funds")} />
         <Check ok={!!dp} icon={<UsersIcon size={16} />} okText={dp ? dp.name : ""} badText="No processor chosen" onGo={() => go("dp")} />

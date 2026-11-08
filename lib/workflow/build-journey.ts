@@ -28,6 +28,8 @@ export interface HoldRec {
   resumedAt: Date | null; resumedBy: string | null; resumeNote: string; simulated: boolean;
   /** The job stage that was current when it was raised. */
   stageId?: string | null;
+  /** Transfers of the hold to another owner, in order. */
+  transfers?: { fromLabel: string; toLabel: string; byLabel: string; note: string; at: Date }[];
 }
 export interface ProblemRec {
   id: string; reason: string; note: string; raisedAt: Date; raisedBy: string;

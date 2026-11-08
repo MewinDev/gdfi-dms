@@ -64,7 +64,7 @@ describe("LA: a second processor (Pasuyo) at Send", () => {
     expect((await myJobs(dp2)).find((r) => r.id === job.id)?.pasuyo).toBe(`to ${dp2.name}`);
 
     // Declined, then sent again with a second processor.
-    await declineJob(dp, job.id, { reasons: ["Unsigned pages"], remarks: "Page 2 unsigned" });
+    await declineJob(dp, job.id, { reasons: ["Papers not complete"], remarks: "Page 2 unsigned" });
     await assignToDp(la, input(loan, txn.id, { pasuyo: true, secondaryDpUserId: dp3.id, pasuyoReason: "Paolo on leave" }));
     expect((await jobOf(txn.id)).secondaryDpUserId).toBe(dp3.id);
   });

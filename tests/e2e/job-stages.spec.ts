@@ -271,7 +271,7 @@ test("Incomplete: the LA records it, the DP sees Package incomplete, corrects an
   await receiveComplete(page, PN, "NOTARY");
 });
 
-test("Screens: Settings Processing stages, DP Home with On hold and Returned, the phone bottom bar", async ({ page }) => {
+test("Screens: Settings Processing stages, DP Home with On hold (a returned job leaves the DP), the phone bottom bar", async ({ page }) => {
   test.setTimeout(400_000);
   // Settings > Processing stages (Admin).
   await signInAs(page, "admin");
@@ -296,11 +296,6 @@ test("Screens: Settings Processing stages, DP Home with On hold and Returned, th
   await signInAs(page, "dp");
   const n = await jobOf(PN, "NOTARY");
   await accept(page, n.id);
-  await page.getByRole("button", { name: "Put on hold" }).first().click();
-  const hold = page.getByRole("dialog", { name: /on hold/i });
-  await hold.getByLabel("Reason").selectOption({ index: 1 });
-  await hold.getByRole("button", { name: /Put on hold/ }).click();
-  await expect(page.getByRole("status", { name: "On hold" })).toBeVisible();
   // Phone: the main next action pinned above the bottom navigation, 48px high.
   const bar = page.locator("[data-pinned-action]");
   if ((page.viewportSize()?.width ?? 0) < 640) {
@@ -314,26 +309,37 @@ test("Screens: Settings Processing stages, DP Home with On hold and Returned, th
   } else {
     await expect(bar).toBeHidden();
   }
+  // On hold: the job is locked, so the pinned action goes away until it is resumed.
+  await page.getByRole("button", { name: "Put on hold" }).first().click();
+  const hold = page.getByRole("dialog", { name: /on hold/i });
+  await hold.getByLabel("Reason").selectOption({ index: 1 });
+  await hold.getByLabel("Remarks (required)").fill("Waiting for the borrower to sign");
+  await hold.getByRole("button", { name: /Put on hold/ }).click();
+  await expect(page.getByRole("status", { name: "On hold" })).toBeVisible();
+  await expect(bar).toBeHidden();
   await noSideways(page);
   const p = await jobOf(PN, "PPSR");
   await accept(page, p.id);
   await page.getByRole("button", { name: /Return to LA: papers needed/ }).click();
   const ret = page.getByRole("dialog", { name: "Return to LA: papers needed" });
   await ret.getByLabel("Reason").selectOption({ label: "Other" });
-  await ret.getByLabel("Note").fill("Wrong branch on the papers");
+  await ret.getByLabel(/^Findings/).fill("Wrong branch on the papers");
+  for (const box of await ret.locator("[data-handover] input[type=checkbox]").all()) await box.check();
+
   await ret.getByRole("button", { name: "Return to LA" }).click();
   await expect.poll(async () => (await db.dpAssignment.findUniqueOrThrow({ where: { id: p.id } })).status).toBe("WITHDRAWN");
 
-  // DP Home and Jobs: On hold and Returned, with chips and filters.
+  // DP Home and Jobs: On hold with its chip and filter. The returned job went back to the LA who sent it:
+  // no Returned tile or tab, and the old link says it is no longer with this processor.
   await page.goto("/dashboard");
   const counts = page.getByRole("region", { name: "Counts" });
   await expect(counts.getByRole("link", { name: /1\s*On hold/ })).toBeVisible();
-  await expect(counts.getByRole("link", { name: /1\s*Returned/ })).toBeVisible();
+  await expect(counts.getByRole("link", { name: /Returned/ })).toHaveCount(0);
   await shot(page, "dp-home-hold-returned");
   await noSideways(page);
   await page.goto("/jobs?tab=process&hold=1");
   await expect(page.locator("[data-hold-chip]")).toHaveCount(1);
-  await page.goto("/jobs?tab=returned");
-  await expect(page.locator("[data-returned-chip]")).toContainText("Returned");
+  await page.goto(`/jobs/${p.id}`);
+  await expect(page.getByRole("heading", { name: "This job is no longer with you." })).toBeVisible();
   await noSideways(page);
 });

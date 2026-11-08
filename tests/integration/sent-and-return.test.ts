@@ -6,11 +6,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { assignToDp, laSetFundsFlag, saveChecklist } from "@/lib/services/workflow";
+import { assignToDp, confirmPapersBack, laSetFundsFlag, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob } from "@/lib/services/jobs";
 import { addProcessorNote, changeProcessor, pullBack, updatesBeforeAccept } from "@/lib/services/sent-changes";
 import { returnToLa } from "@/lib/services/return-to-la";
-import { decideAdvance, releaseAdvance, requestAdvance } from "@/lib/services/funds";
+import { addReceipt, cashToSettleIds, decideAdvance, recordReturn, releaseAdvance, requestAdvance } from "@/lib/services/funds";
 import { myJobs } from "@/lib/services/job-queries";
 import { reasonReport } from "@/lib/services/tat-report";
 import { getLoanForUser } from "@/lib/services/queries";
@@ -20,7 +20,9 @@ import { setRowActive } from "@/lib/services/settings-status";
 import { checkImport, currentDataCsv, runImport } from "@/lib/import/importer";
 import { toCsv } from "@/lib/import/csv";
 import { setSetting } from "@/lib/settings";
-import { asUser, cleanLoans } from "./helpers";
+import { allPapers, asUser, cleanLoans } from "./helpers";
+import { businessDate } from "@/lib/time";
+const today = () => businessDate(new Date());
 
 let la: CurrentUser, dp: CurrentUser, fin: CurrentUser, admin: CurrentUser;
 const ACCEPTED = "Test Document Processor already accepted this. Ask them to return it if something is missing.";
@@ -163,10 +165,15 @@ describe("B. Return to LA: papers needed", () => {
     const checks = await checksOf(txn.id);
     const valid = checks.find((c) => c.required)!;
     await expect(returnToLa(dp, job.id, { reasonId: "", note: "x" })).rejects.toThrow("Pick a reason.");
-    await expect(returnToLa(dp, job.id, { reasonId: await reasonId("MISSING"), note: "" })).rejects.toThrow(/Write a short note/);
+    await expect(returnToLa(dp, job.id, { reasonId: await reasonId("MISSING"), note: "" })).rejects.toThrow("Write 5 to 500 characters.");
     await expect(returnToLa(dp, job.id, { reasonId: await reasonId("MISSING"), note: "Missing ID" })).rejects.toThrow("Pick the papers that are missing or wrong.");
     await expect(returnToLa(dp, job.id, { reasonId: await reasonId("WRONG"), note: "Unclear copy" })).rejects.toThrow("Pick the papers that are missing or wrong.");
-    await returnToLa(dp, job.id, { reasonId: await reasonId("MISSING"), checkIds: [valid.id], otherPaper: "Barangay clearance", note: "Bring the original ID", papers: "KEEP" });
+    // The removed choices are refused on the server.
+    await expect(returnToLa(dp, job.id, { reasonId: await reasonId("MISSING"), checkIds: [valid.id], note: "Bring the original ID", papers: "KEEP" } as never)).rejects.toThrow('The return no longer offers "keep the papers" or "keep the cash".');
+    await expect(returnToLa(dp, job.id, { reasonId: await reasonId("MISSING"), checkIds: [valid.id], note: "Bring the original ID", cash: "KEEP" } as never)).rejects.toThrow('The return no longer offers "keep the papers" or "keep the cash".');
+    // Every paper with the processor must be handed over.
+    await expect(returnToLa(dp, job.id, { reasonId: await reasonId("MISSING"), checkIds: [valid.id], note: "Bring the original ID" })).rejects.toThrow("Tick every paper you hand over to the Loan Associate.");
+    await returnToLa(dp, job.id, { reasonId: await reasonId("MISSING"), checkIds: [valid.id], otherPaper: "Barangay clearance", note: "Bring the original ID", handedOver: await allPapers(txn.id) });
 
     const a = await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } });
     expect(a).toMatchObject({ status: "WITHDRAWN", returnReasonId: await reasonId("MISSING") });
@@ -182,10 +189,10 @@ describe("B. Return to LA: papers needed", () => {
     expect(extra).toMatchObject({ required: true, checked: false });
     const ex = await prisma.loanException.findFirstOrThrow({ where: { transactionId: txn.id, type: "LEGAL_DOCS_COMPLETION", status: "OPEN" } });
     expect(ex.details).toMatchObject({ askedBy: "DP", checkIds: [valid.id, extra.id] });
-    // Kept papers stay with the processor (recorded).
+    // Handed over: in transit to the LA until confirmed back; sending again waits for that.
     const doc = await prisma.documentItem.findFirstOrThrow({ where: { transactionId: txn.id, documentId: { not: null }, NOT: { checkId: valid.id } } });
-    expect(doc.stage).toBe("WITH_DP");
-    expect(await prisma.documentMovement.count({ where: { documentItemId: doc.id, action: "KEPT_BY_DP" } })).toBe(1);
+    expect(doc.stage).toBe("IN_TRANSIT");
+    expect(await prisma.documentMovement.count({ where: { documentItemId: doc.id, action: "HANDED_TO_LA" } })).toBe(1);
     // The branch LA is told.
     expect(await prisma.notification.count({ where: { userId: la.id, title: { contains: "returned by the processor" } } })).toBe(1);
 
@@ -193,14 +200,19 @@ describe("B. Return to LA: papers needed", () => {
     await saveChecklist(la, { transactionId: txn.id, checkedIds: after.filter((c) => c.required).map((c) => c.id), newOthers: [] });
     expect((await prisma.loanException.findUniqueOrThrow({ where: { id: ex.id } })).status).toBe("RESOLVED");
     const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+    const sendInput = { transactionId: txn.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: (await prisma.ltoOffice.findFirstOrThrow({ where: { active: true }, orderBy: { code: "asc" } })).id, fundsNeeded: "NO" as const, fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null };
+    await expect(assignToDp(la, sendInput)).rejects.toThrow("Confirm you received the papers the processor handed over first.");
+    await confirmPapersBack(la, { transactionId: txn.id, notReceived: [] });
+    expect((await prisma.documentItem.findUniqueOrThrow({ where: { id: doc.id } })).stage).toBe("AT_BRANCH");
     await assignToDp(la, { transactionId: txn.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: (await prisma.ltoOffice.findFirstOrThrow({ where: { active: true }, orderBy: { code: "asc" } })).id, fundsNeeded: "NO", fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null });
-    expect(await prisma.notification.count({ where: { userId: dp.id, title: { startsWith: "New assignment" } } })).toBe(2);
+    // Round 2: the first "New assignment" alert was removed with the return (the job left the DP); this is the new one.
+    expect(await prisma.notification.count({ where: { userId: dp.id, title: { startsWith: "New assignment" } } })).toBe(1);
     const again = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id, status: "PENDING_ACCEPTANCE" } });
     await acceptJob(dp, again.id, true);
 
     // Returned twice: the Journey shows both; the report counts Returned separately.
-    await returnToLa(dp, again.id, { reasonId: await reasonId("OTHER"), note: "Needs the PPSR first", papers: "RETURN" });
-    expect(await prisma.documentMovement.count({ where: { documentItemId: doc.id, action: "RETURNED_BY_DP" } })).toBe(1);
+    await returnToLa(dp, again.id, { reasonId: await reasonId("OTHER"), note: "Needs the PPSR first", handedOver: await allPapers(txn.id) });
+    expect(await prisma.documentMovement.count({ where: { documentItemId: doc.id, action: "HANDED_TO_LA" } })).toBe(2);
     const report = await reasonReport(admin);
     expect(report.filter((r) => r.type === "Returned").reduce((s, r) => s + r.count, 0)).toBe(2);
     const j = (await loadJourney(la, (await getLoanForUser(la, "PN-0001003"))!)).journey;
@@ -209,21 +221,22 @@ describe("B. Return to LA: papers needed", () => {
     expect(texts).toContain("Test Document Processor returned Notary to Test Loan Associate: Missing paper (Valid IDs of borrower (2), Barangay clearance).".replace("Valid IDs of borrower (2)", valid.rule!.label));
   });
 
-  it("cash held for the job: blocks until Keep or Return is chosen; both work", async () => {
-    const run = async (choice: "KEEP" | "RETURN") => {
-      await cleanLoans();
-      const { txn, job } = await send("MORTGAGE", "YES", ["LTO_FEE"]);
-      await acceptJob(dp, job.id, true);
-      const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 150000, overMaxReason: "Integration test" }] });
-      await decideAdvance(fin, r.id, { approve: true });
-      await releaseAdvance(fin, r.id, { ref: "V-1" });
-      const input = { reasonId: await reasonId("OTHER"), note: "Needs the PPSR first" };
-      await expect(returnToLa(dp, job.id, input)).rejects.toThrow(/You hold ₱1,500\.00 for this job\. Choose: keep the cash for the re-send, or return the cash\./);
-      await returnToLa(dp, job.id, { ...input, cash: choice });
-      return prisma.cashReturn.count({ where: { advanceId: r.id } });
-    };
-    expect(await run("KEEP")).toBe(0);
-    expect(await run("RETURN")).toBe(1);
+  it("cash released for the job: the return goes ahead; the advance stays the processor's to liquidate (Cash to settle)", async () => {
+    const { txn, job } = await send("MORTGAGE", "YES", ["LTO_FEE"]);
+    await acceptJob(dp, job.id, true);
+    const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 150000, overMaxReason: "Integration test" }] });
+    await decideAdvance(fin, r.id, { approve: true });
+    await releaseAdvance(fin, r.id, { ref: "V-1" });
+    await returnToLa(dp, job.id, { reasonId: await reasonId("OTHER"), note: "Needs the PPSR first", handedOver: await allPapers(txn.id) });
+    // Nothing is returned automatically; the job left the processor but the cash did not.
+    expect(await prisma.cashReturn.count({ where: { advanceId: r.id } })).toBe(0);
+    expect((await myJobs(dp)).map((x) => x.id)).not.toContain(job.id);
+    const adv = await prisma.cashAdvance.findUniqueOrThrow({ where: { id: r.id }, include: { lines: true } });
+    expect([...(await cashToSettleIds([adv]))]).toEqual([r.id]);
+    // Liquidation continues beside it: receipts for what was spent, the rest returned, Finance closes.
+    await addReceipt(dp, { lineId: adv.lines[0].id, date: today(), cents: 50000, number: "OR-55" }, null);
+    await recordReturn(dp, r.id, 100000, today());
+    expect((await prisma.cashAdvance.findUniqueOrThrow({ where: { id: r.id } })).status).toBe("LIQUIDATED");
   });
 });
 

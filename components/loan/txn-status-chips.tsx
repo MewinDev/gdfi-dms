@@ -1,24 +1,31 @@
 import type { TxnStatus } from "@/lib/ui/txn-status";
-import { TatChip } from "@/components/jobs/chips";
-import { AlertIcon, PauseIcon } from "@/components/ui/icons";
+import type { Tone } from "@/lib/ui/plain";
+import { AlertIcon, CheckIcon, ClockIcon, FileTextIcon, MinusIcon, PauseIcon } from "@/components/ui/icons";
 
-const TONE = { act: "c-act", wait: "c-wait", ok: "c-ok", bad: "c-bad", mute: "c-mute", navy: "c-navy" } as const;
+const TONE: Record<Tone, string> = { act: "c-act", wait: "c-wait", ok: "c-ok", bad: "c-bad", mute: "c-mute", navy: "c-navy", hold: "c-hold" };
+
+function PillIcon({ s }: { s: TxnStatus }) {
+  const p = { size: 12, strokeWidth: 2.6 };
+  if (s.pill.kind === "hold") return <PauseIcon {...p} />;
+  if (s.pill.kind === "problem") return <AlertIcon {...p} />;
+  if (s.pill.kind === "missing") return <FileTextIcon {...p} />;
+  if (s.pill.tone === "ok") return <CheckIcon {...p} />;
+  if (s.pill.tone === "wait") return <ClockIcon {...p} />;
+  if (s.pill.tone === "mute") return <MinusIcon {...p} />;
+  return <FileTextIcon {...p} />;
+}
 
 /**
- * The chips of a transaction row, in the same order everywhere: the status chip, the TAT chip (when it
- * applies), then the markers (Problem, On hold, Missing paper). Words and an icon, never colour alone.
+ * The one status pill of a transaction row (soft colours, an icon and the word: colour is never the
+ * only signal), then the day count as plain grey text ("Day 1 of 2"; "+1 day late" in red).
  */
-export function TxnStatusChips({ s, tat = true }: { s: TxnStatus; tat?: boolean }) {
+export function TxnStatusChips({ s, clock = true }: { s: TxnStatus; clock?: boolean }) {
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-1" data-status-chips>
-      <span className={`chip ${TONE[s.chip.tone]} h-auto min-h-6 whitespace-normal py-0.5 text-xs`} data-status-chip>{s.chip.text}</span>
-      {tat && s.tat && <span className="[&_.chip]:min-h-6 [&_.chip]:text-xs" data-tat-chip><TatChip data={s.tat} /></span>}
-      {s.markers.map((m) => (
-        <span key={m.kind} data-marker={m.kind} className={`chip h-6 px-2 text-xs ${m.kind === "hold" ? "c-navy" : "c-bad"}`}>
-          {m.kind === "hold" ? <span className="text-gold"><PauseIcon size={12} strokeWidth={2.6} /></span> : <AlertIcon size={12} strokeWidth={2.6} />}
-          {m.text}
-        </span>
-      ))}
+    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-status-chips>
+      <span className={`chip ${TONE[s.pill.tone]} h-auto min-h-6 whitespace-normal px-2 py-0.5 text-xs`} data-status-chip data-pill={s.pill.kind}>
+        <PillIcon s={s} />{s.pill.text}
+      </span>
+      {clock && s.clock && <span className={`text-xs ${s.clock.late ? "font-semibold text-bad-fg" : "text-ink-2"}`} data-clock>{s.clock.text}</span>}
     </span>
   );
 }

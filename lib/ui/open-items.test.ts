@@ -39,7 +39,7 @@ describe("Open items", () => {
   });
 
   it("title chips and card groups use exactly Missing paper, On hold and Problem", () => {
-    expect(titleChipOf({ kind: "hold", days: 1, papers: [] })).toEqual({ text: "On hold · 1 day", tone: "navy" });
+    expect(titleChipOf({ kind: "hold", days: 1, papers: [] })).toEqual({ text: "On hold · 1 day", tone: "hold" });
     expect(titleChipOf({ kind: "problem", days: 2, papers: [] })).toEqual({ text: "Problem · 2 days", tone: "bad" });
     expect(titleChipOf({ kind: "missing", days: 0, papers: ["OR/CR"] })).toEqual({ text: "1 paper requested", tone: "bad" });
     expect(Object.values(OPEN_WORD)).toEqual(["Problem", "On hold", "Missing paper"]);

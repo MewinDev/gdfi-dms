@@ -3,7 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { can, requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { notifyOverdue } from "@/lib/services/funds";
+import { cashToSettleIds, notifyOverdue } from "@/lib/services/funds";
 import { EXPENSE_LABEL, OPEN_ADVANCE, ageBucket, bandFor, isOverdue, peso, type ExpenseKindKey } from "@/lib/funds/rules";
 import { businessDate, businessDaysBetween } from "@/lib/time";
 import { ltoEstimate } from "@/lib/ui/lto";
@@ -53,6 +53,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
     prisma.user.findUnique({ where: { id: user.id }, select: { roleId: true } }),
     getHolidaySet(),
   ]);
+  const toSettle = await cashToSettleIds(open.map((a) => ({ id: a.id, status: a.status, requestedById: a.requestedBy.id, lines: a.lines })));
   const mayApprove = can(user, PERMISSIONS.FUNDS_APPROVE);
   const mayRelease = can(user, PERMISSIONS.FUNDS_RELEASE);
   const myBand = (cents: number) => bandFor(cents, bands)?.roleId === me?.roleId;
@@ -172,9 +173,10 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             const bal = balanceOf(a);
             const unconfirmed = a.returns.filter((r) => !r.confirmedAt);
             return (
-              <article key={a.id} className="card flex flex-col gap-2 p-4 sm:p-5" data-advance={a.number}>
+              <article key={a.id} className="card flex flex-col gap-2 p-4 sm:p-5" data-advance={a.number} data-cash-to-settle={toSettle.has(a.id) || undefined}>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="mr-auto text-[17px] font-bold text-navy">{a.number} · balance {peso(bal)}</h2>
+                  {toSettle.has(a.id) && <ToneChip tone="act" title="The job went back to the Loan Associate; the processor settles the cash.">Cash to settle</ToneChip>}
                   <ToneChip tone="mute">{ageOf(a)} business days</ToneChip>
                   <AdvanceStatusChip status={a.status} overdue={isOverdue(a, now)} />
                 </div>

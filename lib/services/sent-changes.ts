@@ -9,6 +9,7 @@ import { evaluateChecklist, pendingJobInLock } from "./workflow";
 import { moveDocs } from "./custody";
 import { recomputeStage } from "./stage";
 import { NotInScopeError, UserError } from "./errors";
+import { assertNotHeld } from "./locks";
 
 /**
  * Sent, not accepted yet: the LA can still change it (papers, funds, processor, a note) or pull it back.
@@ -43,6 +44,7 @@ export async function addProcessorNote(u: CurrentUser, transactionId: string, ra
   if (!p.success) throw firstIssue(p.error);
   const t = await loadForLa(u, transactionId);
   return withLoanLock(t.loanId, async (tx) => {
+    await assertNotHeld(tx, t.id);
     const job = await pendingJobInLock(tx, t.id);
     await updated(tx, u, t, job.id, `Note for the processor: ${p.data.note}`, [`Note: ${p.data.note}`]);
     await notify(tx, { email: { event: "job_changed", transactionId: t.id, vars: { pn: t.loan.pn, transaction: t.type.name, who: u.name, reason: `Note: ${p.data.note}` } }, userIds: [job.dpUserId, ...(job.secondaryDpUserId ? [job.secondaryDpUserId] : [])], loanId: t.loanId, title: `${t.loan.pn}: note on ${t.type.name}`, body: `${u.name}: ${p.data.note}`, link: `/jobs/${job.id}` });
@@ -69,6 +71,7 @@ export async function changeProcessor(u: CurrentUser, transactionId: string, raw
   if (d.secondaryDpUserId && !second) throw new UserError("Pick an active second processor.", "secondaryDpUserId");
   if (second && second.id === dp.id) throw new UserError("The second processor must be a different person.", "secondaryDpUserId");
   return withLoanLock(t.loanId, async (tx) => {
+    await assertNotHeld(tx, t.id);
     const job = await pendingJobInLock(tx, t.id);
     if (job.dpUserId === dp.id && (job.secondaryDpUserId ?? null) === (second?.id ?? null)) throw new UserError("Pick a different processor.", "dpUserId");
     const branchId = dp.branches.some((b) => b.branchId === job.dpBranchId) ? job.dpBranchId : dp.branches[0]?.branchId ?? job.dpBranchId;
@@ -109,6 +112,7 @@ export async function pullBack(u: CurrentUser, transactionId: string, raw: unkno
   if (!p.success) throw firstIssue(p.error);
   const t = await loadForLa(u, transactionId);
   return withLoanLock(t.loanId, async (tx) => {
+    await assertNotHeld(tx, t.id);
     const job = await pendingJobInLock(tx, t.id);
     const now = new Date();
     await tx.dpAssignment.update({ where: { id: job.id }, data: { status: "PULLED_BACK", closedAt: now, returnReasons: `Pulled back by ${u.name}: ${p.data.reason}` } });

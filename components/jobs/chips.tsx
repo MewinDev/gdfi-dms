@@ -6,9 +6,9 @@ import { AlertIcon, CheckIcon, ClockIcon, CoinsIcon, HourglassIcon, PauseIcon, T
 
 const TAT_STYLE: Record<TatChipData["state"], { cls: string; Icon: typeof ClockIcon; label: string }> = {
   waiting: { cls: "c-mute", Icon: HourglassIcon, label: "Waiting" },
-  processing: { cls: "c-navy", Icon: ClockIcon, label: "Processing" },
+  processing: { cls: "c-wait", Icon: ClockIcon, label: "Processing" },
   due: { cls: "c-act", Icon: ClockIcon, label: "Due today" },
-  hold: { cls: "c-navy", Icon: PauseIcon, label: "On hold" },
+  hold: { cls: "c-hold", Icon: PauseIcon, label: "On hold" },
   problem: { cls: "c-bad", Icon: AlertIcon, label: "Problem" },
   overdue: { cls: "c-bad", Icon: WarningIcon, label: "Overdue" },
   done: { cls: "c-ok", Icon: CheckIcon, label: "Done" },
@@ -26,7 +26,7 @@ export function TatChip({ data }: { data: TatChipData | null }) {
     <span className="inline-flex max-w-full flex-wrap items-center gap-1" data-tat={data.state}>
       {/* Long problem texts wrap on a phone instead of pushing the page sideways. */}
       <span className={`chip ${s.cls} h-auto min-h-6 max-w-full whitespace-normal py-0.5`}>
-        <span className={data.state === "hold" ? "text-gold" : undefined}><s.Icon size={14} strokeWidth={2.4} /></span>
+        <s.Icon size={14} strokeWidth={2.4} />
         {data.text}
       </span>
       {(data.state === "problem" || data.state === "hold") && data.lateText && <span className="chip c-bad"><WarningIcon size={14} strokeWidth={2.4} />{data.lateText}</span>}
@@ -53,7 +53,7 @@ export function LabelsChip({ printed }: { printed: boolean }) {
 }
 
 export function HoldChip({ reason, days }: { reason: string; days: number }) {
-  return <span className="chip c-navy"><span className="text-gold"><PauseIcon size={14} strokeWidth={2.4} /></span>On hold · {reason} · {days} day{days === 1 ? "" : "s"}</span>;
+  return <span className="chip c-hold"><PauseIcon size={14} strokeWidth={2.4} />On hold · {reason} · {days} day{days === 1 ? "" : "s"}</span>;
 }
 
 export function ProblemChip({ reason, days }: { reason: string; days: number }) {

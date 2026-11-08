@@ -3,7 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { notifyOverdue, requestableJobs } from "@/lib/services/funds";
+import { cashToSettleIds, notifyOverdue, requestableJobs } from "@/lib/services/funds";
 import { EXPENSE_LABEL, OPEN_ADVANCE, isOverdue, peso, type ExpenseKindKey } from "@/lib/funds/rules";
 import { businessDate } from "@/lib/time";
 import { dayText } from "@/lib/ui/plain";
@@ -42,6 +42,9 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
   const lineLabel = (l: (typeof advances)[number]["lines"][number]) =>
     `${EXPENSE_LABEL[l.kind as ExpenseKindKey]}${l.transaction ? ` · ${l.transaction.loan.pn} ${l.transaction.type.name}` : l.note ? ` · ${l.note}` : ""}`;
   const open = advances.filter((a) => OPEN_ADVANCE.includes(a.status));
+  // The job went back to the LA after the cash was released: still yours to settle.
+  const toSettle = await cashToSettleIds(advances);
+  const settleChip = (id: string) => toSettle.has(id) && <ToneChip tone="act" title="The job went back to the Loan Associate. Record what was spent and return the rest.">Cash to settle</ToneChip>;
 
   return (
     <div className="dense flex w-full flex-col gap-4">
@@ -68,6 +71,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
             <article key={a.id} className="card p-4 sm:p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="mr-auto text-[17px] font-bold text-navy">{a.number}</h2>
+                {settleChip(a.id)}
                 <AdvanceStatusChip status={a.status} overdue={isOverdue(a, now)} />
               </div>
               <p className="mt-1 text-[13px] text-ink-2">
@@ -103,11 +107,13 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
             const ret = a.returns.reduce((s, r) => s + r.cents, 0);
             const balance = a.releasedCents - rc - ret;
             return (
-              <article key={a.id} className="card flex flex-col gap-3 p-4 sm:p-5">
+              <article key={a.id} className="card flex flex-col gap-3 p-4 sm:p-5" data-advance={a.number} data-cash-to-settle={toSettle.has(a.id) || undefined}>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="mr-auto text-[17px] font-bold text-navy">{a.number}</h2>
+                  {settleChip(a.id)}
                   <AdvanceStatusChip status={a.status} overdue={isOverdue(a, now)} />
                 </div>
+                {toSettle.has(a.id) && <p className="text-[13px] text-act-fg" data-settle-note>Cash to settle: the job went back to the Loan Associate. Record what was spent (with receipts) and return the unspent cash.</p>}
                 <dl className="grid grid-cols-2 gap-2 text-[15px] sm:grid-cols-4">
                   <div><dt className="text-[13px] text-ink-2">Released</dt><dd className="font-semibold">{peso(a.releasedCents)}</dd></div>
                   <div><dt className="text-[13px] text-ink-2">Receipts</dt><dd className="font-semibold">{peso(rc)}</dd></div>

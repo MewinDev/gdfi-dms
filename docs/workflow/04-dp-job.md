@@ -10,7 +10,7 @@ See the [colour key](README.md#colour-key).
 flowchart TD
   A["Job arrives: Sent to me, waiting to accept"]:::dp
   A --> B{"Papers and funds flag look right?"}
-  B -->|No| B1["Decline with reasons: back to the LA"]:::dp
+  B -->|No| B1["Decline: one reason and remarks. Back to the LA who sent it; gone from my lists"]:::dp
   B -->|Yes| C["Accept: confirm labels are on all papers, papers received into my custody"]:::dp
   C --> F{"Needs funds?"}
   F -->|Yes| F1["Request one cash advance, see My funds"]:::fin
@@ -29,7 +29,7 @@ flowchart TD
   L4 -->|"Not processed"| P["Problem opens in red, the clock keeps counting"]:::prob
   P --> P1["Rest of the cash: carry over or return"]:::fin
   P1 --> L3
-  L4 -->|"Waiting on borrower or an appointment"| H["Put on hold with a reason, resume with remarks"]:::hold
+  L4 -->|"Waiting on borrower or an appointment"| H["Put on hold with a reason and remarks, resume with remarks"]:::hold
   H --> L3
   L4 -->|Done| L5["LTO pickup: annotated papers back with the DP"]:::dp
   L5 --> V
@@ -44,7 +44,8 @@ flowchart TD
   X -->|"Incomplete or blocking"| X2["DP is told, corrects and forwards again"]:::dp
   X2 --> FW
   X -->|Complete| X3["Job closes"]:::sys
-  S1 -.->|"Papers missing or wrong"| R["Return to LA: papers needed"]:::dp
+  S1 -.->|"Papers missing or wrong"| R["Return to LA: findings required, every paper handed over. Back to the LA who sent it; gone from my lists"]:::dp
+  R -.-> RS["Cash released for the job: Cash to settle in My funds until liquidated"]:::fin
   L3 -.->|"Another processor must continue"| PS["Pasuyo: pass to a second processor, decide the cash first"]:::dp
   classDef dp fill:#fdecc8,stroke:#c98512,color:#14213a
   classDef la fill:#dbe8fb,stroke:#3b5a8a,color:#14213a
@@ -61,5 +62,7 @@ flowchart TD
 - Forwarding is manual and never automatic: the DP chooses the branch, then the named LA, and confirms the paper count. Liquidation runs beside forwarding and does not block it.
 - The receiving LA records Complete, Incomplete or Other. Incomplete (or a blocking Other) sends the package back to the DP, who is told, corrects it and forwards again. The clock is never paused.
 - Dotted lines (Return to LA, Pasuyo) can happen at any stage while the job is open. Pasuyo continues from the current stage.
+- After a Decline or a Return to LA the job is no longer the DP's: it leaves every DP list, tile and count, the DP's notifications about it are removed, and an old link says "This job is no longer with you." If the LA sends it again it is a new round, possibly to another processor.
+- While a job is on hold it is locked: nothing on it can change until the hold owner resumes it.
 
 [Back to the workflow index](README.md)

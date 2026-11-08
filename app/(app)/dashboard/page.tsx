@@ -18,6 +18,7 @@ import { FinanceHome } from "@/components/funds/finance-home";
 import { TatProblemsCard } from "@/components/jobs/tat-report";
 import { SourceChangesCard } from "@/components/loan/source-changes-card";
 import { PackagesToReceive } from "@/components/jobs/packages-to-receive";
+import { SentBackToYou } from "@/components/loan/sent-back-to-you";
 
 export const metadata: Metadata = { title: "Home" };
 
@@ -76,6 +77,7 @@ export default async function HomePage() {
       <div className="grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start">
         <div className="flex min-w-0 flex-col gap-6">
           <PackagesToReceive user={user} />
+          <SentBackToYou user={user} />
           {can(user, PERMISSIONS.SOURCE_REVIEW) && <SourceChangesCard />}
           {can(user, PERMISSIONS.REPORTS_TAT) && <TatProblemsCard />}
           <section aria-labelledby="next-title" className="card overflow-hidden">

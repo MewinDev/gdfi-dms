@@ -8,6 +8,7 @@ import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { FUNDS_LABEL } from "@/lib/funds/rules";
 import { txnFunds } from "@/lib/jobs/view";
 import { historySentence, progressStep } from "@/lib/ui/plain";
+import { NO_DETAILS, holdReasonName } from "@/lib/ui/holds";
 import { buildJourney, type EventRec, type Journey, type JourneyInput, type StageRec } from "@/lib/workflow/build-journey";
 import type { LoanDetail } from "./queries";
 
@@ -57,8 +58,14 @@ export function eventText(r: Audit): string {
   const who = r.actorLabel.replace(/ \(Simulated\)$/, "");
   const s = r.summary.replace(/^Simulated: /, "");
   switch (r.action) {
-    case "hold_started": return `${who} put it on hold. ${s.replace(/^.+? put on hold: /, "Reason: ")}.`;
-    case "hold_ended": return who === "System" ? "The hold ended when the work was finished." : `${who} resumed the work.${/: (.+)$/.test(s) ? ` ${s.replace(/^.+?: /, "")}` : ""}`;
+    // "Put on hold · reason · remarks · by" and "Resumed · remarks · by" (the time is shown beside every event).
+    case "hold_started": {
+      const note = String((r.details as { note?: unknown } | null)?.note ?? "").trim();
+      return `Put on hold · ${s.replace(/^.+? put on hold: /, "")} · ${note || NO_DETAILS} · by ${who}`;
+    }
+    case "hold_ended": return who === "System" ? "The hold ended when the work was finished." : `Resumed · ${/\): (.+)$/.exec(s)?.[1] ?? NO_DETAILS} · by ${who}`;
+    case "hold_transferred": return s.replace(/^.+?: /, "");
+    case "hold_details_added": return `${who} added the hold details: ${String((r.details as { note?: unknown } | null)?.note ?? "")}`;
     case "problem_raised": return `${who} raised a problem: ${s.replace(/^Problem on .+?: /, "")}.`;
     case "problem_resolved": return `${who} resolved the problem.`;
     case "problem_outside_control": return `${who} ${s.includes("no longer") ? "removed the tag" : "tagged the problem"} “Outside our control”.`;
@@ -150,8 +157,9 @@ export function journeyInput(loan: LoanDetail, rows: { audit: Audit[]; movements
           resolutionNote: p.resolutionNote, outsideControl: p.outsideControl, simulated: p.simulated, stageId: p.jobStageId,
         })),
         holds: t.holds.map((h) => ({
-          id: h.id, reason: h.reason.name, note: h.note, raisedAt: h.raisedAt, raisedBy: h.raisedByLabel,
+          id: h.id, reason: holdReasonName(h), note: h.note, raisedAt: h.raisedAt, raisedBy: h.raisedByLabel,
           resumedAt: h.resumedAt, resumedBy: h.resumedByLabel, resumeNote: h.resumeNote, simulated: h.simulated, stageId: h.jobStageId,
+          transfers: h.transfers.map((x) => ({ fromLabel: x.fromLabel, toLabel: x.toLabel, byLabel: x.byLabel, note: x.note, at: x.at })),
         })),
         advances: rows.advances.filter((a) => a.lines.some((l) => l.transactionId === t.id)).map(advRec),
       };

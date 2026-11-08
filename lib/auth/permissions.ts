@@ -42,7 +42,7 @@ export const PERMISSIONS = {
   // Holds (waiting on something that is not a fault)
   HOLDS_RAISE: "holds:raise", // put own work on hold (LA: transactions in the LA's hands; DP: own jobs)
   HOLDS_RESOLVE: "holds:resolve", // resume own holds
-  HOLDS_RESOLVE_ANY: "holds:resolve_any", // resume any hold in scope
+  HOLDS_TRANSFER: "holds:transfer", // give a hold to another owner (Admin: any; others: their branches). Never resume.
   // Journey
   JOURNEY_VIEW_AMOUNTS: "journey:view_amounts", // see cash amounts in the Journey (otherwise funds status only)
   // Reports
@@ -59,7 +59,7 @@ export const PERMISSIONS = {
   SETTINGS_LTO: "settings:lto",
   SETTINGS_SYSTEM: "settings:system", // MyLoans test switches, simulator switch, mock source changes
   SETTINGS_PROBLEM_REASONS: "settings:problem_reasons",
-  SETTINGS_HOLD_REASONS: "settings:hold_reasons",
+  HOLDS_MANAGE: "holds:manage", // Settings > Hold reasons (Admin only by default; was settings:hold_reasons)
   SETTINGS_RETURN_REASONS: "settings:return_reasons",
   STAGES_MANAGE: "stages:manage", // Settings > Processing stages (Admin only by default)
   SETTINGS_IMPORT: "settings:import", // Import / Export (with the permission for that list)
@@ -157,7 +157,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     key: "holds", label: "Holds", items: [
       { key: P.HOLDS_RAISE, label: "Put work on hold", help: "Put a transaction on hold while it waits on something that is not a fault (the borrower, another team, an LTO appointment). Only on work the person does. The clock keeps counting.", requires: [P.LOANS_VIEW], can: "put their work on hold" },
       { key: P.HOLDS_RESOLVE, label: "Resume own holds", help: "Resume a hold on work the person does.", requires: [P.HOLDS_RAISE], can: "resume their holds" },
-      { key: P.HOLDS_RESOLVE_ANY, label: "Resume any hold", help: "Resume a hold on any transaction in scope.", requires: [P.LOANS_VIEW], can: "resume any hold" },
+      { key: P.HOLDS_TRANSFER, label: "Transfer a hold", help: "Give a hold to another person of the same work role (for example when the hold owner is on leave). Admin: any hold; others: holds in their branches. It never resumes the hold: only the new owner can.", requires: [P.LOANS_VIEW], can: "transfer holds" },
     ],
   },
   {
@@ -177,7 +177,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.SETTINGS_CASH_ADVANCE, label: "Change cash-advance rules", help: "Suggested and maximum amounts, carry-over and liquidation days, approval bands.", can: "change cash-advance rules" },
       { key: P.SETTINGS_LTO, label: "Change LTO offices", help: "Offices a processor can be sent to.", can: "change LTO offices" },
       { key: P.SETTINGS_PROBLEM_REASONS, label: "Change problem reasons", help: "The reasons a job can be stuck.", can: "change problem reasons" },
-      { key: P.SETTINGS_HOLD_REASONS, label: "Change hold reasons", help: "The reasons a job can wait (on hold).", can: "change hold reasons" },
+      { key: P.HOLDS_MANAGE, label: "Manage hold reasons", help: "Settings, Hold reasons: add, rename, reorder or switch off the reasons a transaction can be on hold. A switched-off reason stays on old holds.", can: "manage hold reasons" },
       { key: P.SETTINGS_RETURN_REASONS, label: "Change return reasons", help: "Why a processor returns a job to the Loan Associate for papers.", can: "change return reasons" },
       { key: P.STAGES_MANAGE, label: "Change processing stages", help: "The stages of each transaction type, their evidence and targets.", can: "change processing stages" },
       { key: P.SETTINGS_SYSTEM, label: "Change system switches", help: "MyLoans test switches, the simulator switch, mock source changes.", can: "change system switches" },
@@ -297,7 +297,7 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
     permissions: ADMIN_PERMISSIONS,
   },
   DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: false, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE] },
-  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation.", permissions: [P.LOANS_VIEW, P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.FUNDS_VIEW_ALL, P.FUNDS_EXCEPTION, P.JOURNEY_VIEW_AMOUNTS] },
+  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; may transfer holds.", permissions: [P.LOANS_VIEW, P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.FUNDS_VIEW_ALL, P.FUNDS_EXCEPTION, P.JOURNEY_VIEW_AMOUNTS, P.HOLDS_TRANSFER] },
   VAULT: { name: "Vault Custodian", canSignIn: false, sortOrder: 5, branchAccess: "ASSIGNED", description: "Phases 6 and 8.", permissions: [P.LOANS_VIEW] },
   DIG: { name: "Digital Records", canSignIn: false, sortOrder: 6, branchAccess: "ASSIGNED", description: "Phase 7 DigiCur.", permissions: [P.LOANS_VIEW] },
   QA: { name: "QA", canSignIn: false, sortOrder: 7, branchAccess: "ASSIGNED", description: "Phase 9 QA review.", permissions: [P.LOANS_VIEW] },
@@ -331,7 +331,7 @@ export const LIST_PERMISSION: Record<string, Permission> = {
   "cash-advance": P.SETTINGS_CASH_ADVANCE,
   "approval-bands": P.SETTINGS_CASH_ADVANCE,
   "problem-reasons": P.SETTINGS_PROBLEM_REASONS,
-  "hold-reasons": P.SETTINGS_HOLD_REASONS,
+  "hold-reasons": P.HOLDS_MANAGE,
   "return-reasons": P.SETTINGS_RETURN_REASONS,
   "processing-stages": P.STAGES_MANAGE,
   system: P.SETTINGS_SYSTEM,
@@ -355,7 +355,7 @@ export const KIND_PERMISSION: Record<string, Permission> = {
   caRule: P.SETTINGS_CASH_ADVANCE,
   approvalBand: P.SETTINGS_CASH_ADVANCE,
   problemReason: P.SETTINGS_PROBLEM_REASONS,
-  holdReason: P.SETTINGS_HOLD_REASONS,
+  holdReason: P.HOLDS_MANAGE,
   returnReason: P.SETTINGS_RETURN_REASONS,
   processingStage: P.STAGES_MANAGE,
   user: P.USERS_EDIT,

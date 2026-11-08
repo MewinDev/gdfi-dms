@@ -1,4 +1,5 @@
 import "server-only";
+import { OPEN_ADVANCE } from "@/lib/funds/rules";
 import { z } from "zod";
 import { ltoEstimate } from "@/lib/ui/lto";
 import { prisma, type Tx } from "@/lib/db";
@@ -15,6 +16,7 @@ import { bandApprovers, fundsApprovers } from "./jobs";
 import { cashBlockReason } from "./source-blocks";
 import { recomputeStage } from "./stage";
 import { UserError } from "./errors";
+import { assertFundsNotHeld } from "./locks";
 
 /**
  * Funds: the DP requests one cash advance for several flagged jobs; an approver (per the approval
@@ -95,6 +97,8 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
   if (!branchId) throw new UserError("You are not assigned to a branch.");
 
   return prisma.$transaction(async (tx) => {
+    // Held transactions: no new cash goes out for them.
+    await assertFundsNotHeld(tx, d.lines.map((l) => l.transactionId));
     // Block: an overdue, unliquidated advance stops new requests, unless Finance granted a one-time exception.
     const open = await tx.cashAdvance.findMany({ where: { requestedById: u.id, status: { in: ["RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"] } } });
     const overdue = open.find((a) => isOverdue(a, now));
@@ -153,6 +157,7 @@ export async function decideAdvance(u: CurrentUser, advanceId: string, raw: unkn
     if (!a) throw new UserError("Cash advance not found.");
     if (a.status !== "REQUESTED") throw new UserError("This request was already decided.");
     await requireApprover(tx, u, a.requestedCents, a.requestedById);
+    if (d.approve) await assertFundsNotHeld(tx, a.lines.map((l) => l.transactionId)); // denying puts no cash out
     const now = new Date();
     if (!d.approve) {
       if (d.note.length < 3) throw new UserError("Say why it is denied.", "note");
@@ -227,6 +232,7 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: { r
     if (!a) throw new UserError("Cash advance not found.");
     if (a.status !== "APPROVED") throw new UserError("Only an approved advance can be released.");
     if (a.requestedById === u.id) throw new UserError("You cannot release your own request.");
+    await assertFundsNotHeld(tx, a.lines.map((l) => l.transactionId));
     const holidays = await getHolidaySet(tx);
     const dueDays = await getSetting("funds.liquidationDueDays", tx);
     let total = 0;
@@ -259,6 +265,7 @@ export async function requestTopUp(u: CurrentUser, lineId: string, extraCents: n
   if (!line || line.advance.requestedById !== u.id) throw new UserError("That line is not on your advance.");
   if (!["RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"].includes(line.advance.status)) throw new UserError("Ask for more only on a released advance.");
   return prisma.$transaction(async (tx) => {
+    await assertFundsNotHeld(tx, [line.transactionId]);
     const t = await tx.cashAdvanceTopUp.create({ data: { lineId, extraCents, reason: reason.trim(), requestedById: u.id } });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "topup_requested", entityType: "CashAdvance", entityId: line.advanceId, summary: `${line.advance.number}: ${u.name} asked for ${peso(extraCents)} more (${reason.trim()})` });
     await notify(tx, { email: { event: "advance_requested", to: await bandApprovers(tx, extraCents), amountCents: extraCents, vars: { number: line.advance.number, who: u.name, reason: "Top-up: more for the same job." } }, userIds: await fundsApprovers(tx), title: `${line.advance.number}: top-up to approve`, body: `${u.name} asked for ${peso(extraCents)} more.`, link: "/funds?tab=approve" });
@@ -272,6 +279,7 @@ export async function decideTopUp(u: CurrentUser, topUpId: string, approve: bool
     const t = await tx.cashAdvanceTopUp.findUnique({ where: { id: topUpId }, include: { line: { include: { advance: true } } } });
     if (!t || t.status !== "REQUESTED") throw new UserError("This top-up was already decided.");
     await requireApprover(tx, u, t.extraCents, t.requestedById);
+    if (approve) await assertFundsNotHeld(tx, [t.line.transactionId]);
     const amount = approve ? cents ?? t.extraCents : 0;
     if (approve && (amount <= 0 || amount > t.extraCents)) throw new UserError("Approve up to the extra asked.");
     if ((!approve || amount < t.extraCents) && note.trim().length < 3) throw new UserError("Add a short note.", "note");
@@ -286,6 +294,7 @@ export async function releaseTopUp(u: CurrentUser, topUpId: string) {
   return prisma.$transaction(async (tx) => {
     const t = await tx.cashAdvanceTopUp.findUnique({ where: { id: topUpId }, include: { line: { include: { advance: true } } } });
     if (!t || t.status !== "APPROVED" || t.releasedAt) throw new UserError("Only an approved top-up can be released.");
+    await assertFundsNotHeld(tx, [t.line.transactionId]);
     const c = t.approvedCents ?? 0;
     await tx.cashAdvanceTopUp.update({ where: { id: t.id }, data: { releasedCents: c, releasedAt: new Date() } });
     await tx.cashAdvanceLine.update({ where: { id: t.lineId }, data: { releasedCents: { increment: c } } });
@@ -303,6 +312,7 @@ export async function decideCarryOver(u: CurrentUser, carryId: string, approve: 
     const c = await tx.carryOver.findUnique({ where: { id: carryId }, include: { line: { include: { advance: true } } } });
     if (!c || c.status !== "PENDING") throw new UserError("This carry-over was already decided.");
     if (c.line.advance.requestedById === u.id) throw new UserError("You cannot approve your own carry-over.");
+    if (approve) await assertFundsNotHeld(tx, [c.line.transactionId]); // approving puts cash back to work
     await tx.carryOver.update({ where: { id: c.id }, data: { status: approve ? "APPROVED" : "DENIED", decidedById: u.id, decidedAt: now } });
     if (approve) {
       const holidays = await getHolidaySet(tx);
@@ -408,6 +418,27 @@ export async function grantException(u: CurrentUser, dpUserId: string, note: str
     await notify(tx, { userIds: [dpUserId], title: "You may submit one more cash advance", body: `${u.name} granted a one-time exception.`, link: "/my-funds" });
     return ex.id;
   });
+}
+
+/**
+ * "Cash to settle": open advances whose job went back to the LA (declined or returned) after the cash
+ * was released. The job is no longer the processor's, but the money is: the advance stays in My funds
+ * and in Finance's Outstanding list, marked, until it is closed.
+ */
+export async function cashToSettleIds(advances: { id: string; status: string; requestedById: string; lines: { transactionId: string | null }[] }[]): Promise<Set<string>> {
+  const open = advances.filter((a) => OPEN_ADVANCE.includes(a.status));
+  const txnIds = [...new Set(open.flatMap((a) => a.lines.map((l) => l.transactionId).filter((x): x is string => !!x)))];
+  if (!txnIds.length) return new Set();
+  const jobs = await prisma.dpAssignment.findMany({ where: { transactionId: { in: txnIds } }, orderBy: { endorsedAt: "asc" }, select: { transactionId: true, dpUserId: true, secondaryDpUserId: true, status: true, returnedAt: true } });
+  const out = new Set<string>();
+  for (const a of open) {
+    for (const l of a.lines) {
+      const mine = jobs.filter((j) => j.transactionId === l.transactionId && (j.dpUserId === a.requestedById || j.secondaryDpUserId === a.requestedById));
+      const last = mine.at(-1);
+      if (last && (last.status === "DECLINED" || (last.status === "WITHDRAWN" && last.returnedAt))) out.add(a.id);
+    }
+  }
+  return out;
 }
 
 export async function financeIds(db: Tx | typeof prisma) {

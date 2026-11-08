@@ -28,6 +28,10 @@ Last updated: 8 November 2026 (PHT)
 
 The clock never pauses. Holds and problems only change the colour and add their own timers. All times are shown in Philippine time (PHT).
 
+On hold: the reason category (from Settings, Hold reasons) and the remarks are both required, for every reason, "Other" included. The system records who put it on hold and when; there is no expected resume date. While it is on hold the transaction is locked: it stays readable but nobody can change it, on the screen or on the server, until it is resumed. Only the hold owner can resume it or add details to an older hold without remarks; nobody else can, Admin included. A supervisor or Admin with `holds:transfer` can transfer the hold to another active person with the same work role (Admin: any hold; others: their own branches), with remarks; they can never resume it. A hold saved without an owner can be transferred too. Remarks for Put on hold, Resume, Add details, Decline and Return to LA: 5 to 500 characters (trimmed). Finance on a held transaction: request, approve, release, top-up and carry-over approval are refused; denying, receipts, recording and confirming cash returns, liquidation, close and exceptions stay allowed, so money already out can be settled.
+
+Decline and Return to LA: the transaction goes back to the specific Loan Associate who sent it (not another LA of the branch) with the DP's findings; only that LA is notified (in-app, and by email when the switch is on). When that LA is inactive, every active LA of the branch sees it ("Sender {name} is inactive"), in-app only, and any of them can send it again. On a Return to LA the DP hands over every paper received at Accept and the LA confirms them before sending again; cash already released stays with the DP as "Cash to settle" until it is liquidated. The DP gets nothing and no longer sees the job. Sending it again starts a new round; the TAT clock never restarts.
+
 ### Processing stages (defaults, editable in Settings)
 
 | Transaction | Stages a DP job runs, in order |
@@ -49,6 +53,6 @@ Details and evidence fields: [Processing stages](10-processing-stages.md).
 | Finance and approvers | Approve and release cash advances, confirm returns, close advances, follow up overdue liquidation |
 | Admin | Settings, roles and access, Audit Log, TAT reports, review of MyLoans changes, closing cancelled loans |
 
-Permissions are switches in Settings, Roles and access, enforced on the server. Examples: `funds:flag`, `funds:request`, `funds:approve`, `funds:release`, `jobs:work`, `jobs:pasuyo`, `jobs:return_to_la`, `holds:raise`, `holds:resolve`, `problems:raise`, `problems:resolve`, `journey:view_amounts`, `source:review`, `source:manage`, `email:manage` and `stages:manage` (Settings, Processing stages; Admin only by default).
+Permissions are switches in Settings, Roles and access, enforced on the server. Examples: `funds:flag`, `funds:request`, `funds:approve`, `funds:release`, `jobs:work`, `jobs:pasuyo`, `jobs:return_to_la`, `holds:raise`, `holds:resolve` (resume: only the hold owner), `holds:transfer` (transfer a hold; Admin and Finance by default, Finance being the role that approves cash advances), `holds:manage` (Settings, Hold reasons; Admin only by default), `problems:raise`, `problems:resolve`, `journey:view_amounts`, `source:review`, `source:manage`, `email:manage` and `stages:manage` (Settings, Processing stages; Admin only by default).
 
 [Back to the workflow index](README.md)

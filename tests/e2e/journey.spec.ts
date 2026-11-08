@@ -89,17 +89,18 @@ test("Journey: hold, resume, problem, resolve, finish; list, scope, filters, bar
   await expect(page.getByRole("heading", { name: "Work on it" })).toBeVisible();
   await page.getByRole("button", { name: "Put on hold" }).click();
   let sheet = page.getByRole("dialog", { name: "Put on hold" });
-  await sheet.getByLabel("Reason").selectOption({ label: "Waiting on borrower" });
-  await sheet.getByLabel("Note (optional)").fill("Borrower to bring the signed page");
+  await sheet.getByLabel("Reason").selectOption({ label: "Waiting for the client's papers" });
+  await sheet.getByLabel("Remarks (required)").fill("Borrower to bring the signed page");
   // Esc with a change asks first; Keep editing keeps it.
   await page.keyboard.press("Escape");
   await expect(page.getByRole("alertdialog", { name: "Discard your changes?" })).toBeVisible();
   await page.getByRole("button", { name: "Keep editing" }).click();
   await shot(page, "dp-put-on-hold", false);
   await sheet.getByRole("button", { name: "Put on hold" }).click();
-  await expect(page.getByRole("status", { name: "On hold" })).toContainText("On hold: Waiting on borrower");
+  await expect(page.getByRole("status", { name: "On hold" })).toContainText("On hold: Waiting for the client's papers");
+  await expect(page.getByRole("status", { name: "On hold" })).toContainText("Borrower to bring the signed page");
   const chip = page.locator('[data-tat="hold"]').filter({ visible: true }).first();
-  await expect(chip).toContainText(/On hold 1 day · Waiting on borrower · Day 1 of \d/);
+  await expect(chip).toContainText(/On hold 1 day · Waiting for the client's papers · Day 1 of \d/);
   await shot(page, "dp-job-on-hold");
   await noSideways(page);
 
@@ -107,7 +108,7 @@ test("Journey: hold, resume, problem, resolve, finish; list, scope, filters, bar
   await page.goto("/loans/PN-0001003?tab=journey");
   const strip = page.locator('[data-strip="NOTARY"]');
   await expect(strip).toContainText("On hold");
-  await expect(strip).toContainText(/With DP Test Document Processor · On hold: waiting on borrower since /);
+  await expect(strip).toContainText(/With DP Test Document Processor · On hold: waiting for the client's papers since /);
   await expect(strip.locator('[data-tat="hold"]')).toBeVisible();
   await shot(page, "journey-strip-on-hold", false);
   await noSideways(page);
@@ -151,15 +152,16 @@ test("Journey: hold, resume, problem, resolve, finish; list, scope, filters, bar
   const order = await page.locator('[data-step$=":NOTARY"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-step")));
   expect(order).toEqual(["3.1:NOTARY", "3.6:NOTARY", "4.1:NOTARY", "4.2:NOTARY", "4.6:NOTARY", "5.1:NOTARY"]);
   const process = page.locator('[data-step="4.2:NOTARY"]');
-  await expect(process.locator('[data-sub="hold"]')).toContainText("On hold: Waiting on borrower");
-  await expect(process.locator('[data-sub="hold"]')).toContainText("Resumed by Test Document Processor: Borrower signed the page");
+  await expect(process.locator('[data-sub="hold"]')).toContainText("On hold: Waiting for the client's papers");
+  await expect(process.locator('[data-sub="hold"] [data-hold-started]')).toHaveText(/^Put on hold · Waiting for the client's papers · Borrower to bring the signed page · by Test Document Processor · .+ PHT$/);
+  await expect(process.locator('[data-sub="hold"] [data-hold-resumed]')).toHaveText(/^Resumed · Borrower signed the page · by Test Document Processor · .+ PHT · was on hold for .+$/);
   await expect(process.locator('[data-sub="problem"]')).toContainText("Problem:");
   await expect(process.locator('[data-sub="attempt"]')).toContainText("Done");
   await expect(process).toContainText(/Took (under 1 min|\d+[mhd])/);
   await expect(process).toContainText(PHT);
   await expect(process).toContainText(/Processing .*On hold .*Problem /);
   await process.locator("summary", { hasText: /Details \(\d+\)/ }).click();
-  await expect(process).toContainText("put it on hold");
+  await expect(process).toContainText("Put on hold · Waiting for the client's papers · Borrower to bring the signed page · by Test Document Processor");
   await expect(page.locator('[data-step="6.1"]')).toContainText(/Later · Target:/);
   await shot(page, "journey-list");
   await noSideways(page);

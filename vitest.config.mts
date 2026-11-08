@@ -1,15 +1,17 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync } from "node:fs";
-import { parseEnv } from "node:util";
+import { loadEnvFiles } from "./lib/env/load-files";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
-const read = (f: string) => (existsSync(f) ? (parseEnv(readFileSync(f, "utf8")) as Record<string, string>) : {});
-// Same order as Next.js: .env.local wins over .env. Tests always run as APP_ENV=local, and the
-// Microsoft Graph values are blanked so no test can send a real email (tests that need them set fakes).
+// Same order as everywhere: a variable set in the shell wins, then .env.local, then .env. (The values
+// passed here are written into each test worker, so the shell's value must be kept, not a file's.)
+// Tests always run as APP_ENV=local, and the Microsoft Graph values are blanked so no test can send a
+// real email (tests that need them set fakes).
+const fromFiles: Record<string, string | undefined> = {};
+loadEnvFiles([".env.local", ".env"], fromFiles);
+const shellFirst = Object.fromEntries(Object.keys(fromFiles).map((k) => [k, process.env[k] ?? fromFiles[k] ?? ""]));
 const dotenv = {
-  ...read(".env"),
-  ...read(".env.local"),
+  ...shellFirst,
   APP_ENV: "local",
   GRAPH_CLIENT_ID: "",
   GRAPH_CLIENT_SECRET: "",

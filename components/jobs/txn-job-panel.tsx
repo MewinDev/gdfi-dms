@@ -60,7 +60,7 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
     : [];
 
   return (
-    <section id={`job-${txn.id}`} aria-label={`${txn.type.name}: job`} className={`card flex scroll-mt-28 flex-col gap-3 p-4 sm:p-5 ${problem ? "border-l-4 border-l-[var(--bad-fg)]" : hold ? "border-l-4 border-l-navy" : ""}`}>
+    <section id={`job-${txn.id}`} aria-label={`${txn.type.name}: job`} className={`card flex scroll-mt-28 flex-col gap-3 p-4 sm:p-5 ${problem ? "border-l-4 border-l-[var(--bad-fg)]" : hold ? "shadow-[inset_4px_0_0_var(--hold-stripe)]" : ""}`}>
       <SentToast txnId={txn.id} targetId={`job-${txn.id}`} />
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mr-auto text-[17px] font-bold text-navy">
