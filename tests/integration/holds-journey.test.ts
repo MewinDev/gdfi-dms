@@ -7,8 +7,9 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { assignToDp, markLabelsPrinted, saveChecklist } from "@/lib/services/workflow";
-import { acceptJob, completeJob, logAttempt, receivePackage } from "@/lib/services/jobs";
-import { raiseHold, resumeHold } from "@/lib/services/holds";
+import { acceptJob, changeFundsFlag, completeJob, finishStage, forwardJob, logAttempt, raiseProblem, receivePackage, startStage, verifyPaper } from "@/lib/services/jobs";
+import { returnToLa } from "@/lib/services/return-to-la";
+import { addHoldDetails, raiseHold, resumeHold } from "@/lib/services/holds";
 import { decideAdvance, releaseAdvance, requestAdvance } from "@/lib/services/funds";
 import { saveSettingsRow } from "@/lib/services/admin";
 import { setRowActive } from "@/lib/services/settings-status";
@@ -18,7 +19,7 @@ import { getLoanForUser } from "@/lib/services/queries";
 import { loadJourney, stripAmounts } from "@/lib/services/journey";
 import { simulate } from "@/lib/services/simulator";
 import { setSetting } from "@/lib/settings";
-import { businessDate } from "@/lib/time";
+import { businessDate, fmtDateTime } from "@/lib/time";
 import { asUser, cleanLoans, workStages, forwardToLoanBranch } from "./helpers";
 
 let la: CurrentUser, dp: CurrentUser, fin: CurrentUser, admin: CurrentUser;
@@ -30,14 +31,14 @@ beforeAll(async () => {
   dp = await asUser("test.dp@gdfi.ph");
   fin = await asUser("test.finance@gdfi.ph");
   admin = await asUser("test.admin@gdfi.ph");
-  borrower = (await prisma.holdReason.findUniqueOrThrow({ where: { code: "BORROWER" } })).id;
+  borrower = (await prisma.holdReason.findUniqueOrThrow({ where: { code: "CLIENT-PAPERS" } })).id;
 });
 beforeEach(async () => {
   process.env.TEST_MODE = "true";
   await cleanLoans();
   await setSetting("funds.blockLtoUntilFunded", true);
   await prisma.holdReason.deleteMany({ where: { code: { startsWith: "Z" } } });
-  await prisma.holdReason.updateMany({ data: { active: true, deactivatedAt: null, deactivatedById: null } });
+  await prisma.holdReason.updateMany({ where: { code: { notIn: ["BORROWER", "OTHER-TEAM", "LTO-SCHEDULE"] } }, data: { active: true, deactivatedAt: null, deactivatedById: null } });
 });
 afterAll(async () => {
   await prisma.holdReason.deleteMany({ where: { code: { startsWith: "Z" } } });
@@ -66,33 +67,44 @@ async function send(code: string, needed: "YES" | "NO" = "NO", kinds: string[] =
   return { loan, txn, job };
 }
 
+/** Remarks are always required when putting work on hold (at least 5 characters). */
+const REMARKS = "Waiting for the borrower to sign";
+
 describe("Holds: who may raise and resume", () => {
-  it("the LA on work in the LA's hands; one open hold per transaction; Admin cannot raise but resumes any", async () => {
+  it("the LA on work in the LA's hands; one open hold per transaction; only the holder resumes (Admin cannot)", async () => {
     const { txn } = await tick("NOTARY"); // Ready to send: in the LA's hands
-    await expect(raiseHold(admin, { transactionId: txn.id, reasonId: borrower })).rejects.toThrow("Your role does not allow putting work on hold.");
-    await expect(raiseHold(dp, { transactionId: txn.id, reasonId: borrower })).rejects.toThrow("You can put on hold only work you do.");
+    await expect(raiseHold(admin, { transactionId: txn.id, reasonId: borrower, note: REMARKS })).rejects.toThrow("Your role does not allow putting work on hold.");
+    await expect(raiseHold(dp, { transactionId: txn.id, reasonId: borrower, note: REMARKS })).rejects.toThrow("You can put on hold only work you do.");
     // The reason is required; the start time and the person are the server's, not the form's.
-    await expect(raiseHold(la, { transactionId: txn.id, reasonId: "" })).rejects.toThrow("Pick a reason.");
+    await expect(raiseHold(la, { transactionId: txn.id, reasonId: "", note: REMARKS })).rejects.toThrow("Pick a reason.");
+    // Remarks are always required (not only for "Other"): at least 5 characters, nothing stored on a refusal.
+    await expect(raiseHold(la, { transactionId: txn.id, reasonId: borrower } as never)).rejects.toThrow("Write 5 to 500 characters.");
+    await expect(raiseHold(la, { transactionId: txn.id, reasonId: borrower, note: "  ok  " })).rejects.toThrow("Write 5 to 500 characters.");
+    await expect(raiseHold(la, { transactionId: txn.id, reasonId: borrower, note: "x".repeat(501) })).rejects.toThrow("Write 5 to 500 characters.");
+    expect(await prisma.hold.count({ where: { transactionId: txn.id } })).toBe(0);
     const before = Date.now();
     const id = await raiseHold(la, { transactionId: txn.id, reasonId: borrower, note: "Signed page", raisedAt: new Date("2020-01-01"), expectedResumeOn: "2020-01-02" } as never);
     const started = await prisma.hold.findUniqueOrThrow({ where: { id } });
     expect(started.raisedAt.getTime()).toBeGreaterThanOrEqual(before - 1000);
     expect(started).toMatchObject({ raisedById: la.id, raisedByLabel: "Test Loan Associate", expectedResumeOn: null });
-    await expect(raiseHold(la, { transactionId: txn.id, reasonId: borrower })).rejects.toThrow("This transaction is already on hold.");
+    await expect(raiseHold(la, { transactionId: txn.id, reasonId: borrower, note: REMARKS })).rejects.toThrow("This transaction is already on hold.");
     // The database refuses a second open hold too.
     await expect(prisma.hold.create({ data: { loanId: txn.loanId, transactionId: txn.id, reasonId: borrower, raisedByLabel: "x" } })).rejects.toThrow();
-    await expect(resumeHold(dp, id, "Done now")).rejects.toThrow("You can resume only holds on work you do.");
-    // Resume remarks are required (at least 3 characters).
-    await expect(resumeHold(admin, id, "")).rejects.toThrow("Write the resume remarks (at least 3 characters).");
-    await expect(resumeHold(admin, id, " ok ")).rejects.toThrow("Write the resume remarks (at least 3 characters).");
+    // Only the holder resumes: the DP and Admin are refused with the same words the screen shows.
+    await expect(resumeHold(dp, id, "Done now")).rejects.toThrow("Only Test Loan Associate can resume this.");
+    await expect(resumeHold(admin, id, "Borrower came in")).rejects.toThrow("Only Test Loan Associate can resume this.");
+    // Resume remarks: 5 to 500 characters.
+    await expect(resumeHold(la, id, "")).rejects.toThrow("Write 5 to 500 characters.");
+    await expect(resumeHold(la, id, " ok ")).rejects.toThrow("Write 5 to 500 characters.");
+    await expect(resumeHold(la, id, "x".repeat(501))).rejects.toThrow("Write 5 to 500 characters.");
     expect((await prisma.hold.findUniqueOrThrow({ where: { id } })).resumedAt).toBeNull();
-    await resumeHold(admin, id, "Borrower came in");
+    await resumeHold(la, id, "Borrower came in");
     const h = await prisma.hold.findUniqueOrThrow({ where: { id } });
-    expect(h).toMatchObject({ resumedByLabel: "Test Admin", resumeNote: "Borrower came in" });
+    expect(h).toMatchObject({ resumedByLabel: "Test Loan Associate", resumeNote: "Borrower came in" });
     expect(await prisma.hold.count({ where: { transactionId: txn.id } })).toBe(1); // closed on the same record
-    await expect(resumeHold(admin, id, "Again please")).rejects.toThrow("This hold has already ended.");
+    await expect(resumeHold(la, id, "Again please")).rejects.toThrow("This hold has already ended.");
     // Several holds over time are fine.
-    await raiseHold(la, { transactionId: txn.id, reasonId: borrower });
+    await raiseHold(la, { transactionId: txn.id, reasonId: borrower, note: REMARKS });
     expect(await prisma.hold.count({ where: { transactionId: txn.id } })).toBe(2);
   });
 
@@ -100,9 +112,9 @@ describe("Holds: who may raise and resume", () => {
     const { txn, job } = await send("NOTARY");
     await acceptJob(dp, job.id, true);
     // Once sent and accepted it is the DP's work, not the LA's.
-    await expect(raiseHold(la, { transactionId: txn.id, reasonId: borrower })).rejects.toThrow("You can put on hold only work you do.");
+    await expect(raiseHold(la, { transactionId: txn.id, reasonId: borrower, note: REMARKS })).rejects.toThrow("You can put on hold only work you do.");
     const auditBefore = await prisma.auditLog.count({ where: { action: { startsWith: "hold_" } } });
-    const id = await raiseHold(dp, { transactionId: txn.id, reasonId: borrower });
+    const id = await raiseHold(dp, { transactionId: txn.id, reasonId: borrower, note: REMARKS });
     await resumeHold(dp, id, "Borrower signed");
     expect(await prisma.auditLog.count({ where: { action: { startsWith: "hold_" } } })).toBe(auditBefore + 2);
     const notes = await prisma.notification.findMany({ where: { loanId: txn.loanId, title: { contains: "Notary" } } });
@@ -110,18 +122,58 @@ describe("Holds: who may raise and resume", () => {
     expect(notes.some((n) => n.title.endsWith("resumed") && n.userId === admin.id)).toBe(true);
   });
 
-  it("a finished transaction does not stay on hold (System ends it, same record)", async () => {
+  it("a held job is locked for the processor: every step is refused until the holder resumes; then it works", async () => {
     const { txn, job } = await send("NOTARY");
     await acceptJob(dp, job.id, true);
-    await raiseHold(dp, { transactionId: txn.id, reasonId: borrower });
+    const id = await raiseHold(dp, { transactionId: txn.id, reasonId: borrower, note: REMARKS });
+    const h = await prisma.hold.findUniqueOrThrow({ where: { id } });
+    const locked = `Locked: on hold by Test Document Processor since ${fmtDateTime(h.raisedAt)}. Only Test Document Processor can resume.`;
+    const stage = (await prisma.jobStage.findFirstOrThrow({ where: { assignmentId: job.id }, orderBy: { sortOrder: "asc" } })).id;
+    const reason = (await prisma.returnReason.findFirstOrThrow({ where: { code: "OTHER" } })).id;
+    for (const step of [
+      () => logAttempt(dp, job.id, { date: today(), result: "DONE" }),
+      () => startStage(dp, job.id, stage),
+      () => finishStage(dp, job.id, stage, {}),
+      () => verifyPaper(dp, job.id, stage, "x"),
+      () => completeJob(dp, job.id, {}),
+      () => forwardJob(dp, job.id, { branchId: "x", laId: la.id, paperCount: 1 } as never),
+      () => returnToLa(dp, job.id, { reasonId: reason, note: "Wrong branch on the papers" }),
+      () => changeFundsFlag(dp, job.id, false, []),
+      async () => raiseProblem(dp, { transactionId: txn.id, reasonId: (await prisma.problemReason.findFirstOrThrow({ where: { active: true } })).id, note: "LTO down" }),
+    ]) await expect(step()).rejects.toThrow(locked);
+    // Refusals are not logged.
+    expect(await prisma.auditLog.count({ where: { loanId: txn.loanId, action: { in: ["attempt_logged", "job_returned_to_la"] } } })).toBe(0);
+    await resumeHold(dp, id, "Borrower signed the page");
     await logAttempt(dp, job.id, { date: today(), result: "DONE" });
-    await workStages(dp, job.id, { name: "Atty. Uy", docNo: "1", pageNo: "2", bookNo: "III", series: "2026" });
-    await completeJob(dp, job.id, {});
-    await forwardToLoanBranch(dp, job.id, la.id);
-    await receivePackage(la, job.id, true, "");
-    const h = await prisma.hold.findFirstOrThrow({ where: { transactionId: txn.id } });
-    expect(h.resumedByLabel).toBe("System");
-    expect(h.resumedAt).not.toBeNull();
+    expect(await prisma.transactionAttempt.count({ where: { transactionId: txn.id } })).toBe(1);
+  });
+});
+
+describe("Hold remarks: stored as typed; older holds without remarks get them once", () => {
+  it("the remarks are saved in full; Add details only for the person who put it on hold", async () => {
+    const { txn } = await tick("NOTARY");
+    const typed = "Borrower is abroad until Friday.\nWill send the signed page by courier.";
+    const id = await raiseHold(la, { transactionId: txn.id, reasonId: borrower, note: typed });
+    expect((await prisma.hold.findUniqueOrThrow({ where: { id } })).note).toBe(typed);
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: id, action: "hold_started" } });
+    expect(audit.details).toMatchObject({ note: typed });
+    // A hold that already has remarks cannot be "added to".
+    await expect(addHoldDetails(la, id, "Something else")).rejects.toThrow("This hold already has remarks.");
+    await resumeHold(la, id, "Courier arrived");
+
+    // An older hold saved without remarks (before they were required).
+    const old = await prisma.hold.create({ data: { loanId: txn.loanId, transactionId: txn.id, reasonId: borrower, raisedById: la.id, raisedByLabel: la.name, ownerId: la.id, ownerLabel: la.name } });
+    await expect(addHoldDetails(dp, old.id, "Not my hold")).rejects.toThrow();
+    await expect(addHoldDetails(la, old.id, "abc")).rejects.toThrow("Write 5 to 500 characters.");
+    await expect(addHoldDetails(la, old.id, "x".repeat(501))).rejects.toThrow("Write 5 to 500 characters.");
+    await addHoldDetails(la, old.id, "Waiting for the borrower to sign");
+    expect((await prisma.hold.findUniqueOrThrow({ where: { id: old.id } })).note).toBe("Waiting for the borrower to sign");
+    expect(await prisma.auditLog.count({ where: { entityId: old.id, action: "hold_details_added" } })).toBe(1);
+    await resumeHold(la, old.id, "Signed");
+
+    // Admin may not (holder only).
+    const old2 = await prisma.hold.create({ data: { loanId: txn.loanId, transactionId: txn.id, reasonId: borrower, raisedById: la.id, raisedByLabel: la.name, ownerId: la.id, ownerLabel: la.name } });
+    await expect(addHoldDetails(admin, old2.id, "Added by Admin after a call")).rejects.toThrow("Only Test Loan Associate can add the details.");
   });
 });
 
@@ -135,7 +187,7 @@ describe("Hold reasons in Settings", () => {
     expect(await prisma.auditLog.count({ where: { entityType: "holdReason", entityId: r.id } })).toBe(3);
     // An inactive reason is not offered for new holds.
     const { txn } = await tick("NOTARY");
-    await expect(raiseHold(la, { transactionId: txn.id, reasonId: r.id })).rejects.toThrow("Pick a reason.");
+    await expect(raiseHold(la, { transactionId: txn.id, reasonId: r.id, note: REMARKS })).rejects.toThrow("Pick a reason.");
     // The LA may not change the list.
     await expect(saveSettingsRow(la, "holdReason", null, { code: "ZNO", name: "No", sortOrder: "1" })).rejects.toThrow(/does not allow/);
 
@@ -148,7 +200,7 @@ describe("Hold reasons in Settings", () => {
     expect((await prisma.holdReason.findUniqueOrThrow({ where: { code: "ZBANK" } })).active).toBe(true);
     const csv = await currentDataCsv("hold-reasons");
     expect(csv).toContain("ZCOURIER,Waiting on the courier,7,Active");
-    expect(csv).toContain("BORROWER,Waiting on borrower,1,Active");
+    expect(csv).toContain("NO-DP,No available DP,1,Active");
   });
 });
 

@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Run against an already running dev server with:  $env:E2E_BASE_URL="http://localhost:3001"; npm run test:e2e
+// The tests reset the loan files: they refuse unless the database is a "test" one or ALLOW_DESTRUCTIVE=1 is set.
 // Otherwise Playwright starts `next dev` on port 3100. Tests reset the LOCAL database before each test.
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 

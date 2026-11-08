@@ -2,8 +2,10 @@ import Link from "next/link";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import type { LoanDetail } from "@/lib/services/queries";
 import { loadJourney } from "@/lib/services/journey";
-import { businessDate, fmtDate, fmtShort } from "@/lib/time";
+import { businessDate, fmtDate, fmtDateTime, fmtShort } from "@/lib/time";
+import { roundEntries } from "@/lib/ui/rounds";
 import { txnName } from "@/lib/ui/plain";
+import { journeyHoldResumed, journeyHoldStarted, journeyHoldTransferred } from "@/lib/ui/holds";
 import {
   dayCells, SEG_LABEL, STEP_STATE_LABEL, businessSpan,
   type CellState, type JPhase, type JStep, type JTxn, type Journey, type SegState, type StepState,
@@ -28,7 +30,7 @@ export interface JourneyParams { scope?: string; filter?: string; view?: string 
 const STATE_STYLE: Record<StepState, { cls: string; Icon: typeof ClockIcon }> = {
   waiting: { cls: "c-mute", Icon: HourglassIcon },
   now: { cls: "c-act", Icon: ClockIcon },
-  hold: { cls: "c-navy", Icon: PauseIcon },
+  hold: { cls: "c-hold", Icon: PauseIcon },
   problem: { cls: "c-bad", Icon: AlertIcon },
   done: { cls: "c-ok", Icon: CheckIcon },
   later: { cls: "c-mute", Icon: ChevronRightIcon },
@@ -39,7 +41,7 @@ export function StateChip({ state, label }: { state: StepState; label?: string }
   const s = STATE_STYLE[state];
   return (
     <span className={`chip ${s.cls} h-6 shrink-0 px-2.5 align-middle text-xs`} data-state={state}>
-      <span className={state === "hold" ? "text-gold" : undefined}><s.Icon size={13} strokeWidth={2.4} /></span>
+      <s.Icon size={13} strokeWidth={2.4} />
       {label ?? STEP_STATE_LABEL[state]}
     </span>
   );
@@ -55,7 +57,7 @@ export function msText(ms: number): string {
   return `${Math.floor(h / 24)}d${h % 24 ? ` ${h % 24}h` : ""}`;
 }
 
-const SEG_BG: Record<SegState, string> = { waiting: "bg-[rgb(12_35_64/0.22)]", processing: "bg-gold", hold: "bg-navy", problem: "bg-[var(--bad-fg)]" };
+const SEG_BG: Record<SegState, string> = { waiting: "bg-[rgb(12_35_64/0.22)]", processing: "bg-gold", hold: "bg-[var(--hold-stripe)]", problem: "bg-[var(--bad-fg)]" };
 
 export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; user: CurrentUser; params: JourneyParams }) {
   const { journey: j, holidays } = await loadJourney(user, loan);
@@ -97,12 +99,47 @@ export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; use
         )}
       </nav>
 
+      {scope !== "DOCS" && <Rounds txns={live.filter((t) => inScope(t.type.code))} now={now} />}
       {scope === "DOCS" && <DocsList docs={docItems(j, live.map((t) => t.type.code))} />}
       {scope !== "DOCS" && view === "list" && <ListView phases={j.phases} scope={scope} filter={filter} userId={user.id} now={now} />}
       {scope !== "DOCS" && view === "bars" && <BarsView txns={txns} holidays={holidays} now={now} />}
 
       <SimulatorBlock loan={loan} user={user} />
     </div>
+  );
+}
+
+/**
+ * Rounds with the processor, per transaction, in order: Sent (round 1), Declined by DP or Returned
+ * by DP (reason and findings, DP, date and time PHT, how long), Sent again (round 2), and so on.
+ * Shown for a transaction that was sent back at least once.
+ */
+function Rounds({ txns, now }: { txns: LoanDetail["transactions"]; now: Date }) {
+  const withRounds = txns.map((t) => ({ t, rows: roundEntries(t.dpAssignments, now) })).filter((x) => x.rows.some((r) => r.round > 1 || r.outcome.endsWith("by DP")));
+  if (!withRounds.length) return null;
+  return (
+    <section aria-labelledby="rounds-h" className="card p-3 sm:p-4" data-rounds>
+      <h2 id="rounds-h" className="text-[17px] font-bold text-navy">Rounds with the processor</h2>
+      {withRounds.map(({ t, rows }) => (
+        <div key={t.id} className="mt-2 border-t border-line pt-2 first-of-type:border-t-0" data-rounds-txn={t.type.code}>
+          <h3 className="text-[15px] font-semibold text-ink">{txnName(t.type.code, t.type.name)}</h3>
+          <ol className="mt-1 flex flex-col gap-1.5">
+            {rows.map((r, i) => (
+              <li key={i} className="rounded-lg bg-fill p-2 text-[13px]" data-round-entry={r.round}>
+                <p className="font-semibold text-ink">
+                  <span className="tag mr-1.5">Round {r.round}</span>{r.sentText} to {r.dpName}{r.sentBy ? ` by ${r.sentBy}` : ""} · {fmtDateTime(r.sentAt)}
+                </p>
+                <p className="text-ink" data-round-outcome>
+                  {r.outcome}{r.outcomeAt ? ` · ${fmtDateTime(r.outcomeAt)}` : ""} · {r.outcomeAt ? "took" : "so far"} {r.duration}
+                </p>
+                {r.findings && <p className="break-words text-ink-2" data-round-findings>{r.findings}</p>}
+                {r.papers.map((line, k) => <p key={k} className="text-ink" data-round-papers>{line}</p>)}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -268,22 +305,19 @@ function StepRow({ s, now }: { s: JStep; now: Date }) {
       {(s.holds.length > 0 || s.problems.length > 0 || s.attempts.length > 0) && (
         <ul className="ml-1 flex min-w-0 flex-col gap-1.5 border-l-2 border-line pl-3" aria-label="Holds, problems and attempts">
           {s.holds.map((h) => (
-            <li key={h.id} className={`rounded-lg p-2 text-[13px] ${h.resumedAt ? "bg-fill" : "bg-navy text-white"}`} data-sub="hold">
+            <li key={h.id} className={`p-2 text-[13px] ${h.resumedAt ? "rounded-lg bg-fill" : "hold-card pl-4"}`} data-sub="hold">
               <p className="flex flex-wrap items-center gap-1.5 font-semibold">
-                <span className={h.resumedAt ? "text-navy" : "text-gold"}><PauseIcon size={14} /></span>
+                <span className="text-hold-fg"><PauseIcon size={14} /></span>
                 On hold: {h.reason}
                 <span className="font-normal">· {h.days} business day{h.days === 1 ? "" : "s"}</span>
                 {h.simulated && <span className="chip c-act h-5 text-[11px]">Simulated</span>}
               </p>
-              <p className={h.resumedAt ? "text-ink-2" : "text-white/90"}>
-                Put on hold {fmtShort(h.raisedAt)} by {h.raisedBy}{h.note ? ` · ${h.note}` : ""}
-              </p>
-              <p className={h.resumedAt ? "text-ink-2" : "text-white/90"}>
-                {h.resumedAt
-                  ? <>Resumed {fmtShort(h.resumedAt)} by {h.resumedBy ?? "System"} · took {msText(h.resumedAt.getTime() - h.raisedAt.getTime())}</>
-                  : <>Still on hold (<LiveSince since={h.raisedAt.toISOString()} now={now.toISOString()} />)</>}
-              </p>
-              {h.resumedAt && h.resumeNote && <p className="text-ink">Resumed by {h.resumedBy ?? "System"}: {h.resumeNote}</p>}
+              {/* Two entries: when it started (with the remarks) and when it resumed (with how long it waited). */}
+              <p className="break-words text-ink" data-hold-started>{journeyHoldStarted({ reason: h.reason, note: h.note, raisedBy: h.raisedBy, raisedAt: h.raisedAt })}</p>
+              {(h.transfers ?? []).map((x, i) => <p key={i} className="break-words text-ink" data-hold-transferred>{journeyHoldTransferred(x)}</p>)}
+              {h.resumedAt
+                ? <p className="break-words text-ink" data-hold-resumed>{journeyHoldResumed({ raisedAt: h.raisedAt, resumedAt: h.resumedAt, resumedBy: h.resumedBy, resumeNote: h.resumeNote })}</p>
+                : <p className="text-ink-2">Still on hold (<LiveSince since={h.raisedAt.toISOString()} now={now.toISOString()} />). The TAT clock keeps running.</p>}
             </li>
           ))}
           {s.problems.map((p) => (
@@ -345,7 +379,7 @@ function Events({ events }: { events: { at: Date; text: string; simulated: boole
 // ---------------------------------------------------------------------------
 
 const CELL: Record<CellState, string> = {
-  waiting: "bg-[rgb(12_35_64/0.22)]", processing: "bg-gold", hold: "bg-navy text-gold", problem: "bg-[var(--bad-fg)] text-white", done: "bg-ok-fg text-white", none: "bg-white",
+  waiting: "bg-[rgb(12_35_64/0.22)]", processing: "bg-gold", hold: "bg-[var(--hold-line)] text-hold-fg", problem: "bg-[var(--bad-fg)] text-white", done: "bg-ok-fg text-white", none: "bg-white",
 };
 const CELL_WORD: Record<CellState, string> = { waiting: "Waiting", processing: "Processing", hold: "On hold", problem: "Problem", done: "Done", none: "Nothing" };
 

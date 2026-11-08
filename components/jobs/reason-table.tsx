@@ -15,8 +15,8 @@ export function ReasonTable({ rows, caption }: { rows: ReasonRow[]; caption: str
           {rows.map((r) => (
             <tr key={`${r.type}-${r.reason}`}>
               <td>
-                <span className={`chip h-6 text-xs ${r.type === "Problem" ? "c-bad" : r.type === "Hold" ? "c-navy" : "c-wait"}`}>
-                  {r.type === "Problem" ? <AlertIcon size={13} /> : r.type === "Hold" ? <span className="text-gold"><PauseIcon size={13} /></span> : <ArrowLeftIcon size={13} />}
+                <span className={`chip h-6 text-xs ${r.type === "Problem" ? "c-bad" : r.type === "Hold" ? "c-hold" : "c-wait"}`}>
+                  {r.type === "Problem" ? <AlertIcon size={13} /> : r.type === "Hold" ? <PauseIcon size={13} /> : <ArrowLeftIcon size={13} />}
                   {r.type === "Returned" ? "Returned to LA" : r.type}
                 </span>
               </td>

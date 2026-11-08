@@ -110,9 +110,11 @@ export interface WorkCardProps {
   canAct: boolean; // LA
   openMissingRequest: boolean;
   /** Small chips next to the title for this transaction's open items ("On hold · 1 day"). */
-  titleChips?: { id: string; text: string; tone: "bad" | "navy" }[];
+  titleChips?: { id: string; text: string; tone: "bad" | "hold" }[];
   /** May also put it on hold from the missing-paper pop-up. */
   canHold?: boolean;
+  /** "Round 2" (LA and Admin) after the DP declined or returned it and it was sent again. */
+  round?: string | null;
   assignmentText: string | null;
   edstReference: string | null;
   send: SendOptions | null;
@@ -186,6 +188,7 @@ export function WorkCard(p: WorkCardProps) {
         <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-xs font-bold text-navy">{p.index}</span>
         <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2.5">
           <h2 id={`w-${p.txnId}`} className="text-[17px] font-bold text-navy">{p.name}</h2>
+          {p.round && <span className="tag self-center" data-round>{p.round}</span>}
           {(p.titleChips ?? []).map((c) => <TitleChip key={c.id} c={c} />)}
           {p.total !== undefined && <span className="basis-full text-xs text-ink-2" data-txn-position>Transaction {p.index} of {p.total}</span>}
           {hint && <span className="self-center text-ink-2" title={hint} aria-label={hint} role="img"><InfoIcon size={16} /></span>}
@@ -264,10 +267,10 @@ export function WorkCard(p: WorkCardProps) {
 }
 
 /** The small chip beside the title: where an open item is (the Open items card is the alert). */
-function TitleChip({ c, phone = false }: { c: { id: string; text: string; tone: "bad" | "navy" }; phone?: boolean }) {
+function TitleChip({ c, phone = false }: { c: { id: string; text: string; tone: "bad" | "hold" }; phone?: boolean }) {
   return (
-    <span id={phone ? `open-${c.id}-m` : `open-${c.id}`} data-title-chip={c.tone} className={`chip ${c.tone === "navy" ? "c-navy" : "c-bad"} h-6 self-center px-2 text-xs ${phone ? "" : "max-sm:hidden"}`}>
-      {c.tone === "navy" ? <span className="text-gold"><PauseIcon size={12} strokeWidth={2.6} /></span> : <AlertIcon size={12} strokeWidth={2.6} />}
+    <span id={phone ? `open-${c.id}-m` : `open-${c.id}`} data-title-chip={c.tone} className={`chip ${c.tone === "hold" ? "c-hold" : "c-bad"} h-6 self-center px-2 text-xs ${phone ? "" : "max-sm:hidden"}`}>
+      {c.tone === "hold" ? <PauseIcon size={12} strokeWidth={2.6} /> : <AlertIcon size={12} strokeWidth={2.6} />}
       {c.text}
     </span>
   );
@@ -348,7 +351,7 @@ function AskMissingForm({ txnId, name, lines, canHold, action, state, pending }:
       {canHold && (
         <label className="inline-flex min-h-11 items-start gap-2 text-[15px]">
           <input type="checkbox" name="alsoHold" className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--navy)]" />
-          <span>Also put this transaction on hold (waiting on borrower)<span className="block text-[13px] text-ink-2">A separate On hold. The turnaround time keeps counting.</span></span>
+          <span>Also put this transaction on hold (waiting for the client&apos;s papers)<span className="block text-[13px] text-ink-2">A separate On hold. The turnaround time keeps counting.</span></span>
         </label>
       )}
       {state && !state.ok && state.field !== "checkIds" && <p role="alert" className="rounded-xl bg-bad-bg px-4 py-3 text-sm text-bad-fg">{plainMessage(state.error)}</p>}

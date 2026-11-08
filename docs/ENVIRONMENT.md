@@ -24,14 +24,40 @@ The first place that has a value wins:
 This order is the same everywhere:
 
 - **Next.js** (`npm run dev`, `npm run build`, `npm start`) loads the files itself.
-- **Prisma CLI** (`generate`, `migrate dev`, `migrate deploy`, `studio`, `db seed`) gets them through `prisma.config.ts`. When that file exists, Prisma no longer reads `.env` by itself.
+- **Prisma CLI** (`generate`, `migrate dev`, `migrate deploy`, `studio`, `db seed`) gets them through `prisma.config.ts`, which uses `lib/env/load-files.ts` (unit-tested: the shell wins, then `.env.local`, then `.env`). When that file exists, Prisma no longer reads `.env` by itself.
+  - Migrations connect through `DIRECT_URL`, the app through `DATABASE_URL`. If they name different databases (for example you set only `DATABASE_URL` in the shell for a scratch database, and `DIRECT_URL` still comes from `.env.local`), Prisma commands refuse to start. To point a command at another database, set **both** in the shell.
 - **Console scripts** (`npm run db:seed`, `db:seed:reference`, `email:test`, `email:reminders`, `myloans:sync`) use `tsx --env-file-if-exists=.env --env-file-if-exists=.env.local`, where the later file wins. They also run the startup check.
-- **Vitest** (`vitest.config.mts`) uses the same order, with three exceptions:
+- **Vitest** (`vitest.config.mts`) uses the same order (a value set in the shell is kept, not replaced by a file's), with three exceptions:
   - Tests always run as `APP_ENV=local`.
   - The `GRAPH_*` values are blanked, so no test can send a real email.
   - The database helpers refuse any database that is not on this PC.
-- **Playwright database helpers** (`tests/e2e/db.ts`) load `.env.local`, then `.env`.
+- **Playwright database helpers** (`tests/e2e/db.ts`) use the same loader (the shell wins, then `.env.local`, then `.env`) and the same `DATABASE_URL` / `DIRECT_URL` check.
 - **Docker Compose** reads only `.env`, for `POSTGRES_*` and the ports. The ports are bound to 127.0.0.1.
+
+## Commands that reset or drop data
+
+These refuse unless every database they would touch has `test` in its name, or you set `ALLOW_DESTRUCTIVE=1` for that one command on purpose. They never run when `APP_ENV` is `staging` or `production`, whatever else is set (`lib/env/destructive.ts`, unit-tested):
+
+| Command | What it does | Guard |
+|---|---|---|
+| `npm run db:reset` | `prisma migrate reset --force`: drops every table, re-applies the migrations and seeds. No question. | `scripts/guard-destructive.ts` runs first |
+| `npm test` (integration files) | Deletes loan files and test settings between tests. | `tests/integration/helpers.ts` |
+| `npm run test:e2e` | Resets the loan files before every test. | `tests/e2e/db.ts` |
+
+For example, `$env:ALLOW_DESTRUCTIVE="1"; npm test` on this PC's own database, or point both `DATABASE_URL` and `DIRECT_URL` at a database such as `gdfi_dms_test`.
+
+Not guarded by this rule, and why:
+
+- `npm run db:seed` and `db:seed:reference` only add missing rows (and refresh the built-in role names); they delete nothing. Production needs `db:seed:reference`, and the seed already refuses test users when `APP_ENV=production`.
+- `npm run db:migrate` (`prisma migrate dev`) asks before resetting a database that has drifted.
+- `npm run db:deploy` applies new migrations only.
+- **Reset test data** (Admin, Settings) is a button with a confirmation, only in test mode, and refused on staging and production.
+
+## Migration names
+
+Until 19 November 2026, create every migration with `npx prisma migrate dev --create-only --name <name>`, then rename the new folder to the next number after the latest one (`20261119090001`, `20261119090002`, and so on) before applying it. Never leave Prisma's automatic date name. From 20 November 2026 this rule no longer applies.
+
+After every migration, print the folder list of `prisma/migrations/` in order and the output of `npx prisma migrate status`, and check the new one is last. `lib/db/migrations.test.ts` checks every folder name (a 14-digit timestamp and a name), that names are unique, and, when a local database is reachable, that it applied them in name order.
 
 ## `APP_ENV` and the startup check
 

@@ -10,7 +10,7 @@ export function Avatar({ name, size = 44, tone = "navy" }: { name: string; size?
   );
 }
 
-const TONE_CLASS: Record<Tone, string> = { act: "c-act", wait: "c-wait", ok: "c-ok", bad: "c-bad", mute: "c-mute", navy: "c-navy" };
+const TONE_CLASS: Record<Tone, string> = { act: "c-act", wait: "c-wait", ok: "c-ok", bad: "c-bad", mute: "c-mute", navy: "c-navy", hold: "c-hold" };
 
 export function ToneChip({ tone, children, check, title }: { tone: Tone; children: React.ReactNode; check?: boolean; title?: string }) {
   return (
@@ -22,9 +22,9 @@ export function ToneChip({ tone, children, check, title }: { tone: Tone; childre
 }
 
 export function Banner({ tone, children }: { tone: "bad" | "wait" | "ok" | "act"; children: React.ReactNode }) {
-  const cls = tone === "bad" ? "bg-bad-bg text-bad-fg" : tone === "ok" ? "bg-ok-bg text-ok-fg" : tone === "act" ? "bg-act-bg text-act-fg" : "bg-wait-bg text-wait-fg";
+  const cls = tone === "bad" ? "border-bad-line bg-bad-bg text-bad-fg" : tone === "ok" ? "border-ok-line bg-ok-bg text-ok-fg" : tone === "act" ? "border-act-line bg-act-bg text-act-fg" : "border-wait-line bg-wait-bg text-wait-fg";
   return (
-    <p role={tone === "bad" ? "alert" : "status"} className={`rounded-xl px-4 py-3 text-[15px] ${cls}`}>
+    <p role={tone === "bad" ? "alert" : "status"} className={`rounded-xl border px-4 py-3 text-[15px] ${cls}`}>
       {children}
     </p>
   );

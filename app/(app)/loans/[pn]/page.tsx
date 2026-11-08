@@ -5,11 +5,11 @@ import { prisma } from "@/lib/db";
 import { can, inScope, requirePagePermission, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getLoanContext, getLoanForUser, type LoanDetail } from "@/lib/services/queries";
-import { checklistStatusOf, recommendDp } from "@/lib/services/workflow";
+import { PAPERS_BACK_FIRST, checklistStatusOf, recommendDp } from "@/lib/services/workflow";
 import { businessDate, fmtDateTime, fmtShort } from "@/lib/time";
 import { JOURNEY_STEP_COUNT, dayText, deadlineChip, liveAssignment, peso, plainMessage, progressStep, stageWords, timeAgo, txnName } from "@/lib/ui/plain";
 import { Banner, ToneChip } from "@/components/ui/basics";
-import { AlertIcon, ChevronRightIcon, PrinterIcon } from "@/components/ui/icons";
+import { AlertIcon, ChevronRightIcon, PauseIcon, PrinterIcon } from "@/components/ui/icons";
 import { PageTop } from "@/components/loan/page-top";
 import { Stepper } from "@/components/ui/stepper";
 import { FixProblem, ReportProblem, WorkCard, type Line, type SendOptions } from "@/components/loan/work";
@@ -26,7 +26,14 @@ import { focusTargetOf, openItemsOf, titleChipOf, type OpenItem } from "@/lib/ui
 import { txnStatus, type TxnStatus } from "@/lib/ui/txn-status";
 import { TxnStatusChips } from "@/components/loan/txn-status-chips";
 import { requestedCheckIds, ASKED_FROM, type AskedFrom } from "@/lib/services/workflow";
-import { PutOnHoldForm } from "@/components/jobs/forms";
+import { PutOnHoldForm, type HoldBrief } from "@/components/jobs/forms";
+import { HoldSummary } from "@/components/jobs/hold-summary";
+import { mayTransferHold, transferCandidates } from "@/lib/services/holds";
+import { LockedArea } from "@/components/ui/locked-area";
+import { SentBackCard } from "@/components/loan/sent-back-card";
+import { PapersBackCard } from "@/components/loan/papers-back";
+import { inactiveSenderNote, roundChip, sentBack, sentBackIsFor } from "@/lib/ui/rounds";
+import { CLOCK_NOTE, firstLine, lockedMessage, mayAddDetails, mayResumeHold, holdReasonName } from "@/lib/ui/holds";
 import { holdDays, problemDays } from "@/lib/workflow/tat";
 import { sendBlockReason } from "@/lib/services/source-blocks";
 import { refreshOnOpen } from "@/lib/services/source-sync";
@@ -88,7 +95,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
   const loanProblem = withProblem?.p ? { reason: withProblem.p.reason.name, days: Math.max(1, problemDays([withProblem.p], ctx.holidays)) } : null;
   // An open hold turns it navy with a pause icon (the problem wins when both are open).
   const withHold = live.map((t) => openHold(t.holds)).find((h) => !!h);
-  const loanHold = withHold ? { reason: withHold.reason.name, days: Math.max(1, holdDays([withHold], ctx.holidays)) } : null;
+  const loanHold = withHold ? { reason: holdReasonName(withHold), days: Math.max(1, holdDays([withHold], ctx.holidays)) } : null;
 
   return (
     <div className="dense flex w-full flex-col gap-4 lg:-mx-2 lg:-mt-2">
@@ -149,12 +156,38 @@ interface NextStep {
   help: string;
   primary?: { label: string; href: string; print?: boolean };
   secondary?: { label: string; href: string };
+  /** Every open transaction is on hold: the usual step button is shown as a secondary (outline) button. */
+  waiting?: boolean;
   txnId?: string;
 }
 
+/** Open = not finished and not cancelled. */
+const isOpenTxn = (t: { status: string }) => !["COMPLETED", "CANCELLED"].includes(t.status);
+
+/**
+ * The one next step. Held transactions are skipped (they wait for a Resume). When every open
+ * transaction is on hold, the card says "Waiting for a resume" and keeps the usual step as a
+ * secondary button.
+ */
 function nextStep(loan: LoanDetail, labelsPending: number): NextStep {
+  const held = new Set(loan.transactions.filter((t) => openHold(t.holds)).map((t) => t.id));
+  const open = loan.transactions.filter(isOpenTxn);
+  if (open.length > 0 && open.every((t) => held.has(t.id))) {
+    const usual = stepFor(loan, labelsPending, new Set());
+    const btn = usual.primary ?? usual.secondary;
+    return {
+      title: "Waiting for a resume",
+      help: open.length === 1 ? "The work is on hold. Press Resume above when what it waits on has arrived." : "Every open transaction is on hold. Press Resume above when what one waits on has arrived.",
+      secondary: btn ? { label: btn.label, href: btn.href } : undefined,
+      waiting: true,
+    };
+  }
+  return stepFor(loan, labelsPending, held);
+}
+
+function stepFor(loan: LoanDetail, labelsPending: number, held: ReadonlySet<string>): NextStep {
   const base = `/loans/${loan.pn}`;
-  const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
+  const live = loan.transactions.filter((t) => t.status !== "CANCELLED" && !held.has(t.id));
   const name = (t: Txn) => txnName(t.type.code, t.type.name);
   const forChecklist = live.find((t) => t.status === "FOR_CHECKLIST");
   if (forChecklist) {
@@ -200,13 +233,18 @@ function nextStep(loan: LoanDetail, labelsPending: number): NextStep {
   return { title: "Nothing for you right now", help: `This loan is ${stageWords(loan.stage).toLowerCase()}.` };
 }
 
-function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; labelsPending: number; step: number; related: React.ReactNode }) {
+async function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; labelsPending: number; step: number; related: React.ReactNode }) {
   const la = can(user, PERMISSIONS.CHECKLIST_TICK);
   const ns = nextStep(loan, labelsPending);
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
   const opens = openItemsFor(loan, ctx.holidays);
   const problems = loan.exceptions.filter((e) => e.status === "OPEN");
   const base = `/loans/${loan.pn}`;
+  const now = new Date();
+  const held = await Promise.all(live.flatMap((t) => {
+    const h = openHold(t.holds);
+    return h ? [{ t, h }] : [];
+  }).map(async (x) => ({ ...x, transfer: await transferFor(user, loan, x.h.id) })));
   const missingTxns = live
     .filter((t) => ["FOR_CHECKLIST", "READY", "RETURNED"].includes(t.status) && t.checks.some((c) => !c.checked))
     .filter((t) => !loan.exceptions.some((e) => e.transactionId === t.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN"))
@@ -216,7 +254,7 @@ function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan: Loan
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_352px] xl:items-start">
       <div className="flex min-w-0 flex-col gap-4">
         {problems.length > 0 && (
-          <section aria-labelledby="problems" className="rounded-[14px] border-2 border-bad-fg/60 bg-bad-bg p-4 sm:p-5">
+          <section aria-labelledby="problems" className="rounded-[14px] border border-bad-line bg-bad-bg p-4 sm:p-5">
             <h2 id="problems" className="text-lg font-bold text-bad-fg">{problems.length === 1 ? "There is a problem to fix" : `There are ${problems.length} problems to fix`}</h2>
             <ul className="mt-3 flex flex-col gap-3">
               {problems.map((e) => (
@@ -239,10 +277,24 @@ function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan: Loan
           </section>
         )}
 
-        <section aria-labelledby="next" className="card flex flex-col gap-3 border-2 border-navy p-5 sm:flex-row sm:items-center sm:gap-5">
+        {held.length > 0 && (
+          <section aria-labelledby="holds-h" className="flex flex-col gap-2" data-holds-banner>
+            <h2 id="holds-h" className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-base font-bold text-ink">
+              <span className="inline-flex items-center gap-1.5"><span className="text-hold-fg"><PauseIcon size={16} strokeWidth={2.4} /></span>On hold{held.length > 1 ? ` (${held.length})` : ""}</span>
+              <span className="text-[13px] font-normal text-ink-2" data-clock-note>{CLOCK_NOTE}</span>
+            </h2>
+            {held.map(({ t, h, transfer }) => (
+              <HoldSummary key={h.id} id={`open-${h.id}`} hold={holdBrief(h)} now={now.toISOString()} txnName={txnName(t.type.code, t.type.name)}
+                canResume={mayResume(user, loan, t)} canAddDetails={mayAddDetails(h, user)} transfer={transfer}
+                resumeClass={ns.waiting && held.length === 1 ? "btn-gold btn-sm" : "btn-ghost btn-sm"} />
+            ))}
+          </section>
+        )}
+
+        <section aria-labelledby="next" className={`card flex flex-col gap-3 p-5 shadow-[var(--shadow-soft)] sm:flex-row sm:items-center sm:gap-5 ${ns.waiting ? "" : "border-line-soft"}`} data-next-step={ns.waiting ? "waiting" : "go"}>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
-              <p className="chip bg-gold text-navy">Next step</p>
+              <p className="chip c-act">Next step</p>
               {step <= JOURNEY_STEP_COUNT && <span className="text-[13px] text-ink-2">Step {step} of {JOURNEY_STEP_COUNT}</span>}
             </div>
             <h2 id="next" className="mt-1.5 text-xl font-bold leading-snug text-navy">{ns.title}</h2>
@@ -255,7 +307,7 @@ function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan: Loan
                   {ns.primary.print && <PrinterIcon size={18} />} {ns.primary.label}
                 </Link>
               )}
-              {ns.secondary && <Link href={ns.secondary.href} className="link inline-flex min-h-11 items-center text-sm">{ns.secondary.label}</Link>}
+              {ns.secondary && <Link href={ns.secondary.href} className={ns.waiting ? "btn-ghost btn-sm" : "link inline-flex min-h-11 items-center text-sm"}>{ns.secondary.label}</Link>}
             </div>
           )}
         </section>
@@ -276,11 +328,10 @@ function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan: Loan
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-2">
                           <span className="text-[15px] font-semibold">{txnName(t.type.code, t.type.name)}</span>
-                          {next && <span className="chip h-5 bg-gold px-2 text-[11px] text-navy" data-next-tag>Next step</span>}
+                          {next && <span className="chip c-act h-5 px-2 text-[11px]" data-next-tag>Next step</span>}
                         </span>
-                        {!next && <span className="block text-[13px] text-ink-2" data-status-line>{s.line}</span>}
-                        {!next && s.papers && <span className="block text-xs text-ink-2">{s.papers}</span>}
                         <span className="mt-1 block"><TxnStatusChips s={s} /></span>
+                        {!next && <span className="mt-0.5 block text-[13px] text-ink-2" data-status-line>{s.line}</span>}
                       </span>
                     </Link>
                   </li>
@@ -383,8 +434,8 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
   ]);
   const labelDocs = loan.documents.filter((d) => d.transactionId === t.id && d.documentId);
   const lastLto = loan.transactions.flatMap((x) => x.dpAssignments).filter((a) => a.ltoOfficeId).sort((a, b) => b.endorsedAt.getTime() - a.endorsedAt.getTime())[0]?.ltoOfficeId ?? null;
-  // Returned by the processor for papers: Send opens with the same processor.
-  const previous = t.status === "RETURNED" ? t.dpAssignments.find((x) => x.status === "WITHDRAWN" && x.returnReasonId) : undefined;
+  // Sent back (declined or returned): a new round. The processor is chosen again: nothing pre-selected.
+  const previous = undefined as { dpBranchId: string; dpUserId: string } | undefined;
   const recommended: Record<string, string | null> = {};
   for (const b of branches) recommended[b.id] = (await recommendDp(b.id))?.id ?? null;
   return {
@@ -395,6 +446,7 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
     ltoOffices: ltoOffices.map((l) => ({ id: l.id, name: l.name })),
     defaultBranchId: previous?.dpBranchId ?? loan.branchId,
     previousDpId: previous?.dpUserId ?? null,
+    resend: t.status === "RETURNED",
     needsLto: t.type.needsLto,
     // The office last used on this loan (for any transaction), else the branch's usual one.
     defaultLtoOfficeId: lastLto ?? loan.branch.usualLtoOfficeId ?? null,
@@ -407,6 +459,8 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
     labelsPrinted: labelDocs.length > 0 && labelDocs.every((d) => d.labelPrintedAt),
     next: nextAfter(loan, t),
     sourceBlock: await sendBlockReason(prisma, loan.id, t.type.code),
+    // Returned with papers handed over: the LA confirms them back first.
+    papersBlock: t.status === "RETURNED" && loan.documents.some((d) => d.transactionId === t.id && d.stage === "IN_TRANSIT") ? PAPERS_BACK_FIRST : null,
   };
 }
 
@@ -442,8 +496,12 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       requestedInfo: requested.has(c.id) ? requestedInfo : undefined,
     }));
   const a = selected.dpAssignments.find((x) => liveAssignment(x.status));
-  const back = selected.status === "RETURNED" ? selected.dpAssignments.find((x) => x.status === "WITHDRAWN" && x.returnReasonId) : undefined;
-  const assignmentText = back ? `Returned by ${back.dpUser.name}: ${back.returnReasons ?? back.returnReason?.name ?? "papers needed"}. Tick the papers when they arrive, then send it again.` :
+  // Declined or returned by the DP: the findings card at the top says it (no second line here).
+  const sb = sentBack(selected.status, selected.dpAssignments);
+  // Returned with papers handed over by the processor: the LA confirms them before sending again.
+  const papersBack = selected.status === "RETURNED" ? loan.documents.filter((d) => d.transactionId === selected.id && d.stage === "IN_TRANSIT") : [];
+  const handedAt = selected.dpAssignments.find((x) => x.papersHandedAt)?.papersHandedAt ?? null;
+  const assignmentText = sb ? null :
     selected.status === "ASSIGNED" && a ? `Sent to ${a.dpUser.name} on ${dayText(a.endorsedAt)}. Waiting for them to accept.`
     : selected.status === "IN_PROCESS" && a ? `${a.dpUser.name} is working on it.`
     : selected.status === "FORWARDED" && a ? `${a.dpUser.name} sent the package back to ${a.receivingLa?.name ?? "the branch"}.`
@@ -452,8 +510,13 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
   // The Processor job card appears only once the transaction was sent.
   const sent = selected.type.requiresDp && !PRE_SEND.includes(selected.status) && selected.status !== "CANCELLED";
   const jobCard = sent;
-  const rows = [...(review ? [sourceRow(review)] : []), ...openRows(loan, opens, user)];
-  const titleChips = mine.map((i) => ({ id: i.id, ...titleChipOf(i) }));
+  const rows = [...(review ? [sourceRow(review)] : []), ...backRows(loan, user), ...openRows(loan, opens, user)];
+  // The hold is explained by the summary at the top, so the header carries no second On hold pill.
+  const titleChips = mine.filter((i) => i.kind !== "hold").map((i) => ({ id: i.id, ...titleChipOf(i) }));
+  const hold = openHold(selected.holds);
+  // On hold: the transaction is locked (readable, controls disabled) until the holder resumes it.
+  const locked = hold ? lockedMessage(hold.raisedByLabel, hold.raisedAt, hold.ownerLabel) : null;
+  const round = la || user.roleKey === "ADMIN" ? roundChip(selected.dpAssignments) : null;
   // The missing-paper pop-up may also put it on hold (waiting on borrower) for the person who does the work.
   const canHold = ownsTxn(user, loan, selected) && can(user, PERMISSIONS.HOLDS_RAISE) && !openHold(selected.holds);
   const openMissing = loan.exceptions.some((e) => e.transactionId === selected.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN");
@@ -487,6 +550,17 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       </div>
       <div className="flex min-w-0 flex-col gap-4">
       <SelectionFocus key={`focus-${selected.id}`} headingId={`w-${selected.id}`} />
+      {hold && (
+        <HoldSummary id={`open-${hold.id}`} hold={holdBrief(hold)} now={new Date().toISOString()} canResume={mayResume(user, loan, selected)}
+          canAddDetails={mayAddDetails(hold, user)} transfer={await transferFor(user, loan, hold.id)} clockNote />
+      )}
+      {sb && <SentBackCard sb={sb} forSender={sentBackIsFor(sb, { id: user.id, isBranchLa: la && inScope(user, loan.branchId) })} />}
+      <LockedArea locked={locked} id={`lock-${selected.id}`}>
+      <div className="flex min-w-0 flex-col gap-4">
+      {la && papersBack.length > 0 && (
+        <PapersBackCard transactionId={selected.id} dpName={sb?.dpName ?? "The processor"} handedAt={fmtDateTime(handedAt ?? new Date())}
+          papers={papersBack.map((d) => ({ id: d.id, label: d.label, code: d.documentId }))} />
+      )}
       <WorkCard
         // Keyed on the transaction only: saving the last tick (For checklist → Ready) must not wipe the funds or processor choice.
         key={`work-${selected.id}`}
@@ -504,6 +578,7 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
         openMissingRequest={openMissing}
         titleChips={titleChips}
         canHold={canHold}
+        round={round}
         assignmentText={jobCard ? null : assignmentText}
         edstReference={selected.edstReference}
         send={send}
@@ -511,6 +586,8 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       {jobCard && <TxnJobPanel loan={loan} txn={selected} user={user} tats={ctx.tats} holidays={ctx.holidays} statusText={assignmentText} />}
       {!jobCard && <LaHoldStrip txn={selected} user={user} />}
       {laCustom && <MarkDone transactionId={selected.id} name={selected.type.name} ready={checklistStatusOf(selected.checks).complete} />}
+      </div>
+      </LockedArea>
       {addable.length > 0 && <AddTransaction loanId={loan.id} types={addable} />}
       {/* Phone: room for the pinned Send bar, so everything below the panel can scroll above it. */}
       {send && la && PRE_SEND.includes(selected.status) && <div aria-hidden="true" className="h-36 sm:hidden" />}
@@ -610,7 +687,7 @@ function txnItems(loan: LoanDetail, ctx: Ctx, opens: OpenItem[]): TxnItem[] {
   return loan.transactions.filter((t) => t.status !== "CANCELLED").map((t, i) => ({
     code: t.type.code, n: i + 1, name: txnName(t.type.code, t.type.name),
     status: statusOf(loan, t, ctx, opens),
-    dot: opens.some((o) => o.txnId === t.id && o.kind !== "hold") ? "bad" : opens.some((o) => o.txnId === t.id) ? "navy" : null,
+    dot: opens.some((o) => o.txnId === t.id && o.kind !== "hold") ? "bad" : opens.some((o) => o.txnId === t.id) ? "hold" : null,
     href: `${base}?tab=todo&tx=${t.type.code}`,
     done: t.status === "COMPLETED",
   }));
@@ -618,7 +695,6 @@ function txnItems(loan: LoanDetail, ctx: Ctx, opens: OpenItem[]): TxnItem[] {
 
 /** The one status wording of a transaction (Loan File list, Check documents list and strip). */
 function statusOf(loan: LoanDetail, t: Txn, ctx: Ctx, opens: OpenItem[]): TxnStatus {
-  const a = t.dpAssignments.find((x) => liveAssignment(x.status));
   const back = t.dpAssignments[0];
   const c = checklistStatusOf(t.checks);
   const p = openProblem(t.problems);
@@ -626,13 +702,12 @@ function statusOf(loan: LoanDetail, t: Txn, ctx: Ctx, opens: OpenItem[]): TxnSta
   return txnStatus({
     code: t.type.code, requiresDp: t.type.requiresDp, status: t.status,
     requiredDone: c.requiredDone, requiredTotal: c.requiredTotal, tickedAny: t.checks.some((x) => x.checked),
-    dpName: (a ?? (t.status === "RETURNED" ? back : undefined))?.dpUser.name ?? null, secondName: a?.secondaryDpUser?.name ?? null,
-    receivingLaName: a?.receivingLa?.name ?? null, edstReference: t.edstReference,
-    ltoName: a?.ltoOffice?.name ?? null,
+    edstReference: t.edstReference,
     returnedForPapers: t.status === "RETURNED" && !!back?.returnReasonId ? (back.returnReason?.name ?? "Papers needed") : null,
+    sentBack: sentBack(t.status, t.dpAssignments)?.kind ?? null,
     tat: txnTat(t, ctx.tats, ctx.holidays),
-    problemDays: p ? Math.max(1, problemDays([p], ctx.holidays)) : null,
-    holdDays: h ? Math.max(1, holdDays([h], ctx.holidays)) : null,
+    problem: p ? { reason: p.reason.name, days: Math.max(1, problemDays([p], ctx.holidays)) } : null,
+    hold: h ? { reason: holdReasonName(h), days: Math.max(1, holdDays([h], ctx.holidays)) } : null,
     missingPapers: opens.filter((o) => o.txnId === t.id && o.kind === "missing").reduce((x, o) => x + Math.max(1, o.papers.length), 0),
   });
 }
@@ -672,6 +747,40 @@ function ownsTxn(user: CurrentUser, loan: LoanDetail, t: Txn): boolean {
   return laOwns || dpOwns;
 }
 
+/** May resume this transaction's hold: only the person who put it on hold (Admin included: no override). */
+function mayResume(user: CurrentUser, _loan: LoanDetail, t: Txn): boolean {
+  const h = openHold(t.holds);
+  return !!h && mayResumeHold(h, user);
+}
+
+/** The hold, for the summary and the Resume form (serializable). */
+function holdBrief(h: Txn["holds"][number]): HoldBrief {
+  return { holdId: h.id, reason: holdReasonName(h), note: h.note, raisedBy: h.raisedByLabel, raisedAt: h.raisedAt.toISOString(), owner: h.ownerLabel ?? null };
+}
+
+/** "Transfer hold" for people with holds:transfer in scope (Admin: any), with who can receive it. */
+async function transferFor(user: CurrentUser, loan: LoanDetail, holdId: string) {
+  return mayTransferHold(user, loan.branchId) ? { candidates: await transferCandidates(user, holdId) } : null;
+}
+
+/**
+ * "Sent back to you": transactions the DP declined or returned, for the Loan Associate who sent them
+ * only (not another LA of the branch): findings, the DP and when.
+ */
+function backRows(loan: LoanDetail, user: CurrentUser): OpenRow[] {
+  return loan.transactions.filter((t) => t.status !== "CANCELLED").flatMap((t) => {
+    const sb = sentBack(t.status, t.dpAssignments);
+    // The sender; or, when the sender is inactive, every active LA of the branch.
+    if (!sb || !sentBackIsFor(sb, { id: user.id, isBranchLa: can(user, PERMISSIONS.CHECKLIST_TICK) && inScope(user, loan.branchId) })) return [];
+    const note = inactiveSenderNote(sb);
+    return [{
+      id: `back-${t.id}`, kind: "returned" as const, badge: sb.kind === "declined" ? "Declined by the DP" : "Returned by the DP", txnCode: t.type.code, txnName: txnName(t.type.code, t.type.name),
+      reason: sb.findings || "No findings were written.", who: `${sb.dpName} (DP) · ${fmtDateTime(sb.at)} · Round ${sb.round}${note ? ` · ${note}` : ""}`, since: "",
+      days: 0, href: `/loans/${loan.pn}?tab=todo&tx=${t.type.code}`, target: "", canResume: false,
+    }];
+  });
+}
+
 /** The MyLoans change under review, as an Open items row ("MyLoans changes" group). */
 function sourceRow(r: ReviewData): OpenRow {
   return {
@@ -704,12 +813,15 @@ function openRows(loan: LoanDetail, opens: OpenItem[], user: CurrentUser): OpenR
     const target = focusTargetOf(i);
     const t = loan.transactions.find((x) => x.id === i.txnId)!;
     const owns = ownsTxn(user, loan, t);
+    const h = i.kind === "hold" ? t.holds.find((x) => x.id === i.id) : undefined;
     return {
       id: i.id, kind: i.kind, txnCode: i.txnCode, txnName: i.txnName, reason: i.reason, target, days: i.days,
       who: i.kind === "missing" ? askedText(i, now) : i.kind === "hold" ? `Put on hold by ${i.by}` : `Raised by ${i.by}`,
       since: i.kind === "missing" ? "" : `since ${i.days} day${i.days === 1 ? "" : "s"}`,
       href: `/loans/${loan.pn}?tab=todo&tx=${i.txnCode}&focus=${target}`,
-      canResume: i.kind === "hold" && ((owns && can(user, PERMISSIONS.HOLDS_RESOLVE)) || can(user, PERMISSIONS.HOLDS_RESOLVE_ANY)),
+      canResume: !!h && mayResumeHold(h, user),
+      remarks: h ? firstLine(h.note) : undefined,
+      hold: h ? holdBrief(h) : undefined,
       problem: i.kind === "problem" ? {
         raisedText: `Raised by ${i.by} on ${fmtShort(i.since)}`, note: i.note, outside: i.outsideControl,
         canResolve: (owns && can(user, PERMISSIONS.PROBLEMS_RESOLVE)) || can(user, PERMISSIONS.PROBLEMS_RESOLVE_ANY),

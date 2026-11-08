@@ -11,11 +11,11 @@ describe("LTO office estimate", () => {
     expect(ltoLine({ name: "LTO Mandaue", distanceKm: null, travelHours: null, suggestedTransportCents: null })).toBe("LTO Mandaue · No estimate yet");
   });
 
-  it("sent work says where: At LTO Mandaue", () => {
-    const base = { code: "NOTARY", requiresDp: true, requiredDone: 5, requiredTotal: 5, tickedAny: true, tat: null, problemDays: null, holdDays: null, missingPapers: 0, dpName: "Grace Tan", ltoName: "LTO Mandaue" };
-    expect(txnStatus({ ...base, status: "ASSIGNED" }).line).toBe("Sent to Grace Tan · waiting to accept · At LTO Mandaue");
-    expect(txnStatus({ ...base, status: "IN_PROCESS" }).line).toBe("With Grace Tan · working on it · At LTO Mandaue");
-    expect(txnStatus({ ...base, status: "READY" }).line).not.toContain("LTO");
+  it("the transaction list stays short: the LTO office and the processor are in the detail only", () => {
+    const base = { code: "NOTARY", requiresDp: true, requiredDone: 5, requiredTotal: 5, tickedAny: true, tat: null, problem: null, hold: null, missingPapers: 0 };
+    expect(txnStatus({ ...base, status: "ASSIGNED" }).line).toBe("Waiting for the DP to accept");
+    expect(txnStatus({ ...base, status: "IN_PROCESS" }).line).toBe("The DP is working on it");
+    for (const status of ["READY", "ASSIGNED", "IN_PROCESS"]) expect(txnStatus({ ...base, status }).line).not.toMatch(/LTO|Grace/);
   });
 });
 

@@ -7,6 +7,8 @@ import { announcing, NowLine, useCloseWhenDone } from "@/components/ui/live-toas
 import { ArrowLeftIcon } from "@/components/ui/icons";
 import { acceptWithMissingAction, returnToLaAction } from "@/app/actions/jobs";
 import type { ActionState } from "@/lib/action";
+import { remarksCounter } from "@/lib/ui/holds";
+import { RemarksField } from "./forms";
 
 const returnAnnounced = announcing(returnToLaAction);
 const missingAnnounced = announcing(acceptWithMissingAction);
@@ -17,13 +19,15 @@ const NEEDS_PAPERS = ["MISSING", "WRONG"];
  * Return to LA: papers needed. After accepting, the processor sends the job back when a paper is
  * missing or wrong. Not a Problem; the turnaround time keeps counting.
  */
-export function ReturnToLaForm({ assignmentId, laName, reasons, papers, heldText }: {
+export function ReturnToLaForm({ assignmentId, laName, reasons, papers, heldText, handover }: {
   assignmentId: string;
   laName: string;
   reasons: { id: string; name: string; code: string }[];
   papers: { id: string; label: string }[];
   /** "₱1,500.00" when the processor holds released, unliquidated cash for this job. */
   heldText: string | null;
+  /** The papers with the processor (received at Accept): each is ticked as handed over to the LA. */
+  handover: { id: string; label: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState(returnAnnounced, null);
@@ -33,15 +37,17 @@ export function ReturnToLaForm({ assignmentId, laName, reasons, papers, heldText
     <>
       <button type="button" className="btn-ghost btn-sm" onClick={() => setOpen(true)}><ArrowLeftIcon size={16} /> Return to LA: papers needed</button>
       <GuardedSheet open={open} onClose={close} title="Return to LA: papers needed">
-        <ReturnForm assignmentId={assignmentId} laName={laName} reasons={reasons} papers={papers} heldText={heldText} action={action} state={state} />
+        <ReturnForm assignmentId={assignmentId} laName={laName} reasons={reasons} papers={papers} heldText={heldText} handover={handover} action={action} state={state} />
       </GuardedSheet>
     </>
   );
 }
 
-function ReturnForm({ assignmentId, laName, reasons, papers, heldText, action, state, preselected = [], atAccept = false }: {
+function ReturnForm({ assignmentId, laName, reasons, papers, heldText, handover, action, state, preselected = [], atAccept = false }: {
   assignmentId: string; laName: string; reasons: { id: string; name: string; code: string }[]; papers: { id: string; label: string }[];
   heldText: string | null; action: (fd: FormData) => void; state: ActionState;
+  /** Papers to hand over (at Accept: the received ones, by checklist row; worked out below). */
+  handover?: { id: string; label: string }[];
   /** Papers already marked missing (at Accept). */
   preselected?: string[];
   /** Some papers are missing at Accept: the received papers are accepted first. */
@@ -53,10 +59,14 @@ function ReturnForm({ assignmentId, laName, reasons, papers, heldText, action, s
   const [labels, setLabels] = useState(false);
   const [other, setOther] = useState("");
   const [note, setNote] = useState("");
-  const [cash, setCash] = useState<"" | "KEEP" | "RETURN">("");
+  const [handed, setHanded] = useState<Set<string>>(new Set());
+  // At Accept the papers received (not marked missing) go straight back to the LA: they are ticked by row.
+  const toHand = handover ?? papers.filter((p) => !picked.has(p.id));
+  const allHanded = toHand.every((p) => handed.has(p.id));
+  const toggleHanded = (id: string) => setHanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const code = reasons.find((r) => r.id === reason)?.code ?? "";
   const needPapers = NEEDS_PAPERS.includes(code);
-  const ready = !!reason && note.trim().length >= 3 && (!needPapers || picked.size > 0 || other.trim().length > 0) && (!heldText || !!cash) && (!atAccept || labels);
+  const ready = !!reason && remarksCounter(note).ok && (!needPapers || picked.size > 0 || other.trim().length > 0) && allHanded && (!atAccept || labels);
   const err = (f: string) => (state && !state.ok && state.field === f ? state.error : null);
   const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (
@@ -65,7 +75,7 @@ function ReturnForm({ assignmentId, laName, reasons, papers, heldText, action, s
       <p className="rounded-xl bg-fill px-3 py-2 text-[13px] text-ink" data-purpose>
         {atAccept
           ? <>Some papers are missing. You accept the papers you received (they are recorded as received by you), and the job goes back to {laName} for the missing ones. Not a problem; the turnaround time keeps counting.</>
-          : <>Return to LA: you accepted it, but a paper is missing or wrong. It goes back to {laName} to fix and send again. Not a problem; the turnaround time keeps counting.</>}
+          : <>Return to LA: you accepted it, but something is wrong or missing. It goes back to {laName}, who sent it, with your findings, to fix and send again. After this you will not see this job any more. Not a problem; the turnaround time keeps counting.</>}
       </p>
       {atAccept && (
         <label className="inline-flex min-h-11 items-center gap-2 text-[15px] font-semibold">
@@ -94,27 +104,29 @@ function ReturnForm({ assignmentId, laName, reasons, papers, heldText, action, s
         <input id={`${uid}-o`} name="otherPaper" value={other} onChange={(e) => setOther(e.target.value)} maxLength={120} className="input" />
         {err("checkIds") && <p className="mt-1 text-[13px] font-semibold text-bad-fg">{err("checkIds")}</p>}
       </fieldset>
-      <div>
-        <label htmlFor={`${uid}-n`} className="label">Note</label>
-        <textarea id={`${uid}-n`} name="note" rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} className="input" aria-invalid={!!err("note")} />
-        {err("note") && <p className="mt-1 text-[13px] font-semibold text-bad-fg">{err("note")}</p>}
-      </div>
-      <fieldset>
-        <legend className="label">The papers you have</legend>
-        <label className="flex min-h-11 items-center gap-2 text-[15px]"><input type="radio" name="papers" value="KEEP" defaultChecked className="h-5 w-5 accent-[var(--navy)]" /> I am keeping the papers I already have</label>
-        <label className="flex min-h-11 items-center gap-2 text-[15px]"><input type="radio" name="papers" value="RETURN" className="h-5 w-5 accent-[var(--navy)]" /> I am returning the papers to the LA</label>
-      </fieldset>
-      {heldText && (
-        <fieldset aria-describedby={`${uid}-cash`} data-cash-question>
-          <legend className="label">You hold {heldText} for this job</legend>
-          <p id={`${uid}-cash`} className="help -mt-1 mb-1">Choose one before you return it.</p>
-          <label className="flex min-h-11 items-center gap-2 text-[15px]"><input type="radio" name="cash" value="KEEP" checked={cash === "KEEP"} onChange={() => setCash("KEEP")} className="h-5 w-5 accent-[var(--navy)]" /> Keep the cash for the re-send</label>
-          <label className="flex min-h-11 items-center gap-2 text-[15px]"><input type="radio" name="cash" value="RETURN" checked={cash === "RETURN"} onChange={() => setCash("RETURN")} className="h-5 w-5 accent-[var(--navy)]" /> Return the cash (Finance confirms it)</label>
-          {err("cash") && <p className="mt-1 text-[13px] font-semibold text-bad-fg">{err("cash")}</p>}
+      <RemarksField id={`${uid}-n`} label="Findings (required): what is wrong or missing" value={note} onChange={setNote} error={err("note")} />
+      {toHand.length > 0 && (
+        <fieldset data-handover>
+          <legend className="label">Papers handed over to {laName} (tick each)</legend>
+          <p className="help -mt-1 mb-1">Every paper you received at Accept goes back. {laName} confirms them before sending it again.</p>
+          <div className="flex flex-col gap-1.5">
+            {toHand.map((p) => (
+              <label key={p.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-line px-3 py-1.5 has-[:checked]:border-navy has-[:checked]:bg-fill">
+                <input type="checkbox" name="handedOver" value={p.id} checked={handed.has(p.id)} onChange={() => toggleHanded(p.id)} className="h-5 w-5 shrink-0 accent-[var(--navy)]" />
+                <span className="text-[15px]">{p.label}</span>
+              </label>
+            ))}
+          </div>
+          {err("handedOver") && <p className="mt-1 text-[13px] font-semibold text-bad-fg">{err("handedOver")}</p>}
         </fieldset>
       )}
+      {heldText && (
+        <p className="rounded-xl border border-act-line bg-act-bg px-3 py-2 text-[13px] text-act-fg" data-liquidation-notice>
+          <strong className="font-semibold">The cash advance must be liquidated.</strong> You hold {heldText} for this job. In My funds, record what was spent (with receipts) and return the unspent cash. The return goes ahead now; the cash stays under &ldquo;Cash to settle&rdquo; until it is closed.
+        </p>
+      )}
       <NowLine label="Returns now" />
-      {state && !state.ok && !["reasonId", "checkIds", "note", "cash"].includes(state.field ?? "") && <FormMessage state={state} />}
+      {state && !state.ok && !["reasonId", "checkIds", "note", "handedOver"].includes(state.field ?? "") && <FormMessage state={state} />}
       {state && !state.ok && state.field === "reasonId" && <FormMessage state={state} />}
       <div className="flex justify-end gap-2"><SheetCancel /><SubmitButton disabled={!ready}>{atAccept ? "Accept the rest and return to LA" : "Return to LA"}</SubmitButton></div>
     </form>

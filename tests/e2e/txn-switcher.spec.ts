@@ -49,8 +49,9 @@ test("side list or strip: only the others (desktop), swap on select, ?tx= surviv
     await expect(side.locator("[data-txn=NOTARY]")).toHaveAttribute("aria-current", "true");
     await expect(side.locator("[data-txn=NOTARY] [data-open-now]")).toHaveText("Open now");
     await expect(side.locator("[data-open-now]")).toHaveCount(1);
-    await expect(side.locator("[data-txn=EDST]")).toContainText("0 of 2 required papers");
+    // One pill and one short line; the papers count is not repeated in the rows (the package summary has it).
     await expect(side.locator("[data-txn=EDST]")).toContainText("Needs 2 required papers");
+    await expect(side.locator("[data-txn=EDST]")).not.toContainText("0 of 2 required papers");
   } else {
     const strip = main.getByRole("region", { name: "Transactions" });
     await expect(strip.getByRole("button")).toHaveCount(4);
@@ -68,7 +69,7 @@ test("side list or strip: only the others (desktop), swap on select, ?tx= surviv
   const reason = await db.problemReason.findFirstOrThrow({ where: { active: true } });
   await db.problem.create({ data: { loanId: ppsr.loanId, transactionId: ppsr.id, reasonId: reason.id, raisedByLabel: "E2E", raisedAt: new Date(Date.now() - 2 * 86_400_000) } });
   await page.reload();
-  await expect(entry(page, "PPSR")).toContainText(/Problem \d+ days?/);
+  await expect(entry(page, "PPSR")).toContainText(/Problem: .+ · \d+ days?/);
   await shot(page, "switch-notary");
   await noSideways(page);
 

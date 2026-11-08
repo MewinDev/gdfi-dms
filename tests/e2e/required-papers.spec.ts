@@ -143,7 +143,8 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   await expect(page.getByRole("status").filter({ hasText: "Notary sent. Next: EDST" })).toBeVisible();
   await expect(page).toHaveURL(/tx=EDST/);
   const notaryEntry = page.locator("[data-txn=NOTARY]").filter({ visible: true }).first();
-  await expect(notaryEntry).toContainText(`Sent to ${name}`);
+  // The list row is short; who it was sent to is in the detail (the job card below).
+  await expect(notaryEntry).toContainText("Waiting for the DP to accept");
   await notaryEntry.click();
   await expect(page).toHaveURL(/tx=NOTARY/);
   // The panel is replaced by the Processor job card.

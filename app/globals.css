@@ -18,26 +18,51 @@
   --fill-soft: rgb(12 35 64 / 0.03); /* search field, ticked rows (v2) */
   --gold-soft: rgb(245 166 35 / 0.12); /* "Stuck?" card (v2) */
   --gold-line: rgb(245 166 35 / 0.5);
-  --done-fg: #1f7a4d; /* green only for done ticks and "Loan found" */
-  --done-bg: #e6f4ec;
-  --problem-fg: #b3261e; /* problems and errors (kept: errors must stand out) */
-  --problem-bg: #fbe9e7;
+  /* ---- Soft status palette (THE RULE for every pill, card and highlighted row) ----
+     Each status has a very light background, a dark text colour and a thin border. No full or
+     strong backgrounds: no filled navy pills, no solid colour blocks. Colour is never the only
+     signal (pills carry an icon and a word). Text on each background meets WCAG AA (4.5:1),
+     checked by lib/ui/design-tokens.test.ts. Red is for Problem only. */
+  --hold-bg: #fff8e8; /* On hold: soft amber */
+  --hold-fg: #774300;
+  --hold-line: #efd29a;
+  --hold-stripe: #e5a93f; /* the thin left accent of a held card or row (decoration, not text) */
+  --missing-bg: #fff8e8; /* Missing paper, "needs you": same amber family */
+  --missing-fg: #774300;
+  --missing-line: #efd29a;
+  --problem-bg: #fdf1ef; /* Problem (and errors): soft red */
+  --problem-fg: #a8261d;
+  --problem-line: #f0c7c2;
+  --sent-bg: #eff3f8; /* Sent, Processing, waiting on others: soft blue-grey */
+  --sent-fg: #2b4366;
+  --sent-line: #d3dce8;
+  --done-bg: #edf7f1; /* Done, Ready to send, ticks: soft green */
+  --done-fg: #1c6b42;
+  --done-line: #c3e1cf;
+  --neutral-bg: #f3f5f7; /* Neutral, not started, cancelled: light grey */
+  --neutral-fg: #3c4857;
+  --neutral-line: #dfe3e8;
 
-  /* ---- Names used by the components, mapped onto the v2 palette ------- */
+  /* ---- Names used by the components, mapped onto the soft palette ----- */
   --cream: var(--white); /* page background is white */
   --sand: var(--fill);
   --border: var(--line);
   --hover: var(--fill-strong);
-  --act-bg: rgb(245 166 35 / 0.2); /* "needs you" chips (v2) */
-  --act-fg: #6b4200;
-  --wait-bg: var(--fill-strong); /* waiting on others */
-  --wait-fg: var(--navy);
+  --act-bg: var(--missing-bg); /* "needs you" chips */
+  --act-fg: var(--missing-fg);
+  --act-line: var(--missing-line);
+  --wait-bg: var(--sent-bg); /* waiting on others */
+  --wait-fg: var(--sent-fg);
+  --wait-line: var(--sent-line);
   --ok-bg: var(--done-bg);
   --ok-fg: var(--done-fg);
+  --ok-line: var(--done-line);
   --bad-bg: var(--problem-bg);
   --bad-fg: var(--problem-fg);
-  --mute-bg: var(--fill-strong);
-  --mute-fg: var(--ink-2);
+  --bad-line: var(--problem-line);
+  --mute-bg: var(--neutral-bg);
+  --mute-fg: var(--neutral-fg);
+  --mute-line: var(--neutral-line);
   --highlight-border: rgb(12 35 64 / 0.24);
   --done-row-bg: color-mix(in srgb, var(--done-bg) 55%, white);
   --done-row-border: color-mix(in srgb, var(--done-fg) 28%, white);
@@ -107,6 +132,14 @@
   --color-bad-fg: var(--bad-fg);
   --color-mute-bg: var(--mute-bg);
   --color-mute-fg: var(--mute-fg);
+  --color-act-line: var(--act-line);
+  --color-wait-line: var(--wait-line);
+  --color-ok-line: var(--ok-line);
+  --color-bad-line: var(--bad-line);
+  --color-mute-line: var(--mute-line);
+  --color-hold-bg: var(--hold-bg);
+  --color-hold-fg: var(--hold-fg);
+  --color-hold-line: var(--hold-line);
   --color-hl-border: var(--highlight-border);
   --color-done-row: var(--done-row-bg);
   --color-done-border: var(--done-row-border);
@@ -232,27 +265,46 @@ body {
     @apply mt-1.5 text-xs text-ink-2;
   }
 
-  /* ---- Chips (28px, fully rounded, 13px semi-bold) ---------------------- */
+  /* ---- Chips (28px, fully rounded, 13px semi-bold) ----------------------
+     Soft pills only: light background, dark text, thin border (see the soft status palette). */
   .chip {
-    @apply inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] font-semibold text-ink;
+    @apply inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full border border-transparent px-3 text-[13px] font-semibold text-ink;
   }
   .c-act {
-    @apply bg-act-bg text-act-fg;
+    @apply border-act-line bg-act-bg text-act-fg;
+  }
+  .c-hold {
+    @apply border-hold-line bg-hold-bg text-hold-fg;
   }
   .c-wait {
-    @apply bg-wait-bg text-wait-fg;
+    @apply border-wait-line bg-wait-bg text-wait-fg;
   }
   .c-ok {
-    @apply bg-ok-bg text-ok-fg;
+    @apply border-ok-line bg-ok-bg text-ok-fg;
   }
   .c-bad {
-    @apply bg-bad-bg text-bad-fg;
+    @apply border-bad-line bg-bad-bg text-bad-fg;
   }
+  /* Formerly a filled navy pill; now the soft blue-grey of Sent and Processing. */
   .c-navy {
-    @apply bg-navy text-white;
+    @apply border-wait-line bg-wait-bg text-wait-fg;
   }
   .c-mute {
-    @apply bg-mute-bg text-mute-fg;
+    @apply border-mute-line bg-mute-bg text-mute-fg;
+  }
+  /* A locked (held) transaction: readable, its controls greyed and not pressable. */
+  .locked :is(button, input, select, textarea, label, a.btn-gold, a.btn-ghost) {
+    @apply cursor-not-allowed;
+  }
+  .locked :is(button, input, select, textarea):disabled {
+    @apply opacity-60;
+  }
+  .locked {
+    filter: grayscale(0.35);
+  }
+  /* A calm card for an open hold: white, thin light border, soft amber stripe on the left edge. */
+  .hold-card {
+    @apply rounded-[14px] border border-line-soft bg-white shadow-[inset_4px_0_0_var(--hold-stripe)];
   }
   .tag {
     @apply rounded-md bg-sand px-2 py-0.5 text-xs font-semibold text-ink-2;

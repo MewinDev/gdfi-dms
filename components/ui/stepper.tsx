@@ -37,12 +37,12 @@ export function Stepper({ current, problem, hold }: {
       {/* Phone: one compact line and a 10-segment bar; tap for the full list */}
       <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" className="flex w-full flex-col gap-1.5 text-left sm:hidden">
         <span className="flex w-full items-center justify-between gap-2">
-          <span className={`flex items-center gap-1.5 text-[15px] font-semibold ${problem ? "text-bad-fg" : "text-navy"}`}>{onHold && <PauseIcon size={16} />}{summary}</span>
+          <span className={`flex items-center gap-1.5 text-[15px] font-semibold ${problem ? "text-bad-fg" : "text-navy"}`}>{onHold && <span className="text-hold-fg"><PauseIcon size={16} /></span>}{summary}</span>
           <span className="text-ink-2"><ChevronRightIcon size={18} /></span>
         </span>
         <span className="flex w-full gap-1" aria-hidden="true">
           {JOURNEY_STEPS.map((s, i) => (
-            <span key={s.name} className={`h-1.5 flex-1 rounded ${i + 1 < current ? "bg-ok-fg" : i + 1 === current ? (problem ? "bg-[var(--bad-fg)]" : onHold ? "bg-navy" : "bg-gold") : "bg-fill-strong"}`} />
+            <span key={s.name} className={`h-1.5 flex-1 rounded ${i + 1 < current ? "bg-ok-fg" : i + 1 === current ? (problem ? "bg-[var(--bad-fg)]" : onHold ? "bg-[var(--hold-stripe)]" : "bg-gold") : "bg-fill-strong"}`} />
           ))}
         </span>
       </button>
@@ -94,7 +94,7 @@ function Dot({ n, state, mark }: { n: number; state: "Done" | "Now" | "Later"; m
   }
   if (state === "Now" && mark === "hold") {
     return (
-      <span className="z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-navy text-gold" data-dot="hold">
+      <span className="z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-[var(--hold-stripe)] bg-hold-bg text-hold-fg" data-dot="hold">
         <PauseIcon size={11} strokeWidth={3} />
       </span>
     );

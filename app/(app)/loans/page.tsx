@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requirePagePermission, can, type CurrentUser } from "@/lib/auth/current-user";
+import { requirePagePermission, can, loanScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 import { listLoans, type LoanListFilters, type LoanRow } from "@/lib/services/queries";
@@ -48,6 +48,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
     loanType: sp.loanType || undefined,
     tat: sp.tat || undefined,
     needsAction: sp.needsAction || undefined,
+    holdReason: sp.holdReason || undefined,
     q: sp.q || undefined,
   };
   const branches = await prisma.branch.findMany({ where: user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }, orderBy: { name: "asc" } });
@@ -57,7 +58,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   const counts = Object.fromEntries(tabs.map((t, i) => [t.key, perTab[i].length]));
   return la
     ? <LaList f={f} sp={sp} rows={rows} branches={branches} counts={counts} />
-    : <AdminList user={user} f={f} rows={rows} branches={branches} tabs={tabs} counts={counts} />;
+    : <AdminList user={user} f={f} rows={rows} branches={branches} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)} />;
 }
 
 function qs(f: LoanListFilters, over: Record<string, string | undefined>) {
@@ -152,7 +153,26 @@ async function LaList({ f, sp, rows, branches, counts }: { f: LoanListFilters; s
 // Admin: one toolbar (search, Filters, Export CSV), chips, segmented tabs, table
 // ---------------------------------------------------------------------------
 
-function AdminList({ user, f, rows, branches, tabs, counts }: { user: CurrentUser; f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; tabs: { key: string; label: string }[]; counts: Record<string, number> }) {
+/**
+ * Open holds by reason (loan files in scope, not archived): one chip per reason with how many loan
+ * files have such a hold. The reason is the copy stored on the hold, so a later rename does not move it.
+ */
+async function holdReasonCounts(user: CurrentUser) {
+  const open = await prisma.hold.findMany({ where: { resumedAt: null, loan: { ...loanScope(user), archivedAt: null } }, select: { loanId: true, reasonId: true, reasonName: true, reason: { select: { name: true } } } });
+  const m = new Map<string, { id: string; name: string; loans: Set<string> }>();
+  for (const h of open) {
+    const e = m.get(h.reasonId) ?? { id: h.reasonId, name: h.reasonName || h.reason.name, loans: new Set<string>() };
+    e.loans.add(h.loanId);
+    m.set(h.reasonId, e);
+  }
+  const reasons = await prisma.holdReason.findMany({ orderBy: [{ active: "desc" }, { sortOrder: "asc" }], select: { id: true, name: true } });
+  return {
+    chips: [...m.values()].map((e) => ({ id: e.id, name: e.name, count: e.loans.size })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    options: [["ANY", "Any hold"], ...reasons.map((r) => [r.id, r.name])] as [string, string][],
+  };
+}
+
+function AdminList({ user, f, rows, branches, tabs, counts, holds }: { user: CurrentUser; f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>> }) {
   const exportAllowed = can(user, PERMISSIONS.LOANS_EXPORT);
   const fields: FilterField[] = [
     { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, s]) },
@@ -161,8 +181,9 @@ function AdminList({ user, f, rows, branches, tabs, counts }: { user: CurrentUse
     { name: "loanType", label: "Loan type", value: f.loanType, options: [["New", "New"], ["Renewal", "Renewal"]] },
     { name: "tat", label: "TAT", value: f.tat, options: TAT_OPTIONS },
     { name: "needsAction", label: "Needs action", value: f.needsAction, options: [["1", "Yes"]] },
+    { name: "holdReason", label: "On hold", value: f.holdReason, options: holds.options },
   ];
-  const params = { tab: f.tab, stage: f.stage, classification: f.classification, branch: f.branch, loanType: f.loanType, tat: f.tat, needsAction: f.needsAction, q: f.q };
+  const params = { tab: f.tab, stage: f.stage, classification: f.classification, branch: f.branch, loanType: f.loanType, tat: f.tat, needsAction: f.needsAction, holdReason: f.holdReason, q: f.q };
   const chips = activeChips(fields, params);
   const filtersOn = chips.length > 0 || !!f.q;
   return (
@@ -175,6 +196,17 @@ function AdminList({ user, f, rows, branches, tabs, counts }: { user: CurrentUse
         resultCount={rows.length}
       />
       <Segments tabs={tabs} current={f.tab} counts={counts} params={params} />
+      {holds.chips.length > 0 && (
+        <nav aria-label="On hold by reason" className="flex flex-wrap items-center gap-1.5" data-hold-reason-chips>
+          <span className="mr-1 text-[13px] font-semibold text-ink-2">On hold by reason</span>
+          {holds.chips.map((c) => (
+            <Link key={c.id} href={listHref({ ...params, holdReason: f.holdReason === c.id ? undefined : c.id })} aria-current={f.holdReason === c.id ? "true" : undefined}
+              className={`chip c-hold h-7 no-underline ${f.holdReason === c.id ? "ring-2 ring-[var(--hold-stripe)]" : ""}`} data-hold-reason={c.name}>
+              {c.name} ({c.count})
+            </Link>
+          ))}
+        </nav>
+      )}
       <ResultLine count={rows.length} chips={chips} clearHref={clearAllHref(params)} extra={f.q ? ` matching "${f.q}"` : ""} />
       {rows.length === 0
         ? <EmptyLoans filtersOn={filtersOn} clearHref={listHref({ tab: f.tab })} testMode={isTestMode()} />

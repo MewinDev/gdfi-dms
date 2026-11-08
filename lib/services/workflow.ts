@@ -17,6 +17,8 @@ import { MissingPapersError, NotInScopeError, UserError } from "./errors";
 import { endHoldsOnCompletion } from "./holds";
 import { EXPENSE_KINDS } from "@/lib/funds/rules";
 import { checklistStatus, type CheckLine, type ChecklistStatus } from "@/lib/workflow/checklist";
+import { assertNotHeld } from "./locks";
+import { moveDocs } from "./custody";
 
 const actorOf = (u: CurrentUser): Actor => ({ id: u.id, label: u.name });
 
@@ -110,6 +112,7 @@ export async function saveChecklist(
   const t0 = await loadTxnInScope(user, input.transactionId);
   const actor = actorOf(user);
   return withLoanLock(t0.loanId, async (tx) => {
+    await assertNotHeld(tx, t0.id);
     const txn = await tx.loanTransaction.findUniqueOrThrow({
       where: { id: input.transactionId },
       include: { loan: { include: { branch: true } }, type: true, checks: { include: { rule: true, documentItem: true } } },
@@ -275,6 +278,7 @@ export async function requestMissingDocuments(user: CurrentUser, raw: z.input<ty
   const input = parsed.data;
   const t0 = await loadTxnInScope(user, input.transactionId);
   return withLoanLock(t0.loanId, async (tx) => {
+    await assertNotHeld(tx, t0.id);
     const checks = await tx.checklistCheck.findMany({ where: { transactionId: t0.id }, include: { rule: true } });
     const wanted = [...new Set(input.checkIds)];
     const rows = wanted.map((id) => checks.find((c) => c.id === id));
@@ -342,6 +346,7 @@ export async function recordEdst(user: CurrentUser, input: { transactionId: stri
   const t0 = await loadTxnInScope(user, input.transactionId);
   if (t0.type.code !== "EDST") throw new UserError("This is not a For EDST transaction.");
   await withLoanLock(t0.loanId, async (tx) => {
+    await assertNotHeld(tx, t0.id);
     const txn = await tx.loanTransaction.findUniqueOrThrow({ where: { id: t0.id } });
     if (txn.status !== "READY") {
       throw new UserError(txn.status === "COMPLETED" ? "EDST is already completed." : "Complete and save the For EDST checklist first.");
@@ -399,6 +404,7 @@ export async function completeLaTransaction(user: CurrentUser, input: { transact
   const t0 = await loadTxnInScope(user, input.transactionId);
   if (t0.type.builtIn || t0.type.requiresDp) throw new UserError("This transaction is finished another way.");
   await withLoanLock(t0.loanId, async (tx) => {
+    await assertNotHeld(tx, t0.id);
     const txn = await tx.loanTransaction.findUniqueOrThrow({ where: { id: t0.id }, include: { checks: { include: { rule: true } } } });
     if (txn.status === "COMPLETED") throw new UserError(`${t0.type.name} is already done.`);
     if (!["FOR_CHECKLIST", "READY", "RETURNED"].includes(txn.status)) throw new UserError(`${t0.type.name} cannot be marked done now.`);
@@ -430,6 +436,7 @@ export async function laSetFundsFlag(user: CurrentUser, input: { transactionId: 
   const kinds = [...new Set(input.kinds)].filter((k) => (EXPENSE_KINDS as readonly string[]).includes(k));
   if (input.needed && kinds.length === 0) throw new UserError("Tick what the funds are for.", "fundsKinds");
   await withLoanLock(t0.loanId, async (tx) => {
+    await assertNotHeld(tx, t0.id);
     const t = await tx.loanTransaction.findUniqueOrThrow({ where: { id: t0.id }, include: { dpAssignments: { where: { status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] } } } } });
     const accepted = t.dpAssignments.find((x) => x.status === "ACCEPTED");
     if (accepted) throw new UserError(acceptedMessage((await tx.user.findUniqueOrThrow({ where: { id: accepted.dpUserId } })).name));
@@ -500,6 +507,53 @@ export async function refuseMissingPapers(
   throw new MissingPapersError(missing);
 }
 
+/** Papers the processor handed over with a Return to LA, waiting for the LA to confirm them back. */
+export async function papersToConfirm(db: Tx | typeof prisma, transactionId: string) {
+  const t = await db.loanTransaction.findUnique({ where: { id: transactionId }, select: { status: true } });
+  if (t?.status !== "RETURNED") return [];
+  return db.documentItem.findMany({ where: { transactionId, stage: "IN_TRANSIT" }, orderBy: { createdAt: "asc" }, select: { id: true, label: true, documentId: true, custodianLabel: true, checkId: true } });
+}
+export const PAPERS_BACK_FIRST = "Confirm you received the papers the processor handed over first.";
+
+/**
+ * The LA confirms the papers handed over by the processor: all received, or some "Not received" (a
+ * Problem is raised on the transaction naming those papers; they stay recorded with the processor).
+ * Sending again waits for this. Who and when are recorded on the round.
+ */
+export async function confirmPapersBack(user: CurrentUser, input: { transactionId: string; notReceived: string[] }) {
+  requireAllowed(user, PERMISSIONS.CHECKLIST_TICK);
+  const t0 = await loadTxnInScope(user, input.transactionId);
+  return withLoanLock(t0.loanId, async (tx) => {
+    await assertNotHeld(tx, t0.id);
+    const docs = await papersToConfirm(tx, t0.id);
+    if (!docs.length) throw new UserError("There are no papers to confirm.");
+    const missing = new Set(input.notReceived);
+    if ([...missing].some((id) => !docs.some((d) => d.id === id))) throw new UserError("Pick papers from the list only.");
+    const last = await tx.dpAssignment.findFirst({ where: { transactionId: t0.id, status: "WITHDRAWN", returnedAt: { not: null } }, orderBy: { returnedAt: "desc" }, include: { dpUser: { select: { name: true } } } });
+    const dpName = last?.dpUser.name ?? "the processor";
+    const by = { id: user.id, label: user.name };
+    const got = docs.filter((d) => !missing.has(d.id));
+    const lost = docs.filter((d) => missing.has(d.id));
+    if (got.length) await moveDocs(tx, got, { stage: "AT_BRANCH", custodian: null, role: "LA", userId: user.id, location: `${t0.loan.branch.name} branch`, action: "RECEIVED_BACK_BY_LA" }, { by });
+    if (lost.length) {
+      await moveDocs(tx, lost, { stage: "WITH_DP", custodian: `${dpName} (DP)`, role: "DP", userId: last?.dpUserId ?? null, location: `Not received from DP ${dpName}`, action: "NOT_RECEIVED_FROM_DP" }, { by });
+      const reason = await tx.problemReason.findFirst({ where: { OR: [{ code: "MISSING_PAPER" }, { code: "OTHER" }], active: true }, orderBy: { code: "asc" } });
+      if (!reason) throw new UserError("There is no active problem reason \"Missing paper\".");
+      const note = `Not received from ${dpName}: ${lost.map((d) => d.label).join(", ")}`;
+      const p = await tx.problem.create({ data: { loanId: t0.loanId, transactionId: t0.id, reasonId: reason.id, note, raisedById: user.id, raisedByLabel: user.name } });
+      await writeAudit(tx, { actor: actorOf(user), mode: "MANUAL", action: "problem_raised", entityType: "Problem", entityId: p.id, loanId: t0.loanId, pn: t0.loan.pn, summary: `Problem on ${t0.type.name}: ${reason.name}`, details: { note } });
+    }
+    if (last) await tx.dpAssignment.update({ where: { id: last.id }, data: { papersReceivedAt: new Date(), papersReceivedBy: user.name } });
+    await writeAudit(tx, {
+      actor: actorOf(user), mode: "MANUAL", action: "papers_received_back", entityType: "LoanTransaction", entityId: t0.id, loanId: t0.loanId, pn: t0.loan.pn,
+      summary: `Papers received by ${user.name} from ${dpName} for ${t0.type.name}: ${got.length} received${lost.length ? `, ${lost.length} not received (${lost.map((d) => d.label).join(", ")})` : ""}`,
+      details: { received: got.map((d) => d.label), notReceived: lost.map((d) => d.label) },
+    });
+    await recomputeStage(tx, t0.loanId);
+    return { received: got.length, notReceived: lost.map((d) => d.label) };
+  });
+}
+
 export async function assignToDp(user: CurrentUser, input: AssignInput) {
   requireAllowed(user, PERMISSIONS.DP_SEND);
   const t0 = await loadTxnInScope(user, input.transactionId);
@@ -550,8 +604,11 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
 
   try {
   await withLoanLock(t0.loanId, async (tx) => {
+    await assertNotHeld(tx, t0.id);
     const txn = await tx.loanTransaction.findUniqueOrThrow({ where: { id: t0.id }, include: { checks: { include: { rule: true } }, documents: true } });
     if (!PRE_SEND.includes(txn.status)) throw new UserError(`${t0.type.name} is already assigned.`);
+    // Returned with papers handed over: the LA confirms them back before sending again.
+    if ((await papersToConfirm(tx, txn.id)).length) throw new UserError(PAPERS_BACK_FIRST);
     // Same rule again under the row lock (another tab may have un-ticked a paper meanwhile).
     const completeness = evaluateChecklist(txn.checks);
     if (!completeness.complete) throw new MissingPapersError(completeness.missing);

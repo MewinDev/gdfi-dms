@@ -52,6 +52,15 @@ describe("docs/workflow", () => {
     }
   });
 
+  it("the glossary defines the agreed words; the rules name holds:manage and holds:transfer", () => {
+    const g = read("01-glossary.md");
+    for (const w of ["Missing paper", "On hold", "Hold owner", "Locked", "Transfer hold", "Papers handed over", "Cash to settle", "Round", "Problem", "Pull back", "Decline", "Return to LA: papers needed"]) {
+      expect(g.split(/\r?\n/).some((line) => line.startsWith(`| **${w}** |`)), w).toBe(true);
+    }
+    expect(read("07-rules-and-roles.md")).toContain("holds:manage");
+    expect(read("07-rules-and-roles.md")).toContain("holds:transfer");
+  });
+
   it("the five diagram files each hold one diagram", () => {
     for (const f of files.filter((x) => /^0[2-6]-/.test(x))) expect(read(f).match(/```mermaid/g), f).toHaveLength(1);
   });

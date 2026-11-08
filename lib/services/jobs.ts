@@ -13,7 +13,10 @@ import { recomputeStage } from "./stage";
 import { moveDocs, noteDocs } from "./custody";
 import { NotInScopeError, UserError } from "./errors";
 import { endHoldsOnCompletion } from "./holds";
+import { remarksSchema } from "@/lib/ui/holds";
+import { DECLINE_REASONS } from "@/lib/ui/rounds";
 import { currentStageIdFor, finishStageCore, requireVerified, somethingMissingCore, stagesForCompletion, startStageCore, verifyPaperCore } from "./job-stages";
+import { assertNotHeld } from "./locks";
 
 /**
  * The processor (DP) side: accept, decline, return, attempts, complete, forward, and the receiving
@@ -30,7 +33,7 @@ export const whoOf = (u: CurrentUser): Who => ({ actor: { id: u.id, label: u.nam
 
 const assignmentInclude = {
   transaction: { include: { type: true, documents: true, advanceLines: { include: { advance: true } }, attempts: true, problems: true, holds: true } },
-  dpUser: true, secondaryDpUser: true, ltoOffice: true, loan: { include: { branch: true } }, assignedBy: { select: { name: true } }, receivingBranch: true, receivingLa: { select: { name: true } },
+  dpUser: true, secondaryDpUser: true, ltoOffice: true, loan: { include: { branch: true } }, assignedBy: { select: { name: true, active: true } }, receivingBranch: true, receivingLa: { select: { name: true } },
 } satisfies Prisma.DpAssignmentInclude;
 export type AssignmentFull = Prisma.DpAssignmentGetPayload<{ include: typeof assignmentInclude }>;
 
@@ -80,8 +83,32 @@ export async function acceptCore(tx: Tx, a: AssignmentFull, who: Who, labelsConf
 
 const reasonsSchema = z.object({
   reasons: z.array(z.string().trim().min(1)).min(1, "Pick at least one reason."),
-  remarks: z.string().trim().min(3, "Add a short remark.").max(500),
+  remarks: remarksSchema,
 });
+/** Decline (before accepting): exactly one reason from the short list, plus remarks (5 to 500). */
+const declineSchema = z.object({
+  reasons: z.array(z.enum(DECLINE_REASONS, { message: "Pick a reason." })).length(1, "Pick a reason."),
+  remarks: remarksSchema,
+});
+
+/**
+ * Who is told that a job came back: the LA who sent it (in-app, and by email when the switch is on).
+ * When that LA is inactive, every active LA of the loan's branch is told, in-app only ("Sender {name}
+ * is inactive"); any of them can fix it and send it again.
+ */
+export async function sentBackRecipients(tx: Tx, a: { assignedById: string; assignedBy: { name: string; active: boolean }; loan: { branchId: string } }) {
+  if (a.assignedBy.active) return { ids: [a.assignedById], email: true, note: "" };
+  return { ids: await branchLaUserIds(tx, a.loan.branchId), email: false, note: ` Sender ${a.assignedBy.name} is inactive.` };
+}
+
+/**
+ * After a decline or a return the job is no longer the DP's: their notifications about it are removed
+ * (the DP's lists and counts leave it out; an old link says "This job is no longer with you").
+ */
+export async function forgetJobForDp(tx: Tx, a: { id: string; dpUserId: string; secondaryDpUserId?: string | null }) {
+  const ids = [a.dpUserId, ...(a.secondaryDpUserId ? [a.secondaryDpUserId] : [])];
+  await tx.notification.deleteMany({ where: { userId: { in: ids }, link: { startsWith: `/jobs/${a.id}` } } });
+}
 
 async function backToLa(tx: Tx, a: AssignmentFull, who: Who, kind: "declined" | "returned", reasons: string[], remarks: string) {
   const now = new Date();
@@ -92,11 +119,17 @@ async function backToLa(tx: Tx, a: AssignmentFull, who: Who, kind: "declined" | 
       ? { status: "DECLINED", decidedAt: now, declineReasons: text, closedAt: now }
       : { status: "WITHDRAWN", returnedAt: now, returnReasons: text, closedAt: now },
   });
-  await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "RETURNED", statusSince: now } });
+  // Back with the LA who sent it. statusSince is kept: the clock never restarts.
+  await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "RETURNED" } });
   await moveDocs(tx, a.transaction.documents.filter((d) => d.stage === "IN_TRANSIT" || d.stage === "WITH_DP"), { stage: "AT_BRANCH", custodian: null, role: "LA", userId: null, location: `${a.loan.branch.name} branch`, action: kind === "declined" ? "RETURNED_UNACKNOWLEDGED" : "RETURNED_BY_DP" }, { simulated: who.mode === "SIMULATED", by: who.actor });
-  await tx.loanException.create({ data: { loanId: a.loanId, transactionId: a.transactionId, type: "DP_DECLINED", reason: `${a.dpUser.name} ${kind} ${a.transaction.type.name}: ${text}. Correct and send again.`, raisedByLabel: who.actor.label, simulated: who.mode === "SIMULATED" } });
-  await audit(tx, who, a, kind === "declined" ? "dp_assignment_declined" : "dp_assignment_returned", "4.1", `${a.dpUser.name} ${kind} ${a.transaction.type.name}; sent back to the LA`, { details: { reasons, remarks } });
-  await notify(tx, { userIds: [a.assignedById], loanId: a.loanId, title: `${a.loan.pn}: ${a.transaction.type.name} ${kind}`, body: text, link: `/loans/${a.loan.pn}?tab=todo&tx=${a.transaction.type.code}`, email: { event: "job_declined", transactionId: a.transactionId, vars: { pn: a.loan.pn, transaction: a.transaction.type.name, who: a.dpUser.name, reason: text } } });
+  // Not a Problem: the findings stay on the assignment (shown at the top of the transaction for the sender).
+  await audit(tx, who, a, kind === "declined" ? "dp_assignment_declined" : "dp_assignment_returned", "4.1", `${a.dpUser.name} ${kind} ${a.transaction.type.name}; sent back to ${a.assignedBy.name}`, { details: { reasons, remarks } });
+  await forgetJobForDp(tx, a);
+  const to = await sentBackRecipients(tx, a);
+  await notify(tx, {
+    userIds: to.ids, loanId: a.loanId, title: `${a.loan.pn}: ${a.transaction.type.name} ${kind}`, body: `${text}${to.note}`, link: `/loans/${a.loan.pn}?tab=todo&tx=${a.transaction.type.code}`,
+    ...(to.email ? { email: { event: "job_declined" as const, transactionId: a.transactionId, vars: { pn: a.loan.pn, transaction: a.transaction.type.name, who: a.dpUser.name, reason: text } } } : {}),
+  });
   await recomputeStage(tx, a.loanId, { simulated: who.mode === "SIMULATED" });
 }
 
@@ -384,21 +417,25 @@ export async function receiveCore(tx: Tx, a: AssignmentFull, who: Who, input: Re
 export async function withJob<T>(user: CurrentUser, assignmentId: string, fn: (tx: Tx, a: AssignmentFull) => Promise<T>) {
   const a0 = await loadAssignment(prisma, assignmentId);
   requireOwnJob(user, a0);
-  return withLoanLock(a0.loanId, async (tx) => fn(tx, await loadAssignment(tx, assignmentId)));
+  return withLoanLock(a0.loanId, async (tx) => {
+    const a = await loadAssignment(tx, assignmentId);
+    await assertNotHeld(tx, a.transactionId); // every processor step: accept, stages, verify, complete, forward, decline, return, funds, Pasuyo, LTO
+    return fn(tx, a);
+  });
 }
 
 export const acceptJob = (u: CurrentUser, id: string, labels: boolean) => withJob(u, id, (tx, a) => acceptCore(tx, a, whoOf(u), labels));
-export function declineJob(u: CurrentUser, id: string, raw: unknown) {
-  const p = reasonsSchema.safeParse(raw);
+export async function declineJob(u: CurrentUser, id: string, raw: unknown) {
+  const p = declineSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   return withJob(u, id, (tx, a) => declineCore(tx, a, whoOf(u), p.data.reasons, p.data.remarks));
 }
-export function returnJob(u: CurrentUser, id: string, raw: unknown) {
+export async function returnJob(u: CurrentUser, id: string, raw: unknown) {
   const p = reasonsSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   return withJob(u, id, (tx, a) => returnCore(tx, a, whoOf(u), p.data.reasons, p.data.remarks));
 }
-export function logAttempt(u: CurrentUser, id: string, raw: unknown, now: Date = new Date()) {
+export async function logAttempt(u: CurrentUser, id: string, raw: unknown, now: Date = new Date()) {
   const p = attemptSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   if (p.data.date > businessDate(now)) throw new UserError("The attempt date cannot be in the future.", "date");
@@ -409,7 +446,7 @@ export const forwardJob = (u: CurrentUser, id: string, input: ForwardInput) => w
 export const startStage = (u: CurrentUser, id: string, stageId: string) => withJob(u, id, (tx, a) => startStageCore(tx, a, whoOf(u), stageId));
 export const finishStage = (u: CurrentUser, id: string, stageId: string, raw: Record<string, unknown>) => withJob(u, id, (tx, a) => finishStageCore(tx, a, whoOf(u), stageId, raw));
 export const verifyPaper = (u: CurrentUser, id: string, stageId: string, documentItemId: string) => withJob(u, id, (tx, a) => verifyPaperCore(tx, a, whoOf(u), stageId, documentItemId));
-export function somethingMissing(u: CurrentUser, id: string, stageId: string, documentItemIds: string[], note: string) {
+export async function somethingMissing(u: CurrentUser, id: string, stageId: string, documentItemIds: string[], note: string) {
   if (note.trim().length > 300) throw new UserError("Keep the note under 300 characters.", "note");
   return withJob(u, id, (tx, a) => somethingMissingCore(tx, a, whoOf(u), stageId, documentItemIds, note));
 }
@@ -429,7 +466,10 @@ export async function receivePackage(u: CurrentUser, id: string, input: ReceiveI
   if (!["complete", "incomplete", "other"].includes(r.result)) throw new UserError("Pick Complete, Incomplete or Other.", "result");
   if (r.result !== "complete" && r.note.trim().length < 3) throw new UserError(r.result === "other" ? "Say what it is." : "Say what is missing or wrong.", "note");
   if (r.note.trim().length > 300) throw new UserError("Keep the note under 300 characters.", "note");
-  return withLoanLock(a0.loanId, async (tx) => receiveCore(tx, await loadAssignment(tx, id), whoOf(u), { ...r, note: r.note.trim() }));
+  return withLoanLock(a0.loanId, async (tx) => {
+    await assertNotHeld(tx, a0.transactionId);
+    return receiveCore(tx, await loadAssignment(tx, id), whoOf(u), { ...r, note: r.note.trim() });
+  });
 }
 
 /** The DP changes the funds flag after accepting (audit row). */
@@ -468,6 +508,7 @@ export async function raiseProblem(u: CurrentUser, input: { transactionId: strin
   const reason = await prisma.problemReason.findUnique({ where: { id: input.reasonId } });
   if (!reason || !reason.active) throw new UserError("Pick a reason.", "reasonId");
   return withLoanLock(t.loanId, async (tx) => {
+    await assertNotHeld(tx, t.id);
     const jobStageId = await currentStageIdFor(tx, t.id);
     const p = await tx.problem.create({ data: { jobStageId, loanId: t.loanId, transactionId: t.id, reasonId: reason.id, note: input.note.trim(), raisedById: u.id, raisedByLabel: u.name } });
     await writeAudit(tx, { actor: { id: u.id, label: u.name }, mode: "MANUAL", action: "problem_raised", entityType: "Problem", entityId: p.id, loanId: t.loanId, pn: t.loan.pn, summary: `Problem on ${t.type.name}: ${reason.name}`, details: { note: input.note } });
@@ -484,6 +525,7 @@ export async function resolveProblem(u: CurrentUser, problemId: string, note: st
   if (!any && !(can(u, PERMISSIONS.PROBLEMS_RESOLVE) && (await ownsTransaction(u, p.transaction)))) throw new UserError("You can resolve problems only on transactions you work on.");
   if (note.trim().length < 3) throw new UserError("Say how it was resolved.", "note");
   return withLoanLock(p.loanId, async (tx) => {
+    await assertNotHeld(tx, p.transactionId);
     await tx.problem.update({ where: { id: p.id }, data: { resolvedAt: new Date(), resolvedById: u.id, resolvedByLabel: u.name, resolutionNote: note.trim() } });
     await writeAudit(tx, { actor: { id: u.id, label: u.name }, mode: "MANUAL", action: "problem_resolved", entityType: "Problem", entityId: p.id, loanId: p.loanId, pn: p.transaction.loan.pn, summary: `Problem resolved on ${p.transaction.type.name} (${p.reason.name}): ${note.trim()}` });
     await notifyProblem(tx, { loanId: p.loanId, transactionId: p.transactionId, loan: p.transaction.loan, transaction: p.transaction }, p.reason.name, "resolved");

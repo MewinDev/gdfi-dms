@@ -3,9 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useEffect } from "react";
-import { AlertIcon, ChevronDownIcon, PauseIcon } from "@/components/ui/icons";
+import { AlertIcon, ArrowLeftIcon, ChevronDownIcon, FileTextIcon, PauseIcon } from "@/components/ui/icons";
 import { Sheet } from "@/components/ui/sheet";
-import { OutsideControlToggle, ResolveProblemForm, ResumeHoldForm } from "@/components/jobs/forms";
+import { OutsideControlToggle, ResolveProblemForm, ResumeHoldForm, type HoldBrief } from "@/components/jobs/forms";
 import { SourceReviewSheet } from "@/components/loan/source-review";
 import type { ReviewData } from "@/lib/services/source-review";
 
@@ -34,7 +34,9 @@ export function FocusFromUrl() {
 
 export interface OpenRow {
   id: string;
-  kind: "problem" | "hold" | "missing" | "source";
+  kind: "problem" | "hold" | "missing" | "source" | "returned";
+  /** Overrides the kind's word on the pill ("Declined by the DP", "Returned by the DP"). */
+  badge?: string;
   txnCode: string;
   txnName: string;
   /** One short reason line: the papers, or the hold or problem reason. */
@@ -48,6 +50,10 @@ export interface OpenRow {
   target: string;
   /** Hold: Resume is shown only to people who can resolve it. */
   canResume: boolean;
+  /** Hold: the first line of the remarks ("No details were written." when there are none). */
+  remarks?: string;
+  /** Hold: what the Resume form shows (original reason, remarks, who and when). */
+  hold?: HoldBrief;
   /** Problem: details and its actions (as before). */
   problem?: { raisedText: string; note: string; outside: boolean; canResolve: boolean; canOutside: boolean };
   /** MyLoans change under review: the review pop-up. */
@@ -55,13 +61,15 @@ export interface OpenRow {
 }
 
 const KIND: Record<OpenRow["kind"], { word: string; cls: string; Icon: typeof AlertIcon }> = {
-  missing: { word: "Missing paper", cls: "c-bad", Icon: AlertIcon },
+  missing: { word: "Missing paper", cls: "c-act", Icon: FileTextIcon },
   problem: { word: "Problem", cls: "c-bad", Icon: AlertIcon },
-  hold: { word: "On hold", cls: "c-navy", Icon: PauseIcon },
+  hold: { word: "On hold", cls: "c-hold", Icon: PauseIcon },
   source: { word: "Needs review", cls: "c-bad", Icon: AlertIcon },
+  returned: { word: "Returned by the DP", cls: "c-act", Icon: ArrowLeftIcon },
 };
 const GROUPS: { kind: OpenRow["kind"]; title: string }[] = [
   { kind: "source", title: "MyLoans changes" },
+  { kind: "returned", title: "Sent back to you" },
   { kind: "missing", title: "Waiting for papers" },
   { kind: "hold", title: "On hold" },
   { kind: "problem", title: "Problems" },
@@ -79,6 +87,13 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
   const [all, setAll] = useState(false);
   const [problem, setProblem] = useState<OpenRow | null>(null);
   const [review, setReview] = useState<OpenRow | null>(null);
+  // Hold reasons: one chip per reason with its count; pressing one shows only those holds.
+  const [holdReason, setHoldReason] = useState<string | null>(null);
+  const holdCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) if (r.kind === "hold") m.set(r.reason, (m.get(r.reason) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [rows]);
   const shownIds = useMemo(() => new Set((rows.length > 4 && !all ? rows.slice(0, 3) : rows).map((r) => r.id)), [rows, all]);
   if (!rows.length) return null;
   const select = (r: OpenRow, highlight = false) => {
@@ -88,36 +103,48 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
   };
   const body = (
     <div className="flex flex-col">
-      <p className="px-3 pb-2 pt-1.5 text-[13px] text-ink-2">Things that need follow-up before this loan can move.</p>
+      <p className="pl-4 pr-3 pb-2 pt-1.5 text-[13px] text-ink-2">Things that need follow-up before this loan can move.</p>
       {GROUPS.map((g) => {
-        const items = rows.filter((r) => r.kind === g.kind && shownIds.has(r.id));
-        if (!items.length) return null;
+        const items = rows.filter((r) => r.kind === g.kind && shownIds.has(r.id) && (g.kind !== "hold" || !holdReason || r.reason === holdReason));
+        if (!items.length && !(g.kind === "hold" && holdReason)) return null;
         return (
           <div key={g.kind} data-open-group={g.kind}>
-            <h3 className="border-t border-line bg-fill px-3 py-1 text-xs font-bold uppercase tracking-[0.06em] text-ink-2">{g.title}</h3>
+            <h3 className="border-t border-line bg-fill pl-4 pr-3 py-1 text-xs font-bold uppercase tracking-[0.06em] text-ink-2">{g.title}</h3>
+            {g.kind === "hold" && holdCounts.length > 0 && (
+              <div role="group" aria-label="Hold reasons" className="flex flex-wrap gap-1.5 border-t border-line pl-4 pr-3 py-1.5" data-hold-reason-chips>
+                {holdCounts.map(([name, n]) => (
+                  <button key={name} type="button" aria-pressed={holdReason === name} onClick={(e) => { e.stopPropagation(); setHoldReason(holdReason === name ? null : name); }}
+                    className={`chip c-hold h-6 px-2 text-xs ${holdReason === name ? "ring-2 ring-[var(--hold-stripe)]" : ""}`} data-hold-reason={name}>
+                    {name} ({n})
+                  </button>
+                ))}
+              </div>
+            )}
             <ul>
               {items.map((r) => {
                 const k = KIND[r.kind];
                 return (
                   // The whole row selects the transaction; its one button does the action.
                   <li key={r.id} onClick={() => select(r)} data-open-row={r.kind} data-txn-code={r.txnCode}
-                    className="flex cursor-pointer items-center gap-2 border-t border-line px-3 py-2 first:border-t-0 hover:bg-fill">
+                    className="flex cursor-pointer items-center gap-2 border-t border-line pl-4 pr-3 py-2 first:border-t-0 hover:bg-fill">
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <span className={`chip ${k.cls} h-6 px-2 text-xs`}><span className={r.kind === "hold" ? "text-gold" : undefined}><k.Icon size={13} strokeWidth={2.4} /></span>{k.word}</span>
+                        <span className={`chip ${k.cls} h-6 px-2 text-xs`}><k.Icon size={13} strokeWidth={2.4} />{r.badge ?? k.word}</span>
                         <a href={r.href.replace(/&focus=[^&]*/, "")} onClick={(e) => { e.preventDefault(); e.stopPropagation(); select(r); }}
                           className="text-[14px] font-semibold text-ink underline-offset-2 hover:underline">{r.txnName}</a>
                       </span>
-                      <span className="text-[13px] leading-snug text-ink">{r.reason}</span>
+                      <span className="text-[13px] font-semibold leading-snug text-ink" data-open-reason>{r.reason}</span>
+                      {r.kind === "hold" && r.remarks && <span className="line-clamp-1 break-words text-[13px] leading-snug text-ink" title={r.remarks} data-open-remarks>“{r.remarks}”</span>}
                       <span className="text-xs text-ink-2">{[r.who, r.since].filter(Boolean).join(" · ")}</span>
                     </span>
                     <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
                       {r.kind === "missing" && (
                         <button type="button" onClick={() => select(r, true)} className="btn-ghost btn-sm min-h-9">Show paper</button>
                       )}
-                      {r.kind === "hold" && r.canResume && <ResumeHoldForm holdId={r.id} reason={r.reason} days={r.days} buttonClass="btn-navy btn-sm min-h-9" />}
+                      {r.kind === "hold" && r.canResume && r.hold && <ResumeHoldForm hold={r.hold} buttonClass="btn-ghost btn-sm min-h-9" />}
                       {r.kind === "problem" && <button type="button" onClick={() => setProblem(r)} className="btn-ghost btn-sm min-h-9">Open</button>}
                       {r.kind === "source" && <button type="button" onClick={() => setReview(r)} className="btn-ghost btn-sm min-h-9">Review</button>}
+                      {r.kind === "returned" && <button type="button" onClick={() => select(r)} className="btn-ghost btn-sm min-h-9">Open</button>}
                     </span>
                   </li>
                 );
@@ -127,7 +154,7 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
         );
       })}
       {rows.length > 4 && !all && (
-        <button type="button" onClick={() => setAll(true)} className="flex min-h-11 w-full items-center border-t border-line px-3 text-sm font-semibold text-navy underline underline-offset-2">Show all ({rows.length})</button>
+        <button type="button" onClick={() => setAll(true)} className="flex min-h-11 w-full items-center border-t border-line pl-4 pr-3 text-sm font-semibold text-navy underline underline-offset-2">Show all ({rows.length})</button>
       )}
       {review?.review && <SourceReviewSheet review={review.review} open={!!review} onClose={() => setReview(null)} />}
       <Sheet open={!!problem} onClose={() => setProblem(null)} title={problem ? `Problem: ${problem.txnName}` : "Problem"}>
@@ -146,11 +173,15 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
       </Sheet>
     </div>
   );
+  // Calm frame: white card, thin light border, a soft stripe on the left (red only when a problem is listed).
+  const urgent = rows.some((r) => r.kind === "problem" || r.kind === "source");
+  const frame = `overflow-hidden rounded-[14px] border border-line-soft bg-white ${urgent ? "shadow-[inset_4px_0_0_var(--bad-line)]" : "shadow-[inset_4px_0_0_var(--hold-stripe)]"}`;
+  const mark = <span className={urgent ? "text-bad-fg" : "text-hold-fg"}>{rows.every((r) => r.kind === "hold") ? <PauseIcon size={18} /> : <AlertIcon size={18} />}</span>;
   if (collapsible) {
     return (
-      <details className="group card overflow-hidden border-2 border-bad-fg/50" data-open-items="collapsible">
-        <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-3 text-[15px] font-bold text-bad-fg">
-          <AlertIcon size={18} />
+      <details className={`group ${frame}`} data-open-items="collapsible" data-urgent={urgent || undefined}>
+        <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 pl-4 pr-3 text-[15px] font-bold text-ink">
+          {mark}
           <h2 className="flex-1">{rows.length} open item{rows.length === 1 ? "" : "s"}</h2>
           <span className="text-ink-2 transition-transform group-open:rotate-180"><ChevronDownIcon size={18} /></span>
         </summary>
@@ -159,9 +190,9 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
     );
   }
   return (
-    <section aria-labelledby="open-items-h" className="card shrink-0 overflow-hidden border-2 border-bad-fg/50" data-open-items="card">
-      <h2 id="open-items-h" className="flex items-center gap-2 border-b border-line bg-bad-bg px-3 py-2 text-[15px] font-bold text-bad-fg">
-        <AlertIcon size={18} /> Open items ({rows.length})
+    <section aria-labelledby="open-items-h" className={`shrink-0 ${frame}`} data-open-items="card" data-urgent={urgent || undefined}>
+      <h2 id="open-items-h" className="flex items-center gap-2 border-b border-line pl-4 pr-3 py-2 text-[15px] font-bold text-ink">
+        {mark} Open items ({rows.length})
       </h2>
       {body}
     </section>

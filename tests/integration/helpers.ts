@@ -3,10 +3,13 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 import { resetLoanData } from "@/lib/test-data/reset-core";
 import { effectivePermissions } from "@/lib/auth/access";
 import { setSetting } from "@/lib/settings";
+import { assertDestructiveAllowed } from "@/lib/env/destructive";
 
 if (!/@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL ?? "")) {
   throw new Error("Integration tests only run against a local database.");
 }
+// They reset loan files and settings: only on a "test" database, or with ALLOW_DESTRUCTIVE=1.
+assertDestructiveAllowed("The integration tests (they reset the loan files)");
 
 /** Builds the same CurrentUser the app builds from the session. */
 export async function asUser(email: string): Promise<CurrentUser> {
@@ -54,4 +57,9 @@ export async function forwardToLoanBranch(u: CurrentUser, jobId: string, laId: s
   const { forwardJob } = await import("@/lib/services/jobs");
   const a = await prisma.dpAssignment.findUniqueOrThrow({ where: { id: jobId }, select: { loan: { select: { branchId: true } } } });
   return forwardJob(u, jobId, { branchId: a.loan.branchId, receivingLaId: laId });
+}
+
+/** Every paper of a transaction: what the processor ticks as "handed over" on a Return to LA. */
+export async function allPapers(transactionId: string): Promise<string[]> {
+  return (await prisma.documentItem.findMany({ where: { transactionId }, select: { id: true } })).map((d) => d.id);
 }

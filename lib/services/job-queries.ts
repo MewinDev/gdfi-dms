@@ -7,16 +7,19 @@ import { businessDate } from "@/lib/time";
 import type { FundsStatus } from "@/lib/funds/rules";
 import { doneTat, openHold, openProblem, txnFunds, txnTat } from "@/lib/jobs/view";
 import { holdDays, problemDays, type TatChipData } from "@/lib/workflow/tat";
+import { holdReasonName } from "@/lib/ui/holds";
 
-/** Job tabs on the Jobs page. */
+/**
+ * Job tabs on the Jobs page. A declined or returned job is no longer the DP's: it is not in any DP
+ * list, tile or count ("returned" is only used by the Admin report rows).
+ */
 export const JOB_TABS = [
   { key: "review", label: "To review" },
   { key: "process", label: "In process" },
   { key: "forwarded", label: "Forwarded" },
   { key: "done", label: "Done" },
-  { key: "returned", label: "Returned" },
 ] as const;
-export type JobTab = (typeof JOB_TABS)[number]["key"];
+export type JobTab = (typeof JOB_TABS)[number]["key"] | "returned";
 
 export interface JobRow {
   id: string;
@@ -95,7 +98,7 @@ export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = 
       dpName: a.dpUser.name, tab, endorsedAt: a.endorsedAt, tat, funds: txnFunds(t),
       problem: p ? { id: p.id, reason: p.reason.name, days: Math.max(1, problemDays([p], holidays, now)), outsideControl: p.outsideControl } : null,
       problemDaysTotal: problemDays(t.problems, holidays, now),
-      hold: h ? { id: h.id, reason: h.reason.name, days: Math.max(1, holdDays([h], holidays, now)) } : null,
+      hold: h ? { id: h.id, reason: holdReasonName(h), days: Math.max(1, holdDays([h], holidays, now)) } : null,
       holdDaysTotal: holdDays(t.holds, holidays, now), attempts: t._count.attempts, ltoOffice: a.ltoOffice?.name ?? null,
       replaces: a.loan.replacesPn,
       stage: tab === "process" ? a.stages.find((s) => s.status !== "DONE")?.name ?? null : null,
@@ -106,8 +109,11 @@ export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = 
   });
 }
 
-/** The person's jobs: sent to them, or passed to them as the second processor (Pasuyo). */
-export const myJobs = (u: CurrentUser) => jobRows({ OR: [{ dpUserId: u.id }, { secondaryDpUserId: u.id }] });
+/**
+ * The person's jobs: sent to them, or passed to them as the second processor (Pasuyo). Jobs they
+ * declined or returned to the LA are left out: those went back to the LA who sent them.
+ */
+export const myJobs = (u: CurrentUser) => jobRows({ OR: [{ dpUserId: u.id }, { secondaryDpUserId: u.id }], status: { notIn: ["DECLINED", "WITHDRAWN"] } });
 
 /** "Do these next": problems first, then overdue, then due today, then jobs to review. */
 export function doNext(rows: JobRow[]): JobRow[] {
@@ -126,7 +132,6 @@ export function jobCounts(rows: JobRow[]) {
     dueToday: open.filter((r) => r.tat?.state === "due").length,
     needsFunds: open.filter((r) => r.funds === "NEEDED").length,
     onHold: open.filter((r) => r.hold).length,
-    returned: rows.filter((r) => r.tab === "returned").length,
   };
 }
 

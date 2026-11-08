@@ -23,12 +23,12 @@ const loanDetailInclude = {
       checks: { include: { rule: { include: { documentType: true } }, documentItem: true }, orderBy: { createdAt: "asc" } },
       dpAssignments: {
         orderBy: { createdAt: "desc" },
-        include: { dpUser: { select: { name: true } }, secondaryDpUser: { select: { name: true } }, dpBranch: true, ltoOffice: true, assignedBy: { select: { name: true } }, receivingLa: { select: { name: true } }, receivingBranch: { select: { name: true } }, returnReason: { select: { name: true } }, stages: { orderBy: { sortOrder: "asc" } } },
+        include: { dpUser: { select: { name: true } }, secondaryDpUser: { select: { name: true } }, dpBranch: true, ltoOffice: true, assignedBy: { select: { name: true, active: true } }, receivingLa: { select: { name: true } }, receivingBranch: { select: { name: true } }, returnReason: { select: { name: true } }, stages: { orderBy: { sortOrder: "asc" } } },
       },
       advanceLines: { include: { advance: { select: { id: true, number: true, status: true } } } },
       attempts: { orderBy: { createdAt: "desc" }, include: { reason: true, dpUser: { select: { name: true } }, spends: true } },
       problems: { orderBy: { raisedAt: "desc" }, include: { reason: true } },
-      holds: { orderBy: { raisedAt: "desc" }, include: { reason: true } },
+      holds: { orderBy: { raisedAt: "desc" }, include: { reason: true, transfers: { orderBy: { at: "asc" } } } },
     },
   },
   documents: { orderBy: [{ documentId: "asc" }, { createdAt: "asc" }], include: { transaction: { include: { type: true } } } },
@@ -113,6 +113,8 @@ export interface LoanListFilters {
   loanType?: string;
   tat?: string; // ON_TIME | DUE_TODAY | OVERDUE
   needsAction?: string; // "1"
+  /** Open hold with this reason (HoldReason id), or "ANY" for any open hold. */
+  holdReason?: string;
   q?: string;
 }
 
@@ -148,6 +150,7 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
   if (f.classification) where.classification = f.classification as "FINANCING" | "REFINANCING";
   if (f.branch) where.branchId = f.branch;
   if (f.loanType) where.loanType = f.loanType;
+  if (f.holdReason) where.holds = { some: { resumedAt: null, ...(f.holdReason === "ANY" ? {} : { reasonId: f.holdReason }) } };
   if (f.q) {
     const q = f.q.trim();
     where.OR = [

@@ -6,12 +6,16 @@ import { Sheet } from "@/components/ui/sheet";
 import { GuardedSheet, SheetCancel } from "@/components/ui/guarded-sheet";
 import { PauseIcon, PlayIcon } from "@/components/ui/icons";
 import { announcing, NowLine, useCloseWhenDone } from "@/components/ui/live-toast";
+import { DECLINE_REASONS } from "@/lib/ui/rounds";
+import { NO_DETAILS, REMARKS_HELP, REMARKS_LIMIT_MESSAGE, REMARKS_MAX, durationText, holdSummaryText, remarksCounter } from "@/lib/ui/holds";
 
 const raiseHoldAnnounced = announcing(raiseHoldAction);
 const resumeHoldAnnounced = announcing(resumeHoldAction);
+const addHoldDetailsAnnounced = announcing(addHoldDetailsAction);
+const transferHoldAnnounced = announcing(transferHoldAction);
 import {
   acceptJobAction, changeFundsFlagJobAction, completeJobAction, declineJobAction, forwardJobAction, logAttemptAction, outsideControlAction, passJobAction,
-  raiseHoldAction, raiseProblemAction, receivePackageAction, resolveProblemAction, resumeHoldAction,
+  addHoldDetailsAction, transferHoldAction, raiseHoldAction, raiseProblemAction, receivePackageAction, resolveProblemAction, resumeHoldAction,
 } from "@/app/actions/jobs";
 import { setFundsFlagAction } from "@/app/actions/loan";
 import { MissingAtAcceptSheet } from "./return-to-la-form";
@@ -23,10 +27,14 @@ export type Reason = { id: string; name: string; code?: string };
 
 /** One-line example under the chosen hold reason (by its code; reasons added in Settings have none). */
 const HOLD_EXAMPLE: Record<string, string> = {
-  BORROWER: "For example: the borrower still has to sign or bring a paper.",
-  "OTHER-TEAM": "For example: waiting for Credit or another branch to send something.",
-  "LTO-SCHEDULE": "For example: the LTO set the appointment for next week.",
-  OTHER: "Say in the note what it is waiting on.",
+  "NO-DP": "For example: no processor is free in the branch until Monday.",
+  "CLIENT-PAPERS": "For example: the client still has to bring or sign a paper.",
+  "CLIENT-DECISION": "For example: the client is deciding whether to transfer the OR/CR.",
+  "BRANCH-HEAD": "For example: the branch head has to approve a correction first.",
+  FUNDS: "For example: the LTO fee is not released yet.",
+  "CLIENT-CORRECTIONS": "For example: the client has to correct a name on the deed.",
+  "MYLOANS-UPDATE": "For example: the loan details in MyLoans have to be corrected first.",
+  OTHER: "Say in the remarks what it is waiting on.",
 };
 
 /** Closes a pop-up after a successful save. */
@@ -171,8 +179,9 @@ export function OutsideControlToggle({ problemId, on }: { problemId: string; on:
 
 
 /**
- * Put on hold: Reason (required) and Note (optional). When it starts and who put it on hold are
- * recorded by the server; the form only shows "Starts now".
+ * Put on hold: Reason category (required) and Remarks (always required, at least 5 characters, with a
+ * counter). There is no expected resume date. When it starts and who put it on hold are recorded by
+ * the server in Philippine time; the form only shows "Starts now" and the summary shows it after saving.
  */
 export function PutOnHoldForm({ transactionId, reasons, buttonClass = "btn-ghost btn-sm" }: { transactionId: string; reasons: Reason[]; buttonClass?: string }) {
   const [open, setOpen] = useState(false);
@@ -190,43 +199,82 @@ export function PutOnHoldForm({ transactionId, reasons, buttonClass = "btn-ghost
   );
 }
 
+/**
+ * A remarks box with the shared limits (lib/ui/holds.ts REMARKS_MIN / REMARKS_MAX): helper text
+ * "At least 5 characters, up to 500.", a counter "12 / 500" that turns amber from 450 (red above
+ * 500). The form's Save stays disabled unless remarksCounter(value).ok. Used for Put on hold, Resume,
+ * Add details, Decline and Return to LA.
+ */
+export function RemarksField({ id, label, value, onChange, error, name = "note", rows = 3 }: {
+  id: string; label: string; value: string; onChange: (v: string) => void; error?: string | null; name?: string; rows?: number;
+  /** Older callers passed these; the shared limits apply. */
+  min?: number; help?: string;
+}) {
+  const c = remarksCounter(value);
+  const tone = c.over || error ? "text-bad-fg font-semibold" : c.warn ? "text-hold-fg font-semibold" : "text-ink-2";
+  return (
+    <div>
+      <label htmlFor={id} className="label">{label}</label>
+      <textarea id={id} name={name} required rows={rows} className="input" value={value} onChange={(e) => onChange(e.target.value)}
+        aria-invalid={!!error || c.over || undefined} aria-describedby={`${id}-c`} />
+      <p id={`${id}-c`} className="mt-1 flex flex-wrap justify-between gap-x-3 text-[13px]" data-remarks-counter>
+        <span className={error || c.over ? "font-semibold text-bad-fg" : "text-ink-2"} data-remarks-help>{error ?? (c.over ? REMARKS_LIMIT_MESSAGE : REMARKS_HELP)}</span>
+        <span className={tone} data-count data-warn={c.warn || undefined}>{c.count} / {REMARKS_MAX}</span>
+      </p>
+    </div>
+  );
+}
+
 function HoldForm({ transactionId, reasons, action, state, uid }: { transactionId: string; reasons: Reason[]; action: (fd: FormData) => void; state: ActionState; uid: string }) {
   const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
   const [tried, setTried] = useState(false);
+  const noteOk = remarksCounter(note).ok;
   const missing = (tried && !reason) || (state && !state.ok && state.field === "reasonId");
+  const noteError = state && !state.ok && state.field === "note" ? state.error ?? null : tried && !noteOk ? REMARKS_LIMIT_MESSAGE : null;
   return (
-    <form action={action} onSubmit={(e) => { if (!reason) { e.preventDefault(); setTried(true); } }} className="flex flex-col gap-3" noValidate>
+    <form action={action} onSubmit={(e) => { if (!reason || !noteOk) { e.preventDefault(); setTried(true); } }} className="flex flex-col gap-3" noValidate>
       <Hidden v={{ transactionId }} />
       <p className="text-[15px] text-ink-2" data-purpose>Use this when the work is waiting on something outside your hands, for example the borrower or an LTO appointment. It is not a fault. The turnaround time keeps counting.</p>
       <div>
-        <label htmlFor={`${uid}-r`} className="label">Reason</label>
+        <label htmlFor={`${uid}-r`} className="label">Reason category (required)</label>
         <select id={`${uid}-r`} name="reasonId" className="input" value={reason} onChange={(e) => setReason(e.target.value)}
           aria-invalid={missing || undefined} aria-describedby={missing ? `${uid}-re` : undefined}>
           <option value="" disabled>Pick a reason</option>
           {reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select>
         {missing && <p id={`${uid}-re`} className="mt-1 text-[13px] font-semibold text-bad-fg">Pick a reason</p>}
-        {!missing && reason && <p className="help" data-reason-example>{HOLD_EXAMPLE[reasons.find((r) => r.id === reason)?.code ?? ""] ?? "Say in the note what it is waiting on."}</p>}
+        {!missing && reason && <p className="help" data-reason-example>{HOLD_EXAMPLE[reasons.find((r) => r.id === reason)?.code ?? ""] ?? "Say in the remarks what it is waiting on."}</p>}
       </div>
-      <div>
-        <label htmlFor={`${uid}-n`} className="label">Note (optional)</label>
-        <textarea id={`${uid}-n`} name="note" maxLength={500} rows={2} className="input" />
-      </div>
+      <RemarksField id={`${uid}-n`} label="Remarks (required): what is it waiting on?" value={note} onChange={setNote} error={noteError} />
       <NowLine label="Starts now" />
-      {state && !state.ok && state.field !== "reasonId" && <FormMessage state={state} />}
+      <p className="-mt-1 text-[13px] text-ink-2">No expected resume date. The date and time are recorded by the system (PHT).</p>
+      {state && !state.ok && state.field !== "reasonId" && state.field !== "note" && <FormMessage state={state} />}
       <div className="flex justify-end gap-2">
         <SheetCancel />
-        <SubmitButton disabled={!reason}>Put on hold</SubmitButton>
+        <SubmitButton disabled={!reason || !noteOk}>Put on hold</SubmitButton>
       </div>
     </form>
   );
 }
 
+/** What a hold is, for the Resume form: the original reason, the remarks, who and when (ISO date: serializable). */
+export interface HoldBrief {
+  holdId: string;
+  reason: string;
+  note: string;
+  raisedBy: string;
+  raisedAt: string;
+  /** The hold owner (the only person who can resume it); null for an old hold saved without one. */
+  owner: string | null;
+}
+
 /**
- * Resume: shows what is being closed, asks for Resume remarks (required, at least 3 characters).
- * When it resumed and who resumed it are recorded by the server.
+ * Resume: shows the original reason, the remarks and how long it has been on hold, then asks for the
+ * resume remarks (required, at least 3 characters). When it resumed and who resumed it are recorded
+ * by the server.
  */
-export function ResumeHoldForm({ holdId, reason, days, buttonClass = "btn-primary btn-sm" }: { holdId: string; reason: string; days: number; buttonClass?: string }) {
+export function ResumeHoldForm({ hold, buttonClass = "btn-ghost btn-sm" }: { hold: HoldBrief; buttonClass?: string }) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState(resumeHoldAnnounced, null);
   const close = useMemo(() => () => setOpen(false), []);
@@ -234,35 +282,128 @@ export function ResumeHoldForm({ holdId, reason, days, buttonClass = "btn-primar
   const uid = useId();
   return (
     <>
-      <button type="button" className={buttonClass} onClick={() => setOpen(true)}><PlayIcon size={16} /> Resume</button>
+      <button type="button" className={buttonClass} onClick={() => setOpen(true)} data-resume><PlayIcon size={16} /> Resume</button>
       <GuardedSheet open={open} onClose={close} title="Resume the work">
-        <ResumeForm holdId={holdId} reason={reason} days={days} action={action} state={state} uid={uid} />
+        <ResumeForm hold={hold} action={action} state={state} uid={uid} />
       </GuardedSheet>
     </>
   );
 }
 
-function ResumeForm({ holdId, reason, days, action, state, uid }: { holdId: string; reason: string; days: number; action: (fd: FormData) => void; state: ActionState; uid: string }) {
+function ResumeForm({ hold, action, state, uid }: { hold: HoldBrief; action: (fd: FormData) => void; state: ActionState; uid: string }) {
   const [text, setText] = useState("");
-  const ok = text.trim().length >= 3;
+  // The moment the pop-up opened: fixed, so "on hold for" does not change while typing.
+  const [opened] = useState(() => Date.now());
+  const ok = remarksCounter(text).ok;
   const bad = state && !state.ok && state.field === "note";
+  const raisedAt = new Date(hold.raisedAt);
+  const t = holdSummaryText({ reason: hold.reason, note: hold.note, raisedBy: hold.raisedBy, raisedAt }, new Date(opened));
   return (
     <form action={action} className="flex flex-col gap-3" noValidate>
-      <Hidden v={{ holdId }} />
-      <p className="flex flex-wrap items-center gap-2 rounded-xl bg-navy px-3 py-2 text-[15px] font-semibold text-white" data-closing>
-        <span className="text-gold"><PauseIcon size={16} /></span> On hold: {reason} · {days} day{days === 1 ? "" : "s"}
-      </p>
-      <div>
-        <label htmlFor={`${uid}-n`} className="label">Resume remarks</label>
-        <textarea id={`${uid}-n`} name="note" required minLength={3} maxLength={500} rows={2} className="input" value={text} onChange={(e) => setText(e.target.value)}
-          aria-invalid={bad || undefined} aria-describedby={`${uid}-h`} />
-        <p id={`${uid}-h`} className={bad ? "mt-1 text-[13px] font-semibold text-bad-fg" : "help"}>{bad ? state.error : "What changed? At least 3 characters."}</p>
+      <Hidden v={{ holdId: hold.holdId }} />
+      <div className="hold-card flex flex-col gap-1 py-2.5 pl-5 pr-3" data-closing>
+        <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink"><span className="text-hold-fg"><PauseIcon size={16} /></span>{t.title}</p>
+        {t.remarks
+          ? <blockquote className="whitespace-pre-line break-words border-l-2 border-hold-line pl-3 text-[15px] text-ink" data-remarks>{t.remarks}</blockquote>
+          : <p className="text-[15px] italic text-ink-2" data-remarks>{NO_DETAILS}</p>}
+        <p className="text-[13px] text-ink-2" data-on-hold-for>Put on hold by {hold.raisedBy} · on hold for {durationText(opened - raisedAt.getTime())}</p>
       </div>
+      <RemarksField id={`${uid}-n`} label="Resume remarks (required): what changed?" value={text} onChange={setText} error={bad ? state.error ?? null : null} />
       <NowLine label="Resumes now" />
       {state && !state.ok && !bad && <FormMessage state={state} />}
       <div className="flex justify-end gap-2">
         <SheetCancel />
         <SubmitButton disabled={!ok}>Resume</SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Transfer hold (holds:transfer): choose the new owner (same work role as the holder) and write why.
+ * Shows the reason, remarks and current owner first. It never resumes the hold.
+ */
+export function TransferHoldForm({ hold, candidates }: { hold: HoldBrief; candidates: { id: string; name: string }[] }) {
+  const [open, setOpen] = useState(false);
+  const [state, action] = useActionState(transferHoldAnnounced, null);
+  const close = useMemo(() => () => setOpen(false), []);
+  useCloseWhenDone(state, close);
+  const uid = useId();
+  return (
+    <>
+      <button type="button" className="btn-ghost btn-sm" onClick={() => setOpen(true)} data-transfer-hold>Transfer hold</button>
+      <GuardedSheet open={open} onClose={close} title="Transfer hold">
+        <TransferBody hold={hold} candidates={candidates} action={action} state={state} uid={uid} />
+      </GuardedSheet>
+    </>
+  );
+}
+
+function TransferBody({ hold, candidates, action, state, uid }: { hold: HoldBrief; candidates: { id: string; name: string }[]; action: (fd: FormData) => void; state: ActionState; uid: string }) {
+  const [to, setTo] = useState("");
+  const [note, setNote] = useState("");
+  const ok = !!to && remarksCounter(note).ok;
+  const err = (f: string) => (state && !state.ok && state.field === f ? state.error ?? null : null);
+  return (
+    <form action={action} className="flex flex-col gap-3" noValidate data-transfer-form>
+      <Hidden v={{ holdId: hold.holdId }} />
+      <div className="hold-card flex flex-col gap-1 py-2.5 pl-5 pr-3" data-transfer-current>
+        <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink"><span className="text-hold-fg"><PauseIcon size={16} /></span>On hold: {hold.reason}</p>
+        {hold.note.trim()
+          ? <blockquote className="whitespace-pre-line break-words border-l-2 border-hold-line pl-3 text-[15px] text-ink">{hold.note}</blockquote>
+          : <p className="text-[15px] italic text-ink-2">{NO_DETAILS}</p>}
+        <p className="text-[13px] text-ink-2">Put on hold by {hold.raisedBy} · Hold owner now: <strong className="font-semibold text-ink" data-current-owner>{hold.owner ?? "nobody"}</strong></p>
+      </div>
+      <p className="text-[13px] text-ink-2">The new owner becomes the only person who can resume it. The reason, remarks and start stay as they are; it stays locked and the TAT clock keeps running.</p>
+      <div>
+        <label htmlFor={`${uid}-to`} className="label">New owner (required)</label>
+        <select id={`${uid}-to`} name="toUserId" className="input" value={to} onChange={(e) => setTo(e.target.value)} aria-invalid={!!err("toUserId") || undefined}>
+          <option value="" disabled>{candidates.length ? "Choose a person" : "Nobody can receive it (same role, active)"}</option>
+          {candidates.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {err("toUserId") && <p className="mt-1 text-[13px] font-semibold text-bad-fg">{err("toUserId")}</p>}
+      </div>
+      <RemarksField id={`${uid}-n`} label="Remarks (required): why it is transferred" value={note} onChange={setNote} error={err("note")} />
+      <NowLine label="Transfers now" />
+      {state && !state.ok && !["toUserId", "note"].includes(state.field ?? "") && <FormMessage state={state} />}
+      <div className="flex justify-end gap-2">
+        <SheetCancel />
+        <SubmitButton disabled={!ok}>Transfer hold</SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+/** "Add details" on an older hold without remarks (the person who put it on hold, or Admin). */
+export function AddHoldDetailsForm({ holdId, reason }: { holdId: string; reason: string }) {
+  const [open, setOpen] = useState(false);
+  const [state, action] = useActionState(addHoldDetailsAnnounced, null);
+  const close = useMemo(() => () => setOpen(false), []);
+  useCloseWhenDone(state, close);
+  const uid = useId();
+  return (
+    <>
+      <button type="button" className="link inline-flex min-h-11 items-center text-[13px]" onClick={() => setOpen(true)} data-add-details>Add details</button>
+      <GuardedSheet open={open} onClose={close} title="Add the hold details">
+        <AddDetailsBody holdId={holdId} reason={reason} action={action} state={state} uid={uid} />
+      </GuardedSheet>
+    </>
+  );
+}
+
+function AddDetailsBody({ holdId, reason, action, state, uid }: { holdId: string; reason: string; action: (fd: FormData) => void; state: ActionState; uid: string }) {
+  const [note, setNote] = useState("");
+  const ok = remarksCounter(note).ok;
+  const bad = state && !state.ok && state.field === "note";
+  return (
+    <form action={action} className="flex flex-col gap-3" noValidate>
+      <Hidden v={{ holdId }} />
+      <p className="text-[15px] text-ink-2">On hold: {reason}. Write what it is waiting on, so everyone can see why.</p>
+      <RemarksField id={`${uid}-n`} label="Remarks (required)" value={note} onChange={setNote} error={bad ? state.error ?? null : null} />
+      {state && !state.ok && !bad && <FormMessage state={state} />}
+      <div className="flex justify-end gap-2">
+        <SheetCancel />
+        <SubmitButton disabled={!ok}>Save the details</SubmitButton>
       </div>
     </form>
   );
@@ -311,7 +452,6 @@ export function ReceivePackageForm({ assignmentId, from, papers }: { assignmentI
 // DP: review (accept / decline), return, attempt, complete, forward
 // ---------------------------------------------------------------------------
 
-const DECLINE_REASONS = ["Incomplete documents", "Wrong documents", "Unsigned pages", "Labels missing", "Wrong processor or branch", "Other"];
 
 export interface ReceivedPaper { checkId: string | null; label: string; original: boolean; documentId: string | null; labelPrinted: boolean }
 
@@ -396,28 +536,34 @@ function ReasonsSheet({ open, onClose, assignmentId, mode }: { open: boolean; on
   const [state, action] = useActionState(declineJobAction, null);
   useCloseOnOk(state, onClose);
   const uid = useId();
+  const [reason, setReason] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const ok = !!reason && remarksCounter(remarks).ok;
+  const bad = (f: string) => (state && !state.ok && state.field === f ? state.error ?? null : null);
   return (
     <Sheet open={open} onClose={onClose} title={mode === "decline" ? "Decline the job" : "Return to the Loan Associate"}>
-      <form action={action} className="flex flex-col gap-3">
+      <form action={action} className="flex flex-col gap-3" noValidate data-decline-form>
         <Hidden v={{ assignmentId, mode }} />
+        <p className="rounded-xl bg-fill px-3 py-2 text-[13px] text-ink" data-purpose>
+          It goes back to the Loan Associate who sent it, with your reason and remarks, to fix and send again. After this you will not see this job any more. The turnaround time keeps counting.
+        </p>
         <fieldset>
-          <legend className="label">Reasons (pick at least one)</legend>
+          <legend className="label">Reason (required)</legend>
           <div className="grid gap-x-4 sm:grid-cols-2">
             {DECLINE_REASONS.map((r) => (
               <label key={r} className="inline-flex min-h-11 items-center gap-2 text-[15px]">
-                <input type="checkbox" name="reasons" value={r} className="h-5 w-5 accent-[var(--navy)]" />{r}
+                <input type="radio" name="reasons" value={r} checked={reason === r} onChange={() => setReason(r)} className="h-5 w-5 accent-[var(--navy)]" />{r}
               </label>
             ))}
           </div>
+          {bad("reasons") && <p className="mt-1 text-[13px] font-semibold text-bad-fg">{bad("reasons")}</p>}
         </fieldset>
-        <div>
-          <label htmlFor={`${uid}-r`} className="label">Remarks</label>
-          <textarea id={`${uid}-r`} name="remarks" required minLength={3} maxLength={500} rows={2} className="input" />
-        </div>
-        <FormMessage state={state} />
+        <RemarksField id={`${uid}-r`} name="remarks" label="Remarks (required)" value={remarks} onChange={setRemarks} error={bad("remarks")} />
+        <NowLine label={mode === "decline" ? "Declined now" : "Returned now"} />
+        {state && !state.ok && !["reasons", "remarks"].includes(state.field ?? "") && <FormMessage state={state} />}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-          <SubmitButton>{mode === "decline" ? "Decline" : "Return"}</SubmitButton>
+          <SubmitButton disabled={!ok}>{mode === "decline" ? "Decline" : "Return"}</SubmitButton>
         </div>
       </form>
     </Sheet>

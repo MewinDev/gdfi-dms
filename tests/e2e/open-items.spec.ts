@@ -75,21 +75,23 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   await alsoHold.check();
   await shot(page, "missing-paper-popup", false);
   await askBtn.click();
-  await expect(toast(page)).toHaveText(/Missing paper requested: Promissory Note · On hold: Waiting on borrower/);
+  await expect(toast(page)).toHaveText(/Missing paper requested: Promissory Note · On hold: Waiting for the client's papers/);
   await expect(page.locator("[data-live-announcer]").first()).toHaveText(/Missing paper requested: Promissory Note/);
   // Two separate records: the request and the hold.
   const notary = await txnOf("NOTARY");
   expect(await db.loanException.count({ where: { transactionId: notary.id, type: "LEGAL_DOCS_COMPLETION", status: "OPEN" } })).toBe(1);
   expect(await db.hold.count({ where: { transactionId: notary.id, resumedAt: null } })).toBe(1);
 
-  // No banners on the left; markers only: the Requested tag (who and when), the title chips.
-  await expect(page.locator("[data-open-banners], [data-hold-open]")).toHaveCount(0);
+  // No banners on the left except the one hold summary (reason and remarks); the Requested tag (who and when), the title chips.
+  await expect(page.locator("[data-open-banners]")).toHaveCount(0);
+  await expect(page.locator("[data-hold-summary]")).toHaveCount(1);
+  await expect(page.locator("[data-hold-summary] blockquote[data-remarks]")).toHaveText("Missing paper: Promissory Note");
   const tag = papers.locator("[data-requested]");
   await expect(tag).toHaveCount(1);
   await expect(tag).toHaveAttribute("title", /^Asked by Test Loan Associate · just now · from Borrower$/);
   await tag.focus();
   await expect(tag.getByRole("tooltip")).toBeVisible();
-  await expect(titleChips(page)).toHaveText(["On hold · 1 day", "1 paper requested"]);
+  await expect(titleChips(page)).toHaveText(["1 paper requested"]); // the hold summary says On hold: no second pill
 
   // Put on hold (Mortgage): purpose and a one-line example for the chosen reason.
   await page.goto("/loans/PN-0001003?tab=todo&tx=MORTGAGE");
@@ -97,11 +99,13 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   const hold = page.getByRole("dialog", { name: "Put on hold" });
   await expect(hold.locator("[data-purpose]")).toHaveText("Use this when the work is waiting on something outside your hands, for example the borrower or an LTO appointment. It is not a fault. The turnaround time keeps counting.");
   await expect(hold.getByRole("button", { name: "Put on hold" })).toBeDisabled();
-  await hold.getByLabel("Reason").selectOption({ label: "Waiting on LTO appointment or schedule" });
-  await expect(hold.locator("[data-reason-example]")).toHaveText("For example: the LTO set the appointment for next week.");
+  await hold.getByLabel("Reason").selectOption({ label: "No available DP" });
+  await expect(hold.locator("[data-reason-example]")).toHaveText("For example: no processor is free in the branch until Monday.");
+  await expect(hold.getByRole("button", { name: "Put on hold" })).toBeDisabled(); // remarks are always required
+  await hold.getByLabel("Remarks (required)").fill("LTO set the appointment for Monday");
   await shot(page, "put-on-hold-popup", false);
   await hold.getByRole("button", { name: "Put on hold" }).click();
-  await expect(toast(page)).toHaveText(/Mortgage put on hold: Waiting on LTO appointment or schedule/);
+  await expect(toast(page)).toHaveText(/Mortgage put on hold: No available DP/);
 
   // Problems on PPSR and Notary: the grouped card, one button per row, "Show all".
   await addProblem("PPSR", 2);
@@ -119,15 +123,17 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   for (const row of await list.locator('[data-open-row="hold"]').all()) await expect(row.getByRole("button")).toHaveText(["Resume"]);
   for (const row of await list.locator('[data-open-row="problem"]').all()) await expect(row.getByRole("button")).toHaveText(["Open"]);
   await expect(list.locator('[data-open-row="missing"]')).toContainText("Asked by Test Loan Associate · just now · from Borrower");
-  await expect(page.locator("[data-open-banners], [data-hold-open]")).toHaveCount(0);
-  await expect(titleChips(page)).toHaveText(["Problem · 1 day", "On hold · 1 day", "1 paper requested"]);
+  await expect(page.locator("[data-open-banners]")).toHaveCount(0);
+  await expect(page.locator("[data-hold-summary]")).toHaveCount(1);
+  await expect(titleChips(page)).toHaveText(["Problem · 1 day", "1 paper requested"]);
+  await expect(list.locator('[data-open-row="hold"][data-txn-code="MORTGAGE"] [data-open-remarks]')).toHaveText("“LTO set the appointment for Monday”");
   if (wide(page)) {
     const side = page.getByRole("region", { name: /^Transactions \(\d+\)$/ });
-    await expect(side.locator("[data-txn=PPSR]")).toContainText(/Problem \d+ days?/);
-    await expect(side.locator("[data-txn=MORTGAGE]")).toContainText(/On hold 1 day/);
+    await expect(side.locator("[data-txn=PPSR]")).toContainText(/Problem: .+ · \d+ days?/);
+    await expect(side.locator("[data-txn=MORTGAGE]")).toContainText("On hold: No available DP · 1 day");
   } else {
     await expect(page.locator("[data-txn=PPSR] [data-dot=bad]").filter({ visible: true })).toHaveCount(1);
-    await expect(page.locator("[data-txn=MORTGAGE] [data-dot=navy]").filter({ visible: true })).toHaveCount(1);
+    await expect(page.locator("[data-txn=MORTGAGE] [data-dot=hold]").filter({ visible: true })).toHaveCount(1);
   }
   await shot(page, "check-docs-open-items");
   await noSideways(page);

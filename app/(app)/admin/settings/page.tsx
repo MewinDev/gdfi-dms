@@ -50,7 +50,7 @@ const AREAS = [
   { key: "cash-advance", title: "Cash-advance rules", desc: "Suggested and maximum amounts, carry-over and liquidation.", help: "Used when the processor asks Finance for funds. More than the maximum needs a typed reason.", Icon: CoinsIcon },
   { key: "approval-bands", title: "Approval bands", desc: "Who approves a cash advance, by amount.", help: "The band with the highest \"from\" amount at or below the advance decides who approves it.", Icon: UsersIcon },
   { key: "problem-reasons", title: "Problem reasons", desc: "Why a job can be stuck.", help: "Offered when a job has a problem or an attempt was not processed. Nothing is deleted: make it inactive instead.", Icon: AlertIcon },
-  { key: "hold-reasons", title: "Hold reasons", desc: "Why a job can wait (not a fault).", help: "Offered when someone puts work on hold. The turnaround time keeps counting. Nothing is deleted: make it inactive instead.", Icon: PauseIcon },
+  { key: "hold-reasons", title: "Hold reasons", desc: "Why a job can wait (not a fault).", help: "Offered when someone puts work on hold (remarks are required for every reason). Add, rename, reorder (Order) or switch off; a switched-off reason stays on old holds, which keep the name they had. The list was seeded as \"Proposed, to be confirmed with the team\"; saving a reason confirms it. The turnaround time keeps counting.", Icon: PauseIcon },
   { key: "return-reasons", title: "Return reasons", desc: "Why a processor returns a job to the Loan Associate.", help: "Offered when a processor returns an accepted job for papers. The turnaround time keeps counting. Nothing is deleted: make it inactive instead.", Icon: ArrowLeftIcon },
   { key: "holidays", title: "Holidays", desc: "Days skipped when counting turnaround times.", help: "Add or change a holiday. An inactive holiday is no longer skipped.", Icon: CalendarIcon },
   { key: "system", title: "System and test mode", desc: "MyLoans adapter, simulator and test switches.", help: "These switches save as soon as you press them.", Icon: SettingsIcon },
@@ -494,7 +494,8 @@ async function loadListArea(key: AreaKey): Promise<ListArea | null> {
       ];
       return {
         kind: "holdReason", statusKind: "holdReason", noun: "hold reason", addLabel: "Add reason", filterLabel: "Find a reason",
-        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: r.code, inactive: !r.active, href: editHref(key, r.id) })),
+        // Seeded defaults: "Proposed, to be confirmed with the team" until Admin saves the row.
+        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: r.proposed ? `${r.code} · Proposed, to be confirmed with the team` : r.code, inactive: !r.active, href: editHref(key, r.id) })),
         fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
       };
     }

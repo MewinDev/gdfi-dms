@@ -11,10 +11,10 @@ export interface TxnItem {
   /** Fixed number (order on the loan file). */
   n: number;
   name: string;
-  /** The one status wording (lib/ui/txn-status.ts): chip, line, papers, TAT chip, markers. */
+  /** The one status wording (lib/ui/txn-status.ts): one pill, one short line, the day count as text. */
   status: TxnStatus;
-  /** Dot on strip cards: red (missing paper or problem), navy (hold). */
-  dot?: "bad" | "navy" | null;
+  /** Dot on strip cards: red (missing paper or problem), amber (hold). */
+  dot?: "bad" | "hold" | null;
   href: string;
   done: boolean;
 }
@@ -39,7 +39,8 @@ function Badge({ item, selected }: { item: TxnItem; selected?: boolean }) {
   );
 }
 
-const OpenNow = () => <span className="chip h-5 shrink-0 bg-navy px-2 text-[11px] text-white" data-open-now>Open now</span>;
+/** The selected row's tag: a soft pill (the row itself has a very light tint and a thin left accent). */
+const OpenNow = () => <span className="chip c-mute h-5 shrink-0 px-2 text-[11px]" data-open-now>Open now</span>;
 
 export function PackageSummary({ done, total }: { done: number; total: number }) {
   const pct = total ? Math.round((done / total) * 100) : 0;
@@ -54,8 +55,10 @@ export function PackageSummary({ done, total }: { done: number; total: number })
 }
 
 /**
- * Desktop (1100 and up): "Transactions (n)", every transaction in its fixed number order. The open one
- * stays in its place and is marked (navy border, light navy background, "Open now"); the order never changes.
+ * Desktop (1100 and up): "Transactions (n)", every transaction in its fixed number order. Each row:
+ * number, name, one status pill, one short line (who it was sent to and the LTO office are in the
+ * detail only). The open one stays in its place and is marked (very light tint, thin left accent,
+ * "Open now"); the order never changes.
  */
 export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; selected: string; summary: { done: number; total: number } }) {
   const select = useSelect();
@@ -75,8 +78,11 @@ export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; se
                 <span className="pt-0.5"><Badge item={i} selected={on} /></span>
                 <span className="min-w-0 flex-1 leading-snug">
                   <span className="flex items-center gap-2"><span className="min-w-0 flex-1 text-[15px] font-semibold text-ink">{i.name}</span>{on && <OpenNow />}</span>
-                  <span className="block text-[13px] text-ink-2"><span data-status-line>{i.status.line}</span>{i.status.papers && <span className="text-xs"> · {i.status.papers}</span>}</span>
-                  <span className="mt-0.5 block"><TxnStatusChips s={i.status} /></span>
+                  <span className="mt-0.5 block"><TxnStatusChips s={i.status} clock={false} /></span>
+                  <span className="mt-0.5 block text-[13px] text-ink-2">
+                    <span data-status-line>{i.status.line}</span>
+                    {i.status.clock && <> · <span className={i.status.clock.late ? "font-semibold text-bad-fg" : undefined} data-clock>{i.status.clock.text}</span></>}
+                  </span>
                 </span>
               </button>
             </li>
@@ -111,11 +117,11 @@ export function TxnStrip({ items, selected, summary }: { items: TxnItem[]; selec
                 className={`flex h-full min-h-[72px] w-[208px] flex-col items-start gap-1 rounded-xl border px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy ${on ? "border-line-soft bg-select-bg shadow-[inset_3px_0_0_var(--gold)]" : "border-line bg-white hover:border-navy/40"}`}>
                 <span className="flex w-full items-center gap-2">
                   <Badge item={i} selected={on} /><span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{i.name}</span>
-                  {i.dot && <span role="img" aria-label={i.dot === "bad" ? "Has an open item" : "On hold"} data-dot={i.dot} className={`h-2.5 w-2.5 shrink-0 rounded-full ${i.dot === "bad" ? "bg-[var(--bad-fg)]" : "bg-navy"}`} />}
+                  {i.dot && <span role="img" aria-label={i.dot === "bad" ? "Has an open item" : "On hold"} data-dot={i.dot} className={`h-2.5 w-2.5 shrink-0 rounded-full ${i.dot === "bad" ? "bg-[var(--bad-fg)]" : "bg-[var(--hold-stripe)]"}`} />}
                   {on && <OpenNow />}
                 </span>
-                <span className="line-clamp-1 text-xs text-ink-2" title={i.status.line} data-status-line>{i.status.line}</span>
                 <TxnStatusChips s={i.status} />
+                <span className="line-clamp-1 text-xs text-ink-2" title={i.status.line} data-status-line>{i.status.line}</span>
               </button>
             </li>
           );
@@ -128,16 +134,22 @@ export function TxnStrip({ items, selected, summary }: { items: TxnItem[]; selec
 /** After a row or card is pressed: focus the opened transaction's heading and announce it. */
 export function SelectionFocus({ headingId }: { headingId: string }) {
   const [said, setSaid] = useState("");
+  // The name read from storage is kept until it is announced: in development React runs the effect
+  // twice (the first run's timer is cancelled), and the second run must still announce it.
+  const pending = useRef<string | null>(null);
   useEffect(() => {
-    let name: string | null = null;
-    try {
-      name = sessionStorage.getItem(FOCUS_KEY);
-      if (name !== null) sessionStorage.removeItem(FOCUS_KEY);
-    } catch { /* storage blocked */ }
+    let name = pending.current;
+    if (name === null) {
+      try {
+        name = sessionStorage.getItem(FOCUS_KEY);
+        if (name !== null) sessionStorage.removeItem(FOCUS_KEY);
+      } catch { /* storage blocked */ }
+    }
     if (name === null) return;
+    pending.current = name;
     const h = document.getElementById(headingId);
     if (h) { h.setAttribute("tabindex", "-1"); h.focus({ preventScroll: true }); }
-    const t = window.setTimeout(() => setSaid(`${name} opened`), 50);
+    const t = window.setTimeout(() => { setSaid(`${name} opened`); pending.current = null; }, 50);
     return () => window.clearTimeout(t);
   }, [headingId]);
   return <p role="status" aria-live="polite" className="sr-only">{said}</p>;
@@ -147,14 +159,20 @@ export function SelectionFocus({ headingId }: { headingId: string }) {
 export const TOAST_KEY = "dms:toast";
 export function StoredToast() {
   const [text, setText] = useState<string | null>(null);
+  // Kept until shown (React runs the effect twice in development; the first run's timers are cancelled).
+  const pending = useRef<string | null>(null);
   useEffect(() => {
-    let t: string | null = null;
-    try {
-      t = sessionStorage.getItem(TOAST_KEY);
-      if (t !== null) sessionStorage.removeItem(TOAST_KEY);
-    } catch { /* no toast */ }
+    let t = pending.current;
+    if (t === null) {
+      try {
+        t = sessionStorage.getItem(TOAST_KEY);
+        if (t !== null) sessionStorage.removeItem(TOAST_KEY);
+      } catch { /* no toast */ }
+    }
     if (!t) return;
-    const show = window.setTimeout(() => setText(t), 0);
+    pending.current = t;
+    const msg = t;
+    const show = window.setTimeout(() => { setText(msg); pending.current = null; }, 0);
     const hide = window.setTimeout(() => setText(null), 4500);
     return () => { window.clearTimeout(show); window.clearTimeout(hide); };
   }, []);

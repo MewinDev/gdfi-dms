@@ -33,6 +33,7 @@ export const LogOutIcon = (p: P) => <Svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5
 export const MinusIcon = (p: P) => <Svg {...p}><path d="M5 12h14" /></Svg>;
 export const PauseIcon = (p: P) => <Svg {...p}><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></Svg>;
 export const PlayIcon = (p: P) => <Svg {...p}><path d="M7 5l12 7-12 7z" /></Svg>;
+export const LockIcon = (p: P) => <Svg {...p}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></Svg>;
 export const ClockIcon = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Svg>;
 export const HourglassIcon = (p: P) => <Svg {...p}><path d="M6 3h12M6 21h12" /><path d="M7 3c0 5 10 5 10 9s-10 4-10 9" /><path d="M17 3c0 5-10 5-10 9s10 4 10 9" /></Svg>;
 export const WarningIcon = (p: P) => <Svg {...p}><path d="M12 3l10 18H2z" /><path d="M12 10v5" /><path d="M12 18h.01" /></Svg>;

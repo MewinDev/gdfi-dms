@@ -146,36 +146,42 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
   const submit = ret.getByRole("button", { name: "Return to LA" });
   await ret.getByLabel("Reason").selectOption({ label: "Missing paper" });
   const required = notary.checks.find((c) => c.required)!;
-  await ret.getByRole("checkbox", { name: required.rule!.label }).check();
-  await ret.getByLabel("Note", { exact: true }).fill("Bring the original ID");
-  await expect(ret.getByRole("radio", { name: "I am keeping the papers I already have" })).toBeChecked();
-  await expect(ret.locator("[data-cash-question]")).toContainText("You hold ₱500.00 for this job");
-  await expect(submit).toBeDisabled(); // the cash question first
-  await ret.getByRole("radio", { name: "Keep the cash for the re-send" }).check();
+  await ret.getByRole("group", { name: "Which papers" }).getByRole("checkbox", { name: required.rule!.label }).check();
+  await ret.getByLabel(/^Findings/).fill("Bring the original ID");
+  // No "keep" choices any more: the cash must be liquidated, and every paper is handed over.
+  await expect(ret.getByText(/I am keeping the papers|Keep the cash for the re-send/)).toHaveCount(0);
+  await expect(ret.locator("[data-liquidation-notice]")).toContainText("You hold ₱500.00 for this job");
+  await expect(submit).toBeDisabled(); // the papers are not ticked as handed over yet
+  for (const box of await ret.locator("[data-handover] input[type=checkbox]").all()) await box.check();
+
   await expect(ret.locator("[data-now-line]")).toHaveText(/^Returns now: .+ PHT$/);
   await expect(submit).toBeEnabled();
   await shot(page, "dp-return-to-la-popup", false);
   await submit.click();
-  await expect(toast(page)).toHaveText(new RegExp(`Returned to the Loan Associate: ${required.rule!.label.replace(/[()]/g, "\\$&")}`));
+  // The job is no longer the DP's: the page says so (the toast may be replaced by that page).
+  await expect(page.getByRole("heading", { name: "This job is no longer with you." })).toBeVisible();
+  await expect.poll(async () => (await db.dpAssignment.findFirstOrThrow({ where: { transactionId: notary.id }, orderBy: { createdAt: "desc" } })).status).toBe("WITHDRAWN");
   await shot(page, "dp-job-returned");
   await noSideways(page);
 
-  // The LA: status, the processor's reason, the Requested tag, the Open items row; Send with the same processor.
+  // The LA who sent it: the findings at the top, the Requested tag, the Open items rows; the processor is chosen again (nothing pre-selected).
   await signInAs(page, "la");
   await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
-  await expect(page.getByText(/Returned by Test Document Processor: Missing paper/).first()).toBeVisible();
+  await expect(page.locator("[data-sent-back=returned] [data-findings]")).toContainText("Missing paper");
+  await expect(page.locator("[data-sent-back=returned] [data-findings]")).toContainText("Bring the original ID");
   const tag = page.getByRole("group", { name: "Notary papers" }).locator("[data-requested]");
   await expect(tag).toHaveCount(1);
   await expect(tag).toHaveAttribute("title", /^Asked by Test Document Processor \(DP\)/);
   const list = wide(page) ? page.locator('[data-open-items="card"]') : page.locator('[data-open-items="collapsible"]');
   if (!wide(page)) await list.locator("summary").click();
   await expect(list.locator('[data-open-row="missing"]')).toContainText("Test Document Processor (DP)");
-  await expect(page.locator("[data-status-chip]", { hasText: "Returned by DP: papers needed" }).filter({ visible: true }).first()).toBeVisible();
+  // One pill per row: the open missing-paper request wins; the line says it was returned.
+  await expect(page.locator("[data-status-line]", { hasText: "Returned: Missing paper" }).filter({ visible: true }).first()).toBeVisible();
   await shot(page, "la-after-return");
   await noSideways(page);
   await page.getByRole("group", { name: "Notary papers" }).getByLabel(required.rule!.label).check();
   await expect(page.getByRole("group", { name: "Notary papers" }).locator("[data-requested]")).toHaveCount(0, { timeout: 30_000 });
-  await expect(page.locator("label", { hasText: "Test Document Processor" }).locator("input")).toBeChecked();
+  await expect(page.locator("label", { hasText: "Test Document Processor" }).locator("input")).not.toBeChecked();
   // No "Pending" or "Rejected" for these states.
   expect(await page.locator("main").innerText()).not.toMatch(/pending|rejected/i);
 });

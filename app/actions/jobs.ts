@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireAnyPermission, requirePermission } from "@/lib/auth/current-user";
+import { requireAnyPermission, requirePermission, requireUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, type ActionState } from "@/lib/action";
 import { toCents } from "@/lib/funds/rules";
@@ -16,7 +16,7 @@ import {
 } from "@/lib/services/funds";
 import { UserError } from "@/lib/services/errors";
 import { passJob } from "@/lib/services/pasuyo";
-import { raiseHold, resumeHold } from "@/lib/services/holds";
+import { addHoldDetails, raiseHold, resumeHold, transferHold } from "@/lib/services/holds";
 import { acceptWithMissing, returnToLa } from "@/lib/services/return-to-la";
 import { dpChangeLtoOffice } from "@/lib/services/lto";
 import { txnName } from "@/lib/ui/plain";
@@ -213,11 +213,35 @@ export async function raiseHoldAction(_p: ActionState, fd: FormData): Promise<Ac
 
 export async function resumeHoldAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requireAnyPermission([PERMISSIONS.HOLDS_RESOLVE, PERMISSIONS.HOLDS_RESOLVE_ANY]);
+    const u = await requireUser(); // only the holder may resume (checked in resumeHold)
     const h = await prisma.hold.findUnique({ where: { id: str(fd, "holdId") }, select: { transactionId: true, transaction: { select: { type: { select: { code: true, name: true } } } } } });
     await resumeHold(u, str(fd, "holdId"), str(fd, "note"));
     if (h) await refreshTxn(h.transactionId);
     return `${h ? txnName(h.transaction.type.code, h.transaction.type.name) : "It"} resumed`;
+  });
+}
+
+/** Older hold without remarks: the person who put it on hold (or Admin) adds them. */
+export async function addHoldDetailsAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const u = await requireUser(); // only the holder may add the details (checked in addHoldDetails)
+    const h = await prisma.hold.findUnique({ where: { id: str(fd, "holdId") }, select: { transactionId: true } });
+    await addHoldDetails(u, str(fd, "holdId"), str(fd, "note"));
+    if (h) await refreshTxn(h.transactionId);
+    return "Details added";
+  });
+}
+
+/** A supervisor or Admin gives the hold to another owner (never resumes it). */
+export async function transferHoldAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const u = await requirePermission(PERMISSIONS.HOLDS_TRANSFER);
+    const holdId = str(fd, "holdId");
+    const h = await prisma.hold.findUnique({ where: { id: holdId }, select: { transactionId: true } });
+    await transferHold(u, holdId, str(fd, "toUserId"), str(fd, "note"));
+    if (h) await refreshTxn(h.transactionId);
+    const t = await prisma.hold.findUnique({ where: { id: holdId }, select: { ownerLabel: true } });
+    return `Hold transferred to ${t?.ownerLabel ?? "the new owner"}`;
   });
 }
 
@@ -239,10 +263,9 @@ export async function returnToLaAction(_p: ActionState, fd: FormData): Promise<A
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.JOBS_RETURN_TO_LA);
     const id = str(fd, "assignmentId");
-    const cash = str(fd, "cash");
     const r = await returnToLa(u, id, {
       reasonId: str(fd, "reasonId"), checkIds: fd.getAll("checkIds").map(String), otherPaper: str(fd, "otherPaper"), note: str(fd, "note"),
-      papers: str(fd, "papers") === "RETURN" ? "RETURN" : "KEEP", cash: cash === "KEEP" || cash === "RETURN" ? cash : null,
+      handedOver: fd.getAll("handedOver").map(String),
     });
     await refresh(id);
     return `Returned to the Loan Associate${r.names.length ? `: ${r.names.join(", ")}` : ""}`;
@@ -256,7 +279,7 @@ export async function acceptWithMissingAction(_p: ActionState, fd: FormData): Pr
     const id = str(fd, "assignmentId");
     const r = await acceptWithMissing(u, id, fd.get("labels") === "on", {
       reasonId: str(fd, "reasonId"), checkIds: fd.getAll("checkIds").map(String), otherPaper: str(fd, "otherPaper"), note: str(fd, "note"),
-      papers: str(fd, "papers") === "RETURN" ? "RETURN" : "KEEP", cash: null,
+      handedOver: fd.getAll("handedOver").map(String),
     });
     await refresh(id);
     return `Accepted the papers received and returned to the Loan Associate for: ${r.names.join(", ")}`;

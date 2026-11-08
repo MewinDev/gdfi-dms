@@ -160,9 +160,11 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await expect(job.locator("[data-lto-chip]")).toHaveText("At Z LTO Cebu City");
   const dp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
   expect(await db.notification.count({ where: { userId: dp.id, title: { contains: "LTO office changed" } } })).toBe(1);
-  // The Transactions list says where too.
+  // The Transactions list stays short (one pill, one line); the office is in the transaction detail.
   await page.goto("/loans/PN-0001003?tab=todo");
-  await expect(page.locator("[data-txn-row=NOTARY]")).toContainText("At Z LTO Cebu City");
+  await expect(page.locator("[data-txn-row=NOTARY]")).not.toContainText("LTO");
+  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await expect(page.locator("[data-lto-chip]").filter({ visible: true }).first()).toHaveText("At Z LTO Cebu City");
 
   // DP: accept; "Process at" with the estimate; change it after accepting (a note is required).
   await signInAs(page, "dp");

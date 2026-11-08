@@ -9,6 +9,7 @@ import { pendingJobInLock } from "./workflow";
 import { withJob } from "./jobs";
 import { financeIds } from "./funds";
 import { NotInScopeError, UserError } from "./errors";
+import { assertNotHeld } from "./locks";
 
 /**
  * The LTO office of a job (where the processor takes it). The LA picks it when sending; before the
@@ -35,6 +36,7 @@ export async function laChangeLtoOffice(u: CurrentUser, transactionId: string, r
   if (!t || !inScope(u, t.loan.branchId)) throw new NotInScopeError();
   const office = await activeOffice(p.data.ltoOfficeId);
   return withLoanLock(t.loanId, async (tx) => {
+    await assertNotHeld(tx, t.id);
     const job = await pendingJobInLock(tx, t.id);
     if (job.ltoOfficeId === office.id) throw new UserError("That is already the office.", "ltoOfficeId");
     const before = job.ltoOfficeId ? (await tx.ltoOffice.findUnique({ where: { id: job.ltoOfficeId } }))?.name ?? null : null;

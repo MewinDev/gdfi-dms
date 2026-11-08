@@ -5,6 +5,7 @@ import { getHolidaySet } from "@/lib/settings";
 import { endOfBusinessDay, startOfBusinessDay } from "@/lib/time";
 import { holdDays, problemDays } from "@/lib/workflow/tat";
 import { jobRows, type JobRow } from "./job-queries";
+import { holdReasonName } from "@/lib/ui/holds";
 
 export interface TatFilters { stage?: string; branch?: string; type?: string; show?: string; outside?: string; from?: string; to?: string }
 
@@ -74,7 +75,7 @@ export async function reasonReport(user: CurrentUser, f: Pick<TatFilters, "branc
     rows.set(k, r);
   };
   for (const p of problems) add("Problem", p.reason.name, problemDays([p], holidays, now), !p.resolvedAt, p.outsideControl);
-  for (const h of holds) add("Hold", h.reason.name, holdDays([h], holidays, now), !h.resumedAt, null);
+  for (const h of holds) add("Hold", holdReasonName(h), holdDays([h], holidays, now), !h.resumedAt, null);
   // Returned to the LA for papers: until it was sent again (or now).
   for (const a of returns) {
     const resent = a.transaction.dpAssignments.map((x) => x.endorsedAt).filter((x) => a.returnedAt && x > a.returnedAt).sort((x, y) => x.getTime() - y.getTime())[0] ?? null;

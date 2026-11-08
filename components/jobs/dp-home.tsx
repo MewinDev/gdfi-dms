@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { OPEN_ADVANCE, isOverdue, peso } from "@/lib/funds/rules";
 import { greeting } from "@/lib/ui/plain";
 import { PageHeader } from "@/components/ui/basics";
-import { AlertIcon, ArrowLeftIcon, ClockIcon, CoinsIcon, ChecklistIcon, PauseIcon } from "@/components/ui/icons";
+import { AlertIcon, ClockIcon, CoinsIcon, ChecklistIcon, PauseIcon } from "@/components/ui/icons";
 import { JobRow } from "./job-row";
 
 /** The processor's Home: counts, then "Do these next" (problems, overdue, due today, to review). */
@@ -25,8 +25,7 @@ export async function DpHome({ user }: { user: CurrentUser }) {
     { n: c.process, label: "In process", icon: <ClockIcon size={24} />, href: "/jobs?tab=process", tone: "bg-fill-strong text-navy" },
     { n: c.problems, label: c.problems === 1 ? "Problem" : "Problems", icon: <AlertIcon size={24} />, href: "/jobs?tab=process&problem=1", tone: "bg-bad-bg text-bad-fg" },
     { n: c.needsFunds, label: "Need funds", icon: <CoinsIcon size={24} />, href: "/my-funds", tone: "bg-wait-bg text-wait-fg" },
-    { n: c.onHold, label: "On hold", icon: <PauseIcon size={24} />, href: "/jobs?tab=process&hold=1", tone: "bg-navy text-white" },
-    { n: c.returned, label: "Returned", icon: <ArrowLeftIcon size={24} />, href: "/jobs?tab=returned", tone: "bg-fill-strong text-navy" },
+    { n: c.onHold, label: "On hold", icon: <PauseIcon size={24} />, href: "/jobs?tab=process&hold=1", tone: "border border-hold-line bg-hold-bg text-hold-fg" },
   ];
   return (
     <div className="flex w-full flex-col gap-4 sm:gap-6">
@@ -37,7 +36,7 @@ export async function DpHome({ user }: { user: CurrentUser }) {
           <Link href="/my-funds?tab=liquidation" className="font-semibold text-bad-fg underline">Liquidate now</Link>
         </p>
       )}
-      <section aria-label="Counts" className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-6">
+      <section aria-label="Counts" className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-5">
         {tiles.map((t) => (
           <Link key={t.label} href={t.href} className="card flex items-center gap-3 px-3 py-3 no-underline hover:bg-fill sm:px-5 sm:py-4">
             <span aria-hidden="true" className={`hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl lg:flex ${t.tone}`}>{t.icon}</span>

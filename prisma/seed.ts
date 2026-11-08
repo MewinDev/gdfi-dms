@@ -123,8 +123,11 @@ const PROBLEM_REASONS = [
 ] as const;
 
 /** Hold reasons: waiting on something that is not a fault. */
+/** Proposed hold reasons, to be confirmed with the team (marked "Proposed" in Settings until Admin saves them). */
 const HOLD_REASONS = [
-  ["BORROWER", "Waiting on borrower"], ["OTHER-TEAM", "Waiting on another team"], ["LTO-SCHEDULE", "Waiting on LTO appointment or schedule"], ["OTHER", "Other"],
+  ["NO-DP", "No available DP"], ["CLIENT-PAPERS", "Waiting for the client's papers"], ["CLIENT-DECISION", "Waiting for the client's decision"],
+  ["BRANCH-HEAD", "Waiting for the branch head's approval"], ["FUNDS", "Waiting for funds or payment"], ["CLIENT-CORRECTIONS", "Waiting for corrections from the client"],
+  ["MYLOANS-UPDATE", "Waiting for a MyLoans update"], ["OTHER", "Other"],
 ] as const;
 
 /** Why a processor returns an accepted job to the LA (papers needed). */
@@ -191,7 +194,7 @@ async function main() {
   // Problem reasons
   for (const [i, [code, name]] of PROBLEM_REASONS.entries()) await prisma.problemReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
   // Hold reasons
-  for (const [i, [code, name]] of HOLD_REASONS.entries()) await prisma.holdReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
+  for (const [i, [code, name]] of HOLD_REASONS.entries()) await prisma.holdReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1, proposed: true }, update: {} });
   // Return reasons
   for (const [i, [code, name]] of RETURN_REASONS.entries()) await prisma.returnReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
   // Approval bands: one default band, any amount, Finance.

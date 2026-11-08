@@ -137,8 +137,10 @@ describe("Holds and Journey amounts permissions", () => {
     expect(ROLE_DEFAULTS.DP.permissions).toEqual(expect.arrayContaining([P.HOLDS_RAISE, P.HOLDS_RESOLVE]));
     expect(WORKFLOW_PERMISSIONS).toEqual(expect.arrayContaining([P.HOLDS_RAISE, P.HOLDS_RESOLVE]));
     expect(ADMIN_PERMISSIONS).not.toContain(P.HOLDS_RAISE);
-    expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_RESOLVE_ANY);
-    expect(ADMIN_PERMISSIONS).toContain(P.SETTINGS_HOLD_REASONS);
+    expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.FIN.permissions).toContain(P.HOLDS_TRANSFER);
+    expect(ALL_PERMISSIONS as readonly string[]).not.toContain("holds:resolve_any");
+    expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_MANAGE);
   });
   it("cash amounts in the Journey: Finance, Approvers and Admin by default; a normal switch under Funds", () => {
     expect(ROLE_DEFAULTS.FIN.permissions).toContain(P.JOURNEY_VIEW_AMOUNTS);

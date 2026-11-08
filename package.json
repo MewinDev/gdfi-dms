@@ -18,7 +18,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local prisma/seed.ts",
     "db:seed:reference": "cross-env SEED_TEST_USERS=false tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local prisma/seed.ts",
-    "db:reset": "prisma migrate reset --force",
+    "db:reset": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/guard-destructive.ts \"npm run db:reset (drops every table)\" && prisma migrate reset --force",
     "db:studio": "prisma studio",
     "email:reminders": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/email.ts reminders",
     "myloans:sync": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/myloans-sync.ts",

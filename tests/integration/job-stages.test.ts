@@ -27,7 +27,7 @@ import { getLoanForUser } from "@/lib/services/queries";
 import { getHolidaySet, getTatMap, setSetting } from "@/lib/settings";
 import { txnTat } from "@/lib/jobs/view";
 import { businessDate } from "@/lib/time";
-import { asUser, cleanLoans, workStages } from "./helpers";
+import { asUser, cleanLoans, workStages, allPapers } from "./helpers";
 
 let la: CurrentUser, dp: CurrentUser, dp2: CurrentUser, fin: CurrentUser, admin: CurrentUser, laDvo: CurrentUser;
 const PN = "PN-0001003"; // Cebu
@@ -245,7 +245,7 @@ describe("Stage rules on a job", () => {
     expect((await current(job.id)).code).toBe("LTO-PICKUP");
     const reason = await prisma.returnReason.findFirstOrThrow({ where: { code: "MISSING" } });
     const check = await prisma.checklistCheck.findFirstOrThrow({ where: { transaction: { dpAssignments: { some: { id: job.id } } } } });
-    await returnToLa(dp2, job.id, { reasonId: reason.id, checkIds: [check.id], note: "Page 2 unsigned", papers: "KEEP" });
+    await returnToLa(dp2, job.id, { reasonId: reason.id, checkIds: [check.id], note: "Page 2 unsigned", handedOver: await allPapers(check.transactionId) });
     expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("WITHDRAWN");
   });
 });
@@ -395,7 +395,8 @@ describe("Gaps closed", () => {
     const missing = docs[0];
     const reason = await prisma.returnReason.findFirstOrThrow({ where: { code: "MISSING" } });
     await expect(acceptWithMissing(dp, job.id, false, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope" })).rejects.toThrow(/Labels are on the papers I received/);
-    await acceptWithMissing(dp, job.id, true, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope" });
+    await expect(acceptWithMissing(dp, job.id, true, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope" })).rejects.toThrow("Tick every paper you hand over to the Loan Associate.");
+    await acceptWithMissing(dp, job.id, true, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope", handedOver: await allPapers(txn.id) });
     const acks = await prisma.documentMovement.findMany({ where: { documentItem: { transactionId: txn.id }, action: "ACKNOWLEDGED_BY_DP" } });
     expect(acks).toHaveLength(docs.length - 1);
     expect(acks.every((m) => m.actorLabel === "Test Document Processor" && m.acknowledgedAt)).toBe(true);
@@ -404,19 +405,20 @@ describe("Gaps closed", () => {
     expect((await prisma.checklistCheck.findUniqueOrThrow({ where: { id: missing.checkId! } })).checked).toBe(false);
   });
 
-  it("DP lists: On hold and Returned show with chips; the TAT report filters by stage", async () => {
+  it("DP lists: On hold shows with its chip; a returned job leaves the DP's list; the TAT report filters by stage", async () => {
     const a = await send("NOTARY");
     await acceptJob(dp, a.job.id, true);
     await startStage(dp, a.job.id, "NOTARIZATION");
     const hr = await prisma.holdReason.findFirstOrThrow({ where: { active: true } });
-    await raiseHold(dp, { transactionId: a.txn.id, reasonId: hr.id, note: "" });
+    await raiseHold(dp, { transactionId: a.txn.id, reasonId: hr.id, note: "Waiting on the LTO" });
     const mine = await myJobs(dp);
     expect(mine.find((r) => r.id === a.job.id)).toMatchObject({ hold: expect.objectContaining({ reason: hr.name }), stage: "Notarization" });
     const b = await send("PPSR");
     const reason = await prisma.returnReason.findFirstOrThrow({ where: { code: "OTHER" } });
     await acceptJob(dp, b.job.id, true);
-    await returnToLa(dp, b.job.id, { reasonId: reason.id, note: "Wrong branch" });
-    expect((await myJobs(dp)).find((r) => r.id === b.job.id)).toMatchObject({ tab: "returned", returnedHow: "Returned" });
+    await returnToLa(dp, b.job.id, { reasonId: reason.id, note: "Wrong branch", handedOver: await allPapers(b.txn.id) });
+    // Returned to the LA who sent it: no longer in any DP list, tile or count.
+    expect((await myJobs(dp)).find((r) => r.id === b.job.id)).toBeUndefined();
     const { tatReport } = await import("@/lib/services/tat-report");
     expect((await tatReport(admin, { show: "all", stage: "Notarization" })).rows.map((r) => r.id)).toEqual([a.job.id]);
     expect((await jobRows({ id: a.job.id }))[0].stage).toBe("Notarization");

@@ -12,6 +12,7 @@ import {
   addCustomTransaction,
   assignToDp,
   completeLaTransaction,
+  confirmPapersBack,
   markLabelsPrinted,
   overrideAutomaticResult,
   reportProblem,
@@ -95,11 +96,11 @@ export async function requestMissingAction(_prev: ActionState, fd: FormData): Pr
     let held = "";
     if (fd.get("alsoHold") === "on") {
       // A normal hold through the hold rules (permissions, one open hold, audit): a separate record.
-      const reason = await prisma.holdReason.findFirst({ where: { active: true, OR: [{ code: "BORROWER" }, { name: "Waiting on borrower" }] } });
+      const reason = await prisma.holdReason.findFirst({ where: { active: true, code: { in: ["CLIENT-PAPERS", "BORROWER"] } }, orderBy: { sortOrder: "asc" } });
       try {
-        if (!reason) throw new UserError("There is no active hold reason \"Waiting on borrower\".");
+        if (!reason) throw new UserError("There is no active hold reason \"Waiting for the client's papers\".");
         await raiseHold(user, { transactionId, reasonId: reason.id, note: `Missing paper: ${missing.join(", ")}` });
-        held = " · On hold: Waiting on borrower";
+        held = ` · On hold: ${reason.name}`;
       } catch (e) {
         if (!(e instanceof UserError)) throw e;
         held = ` · Not put on hold: ${e.message}`;
@@ -296,4 +297,17 @@ export async function countLoansAction(fd: FormData): Promise<number | null> {
   const v = (k: string) => (typeof fd.get(k) === "string" && fd.get(k) ? String(fd.get(k)) : undefined);
   const rows = await listLoans(user, { tab: v("tab") ?? "queue", stage: v("stage"), classification: v("classification"), branch: v("branch"), loanType: v("loanType"), tat: v("tat"), needsAction: v("needsAction"), q: v("q") });
   return rows.length;
+}
+
+/** The LA confirms the papers the processor handed over with a Return to LA (some may be "Not received"). */
+export async function confirmPapersBackAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.CHECKLIST_TICK);
+    const transactionId = str(fd, "transactionId");
+    const r = await confirmPapersBack(user, { transactionId, notReceived: fd.getAll("notReceived").map(String) });
+    revalidateLoan(await pnOfTxn(transactionId));
+    return r.notReceived.length
+      ? `Papers confirmed: ${r.received} received. Not received: ${r.notReceived.join(", ")} (a problem was raised).`
+      : `Papers confirmed: all ${r.received} received. You can send it again.`;
+  });
 }

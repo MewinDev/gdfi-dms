@@ -307,7 +307,8 @@ export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id:
       const del = delegates(tx)[kind];
       const before = id ? await del.findUnique({ where: { id } }) : null;
       if (id && !before) throw new UserError("Row not found.");
-      const saved = id ? await del.update({ where: { id }, data }) : await del.create({ data });
+      // A hold reason saved by Admin is no longer "Proposed, to be confirmed with the team".
+      const saved = id ? await del.update({ where: { id }, data: kind === "holdReason" ? { ...data, proposed: false } : data }) : await del.create({ data });
       await writeAudit(tx, {
         actor: actorOf(user), mode: "MANUAL", action: id ? "setting_updated" : "setting_created", entityType: kind, entityId: saved.id,
         summary: `${id ? "Updated" : "Added"} ${kind.replace(/([A-Z])/g, " $1").toLowerCase()} setting`,
