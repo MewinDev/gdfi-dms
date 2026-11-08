@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 import { loadEnvFiles } from "./lib/env/load-files";
+import { testDatabaseUrl } from "./lib/env/test-db";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 // Same order as everywhere: a variable set in the shell wins, then .env.local, then .env. (The values
@@ -10,8 +11,13 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 const fromFiles: Record<string, string | undefined> = {};
 loadEnvFiles([".env.local", ".env"], fromFiles);
 const shellFirst = Object.fromEntries(Object.keys(fromFiles).map((k) => [k, process.env[k] ?? fromFiles[k] ?? ""]));
+// Tests never use the person's own database (gdfi_dms): always the test database, gdfi_dms_test
+// (TEST_DATABASE_URL, or DATABASE_URL with the name swapped). Create it once with npm run db:create-test.
+const testDb = testDatabaseUrl({ ...shellFirst, ...process.env }) ?? "";
 const dotenv = {
   ...shellFirst,
+  DATABASE_URL: testDb,
+  DIRECT_URL: testDb,
   APP_ENV: "local",
   GRAPH_CLIENT_ID: "",
   GRAPH_CLIENT_SECRET: "",

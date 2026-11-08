@@ -9,6 +9,12 @@ describe("Settings groups", () => {
     expect(g[4].cards).toEqual(["system", "myloans-sync", "email", "test-data"]);
   });
 
+  it("shows Test kit only when the kit is available here (and in test mode)", () => {
+    expect(visibleSettingsGroups(true, undefined, true)[4].cards).toEqual(["system", "myloans-sync", "email", "test-data", "test-kit"]);
+    expect(visibleSettingsGroups(true, undefined, false).flatMap((x) => x.cards)).not.toContain("test-kit");
+    expect(visibleSettingsGroups(false, undefined, true).flatMap((x) => x.cards)).not.toContain("test-kit");
+  });
+
   it("hides the Test data card when TEST_MODE is not true", () => {
     const g = visibleSettingsGroups(false);
     expect(g.flatMap((x) => x.cards)).not.toContain("test-data");
@@ -27,7 +33,7 @@ describe("Settings groups", () => {
   it("every card belongs to exactly one group", () => {
     const all = SETTINGS_GROUPS.flatMap((x) => x.cards);
     expect(new Set(all).size).toBe(all.length);
-    expect(all).toHaveLength(19); // + Processing stages, beside Checklist items
+    expect(all).toHaveLength(20); // + Processing stages, beside Checklist items; + Test kit
     expect(SETTINGS_GROUPS.find((x) => x.key === "documents")!.cards).toContain("processing-stages");
     // Hold reasons sit beside Problem reasons.
     const docs = SETTINGS_GROUPS.find((x) => x.key === "documents")!.cards as readonly string[];

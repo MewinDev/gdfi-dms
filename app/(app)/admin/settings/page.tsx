@@ -1,6 +1,7 @@
 import { ensureTypeStages } from "@/lib/services/job-stages";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { can, requirePageAny, type CurrentUser } from "@/lib/auth/current-user";
 import { ALL_PERMISSIONS, LIST_PERMISSION, SETTINGS_PERMISSIONS } from "@/lib/auth/permissions";
@@ -19,7 +20,9 @@ import { ltoEstimate } from "@/lib/ui/lto";
 import { inactiveEffect, type StatusKind } from "@/lib/services/settings-status";
 import { PageHeader } from "@/components/ui/basics";
 import { FundsSettingsForm, MockOverrideForm, SettingsEditForm, ToggleForm, type FieldDef } from "@/components/admin/forms";
-import { ResetTestData } from "@/components/admin/reset-test-data";
+import { TestKitPanel } from "@/components/admin/test-kit";
+import { kitScreensAvailable } from "@/lib/kit/access";
+import { kitPanelData } from "@/lib/kit/panel-data";
 import { EmailEventRow, EmailMasterSwitch, EmailTemplateForm, RecentEmails, TestEmailButton } from "@/components/admin/email";
 import { EMAIL_EVENTS, EMAIL_EVENT_KEYS, isEmailEvent, type EmailEventKey } from "@/lib/email/templates";
 import { listOutbox, senderLine, type OutboxFilter } from "@/lib/email/outbox";
@@ -56,7 +59,8 @@ const AREAS = [
   { key: "system", title: "System and test mode", desc: "MyLoans adapter, simulator and test switches.", help: "These switches save as soon as you press them.", Icon: SettingsIcon },
   { key: "myloans-sync", title: "MyLoans sync", desc: "How often loan files are checked against MyLoans.", help: "Only the loans someone opened are checked, never the whole MyLoans. A change that matters waits for Admin to review it.", Icon: RefreshIcon },
   { key: "email", title: "Email notifications", desc: "Emails for the updates people already get in GDFI DMS.", help: "Email is another way to get the same updates. Turn it on when the system goes live.", Icon: BellIcon },
-  { key: "test-data", title: "Test data", desc: "Sample PNs and Reset test data.", help: "Only in test mode. Reset asks you to confirm first.", Icon: FlaskIcon },
+  { key: "test-data", title: "Test data", desc: "Sample PNs on Find a loan.", help: "Only in test mode.", Icon: FlaskIcon },
+  { key: "test-kit", title: "Test kit", desc: "Starting state, reset, backups and the test sheet.", help: "Only on a local test setup (database gdfi_dms, test mode). Reset and Restore ask you to type RESET and take a backup first.", Icon: FlaskIcon },
 ] as const;
 type AreaKey = (typeof AREAS)[number]["key"];
 
@@ -70,12 +74,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const user = await requirePageAny([...SETTINGS_PERMISSIONS, PERMISSIONS.ROLES_MANAGE, PERMISSIONS.TESTDATA_RESET, PERMISSIONS.EMAIL_MANAGE, PERMISSIONS.SOURCE_MANAGE]);
   const sp = await searchParams;
   const testMode = isTestMode();
-  const areas = AREAS.filter((a) => (a.key !== "test-data" || testMode) && can(user, LIST_PERMISSION[a.key]));
+  // The Test kit: only on a local test setup, checked on the server (lib/kit/access.ts). Elsewhere its
+  // card is not listed and its address is "not found", even for Admin.
+  const kit = kitScreensAvailable();
+  const areas = AREAS.filter((a) => (a.key !== "test-data" || testMode) && (a.key !== "test-kit" || kit) && can(user, LIST_PERMISSION[a.key]));
   // Old links (?tab=...) still open the right area.
   const openKey = sp.open ?? sp.tab;
+  if (openKey === "test-kit" && !kit) notFound();
   const open = areas.find((a) => a.key === openKey);
   const status = await statusLines(testMode);
-  const groups = visibleSettingsGroups(testMode)
+  const groups = visibleSettingsGroups(testMode, undefined, kit)
     .map((g) => ({ ...g, areas: g.cards.map((k) => areas.find((a) => a.key === k)).filter((a): a is (typeof AREAS)[number] => !!a) }))
     .filter((g) => g.areas.length > 0);
 
@@ -164,6 +172,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     email: { main: (await getSetting("email.active")) ? "Active" : "Not active", extra: senderLine() === "Not set up" ? "Not set up" : "" },
     system: { main: `${ENV_LABEL[appEnv()]} · ${appEnv() === "production" ? "" : `Simulator ${sim ? "On" : "Off"} · `}MyLoans ${unavailable ? "unavailable (test)" : (process.env.MYLOANS_MODE ?? "mock").toLowerCase() === "live" ? "live" : "mock"}`, extra: "" },
     "test-data": { main: testMode ? "Test mode only" : "Off", extra: "" },
+    "test-kit": { main: "Local test setup only", extra: "" },
     roles: { main: `${roles[0]} role${roles[0] === 1 ? "" : "s"} · ${customRoles} custom`, extra: roles[1] > 0 ? `+${roles[1]} inactive` : "" },
   };
 }
@@ -214,6 +223,10 @@ async function AreaModal({ area, edit, step, testMode, user, filter }: { area: (
   }
   if (area.key === "test-data") {
     return <SettingsModal {...common} footer={{ kind: "done" }}>{testMode ? <TestDataArea /> : null}</SettingsModal>;
+  }
+  if (area.key === "test-kit") {
+    if (!kitScreensAvailable()) notFound();
+    return <SettingsModal {...common} footer={{ kind: "done" }}><TestKitPanel {...kitPanelData()} /></SettingsModal>;
   }
 
   const importKey = area.key as ImportListKey;
@@ -753,7 +766,11 @@ async function TestDataArea() {
   const showDataCheck = await getSetting("samples.showDataCheck");
   return (
     <div className="space-y-4">
-      <ResetTestData />
+      <p className="text-[15px] text-ink-2">
+        {kitScreensAvailable()
+          ? <>To start over, use <Link href={listHref("test-kit")} className="link">Test kit</Link>: it puts everything back to the starting state.</>
+          : <>Starting over is done with the Manual Test Kit (<code>npm run kit:reset</code>), only on a local test setup with the database gdfi_dms.</>}
+      </p>
       <ToggleForm settingKey="samples.showDataCheck" label="Show data-check test PNs" on={showDataCheck}
         description="Adds a second group, Data-check samples, under the sample loans on Find a loan: the PNs that test refusals (not released, missing field, other branch, and so on)." />
     </div>

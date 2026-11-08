@@ -7,8 +7,6 @@ import { runAction, str, strOrNull, type ActionState } from "@/lib/action";
 import { saveSettingsRow, saveUser, setMockOverride, setToggle, type SettingsKind, saveFundsSettings } from "@/lib/services/admin";
 import { UserError } from "@/lib/services/errors";
 import { AuthzError } from "@/lib/auth/current-user";
-import { resetTestData } from "@/lib/services/test-data";
-import type { ResetCounts } from "@/lib/test-data/reset-core";
 import { duplicateRole, resetRoleToDefault, saveRole, setRoleActive } from "@/lib/services/roles";
 import { STATUS_KINDS, setRowActive, type StatusKind } from "@/lib/services/settings-status";
 import { IMPORT_LISTS, type ImportListKey } from "@/lib/import/columns";
@@ -88,19 +86,8 @@ export async function mockOverrideAction(_prev: ActionState, fd: FormData): Prom
   });
 }
 
-export type ResetState = (ActionState & { counts?: ResetCounts }) | null;
-
-/** Reset test data. Refused unless TEST_MODE=true and the user is an Admin (checked in the service). */
-export async function resetTestDataAction(): Promise<ResetState> {
-  let counts: ResetCounts | undefined;
-  const state = await runAction(async () => {
-    const user = await requirePermission(PERMISSIONS.TESTDATA_RESET);
-    counts = await resetTestData(user);
-    revalidatePath("/", "layout");
-    return "Test data reset.";
-  });
-  return state ? { ...state, counts } : state;
-}
+// Reset test data: replaced by Settings > Test kit (app/actions/kit.ts), which resets to the kit's
+// starting state with a typed RESET and an automatic backup first.
 
 // ---------------------------------------------------------------------------
 // Inactive instead of delete

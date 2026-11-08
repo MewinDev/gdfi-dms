@@ -3,13 +3,10 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 import { resetLoanData } from "@/lib/test-data/reset-core";
 import { effectivePermissions } from "@/lib/auth/access";
 import { setSetting } from "@/lib/settings";
-import { assertDestructiveAllowed } from "@/lib/env/destructive";
+import { assertTestDatabase } from "@/lib/env/test-db";
 
-if (!/@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL ?? "")) {
-  throw new Error("Integration tests only run against a local database.");
-}
-// They reset loan files and settings: only on a "test" database, or with ALLOW_DESTRUCTIVE=1.
-assertDestructiveAllowed("The integration tests (they reset the loan files)");
+// They reset loan files and settings: only on the local test database (gdfi_dms_test), never on gdfi_dms.
+assertTestDatabase("The integration tests");
 
 /** Builds the same CurrentUser the app builds from the session. */
 export async function asUser(email: string): Promise<CurrentUser> {
