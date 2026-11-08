@@ -1,26 +1,375 @@
 @import "tailwindcss";
 
+/* =========================================================================
+   GDFI DMS color tokens. Define colors ONLY here; use the tokens everywhere.
+   ========================================================================= */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ---- UI v2 palette: navy, gold, white ------------------------------- */
+  --navy: #0c2340;
+  --gold: #f5a623;
+  --white: #ffffff;
+  --line: rgb(12 35 64 / 0.12); /* card borders: navy 12% */
+  --fill: rgb(12 35 64 / 0.04); /* subtle fills: navy 4% */
+  --fill-strong: rgb(12 35 64 / 0.08); /* hover / selected rows */
+  --ink: var(--navy); /* text */
+  --ink-2: rgb(12 35 64 / 0.7); /* secondary text: navy 70% (v2) */
+  --line-input: rgb(12 35 64 / 0.18); /* inputs, icon buttons (v2) */
+  --line-strong: rgb(12 35 64 / 0.24); /* ghost buttons (v2) */
+  --fill-soft: rgb(12 35 64 / 0.03); /* search field, ticked rows (v2) */
+  --gold-soft: rgb(245 166 35 / 0.12); /* "Stuck?" card (v2) */
+  --gold-line: rgb(245 166 35 / 0.5);
+  --done-fg: #1f7a4d; /* green only for done ticks and "Loan found" */
+  --done-bg: #e6f4ec;
+  --problem-fg: #b3261e; /* problems and errors (kept: errors must stand out) */
+  --problem-bg: #fbe9e7;
+
+  /* ---- Names used by the components, mapped onto the v2 palette ------- */
+  --cream: var(--white); /* page background is white */
+  --sand: var(--fill);
+  --border: var(--line);
+  --hover: var(--fill-strong);
+  --act-bg: rgb(245 166 35 / 0.2); /* "needs you" chips (v2) */
+  --act-fg: #6b4200;
+  --wait-bg: var(--fill-strong); /* waiting on others */
+  --wait-fg: var(--navy);
+  --ok-bg: var(--done-bg);
+  --ok-fg: var(--done-fg);
+  --bad-bg: var(--problem-bg);
+  --bad-fg: var(--problem-fg);
+  --mute-bg: var(--fill-strong);
+  --mute-fg: var(--ink-2);
+  --highlight-border: rgb(12 35 64 / 0.24);
+  --done-row-bg: color-mix(in srgb, var(--done-bg) 55%, white);
+  --done-row-border: color-mix(in srgb, var(--done-fg) 28%, white);
+  --box-border: color-mix(in srgb, var(--navy) 45%, white);
+  --wait-bar: var(--navy);
+  /* Soft frames: the open transaction's card and the selected row (no heavy navy border). */
+  --line-soft: #dbe2ea;
+  --select-bg: #eef2f8;
+  --shadow-soft: 0 1px 2px rgb(12 35 64 / 0.06), 0 4px 12px -4px rgb(12 35 64 / 0.08);
+
+  /* Login background gradient stops (login page only) */
+  --navy-deep: #0a1c36;
+  --navy-mid: #16325c;
+  --navy-light: #1d3f73;
+
+  /* Role chips (Admin screens, Journey) */
+  --chip-la: #dbe8fb;
+  --chip-dp: #fdecc8;
+  --chip-vault: #dcefe2;
+  --chip-dig: #e9e0f7;
+  --chip-qa: #fbe0dc;
+  --chip-fin: #d5f0ec;
+  --chip-appr: #f8dcea;
+  --chip-sys: #e6e8ec;
+
+  /* Older status names kept for Admin screens */
+  --err-bg: var(--bad-bg);
+  --err-fg: var(--bad-fg);
+  --info-bg: var(--fill-strong);
+  --info-fg: var(--navy);
+  --warn-bg: var(--act-bg);
+  --warn-fg: var(--navy);
+
+  /* Microsoft mark (brand colors of the sign-in button logo) */
+  --ms-red: #f25022;
+  --ms-green: #7fba00;
+  --ms-blue: #00a4ef;
+  --ms-yellow: #ffb900;
+
+  /* Shadows (login only; no heavy shadows inside the app) */
+  --shadow-card: 0 20px 50px -20px rgb(0 0 0 / 0.45);
+  --shadow-tile: 0 6px 18px -6px rgb(0 0 0 / 0.25);
+
+  color-scheme: light;
+}
+
+@theme {
+  /* Phone below 600px, tablet 600-1023px, desktop 1024px and up */
+  --breakpoint-sm: 37.5rem;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-navy: var(--navy);
+  --color-gold: var(--gold);
+  --color-cream: var(--cream);
+  --color-sand: var(--sand);
+  --color-line: var(--border);
+  --color-hover: var(--hover);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-white: var(--white);
+  --color-act-bg: var(--act-bg);
+  --color-act-fg: var(--act-fg);
+  --color-wait-bg: var(--wait-bg);
+  --color-wait-fg: var(--wait-fg);
+  --color-bad-bg: var(--bad-bg);
+  --color-bad-fg: var(--bad-fg);
+  --color-mute-bg: var(--mute-bg);
+  --color-mute-fg: var(--mute-fg);
+  --color-hl-border: var(--highlight-border);
+  --color-done-row: var(--done-row-bg);
+  --color-done-border: var(--done-row-border);
+  --color-box-border: var(--box-border);
+  --color-wait-bar: var(--wait-bar);
+  --color-line-soft: var(--line-soft);
+  --color-select-bg: var(--select-bg);
+  --color-fill: var(--fill);
+  --color-fill-soft: var(--fill-soft);
+  --color-line-input: var(--line-input);
+  --color-line-strong: var(--line-strong);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-line: var(--gold-line);
+  --color-fill-strong: var(--fill-strong);
+  --color-chip-la: var(--chip-la);
+  --color-chip-dp: var(--chip-dp);
+  --color-chip-vault: var(--chip-vault);
+  --color-chip-dig: var(--chip-dig);
+  --color-chip-qa: var(--chip-qa);
+  --color-chip-fin: var(--chip-fin);
+  --color-chip-appr: var(--chip-appr);
+  --color-chip-sys: var(--chip-sys);
+  --color-ok-bg: var(--ok-bg);
+  --color-ok-fg: var(--ok-fg);
+  --color-err-bg: var(--err-bg);
+  --color-err-fg: var(--err-fg);
+  --color-info-bg: var(--info-bg);
+  --color-info-fg: var(--info-fg);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-fg: var(--warn-fg);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--cream);
+  color: var(--ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus ring on every interactive element */
+@layer base {
+  :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--navy);
+    outline-offset: 2px;
+  }
+  /* Focus moved by code (an opened transaction's title, a dialog's heading): no ring, it was not a key press. */
+  :where([tabindex="-1"]):focus {
+    outline: none;
+  }
+  /* On the navy sidebar and phone top bar the ring is white. */
+  :where(.bg-navy) :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline-color: var(--white);
+  }
+}
+
+@layer components {
+  /* ---- Buttons (48-52px tall, 12px radius) ---------------------------- */
+  .btn,
+  .btn-gold,
+  .btn-navy,
+  .btn-ghost,
+  .btn-primary,
+  .btn-accent,
+  .btn-secondary,
+  .btn-danger {
+    @apply inline-flex min-h-[46px] items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-[22px] text-[15px] font-semibold no-underline transition-colors;
+  }
+  .btn-gold,
+  .btn-accent {
+    @apply border-gold bg-gold text-navy hover:brightness-95;
+  }
+  .btn-navy,
+  .btn-primary {
+    @apply border-navy bg-navy text-white hover:opacity-90;
+  }
+  .btn-ghost,
+  .btn-secondary {
+    @apply border-line-strong bg-white text-navy hover:bg-fill;
+  }
+  .btn-danger {
+    @apply border-bad-fg bg-white text-bad-fg hover:bg-bad-bg;
+  }
+  :is(.btn, .btn-gold, .btn-navy, .btn-ghost, .btn-primary, .btn-accent, .btn-secondary, .btn-danger):disabled,
+  :is(.btn, .btn-gold, .btn-navy, .btn-ghost, .btn-primary, .btn-accent, .btn-secondary, .btn-danger)[aria-disabled="true"] {
+    @apply cursor-not-allowed border-sand bg-sand text-ink-2 opacity-100 hover:brightness-100;
+  }
+  .btn-sm {
+    @apply min-h-11 px-3.5 text-sm;
+  }
+  .btn-lg {
+    @apply min-h-[54px] px-8 text-base;
+  }
+  .link {
+    @apply font-semibold text-navy underline underline-offset-2;
+  }
+
+  /* ---- Cards ----------------------------------------------------------- */
+  .card {
+    @apply rounded-2xl border border-line bg-white;
+  }
+  .card-hl {
+    @apply rounded-2xl border border-hl-border bg-hover;
+  }
+
+  /* ---- Form fields ----------------------------------------------------- */
+  .input {
+    @apply min-h-[46px] w-full rounded-xl border border-line-input bg-white px-4 py-2 text-[15px] text-ink placeholder:text-ink-2;
+  }
+  textarea.input {
+    @apply py-3;
+  }
+  .label {
+    @apply mb-1.5 block text-[13px] font-semibold text-ink;
+  }
+  .help {
+    @apply mt-1.5 text-xs text-ink-2;
+  }
+
+  /* ---- Chips (28px, fully rounded, 13px semi-bold) ---------------------- */
+  .chip {
+    @apply inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] font-semibold text-ink;
+  }
+  .c-act {
+    @apply bg-act-bg text-act-fg;
+  }
+  .c-wait {
+    @apply bg-wait-bg text-wait-fg;
+  }
+  .c-ok {
+    @apply bg-ok-bg text-ok-fg;
+  }
+  .c-bad {
+    @apply bg-bad-bg text-bad-fg;
+  }
+  .c-navy {
+    @apply bg-navy text-white;
+  }
+  .c-mute {
+    @apply bg-mute-bg text-mute-fg;
+  }
+  .tag {
+    @apply rounded-md bg-sand px-2 py-0.5 text-xs font-semibold text-ink-2;
+  }
+
+  /* ---- Tables (Admin and All loans) ------------------------------------ */
+  .table {
+    @apply w-full border-collapse text-sm;
+  }
+  .table th {
+    @apply whitespace-nowrap border-b border-line bg-sand px-3 py-2.5 text-left text-xs font-semibold text-ink;
+  }
+  .table td {
+    @apply border-b border-line px-3 py-2.5 align-top;
+  }
+  .table tbody tr:hover {
+    @apply bg-hover;
+  }
+
+  /* ---- Type ------------------------------------------------------------ */
+  .page-title {
+    @apply text-[28px] font-bold leading-tight tracking-[-0.01em] text-navy sm:text-[30px];
+  }
+  .h1 {
+    @apply text-[28px] font-bold leading-tight tracking-[-0.01em] text-navy;
+  }
+  .h2 {
+    @apply text-lg font-bold text-navy;
+  }
+  .muted {
+    @apply text-ink-2;
+  }
+  .mono {
+    @apply font-mono text-[13px];
+  }
+
+  /* ---- Tabs (gold 3px underline) --------------------------------------- */
+  .tab {
+    @apply -mb-px inline-flex min-h-12 items-center whitespace-nowrap border-b-[3px] border-transparent px-4 text-base font-medium text-ink-2 hover:text-ink;
+  }
+  .tab[aria-current="page"] {
+    @apply border-navy font-semibold text-navy;
+  }
+
+  /* ---- Dense pages (Loan File, Check documents) ------------------------- */
+  .dense .card {
+    border-radius: 14px;
+  }
+  .dense .chip {
+    @apply h-6 gap-1 px-2.5 text-xs;
+  }
+  .dense :is(.btn, .btn-gold, .btn-navy, .btn-ghost, .btn-danger) {
+    @apply min-h-11;
+  }
+  .dense .btn-lg {
+    @apply min-h-11 px-6 text-[15px];
+  }
+  .dense .input {
+    @apply min-h-11;
+  }
+  .dense .tab {
+    @apply min-h-11;
+  }
+
+  /* ---- Segmented control (list views) ---------------------------------- */
+  .seg {
+    @apply inline-flex max-w-full gap-1 overflow-x-auto rounded-xl bg-fill p-1;
+    scrollbar-width: none;
+  }
+  .seg-row {
+    scrollbar-width: none;
+  }
+  .seg-row::-webkit-scrollbar,
+  .seg::-webkit-scrollbar {
+    display: none;
+  }
+  .seg-item {
+    @apply inline-flex min-h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 text-sm font-medium text-ink-2 no-underline hover:text-navy;
+  }
+  .seg-item[aria-current="page"] {
+    @apply bg-white font-semibold text-navy shadow-sm;
+  }
+  .seg-count {
+    @apply rounded-full bg-fill-strong px-1.5 text-xs font-semibold text-ink-2;
+  }
+
+  /* ---- Login (frozen: the sign-in screen keeps its original look) ------ */
+  .login-btn-primary,
+  .login-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold transition-colors;
+  }
+  .login-btn-primary {
+    @apply border-navy bg-navy text-white hover:opacity-90;
+  }
+  .login-btn-secondary {
+    @apply border-line bg-white text-ink hover:bg-hover;
+  }
+  .login-input {
+    @apply w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink;
+  }
+  .login-chip {
+    @apply inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: var(--white);
+  }
+}
+
+/* An Open items row or "Show the paper" points here for a moment. */
+[data-flash="true"] {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+  transition: outline-color 0.2s;
 }

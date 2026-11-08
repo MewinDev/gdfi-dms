@@ -1,0 +1,1461 @@
+// GDFI DMS - Loan Document Management System
+// Standard PostgreSQL only (runs unchanged on local Docker and on Supabase).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Classification {
+  FINANCING
+  REFINANCING
+}
+
+enum FinancingType {
+  UNDERTAKING
+  NON_UNDERTAKING
+}
+
+enum OrcrStatus {
+  TRANSFERRED
+  UNTRANSFERRED
+}
+
+enum MortgageResult {
+  MORTGAGE
+  NOT_MORTGAGE
+  NOT_EVALUATED
+}
+
+enum TransactionStatus {
+  FOR_CHECKLIST // created, checklist not complete
+  READY // checklist complete, waiting for the LA's next action (assign DP / record EDST)
+  ASSIGNED // assigned to a DP, waiting for acceptance
+  RETURNED // DP declined or returned it; back with the LA
+  IN_PROCESS // DP accepted
+  FORWARDED // DP forwarded the package to a named LA (in transit to branch)
+  COMPLETED
+  CANCELLED
+}
+
+enum ChecklistKind {
+  REQUIRED
+  ONE_OF
+  OPTIONAL
+}
+
+enum Originality {
+  ORIGINAL
+  COPY
+}
+
+enum BranchAccess {
+  ASSIGNED
+  ALL
+}
+
+enum DefaultOriginality {
+  ORIGINAL
+  COPY
+  EITHER
+}
+
+enum DocumentStage {
+  EXPECTED // expected from the checklist, not yet physically confirmed
+  AT_BRANCH
+  IN_TRANSIT
+  WITH_DP
+  IN_SAFEKEEPING
+  PULLED_OUT
+  RELEASED
+  LOST
+  DISPOSED
+}
+
+enum DpAssignmentStatus {
+  PENDING_ACCEPTANCE
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+  CLOSED
+  /// The LA pulled it back before the processor accepted (kept in history, gone from the DP's list).
+  PULLED_BACK
+}
+
+enum FundStatus {
+  NOT_REQUIRED
+  FOR_FUNDING
+  FUNDED
+}
+
+enum ExceptionStatus {
+  OPEN
+  RESOLVED
+}
+
+enum AuditMode {
+  AUTOMATIC
+  MANUAL
+  SIMULATED
+}
+
+enum TransmittalStatus {
+  DRAFT
+  IN_TRANSIT
+  RECEIVED
+  RECEIVED_WITH_DISCREPANCY
+}
+
+enum PullOutStatus {
+  REQUESTED
+  APPROVED
+  DENIED
+  RELEASED
+  RETURNED
+  OVERDUE
+  WRITTEN_OFF
+}
+
+enum DigitalRecordStatus {
+  FOR_SCANNING
+  SCANNED
+  QC_FAILED
+  INDEXED
+  UPLOADED
+  VERIFIED
+}
+
+enum QaFindingStatus {
+  OPEN
+  ENDORSED
+  CORRECTIVE_ACTION
+  VALIDATED
+  RESOLVED
+  CLOSED
+}
+
+enum DisposalBatchStatus {
+  DRAFT
+  FOR_APPROVAL
+  APPROVED
+  DESTROYED
+}
+
+// ---------------------------------------------------------------------------
+// Identity and access
+// ---------------------------------------------------------------------------
+
+/// Roles live in a table so new roles can be added without code changes.
+model Role {
+  id              String         @id @default(cuid())
+  key             String         @unique // LA, ADMIN, DP, FIN, VAULT, DIG, QA, APPR
+  name            String
+  description     String         @default("")
+  /// Permission keys (see lib/auth/permissions.ts). Server checks read these.
+  permissions     String[]
+  /// Whether users with this role may sign in yet (built-in roles). Custom roles: see lib/auth/sign-in-rule.ts.
+  canSignIn       Boolean        @default(false)
+  sortOrder       Int            @default(0)
+  /// Seeded roles (names fixed; "Reset to default" restores their permissions). Admin is also locked.
+  builtIn         Boolean        @default(false)
+  /// Which loan files people with this role see: their assigned branches, or all branches.
+  branchAccess    BranchAccess   @default(ASSIGNED)
+  /// Inactive instead of delete (only when nobody has the role).
+  active          Boolean        @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  users           User[]
+  approvalBands   ApprovalBand[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model User {
+  id              String       @id @default(cuid())
+  email           String       @unique
+  name            String
+  active          Boolean      @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  roleId          String
+  role            Role         @relation(fields: [roleId], references: [id])
+  /// Identity provider subject (Entra object id) once Microsoft sign-in is enabled.
+  externalId      String?      @unique
+  isTestUser      Boolean      @default(false)
+  /// Email me for non-urgent updates (urgent ones always go while emails are on).
+  emailNonUrgent  Boolean      @default(true)
+  branches        UserBranch[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  openedLoans        Loan[]               @relation("LoanOpenedBy")
+  notifications      Notification[]
+  emails             EmailOutbox[]
+  auditLogs          AuditLog[]
+  dpAssignments      DpAssignment[]       @relation("DpPrimary")
+  secondaryDpWork    DpAssignment[]       @relation("DpSecondary")
+  assignmentsMade    DpAssignment[]       @relation("DpAssignedBy")
+  receivingAsLa      DpAssignment[]       @relation("DpReceivingLa")
+  checklistChecks    ChecklistCheck[]
+  cashAdvances       CashAdvance[]        @relation("CaRequestedBy")
+  attempts           TransactionAttempt[] @relation("DpAttempts")
+  exceptionsRaised   LoanException[]      @relation("ExceptionRaisedBy")
+  holdsRaised        Hold[]               @relation("HoldRaisedBy")
+  holdsResumed       Hold[]               @relation("HoldResumedBy")
+  exceptionsResolved LoanException[]      @relation("ExceptionResolvedBy")
+}
+
+model Branch {
+  id                String         @id @default(cuid())
+  code              String         @unique
+  name              String         @unique
+  active            Boolean        @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt     DateTime?
+  deactivatedById   String?
+  users             UserBranch[]
+  loans             Loan[]
+  dpWork            DpAssignment[]
+  receivingPackages DpAssignment[] @relation("DpReceivingBranch")
+  cashAdvances      CashAdvance[]
+  /// Pre-selected in the Send panel for transactions that need LTO processing (optional).
+  usualLtoOfficeId  String?
+  usualLtoOffice    LtoOffice?     @relation("BranchUsualLto", fields: [usualLtoOfficeId], references: [id])
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+model UserBranch {
+  userId   String
+  branchId String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+}
+
+// ---------------------------------------------------------------------------
+// Reference data (Settings)
+// ---------------------------------------------------------------------------
+
+model TransactionType {
+  id              String            @id @default(cuid())
+  code            String            @unique // NOTARY, EDST, PPSR, MORTGAGE
+  name            String
+  description     String            @default("")
+  requiresDp      Boolean           @default(true)
+  /// The processor takes it to an LTO office; the LA must say which office when sending. Only with requiresDp.
+  needsLto        Boolean           @default(false)
+  /// Owner role of the processing stage for this type (DP, LA ...).
+  ownerRole       String            @default("DP")
+  sortOrder       Int               @default(0)
+  active          Boolean           @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  /// The four types the automation rules create (NOTARY, EDST, PPSR, MORTGAGE). Never inactive; code fixed.
+  builtIn         Boolean           @default(false)
+  rules           ChecklistRule[]
+  txns            LoanTransaction[]
+  stages          ProcessingStage[]
+  caRules         CashAdvanceRule[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+model DocumentType {
+  id                 String             @id @default(cuid())
+  code               String             @unique // ORCR, OR, CR, DS, CHM, DOS, PPSR, INS, ID ...
+  name               String
+  active             Boolean            @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt      DateTime?
+  deactivatedById    String?
+  /// Default for new checklist items: ORIGINAL, COPY or EITHER.
+  defaultOriginality DefaultOriginality @default(EITHER)
+  notes              String             @default("")
+  rules              ChecklistRule[]
+  retentionRule      RetentionRule?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+model ChecklistRule {
+  id                String           @id @default(cuid())
+  transactionTypeId String
+  transactionType   TransactionType  @relation(fields: [transactionTypeId], references: [id])
+  documentTypeId    String
+  documentType      DocumentType     @relation(fields: [documentTypeId], references: [id])
+  label             String
+  kind              ChecklistKind
+  /// Items with kind ONE_OF and the same group: at least one must be ticked.
+  oneOfGroup        String?
+  /// Must be ticked before the transaction can be sent to a DP. Copied onto each loan file's
+  /// checklist line when the loan file is opened (changing it later does not affect open loan files).
+  required          Boolean          @default(true)
+  /// Belongs to the borrower (valid IDs, SPA): can be copied to a replacement PN. Unit papers never.
+  reusable          Boolean          @default(false)
+  originality       Originality      @default(ORIGINAL)
+  sortOrder         Int              @default(0)
+  active            Boolean          @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt     DateTime?
+  deactivatedById   String?
+  checks            ChecklistCheck[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+model LoanType {
+  id              String    @id @default(cuid())
+  code            String    @unique // New, Renewal (exact MyLoans values)
+  name            String
+  description     String    @default("")
+  active          Boolean   @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model LtoOffice {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  name            String
+  city            String    @default("")
+  active          Boolean   @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt   DateTime?
+  deactivatedById String?
+
+  /// Optional estimates, used only to help the approver judge the cash advance (transport and time).
+  distanceKm              Float?
+  travelHours             Float?
+  suggestedTransportCents Int?
+
+  assignments      DpAssignment[]
+  usualForBranches Branch[]          @relation("BranchUsualLto")
+  advanceLines     CashAdvanceLine[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+/// Turnaround time per journey step, in business days. Editable in Settings.
+model TatRule {
+  id           String   @id @default(cuid())
+  key          String   @unique // e.g. P3_CHECKLIST, P4_NOTARY
+  phase        Int
+  step         String
+  label        String
+  businessDays Int
+  /// Free-text target shown when the TAT is not a whole number of days (e.g. "Seconds", "Per Finance policy").
+  note         String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CashAdvanceRule {
+  id                String          @id @default(cuid())
+  transactionTypeId String
+  transactionType   TransactionType @relation(fields: [transactionTypeId], references: [id])
+  /// Expense kind this rule is for (one rule per transaction type and kind).
+  kind              ExpenseKind     @default(OTHER)
+  purpose           String
+  /// Suggested amount; empty when the owner has not set one.
+  suggestedAmount   Decimal?        @db.Decimal(14, 2)
+  /// Maximum per transaction (more needs a typed reason).
+  maxAmount         Decimal         @db.Decimal(14, 2)
+  /// Business days after release within which the DP must liquidate.
+  liquidationDays   Int             @default(5)
+  active            Boolean         @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt     DateTime?
+  deactivatedById   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model HolidayCalendar {
+  id              String    @id @default(cuid())
+  date            String    @unique // YYYY-MM-DD (business time zone)
+  name            String
+  /// Inactive: no longer skipped when counting business days.
+  active          Boolean   @default(true)
+  /// Inactive instead of delete: when and by whom it was made inactive (null while active).
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  createdAt       DateTime  @default(now())
+}
+
+/// Key/value system settings (toggles such as "simulate MyLoans unavailable").
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Loan File
+// ---------------------------------------------------------------------------
+
+/// The Loan File. Keyed by PN. Created only by "Open Loan File".
+model Loan {
+  id                  String   @id @default(cuid())
+  pn                  String   @unique
+  cin                 String?
+  cif                 String?
+  sourceLoanId        String?
+  borrowerName        String
+  branchId            String
+  branch              Branch   @relation(fields: [branchId], references: [id])
+  loanType            String
+  productName         String   @default("")
+  totalReleasedAmount Decimal  @db.Decimal(14, 2)
+  releasedAt          DateTime
+  sourceStatus        String
+
+  retrievedAt DateTime
+  openedAt    DateTime @default(now())
+  openedById  String
+  openedBy    User     @relation("LoanOpenedBy", fields: [openedById], references: [id])
+
+  classification Classification
+  financingType  FinancingType?
+  orcrStatus     OrcrStatus?
+  mortgageResult MortgageResult
+  ruleFired      String
+  /// True when an Admin (Supervisor) overrode the automatic result.
+  overridden     Boolean        @default(false)
+
+  /// Derived from the transactions on every write (never typed in). Cached for list filters.
+  stage      String   @default("Opened")
+  stageSince DateTime @default(now())
+
+  /// False when the last refresh from MyLoans failed (stored copy shown as Not current).
+  sourceCurrent       Boolean   @default(true)
+  lastRefreshError    String?
+  /// When MyLoans was last asked (answered or not). retrievedAt is the last answer.
+  lastCheckedAt       DateTime?
+  /// MyLoans polling: A work in progress, B not yet sent, C finished steps not closed; null = never (closed, cancelled).
+  syncTier            String?
+  /// When the background sync should ask MyLoans again (partial index "Loan_due_idx" on active loans).
+  nextCheckAt         DateTime?
+  /// Replacement PN links (a changed unit gets a new PN: a new loan file linked to the old one).
+  replacesPn          String?
+  replacedByPn        String?
+  /// How the replacement was confirmed (no payment on the old PN): MyLoans evidence, the Admin's tick, or an override note.
+  replacementEvidence String?
+  /// Closed as cancelled in MyLoans (Admin review): when and why ("Cancelled in MyLoans", "Replaced by PN-...").
+  cancelledAt         DateTime?
+  cancelReason        String?
+
+  closedAt   DateTime?
+  archivedAt DateTime?
+  disposedAt DateTime?
+
+  snapshots        LoanSourceSnapshot[]
+  sourceChanges    SourceChange[]
+  transactions     LoanTransaction[]
+  documents        DocumentItem[]
+  dpAssignments    DpAssignment[]
+  problems         Problem[]
+  holds            Hold[]
+  exceptions       LoanException[]
+  transmittalItems TransmittalItem[]
+  pullOuts         PullOutRequest[]
+  digitalRecords   DigitalRecord[]
+  qaFindings       QaFinding[]
+  notifications    Notification[]
+  attachments      Attachment[]
+  auditLogs        AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId, stage])
+  @@index([cin])
+  @@index([cif])
+  @@index([lastCheckedAt])
+}
+
+/// Full MyLoans API response for every retrieval.
+model LoanSourceSnapshot {
+  id          String   @id @default(cuid())
+  loanId      String
+  loan        Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  retrievedAt DateTime @default(now())
+  adapter     String // mock | live
+  payload     Json
+  /// Field-level differences against the previous snapshot (null for the first).
+  changes     Json?
+  /// The tracked fields as stored values (lib/myloans/changes.ts) and their hash. Null on older rows.
+  tracked     Json?
+  hash        String?
+  /// BASE (first copy), MINOR (only the latest is kept), MATERIAL, STATUS, REPLACEMENT (always kept).
+  kind        String?
+
+  @@index([loanId, retrievedAt])
+}
+
+enum SourceChangeCategory {
+  MATERIAL
+  STATUS
+  REPLACEMENT
+}
+
+enum SourceChangeState {
+  OPEN
+  APPLIED
+  KEPT
+  CLOSED_CANCELLED
+}
+
+/// A MyLoans change that needs a decision (Admin review). Append-only except the decision fields
+/// (state, decidedById, decidedByLabel, decidedAt, note) and, while Open, the latest detection
+/// (changes, proposed, detectedAt) whose earlier versions are kept in history.
+model SourceChange {
+  id             String               @id @default(cuid())
+  loanId         String
+  loan           Loan                 @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  firstSeenAt    DateTime             @default(now())
+  detectedAt     DateTime             @default(now())
+  category       SourceChangeCategory
+  /// [{ field, label, was, now, kind }] (stored values, amounts in centavos).
+  changes        Json
+  /// The proposed effect: what the rules would do on the new data (nothing saved).
+  proposed       Json
+  /// Earlier detections while it was open: [{ detectedAt, category, changes }].
+  history        Json                 @default("[]")
+  /// The new values' hash (the snapshot it was detected on).
+  hash           String
+  /// Possible replacement PNs (same CIN or CIF), or the PN MyLoans named.
+  candidates     String[]             @default([])
+  state          SourceChangeState    @default(OPEN)
+  decidedById    String?
+  decidedByLabel String?
+  decidedAt      DateTime?
+  note           String?
+  simulated      Boolean              @default(false)
+
+  @@index([loanId, state])
+  @@index([state])
+}
+
+model LoanTransaction {
+  id               String               @id @default(cuid())
+  loanId           String
+  loan             Loan                 @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  typeId           String
+  type             TransactionType      @relation(fields: [typeId], references: [id])
+  status           TransactionStatus    @default(FOR_CHECKLIST)
+  statusSince      DateTime             @default(now())
+  /// AUTOMATIC (rule engine) or OVERRIDE (Supervisor).
+  origin           String               @default("AUTOMATIC")
+  checklistSavedAt DateTime?
+  edstReference    String?
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  cancelReason     String?
+  checks           ChecklistCheck[]
+  documents        DocumentItem[]
+  dpAssignments    DpAssignment[]
+  /// LA flag: does this transaction need funds? (no amount; the DP asks Finance for it)
+  fundsNeeded      FundsNeeded          @default(UNANSWERED)
+  fundsKinds       ExpenseKind[]
+  /// Free text kept from older data (e.g. the old cash advance amount).
+  fundsNote        String               @default("")
+  fundsFlaggedAt   DateTime?
+  labelsPrintedAt  DateTime?
+  advanceLines     CashAdvanceLine[]
+  attempts         TransactionAttempt[]
+  problems         Problem[]
+  holds            Hold[]
+  exceptions       LoanException[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([loanId, status])
+}
+
+model ChecklistCheck {
+  id            String          @id @default(cuid())
+  transactionId String
+  transaction   LoanTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  ruleId        String?
+  rule          ChecklistRule?  @relation(fields: [ruleId], references: [id])
+  /// For "Others" free-text items.
+  otherLabel    String?
+  /// Copy of the rule's "required" flag when the loan file was opened.
+  required      Boolean         @default(true)
+  checked       Boolean         @default(false)
+  checkedAt     DateTime?
+  checkedById   String?
+  checkedBy     User?           @relation(fields: [checkedById], references: [id])
+  documentItem  DocumentItem?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([transactionId, ruleId])
+}
+
+model DocumentItem {
+  id               String             @id @default(cuid())
+  /// {PN}-{DocTypeCode}-{Seq}. Null until the LA confirms the item is physically present.
+  documentId       String?            @unique
+  loanId           String
+  loan             Loan               @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  transactionId    String?
+  transaction      LoanTransaction?   @relation(fields: [transactionId], references: [id])
+  checkId          String?            @unique
+  check            ChecklistCheck?    @relation(fields: [checkId], references: [id])
+  docTypeCode      String
+  label            String
+  originality      Originality        @default(ORIGINAL)
+  stage            DocumentStage      @default(EXPECTED)
+  /// Exactly one custodian at a time.
+  custodianLabel   String             @default("Not yet received")
+  custodianRole    String?
+  custodianUserId  String?
+  location         String             @default("")
+  since            DateTime           @default(now())
+  labelPrintedAt   DateTime?
+  movements        DocumentMovement[]
+  digitalRecords   DigitalRecord[]
+  transmittalItems TransmittalItem[]
+  pullOuts         PullOutRequest[]
+  vaultLocationId  String?
+  vaultLocation    VaultLocation?     @relation(fields: [vaultLocationId], references: [id])
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([loanId])
+}
+
+/// Append-only custody trail. Never updated or deleted; corrections reference the corrected row.
+model DocumentMovement {
+  id               String             @id @default(cuid())
+  documentItemId   String
+  documentItem     DocumentItem       @relation(fields: [documentItemId], references: [id], onDelete: Cascade)
+  action           String // RECEIVED_AT_BRANCH, LABEL_PRINTED, DISPATCHED, ACKNOWLEDGED, ...
+  fromCustodian    String?
+  toCustodian      String?
+  purpose          String?
+  remarks          String?
+  createdAt        DateTime           @default(now())
+  actorId          String?
+  /// Who did it, as shown (the name at the time; "Name (Simulated)" for the test simulator).
+  actorLabel       String?
+  /// Where the paper is after this movement (branch, "With DP ...", "In transit to ...", vault slot).
+  location         String?
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
+  correctsId       String?
+  corrects         DocumentMovement?  @relation("MovementCorrection", fields: [correctsId], references: [id])
+  correctedBy      DocumentMovement[] @relation("MovementCorrection")
+  simulated        Boolean            @default(false)
+
+  @@index([documentItemId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 / 4: DP assignment, cash advance
+// ---------------------------------------------------------------------------
+
+model DpAssignment {
+  id                  String             @id @default(cuid())
+  loanId              String
+  loan                Loan               @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  transactionId       String
+  transaction         LoanTransaction    @relation(fields: [transactionId], references: [id])
+  dpBranchId          String
+  dpBranch            Branch             @relation(fields: [dpBranchId], references: [id])
+  dpUserId            String
+  dpUser              User               @relation("DpPrimary", fields: [dpUserId], references: [id])
+  /// Pasuyo (secondary DP)
+  secondaryDpUserId   String?
+  secondaryDpUser     User?              @relation("DpSecondary", fields: [secondaryDpUserId], references: [id])
+  pasuyoReason        String?
+  pasuyoEvents        PasuyoEvent[]
+  /// Job stages (snapshot of the type's processing stages, made when the first stage starts).
+  stages              JobStage[]
+  ltoOfficeId         String?
+  ltoOffice           LtoOffice?         @relation(fields: [ltoOfficeId], references: [id])
+  /// Old per-assignment fund status (kept for history). Funds now follow the transaction flag and its advance lines.
+  fundStatus          FundStatus         @default(NOT_REQUIRED)
+  /// The DP ticked "Labels are on all papers" when accepting.
+  labelsConfirmedAt   DateTime?
+  returnedAt          DateTime?
+  returnReasons       String?
+  /// Return to LA (after accepting): why papers are needed (Settings list). Null for a decline or an older return.
+  returnReasonId      String?
+  returnReason        ReturnReason?      @relation(fields: [returnReasonId], references: [id])
+  beyondTatReason     String?
+  recommendedDpUserId String?
+  status              DpAssignmentStatus @default(PENDING_ACCEPTANCE)
+  endorsedAt          DateTime           @default(now())
+  assignedById        String
+  assignedBy          User               @relation("DpAssignedBy", fields: [assignedById], references: [id])
+  decidedAt           DateTime?
+  declineReasons      String?
+  /// Phase 4 processing details (notary, PPSR, LTO), recorded by the DP later.
+  processing          Json?
+  forwardedAt         DateTime?
+  receivingLaId       String?
+  receivingLa         User?              @relation("DpReceivingLa", fields: [receivingLaId], references: [id])
+  /// The branch the DP chose when forwarding (the loan's branch is only a hint).
+  receivingBranchId   String?
+  receivingBranch     Branch?            @relation("DpReceivingBranch", fields: [receivingBranchId], references: [id])
+  closedAt            DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([dpUserId, status])
+  @@index([loanId])
+}
+
+model LoanException {
+  id              String           @id @default(cuid())
+  loanId          String
+  loan            Loan             @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  transactionId   String?
+  transaction     LoanTransaction? @relation(fields: [transactionId], references: [id])
+  /// LEGAL_DOCS_COMPLETION, NO_FUNDS, SOURCE_CHANGE, DP_DECLINED, LTO_PROBLEM, INCOMPLETE_PACKAGE, ...
+  type            String
+  reason          String
+  details         Json?
+  status          ExceptionStatus  @default(OPEN)
+  raisedAt        DateTime         @default(now())
+  raisedById      String?
+  raisedBy        User?            @relation("ExceptionRaisedBy", fields: [raisedById], references: [id])
+  /// "System" when raised automatically.
+  raisedByLabel   String
+  resolvedAt      DateTime?
+  resolvedById    String?
+  resolvedBy      User?            @relation("ExceptionResolvedBy", fields: [resolvedById], references: [id])
+  resolvedByLabel String?
+  resolution      String?
+  simulated       Boolean          @default(false)
+
+  @@index([loanId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6: transmittal and vault
+// ---------------------------------------------------------------------------
+
+model Transmittal {
+  id           String            @id @default(cuid())
+  number       String            @unique
+  fromBranchId String?
+  toLabel      String            @default("Main Vault")
+  method       String // HAND_CARRY, COURIER, POUCH
+  status       TransmittalStatus @default(DRAFT)
+  createdById  String?
+  dispatchedAt DateTime?
+  receivedAt   DateTime?
+  receivedBy   String?
+  simulated    Boolean           @default(false)
+  items        TransmittalItem[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+model TransmittalItem {
+  id             String       @id @default(cuid())
+  transmittalId  String
+  transmittal    Transmittal  @relation(fields: [transmittalId], references: [id], onDelete: Cascade)
+  loanId         String
+  loan           Loan         @relation(fields: [loanId], references: [id])
+  documentItemId String
+  documentItem   DocumentItem @relation(fields: [documentItemId], references: [id])
+  received       Boolean      @default(false)
+  discrepancy    String?
+
+  @@unique([transmittalId, documentItemId])
+}
+
+model VaultLocation {
+  id        String         @id @default(cuid())
+  vault     String
+  rack      String
+  shelf     String
+  box       String
+  slot      String
+  label     String         @unique
+  occupied  Boolean        @default(false)
+  documents DocumentItem[]
+  createdAt DateTime       @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8: pull-out
+// ---------------------------------------------------------------------------
+
+model PullOutRequest {
+  id                 String        @id @default(cuid())
+  loanId             String
+  loan               Loan          @relation(fields: [loanId], references: [id])
+  documentItemId     String
+  documentItem       DocumentItem  @relation(fields: [documentItemId], references: [id])
+  requestedById      String?
+  purpose            String
+  isThirdParty       Boolean       @default(false)
+  thirdPartyId       String?
+  thirdParty         ThirdParty?   @relation(fields: [thirdPartyId], references: [id])
+  expectedReturnDate DateTime
+  status             PullOutStatus @default(REQUESTED)
+  approvals          Json?
+  releasedAt         DateTime?
+  returnedAt         DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model ThirdParty {
+  id                  String           @id @default(cuid())
+  name                String
+  organization        String           @default("")
+  idType              String           @default("")
+  idNumber            String           @default("")
+  authorizationLetter String?
+  requests            PullOutRequest[]
+  createdAt           DateTime         @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7: DigiCur, Phase 9: QA, Phase 10: retention
+// ---------------------------------------------------------------------------
+
+model DigitalRecord {
+  id             String              @id @default(cuid())
+  loanId         String
+  loan           Loan                @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  documentItemId String
+  documentItem   DocumentItem        @relation(fields: [documentItemId], references: [id])
+  status         DigitalRecordStatus @default(FOR_SCANNING)
+  pageCount      Int?
+  rescanReason   String?
+  storageKey     String?
+  verifiedAt     DateTime?
+  verifiedBy     String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+}
+
+model QaFinding {
+  id          String          @id @default(cuid())
+  loanId      String
+  loan        Loan            @relation(fields: [loanId], references: [id])
+  category    String
+  severity    String // LOW, MEDIUM, HIGH, CRITICAL
+  department  String
+  demerits    Int
+  isRepeat    Boolean         @default(false)
+  dueDate     DateTime
+  description String
+  status      QaFindingStatus @default(OPEN)
+  raisedBy    String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model RetentionRule {
+  id             String       @id @default(cuid())
+  documentTypeId String       @unique
+  documentType   DocumentType @relation(fields: [documentTypeId], references: [id])
+  retentionYears Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model DisposalBatch {
+  id          String              @id @default(cuid())
+  month       String // YYYY-MM
+  status      DisposalBatchStatus @default(DRAFT)
+  approvedBy  String?
+  approvedAt  DateTime?
+  certificate String?
+  loanIds     String[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model Attachment {
+  id          String   @id @default(cuid())
+  loanId      String?
+  loan        Loan?    @relation(fields: [loanId], references: [id])
+  ownerType   String // e.g. DocumentItem, CashAdvanceLiquidation, DisposalBatch
+  ownerId     String
+  fileName    String
+  contentType String
+  sizeBytes   Int
+  storageKey  String
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Notifications and audit
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loanId    String?
+  loan      Loan?     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  emailedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+/// Email channel of the notifications. Written in the same database transaction as the notification;
+/// append-only except the status fields (status, attempts, lastError, nextAttemptAt, sentAt, batchedIntoId).
+/// Never holds a secret or a token.
+model EmailOutbox {
+  id              String      @id @default(cuid())
+  event           String
+  userId          String?
+  user            User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// "Joy Navarro (DP)"
+  toName          String
+  /// The real person's address; toAddress is where it goes (the test address in test mode).
+  intendedAddress String
+  toAddress       String?
+  subject         String
+  html            String
+  text            String
+  /// The headline of this one item, used when several are combined into one email.
+  headline        String
+  link            String?
+  urgent          Boolean     @default(false)
+  status          EmailStatus
+  attempts        Int         @default(0)
+  lastError       String?
+  nextAttemptAt   DateTime?
+  /// When batched: the row whose email carried this one.
+  batchedIntoId   String?
+  /// Reminders: one per thing per day.
+  dedupeKey       String?     @unique
+  loanId          String?
+  transactionId   String?
+  simulated       Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  sentAt          DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+  @@index([event, userId, status])
+}
+
+/// Append-only audit trail. Written in the same database transaction as the change it records.
+model AuditLog {
+  id          String    @id @default(cuid())
+  at          DateTime  @default(now())
+  actorId     String?
+  actor       User?     @relation(fields: [actorId], references: [id])
+  /// Display name at the time ("System" for automatic entries).
+  actorLabel  String
+  mode        AuditMode
+  action      String
+  entityType  String
+  entityId    String?
+  loanId      String?
+  loan        Loan?     @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  pn          String?
+  /// Journey step id this entry completes (e.g. "1.4", "3.6").
+  journeyStep String?
+  summary     String
+  before      Json?
+  after       Json?
+  details     Json?
+
+  @@index([pn])
+  @@index([loanId, at])
+  @@index([action])
+  @@index([at])
+}
+
+// ---------------------------------------------------------------------------
+// Funds (cash advance), DP attempts, receipts and problems
+// Money is stored as integer centavos (Int). Never floats.
+// Released amounts, attempts, receipts and returns are append-only: a correction is a new row
+// that references the old one (correctsId).
+// ---------------------------------------------------------------------------
+
+enum FundsNeeded {
+  UNANSWERED
+  YES
+  NO
+}
+
+enum ExpenseKind {
+  NOTARY_FEE
+  PPSR_FEE
+  LTO_FEE
+  TRANSPORT
+  OTHER
+}
+
+enum AdvanceStatus {
+  REQUESTED
+  APPROVED
+  RELEASED
+  FOR_LIQUIDATION
+  PARTIALLY_LIQUIDATED
+  LIQUIDATED
+  CLOSED
+  DENIED
+  CANCELLED
+}
+
+enum AttemptResult {
+  DONE
+  NOT_PROCESSED
+}
+
+enum RestDecision {
+  CARRY_OVER
+  RETURN
+  NONE
+}
+
+enum TopUpStatus {
+  REQUESTED
+  APPROVED
+  DENIED
+}
+
+enum CarryOverStatus {
+  AUTO
+  PENDING
+  APPROVED
+  DENIED
+}
+
+/// One cash advance requested by a DP, covering several flagged transactions (and other expenses).
+model CashAdvance {
+  id                String            @id @default(cuid())
+  /// Move to the new PN: the line whose balance this request moves (the cash is already with the DP).
+  movedFromLineId   String?
+  number            String            @unique // CA-2026-0001
+  requestedById     String
+  requestedBy       User              @relation("CaRequestedBy", fields: [requestedById], references: [id])
+  branchId          String
+  branch            Branch            @relation(fields: [branchId], references: [id])
+  status            AdvanceStatus     @default(REQUESTED)
+  requestedCents    Int
+  /// Notes such as a Pasuyo handover ("₱500.00 handed to Grace Tan, CA-2026-0003").
+  note              String            @default("")
+  approvedCents     Int?
+  releasedCents     Int               @default(0)
+  approvedById      String?
+  approvedAt        DateTime?
+  approvalNote      String            @default("")
+  deniedReason      String            @default("")
+  releasedById      String?
+  releasedAt        DateTime?
+  releaseRef        String            @default("")
+  /// Restarts at each carry-over decision.
+  liquidationDueAt  DateTime?
+  /// Overdue notice sent (cleared when the due date restarts).
+  overdueNotifiedAt DateTime?
+  closedById        String?
+  closedAt          DateTime?
+  /// One-time exception used to submit this request while another advance was overdue.
+  exceptionId       String?           @unique
+  exception         FundsException?   @relation(fields: [exceptionId], references: [id])
+  lines             CashAdvanceLine[]
+  returns           CashReturn[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([requestedById, status])
+}
+
+model CashAdvanceLine {
+  id             String             @id @default(cuid())
+  advanceId      String
+  advance        CashAdvance        @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  /// Null for a general expense (e.g. transport).
+  transactionId  String?
+  transaction    LoanTransaction?   @relation(fields: [transactionId], references: [id])
+  kind           ExpenseKind
+  note           String             @default("")
+  /// Typed reason when the amount is above the maximum per transaction.
+  overMaxReason  String             @default("")
+  /// The job's LTO office when the cash was requested (to show "Office changed from X to Y").
+  ltoOfficeId    String?
+  ltoOffice      LtoOffice?         @relation(fields: [ltoOfficeId], references: [id])
+  requestedCents Int
+  approvedCents  Int?
+  releasedCents  Int                @default(0)
+  denied         Boolean            @default(false)
+  topUps         CashAdvanceTopUp[]
+  spends         AttemptSpend[]
+  receipts       Receipt[]
+  returns        CashReturn[]
+  carryOvers     CarryOver[]
+  createdAt      DateTime           @default(now())
+}
+
+model CashAdvanceTopUp {
+  id            String          @id @default(cuid())
+  lineId        String
+  line          CashAdvanceLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  extraCents    Int
+  reason        String
+  status        TopUpStatus     @default(REQUESTED)
+  approvedCents Int?
+  approverId    String?
+  decidedAt     DateTime?
+  decisionNote  String          @default("")
+  releasedCents Int             @default(0)
+  releasedAt    DateTime?
+  requestedById String
+  createdAt     DateTime        @default(now())
+}
+
+/// A day of work on a transaction (append-only).
+model TransactionAttempt {
+  id            String          @id @default(cuid())
+  transactionId String
+  transaction   LoanTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  dpUserId      String
+  dpUser        User            @relation("DpAttempts", fields: [dpUserId], references: [id])
+  date          String // YYYY-MM-DD (business time zone)
+  result        AttemptResult
+  reasonId      String?
+  reason        ProblemReason?  @relation(fields: [reasonId], references: [id])
+  note          String          @default("")
+  restDecision  RestDecision    @default(NONE)
+  simulated     Boolean         @default(false)
+  /// The job stage that was current when it was logged (null before stages existed).
+  jobStageId    String?
+  jobStage      JobStage?       @relation(fields: [jobStageId], references: [id])
+  correctsId    String?
+  spends        AttemptSpend[]
+  createdAt     DateTime        @default(now())
+
+  @@index([transactionId, createdAt])
+}
+
+model AttemptSpend {
+  id        String             @id @default(cuid())
+  attemptId String
+  attempt   TransactionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  lineId    String
+  line      CashAdvanceLine    @relation(fields: [lineId], references: [id])
+  cents     Int
+}
+
+model Receipt {
+  id           String          @id @default(cuid())
+  lineId       String
+  line         CashAdvanceLine @relation(fields: [lineId], references: [id])
+  date         String // YYYY-MM-DD
+  cents        Int
+  number       String // receipt or OR number
+  fileKey      String          @default("")
+  fileName     String          @default("")
+  mime         String          @default("")
+  uploadedById String
+  correctsId   String?
+  createdAt    DateTime        @default(now())
+}
+
+/// Cash the DP returns; Finance confirms receipt.
+model CashReturn {
+  id            String           @id @default(cuid())
+  advanceId     String
+  advance       CashAdvance      @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  lineId        String?
+  line          CashAdvanceLine? @relation(fields: [lineId], references: [id])
+  cents         Int
+  date          String
+  recordedById  String
+  confirmedById String?
+  confirmedAt   DateTime?
+  /// CASH: cash given back to Finance. HANDOVER: the balance went to a second processor (Pasuyo) on a new advance.
+  kind          CashReturnKind   @default(CASH)
+  /// HANDOVER: the second processor's line that now holds the balance.
+  toLineId      String?
+  createdAt     DateTime         @default(now())
+}
+
+enum CashReturnKind {
+  CASH
+  HANDOVER
+}
+
+/// Pasuyo history (append-only): a job given to, or passed to, a second processor.
+model PasuyoEvent {
+  id           String       @id @default(cuid())
+  assignmentId String
+  assignment   DpAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  /// Who passed it (null: the LA chose a second processor at Send).
+  fromUserId   String?
+  fromLabel    String?
+  toUserId     String
+  toLabel      String
+  byUserId     String?
+  byLabel      String
+  reason       String
+  note         String       @default("")
+  /// What happened to cash held for the job: NONE, RETURNED (cash return), HANDED (balance moved to the second processor).
+  funds        String       @default("NONE")
+  createdAt    DateTime     @default(now())
+
+  @@index([assignmentId, createdAt])
+}
+
+/// A balance kept for the next attempt. Beyond the carry-over limit it needs approval.
+model CarryOver {
+  id           String          @id @default(cuid())
+  lineId       String
+  line         CashAdvanceLine @relation(fields: [lineId], references: [id])
+  attemptId    String?
+  cents        Int
+  status       CarryOverStatus
+  /// Business days since the first carry-over of this line, when decided.
+  businessDays Int             @default(0)
+  decidedById  String?
+  decidedAt    DateTime?
+  createdAt    DateTime        @default(now())
+}
+
+/// Finance lets a DP submit one new request while an advance is overdue (one-time).
+model FundsException {
+  id          String       @id @default(cuid())
+  dpUserId    String
+  grantedById String
+  grantedAt   DateTime     @default(now())
+  note        String       @default("")
+  usedBy      CashAdvance?
+}
+
+/// Who approves an advance, by amount (Settings). The band with the highest "from" at or below the amount applies.
+model ApprovalBand {
+  id              String    @id @default(cuid())
+  fromCents       Int       @unique
+  roleId          String
+  role            Role      @relation(fields: [roleId], references: [id])
+  active          Boolean   @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+/// Reasons for a problem (also the result of an attempt that was not processed). Settings list.
+model ProblemReason {
+  id              String               @id @default(cuid())
+  code            String               @unique
+  name            String
+  sortOrder       Int                  @default(0)
+  active          Boolean              @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  problems        Problem[]
+  attempts        TransactionAttempt[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+}
+
+/// A problem on a transaction: a red state with its own timer. The TAT clock never pauses for it.
+model Problem {
+  id                String          @id @default(cuid())
+  loanId            String
+  loan              Loan            @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  transactionId     String
+  transaction       LoanTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  reasonId          String
+  reason            ProblemReason   @relation(fields: [reasonId], references: [id])
+  note              String          @default("")
+  raisedById        String?
+  raisedByLabel     String
+  raisedAt          DateTime        @default(now())
+  resolvedById      String?
+  resolvedByLabel   String?
+  resolvedAt        DateTime?
+  resolutionNote    String          @default("")
+  outsideControl    Boolean         @default(false)
+  outsideMarkedById String?
+  outsideMarkedAt   DateTime?
+  simulated         Boolean         @default(false)
+  /// The job stage that was current when it was raised.
+  jobStageId        String?
+  jobStage          JobStage?       @relation(fields: [jobStageId], references: [id])
+
+  @@index([transactionId, resolvedAt])
+}
+
+/**
+ * Reasons a transaction can be on hold (waiting on something that is not a fault). Settings list.
+ */
+model HoldReason {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  name            String
+  sortOrder       Int       @default(0)
+  active          Boolean   @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  holds           Hold[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+/**
+ * A transaction On hold: it waits on something that is not a fault (the borrower, another team, an
+ * LTO appointment). Separate from Problem; both may be open at once (the problem wins for colour).
+ * The TAT clock never pauses: a hold only changes the state and has its own timer. Several holds can
+ * happen over time, but only one is open per transaction (unique index on open holds, see migration).
+ * The row is written when the hold starts and closed (resumed*) when it ends; nothing else changes.
+ */
+model Hold {
+  id               String          @id @default(cuid())
+  loanId           String
+  loan             Loan            @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  transactionId    String
+  transaction      LoanTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  reasonId         String
+  reason           HoldReason      @relation(fields: [reasonId], references: [id])
+  note             String          @default("")
+  /// Optional "expected to resume on" date, YYYY-MM-DD in Philippine time.
+  expectedResumeOn String?
+  raisedById       String?
+  raisedBy         User?           @relation("HoldRaisedBy", fields: [raisedById], references: [id])
+  raisedByLabel    String
+  raisedAt         DateTime        @default(now())
+  resumedById      String?
+  resumedBy        User?           @relation("HoldResumedBy", fields: [resumedById], references: [id])
+  resumedByLabel   String?
+  resumedAt        DateTime?
+  resumeNote       String          @default("")
+  simulated        Boolean         @default(false)
+  /// The job stage that was current when it was put on hold.
+  jobStageId       String?
+  jobStage         JobStage?       @relation(fields: [jobStageId], references: [id])
+
+  @@index([transactionId, resumedAt])
+  @@index([loanId])
+}
+
+/**
+ * Why a processor returns an accepted job to the LA (papers needed). Settings list.
+ */
+model ReturnReason {
+  id              String         @id @default(cuid())
+  code            String         @unique
+  name            String
+  sortOrder       Int            @default(0)
+  active          Boolean        @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  assignments     DpAssignment[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Processing stages (Settings) and job stages (per DP job)
+// ---------------------------------------------------------------------------
+
+/// What a stage is: the type's own work (OWN, in order), or a stage the system adds:
+/// LTO drop off and LTO pickup (only when the type needs LTO processing), Check and verify (always last).
+enum StageKind {
+  OWN
+  LTO_DROP
+  LTO_PICKUP
+  VERIFY
+}
+
+/// Settings > Processing stages: the ordered stages of one transaction type. Never deleted (Inactive).
+model ProcessingStage {
+  id              String          @id @default(cuid())
+  typeId          String
+  type            TransactionType @relation(fields: [typeId], references: [id])
+  code            String
+  name            String
+  kind            StageKind       @default(OWN)
+  /// Order among the type's own stages (system stages always follow them).
+  sortOrder       Int             @default(0)
+  /// Evidence fields, in order: [{ key, label, type: text | date | number | file | tick, required }].
+  fields          Json            @default("[]")
+  /// Optional target in business days (blank: no target). Informational chip only.
+  targetDays      Int?
+  active          Boolean         @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  jobStages       JobStage[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([typeId, code])
+}
+
+enum JobStageStatus {
+  LATER
+  STARTED
+  DONE
+}
+
+/// One stage of one DP job: a snapshot of the setting (name, fields, target) with system start and
+/// finish times and the evidence. Append-only in practice: a finished stage is never changed.
+model JobStage {
+  id              String               @id @default(cuid())
+  assignmentId    String
+  assignment      DpAssignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  stageId         String?
+  stage           ProcessingStage?     @relation(fields: [stageId], references: [id])
+  code            String
+  name            String
+  kind            StageKind
+  sortOrder       Int
+  fields          Json                 @default("[]")
+  targetDays      Int?
+  status          JobStageStatus       @default(LATER)
+  startedAt       DateTime?
+  startedById     String?
+  startedByLabel  String?
+  finishedAt      DateTime?
+  finishedById    String?
+  finishedByLabel String?
+  /// Evidence values by field key; Check and verify: { papers: { documentItemId: { at, by } }, note }.
+  evidence        Json?
+  /// Mapped from a job completed before stages existed (no start time was recorded).
+  migrated        Boolean              @default(false)
+  simulated       Boolean              @default(false)
+  attempts        TransactionAttempt[]
+  problems        Problem[]
+  holds           Hold[]
+  createdAt       DateTime             @default(now())
+
+  @@unique([assignmentId, code])
+  @@index([assignmentId, sortOrder])
+}

@@ -1,0 +1,41 @@
+# GDFI DMS local database (Docker Desktop). Local development only; production uses Supabase.
+# Docker Compose reads POSTGRES_* and the ports from .env (local, non-secret defaults). No secret is
+# written in this file or baked into an image (the official postgres image is used as is).
+# The project name is explicit so it never collides with other "gdfi-dms" compose projects on this machine.
+name: gdfi-loan-dms
+
+services:
+  gdfi-dms-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-gdfi_dms}
+      TZ: UTC
+    ports:
+      # Host port defaults to 5432. Set DB_HOST_PORT in .env if 5432 is already used on your PC.
+      # Bound to this computer only (127.0.0.1): the local database is not reachable from the network.
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
+    volumes:
+      - gdfi-dms-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  adminer:
+    image: adminer:5
+    profiles: ["tools"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ADMINER_HOST_PORT:-8081}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: gdfi-dms-db
+    depends_on:
+      gdfi-dms-db:
+        condition: service_healthy
+
+volumes:
+  gdfi-dms-pgdata:

@@ -30,8 +30,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files: real values never go in git (.env, .env.local, .env.*.local and any other .env file).
+# Only .env.example (names and placeholders) is committed.
+.env
+.env.local
+.env.*.local
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +44,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local attachment storage
+/storage
+/test-results
+/playwright-report

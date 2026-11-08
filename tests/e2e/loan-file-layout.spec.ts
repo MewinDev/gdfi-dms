@@ -1,0 +1,120 @@
+import { expect, test, type Page } from "@playwright/test";
+import { db, resetLoans } from "./db";
+import { signIn } from "./helpers";
+
+const STEPS = ["Loan opened", "Classified", "Check documents", "Processing", "Your acceptance", "Vault", "DigiCur", "Pull-out", "QA review", "Closure"];
+
+test.beforeEach(async () => {
+  await resetLoans();
+});
+
+async function openLoan(page: Page) {
+  await signIn(page, "la");
+  await page.goto("/search?q=PN-0001001");
+  await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
+  await expect(page).toHaveURL(/\/loans\/PN-0001001/);
+}
+
+async function noSideScroll(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+}
+
+const phone = (page: Page) => page.viewportSize()!.width < 600;
+
+test("header: breadcrumb above, no boxed Back button beside the title, subtitle directly under the title", async ({ page }) => {
+  await openLoan(page);
+  const main = page.getByRole("main");
+  const title = main.getByRole("heading", { level: 1, name: "Loan File" });
+  await expect(title).toBeVisible();
+  await expect(main.getByRole("link", { name: /Back to home/ })).toHaveCount(0);
+  if (phone(page)) {
+    await expect(main.getByRole("link", { name: /My loans/ }).first()).toBeVisible();
+  } else {
+    const crumbs = main.getByRole("navigation", { name: "Breadcrumb" });
+    await expect(crumbs.getByRole("link", { name: "Home" })).toBeVisible();
+    await expect(crumbs.getByRole("link", { name: "My loans" })).toBeVisible();
+    await expect(crumbs.getByText("PN-0001001")).toHaveAttribute("aria-current", "page");
+  }
+  const sub = main.getByText("Maria Santos · PN-0001001 · Quezon City · ₱450,000 · New");
+  const t = (await title.boundingBox())!;
+  const s = (await sub.boundingBox())!;
+  expect(Math.abs(s.x - t.x)).toBeLessThan(2); // nothing to the left of either
+  expect(s.y - (t.y + t.height)).toBeLessThan(12); // directly below
+  await noSideScroll(page);
+
+  // Check documents: same pattern.
+  await page.getByRole("link", { name: "Start checking" }).click();
+  await expect(main.getByRole("heading", { level: 1, name: "Check documents" })).toBeVisible();
+  if (!phone(page)) {
+    await expect(main.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Home›My loans›PN-0001001›Check documents");
+  }
+  await noSideScroll(page);
+});
+
+test("progress: all 10 steps, done / now / later, labels not cut; Step 3 of 10 in the Next step card", async ({ page }) => {
+  await openLoan(page);
+  const progress = page.getByRole("region", { name: "Progress" });
+  if (phone(page)) {
+    const line = progress.getByRole("button", { name: /Step 3 of 10 · Check documents/ });
+    await expect(line).toBeVisible();
+    await line.click();
+    const sheet = page.getByRole("dialog", { name: "All 10 steps" });
+    await expect(sheet.getByRole("listitem")).toHaveCount(10);
+    for (const [i, name] of STEPS.entries()) await expect(sheet.getByRole("listitem").nth(i)).toContainText(name);
+    await expect(sheet.getByRole("listitem").nth(1)).toContainText("Done");
+    await expect(sheet.getByRole("listitem").nth(2)).toContainText("Now");
+    await expect(sheet.getByRole("listitem").nth(3)).toContainText("Later");
+    await page.keyboard.press("Escape");
+  } else {
+    const dots = progress.getByRole("img");
+    await expect(dots).toHaveCount(10);
+    await expect(dots.nth(0)).toHaveAccessibleName("Loan opened. You. Done.");
+    await expect(dots.nth(1)).toHaveAccessibleName("Classified. Automatic. Done.");
+    await expect(dots.nth(2)).toHaveAccessibleName("Check documents. You. Now.");
+    await expect(dots.nth(3)).toHaveAccessibleName("Processing. Processor. Later.");
+    await expect(dots.nth(9)).toHaveAccessibleName("Closure. Admin. Later.");
+    // Every label fully visible (at most two lines, not cut).
+    const cut = await progress.locator("ol > li > span[aria-hidden]").evaluateAll((els) => els.filter((e) => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
+    expect(cut).toEqual([]);
+    const h = (await progress.boundingBox())!.height;
+    expect(h).toBeLessThanOrEqual(80);
+  }
+  const next = page.getByRole("region", { name: /Check the papers for Notary/ }).or(page.locator("section[aria-labelledby=next]")).first();
+  await expect(next).toContainText("Step 3 of 10");
+  if (page.viewportSize()!.width >= 1440) expect((await next.boundingBox())!.height).toBeLessThan(150);
+  await noSideScroll(page);
+});
+
+test("the current step follows the loan file's real stage", async ({ page }) => {
+  await openLoan(page);
+  for (const [stage, n] of [["In process", 4], ["Awaiting LA acceptance", 5], ["For Vault Transmittal", 6], ["In Safekeeping", 7]] as const) {
+    await db.loan.update({ where: { pn: "PN-0001001" }, data: { stage } });
+    await page.reload();
+    const progress = page.getByRole("region", { name: "Progress" });
+    if (phone(page)) await expect(progress).toContainText(`Step ${n} of 10 · ${STEPS[n - 1]}`);
+    else await expect(progress.getByRole("img").nth(n - 1)).toHaveAccessibleName(new RegExp(`${STEPS[n - 1]}\\..*Now\\.`));
+    await expect(page.locator("section[aria-labelledby=next]")).toContainText(`Step ${n} of 10`);
+  }
+});
+
+test("Check documents: paper rows at most 56px; collapsed rows compact; side card and report row", async ({ page }) => {
+  await openLoan(page);
+  const main = page.getByRole("main");
+  if (!phone(page)) await expect(main.getByRole("region", { name: "Something wrong?" }).getByRole("button", { name: "Report a problem" })).toBeVisible();
+  await expect(main.getByText("Send by")).toBeVisible();
+  await page.getByRole("link", { name: "Start checking" }).click();
+  const notary = page.getByRole("region", { name: "Notary", exact: true });
+  const rows = notary.locator("label[id^=line-]");
+  await expect(rows).toHaveCount(7);
+  const heights = await rows.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+  for (const h of heights) expect(h).toBeLessThanOrEqual(56);
+  // Transactions: every one in number order, a side list at 1100 and up, a strip of cards below that.
+  const wide = page.viewportSize()!.width >= 1100;
+  const list = wide ? main.getByRole("region", { name: "Transactions (4)" }) : main.getByRole("region", { name: "Transactions", exact: true });
+  const otherRows = list.getByRole("button");
+  await expect(otherRows).toHaveCount(4);
+  const otherHeights = await otherRows.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+  // Side-list rows stay compact; strip cards also carry the TAT chip (two chip lines at most).
+  for (const h of otherHeights) { expect(h).toBeGreaterThanOrEqual(64); expect(h).toBeLessThanOrEqual(wide ? 110 : 130); }
+  await noSideScroll(page);
+});

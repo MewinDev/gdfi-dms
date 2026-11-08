@@ -6,21 +6,49 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:tools": "docker compose --profile tools up -d",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local prisma/seed.ts",
+    "db:seed:reference": "cross-env SEED_TEST_USERS=false tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force",
+    "db:studio": "prisma studio",
+    "email:reminders": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/email.ts reminders",
+    "myloans:sync": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/myloans-sync.ts",
+    "email:test": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/email.ts test",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "jose": "^6.2.15",
     "next": "16.4.5",
+    "qrcode": "^1.5.4",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
+    "@types/node": "^24.19.2",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.5",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^5.1.0"
   }
 }
