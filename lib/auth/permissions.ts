@@ -32,6 +32,8 @@ export const PERMISSIONS = {
   FUNDS_RELEASE: "funds:release", // Finance: release money, confirm returns, close
   FUNDS_VIEW_ALL: "funds:view_all", // see every advance in scope (Funds page)
   FUNDS_EXCEPTION: "funds:exception", // let an overdue DP submit one more request
+  FUNDS_KINDS_VIEW: "funds:kinds_view", // see Settings, Expense kinds
+  FUNDS_KINDS_MANAGE: "funds:kinds_manage", // add, edit, reorder, switch off expense kinds; "+ Add new kind"; change a fixed amount for one request
   // DP work (processor side)
   JOBS_WORK: "jobs:work", // accept, decline, return, attempts, complete, forward
   JOBS_PASUYO: "jobs:pasuyo", // pass a job to a second processor (Pasuyo)
@@ -184,6 +186,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.FUNDS_APPROVE, label: "Approve cash advances", help: "Approve or deny requests within the approval bands.", requires: [P.FUNDS_VIEW_ALL], can: "approve cash advances", where: "Funds", was: "funds:approve" },
       { key: P.FUNDS_RELEASE, label: "Release funds", help: "Release money, confirm returned cash, close advances.", requires: [P.FUNDS_VIEW_ALL], can: "release funds", where: "Funds", was: "funds:release" },
       { key: P.FUNDS_EXCEPTION, label: "Grant a funds exception", help: "Let a processor with an overdue advance submit one more request.", requires: [P.FUNDS_VIEW_ALL], can: "grant funds exceptions", where: "Funds", was: "funds:exception" },
+      { key: P.FUNDS_KINDS_VIEW, label: "See expense kinds", help: "See Settings, Expense kinds: what a cash advance or fund transfer can be for, and each kind's amount.", can: "see expense kinds", where: "Settings, Expense kinds", was: "none (the kinds were fixed in code)" },
+      { key: P.FUNDS_KINDS_MANAGE, label: "Add and manage expense kinds", help: "Add, rename, reorder or switch off expense kinds and set their amount; \"+ Add new kind\" on the funds screens; change a fixed amount on one request.", requires: [P.FUNDS_KINDS_VIEW], view: P.FUNDS_KINDS_VIEW, can: "add and manage expense kinds", where: "Settings, Expense kinds; Funds, To approve; My funds", was: "none (the kinds were fixed in code)" },
       { key: P.JOURNEY_VIEW_AMOUNTS, label: "See cash amounts in the Journey", help: "Show peso amounts in a loan's Journey. Without it, the Journey shows the funds status only.", requires: [P.LOANS_VIEW], can: "see cash amounts in the Journey", where: "Loan File, Journey; LTO monitor amounts", was: "journey:view_amounts" },
     ],
   },
@@ -264,7 +268,7 @@ export const changesOf = (k: string) => PERMISSION_DEFS.filter((d) => d.view ===
 /** Any one of these shows the Settings page (each area needs its own). */
 export const SETTINGS_PERMISSIONS: Permission[] = [
   ...PERMISSION_GROUPS.find((g) => g.key === "settings")!.items.map((i) => i.key).filter((k) => k !== P.SIMULATOR_USE),
-  P.BRANCHES_VIEW, P.EMAIL_VIEW, P.SOURCE_MANAGE, P.MYLOANS_SYNC, P.DP_CAPACITY_MANAGE, P.ROLES_MANAGE,
+  P.BRANCHES_VIEW, P.EMAIL_VIEW, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.SOURCE_MANAGE, P.MYLOANS_SYNC, P.DP_CAPACITY_MANAGE, P.ROLES_MANAGE,
 ];
 
 /**
@@ -340,19 +344,19 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
   LA: {
     name: "Loan Associate", canSignIn: true, sortOrder: 1, branchAccess: "ASSIGNED",
     description: "Finds and opens loan files, checks papers, prints labels, sends to processors.",
-    permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP],
+    permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_VIEW, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP],
   },
   ADMIN: {
     name: "Admin", canSignIn: true, sortOrder: 2, branchAccess: "ALL",
     description: "Users, roles, Settings, audit log, CSV export, all loans (read-only), Supervisor override, test tools.",
     permissions: ADMIN_PERMISSIONS,
   },
-  DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: false, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, P.LTO_REPORTS_CREATE, ...SOURCE_STRIP] },
-  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; may transfer holds.", permissions: [P.LOANS_VIEW, P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.FUNDS_VIEW_ALL, P.FUNDS_EXCEPTION, P.JOURNEY_VIEW_AMOUNTS, P.HOLDS_TRANSFER, P.MYLOANS_VIEW] },
+  DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: false, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, P.LTO_REPORTS_CREATE, ...SOURCE_STRIP] },
+  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; may transfer holds.", permissions: [P.LOANS_VIEW, P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.FUNDS_VIEW_ALL, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.HOLDS_TRANSFER, P.MYLOANS_VIEW] },
   VAULT: { name: "Vault Custodian", canSignIn: false, sortOrder: 5, branchAccess: "ASSIGNED", description: "Phases 6 and 8.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   DIG: { name: "Digital Records", canSignIn: false, sortOrder: 6, branchAccess: "ASSIGNED", description: "Phase 7 DigiCur.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   QA: { name: "QA", canSignIn: false, sortOrder: 7, branchAccess: "ASSIGNED", description: "Phase 9 QA review.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
-  APPR: { name: "Approvers, Records, Compliance", canSignIn: false, sortOrder: 8, branchAccess: "ASSIGNED", description: "Phase 8 and 10 approvals.", permissions: [P.LOANS_VIEW, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW] },
+  APPR: { name: "Approvers, Records, Compliance", canSignIn: false, sortOrder: 8, branchAccess: "ASSIGNED", description: "Phase 8 and 10 approvals.", permissions: [P.LOANS_VIEW, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE] },
   /** Read-only, all branches: the Monitoring page and LTO advisories. No loan files, no amounts. */
   MONITOR: { name: "Operations Monitor", canSignIn: true, sortOrder: 9, branchAccess: "ALL", description: "Watches processors and LTO offices (Monitoring page) and resolves LTO advisories. Read-only.", permissions: [P.MONITOR_DP, P.MONITOR_LTO, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY] },
 };
@@ -387,6 +391,7 @@ export const LIST_PERMISSION: Record<string, Permission> = {
   "problem-reasons": P.SETTINGS_PROBLEM_REASONS,
   "hold-reasons": P.HOLDS_MANAGE,
   "funds-types": P.FUNDS_TYPES_MANAGE,
+  "expense-kinds": P.FUNDS_KINDS_MANAGE,
   "return-reasons": P.SETTINGS_RETURN_REASONS,
   "processing-stages": P.STAGES_MANAGE,
   system: P.SETTINGS_SYSTEM,
@@ -408,6 +413,7 @@ export const AREA_PERMISSIONS: Record<string, Permission[]> = {
   branches: [P.BRANCHES_VIEW],
   system: [P.SETTINGS_SYSTEM, P.SETTINGS_PN_FORMAT],
   email: [P.EMAIL_VIEW],
+  "expense-kinds": [P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE],
   "myloans-sync": [P.SOURCE_MANAGE, P.MYLOANS_SYNC],
 };
 
@@ -426,6 +432,7 @@ export const KIND_PERMISSION: Record<string, Permission> = {
   problemReason: P.SETTINGS_PROBLEM_REASONS,
   holdReason: P.HOLDS_MANAGE,
   fundsType: P.FUNDS_TYPES_MANAGE,
+  expenseKind: P.FUNDS_KINDS_MANAGE,
   returnReason: P.SETTINGS_RETURN_REASONS,
   processingStage: P.STAGES_MANAGE,
   user: P.USERS_EDIT,

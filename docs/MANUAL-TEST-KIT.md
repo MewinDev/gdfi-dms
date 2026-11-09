@@ -99,18 +99,22 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 | PN | Case | Who signs in | What to do | What should happen |
 |---|---|---|---|---|
 | GD1012026902031 | Funds: requested | Finance | Funds > Approve: approve the request. | Approved; waiting for release. |
-| GD1012026902032 | Funds: approved | Finance | Funds: release it with a voucher reference. | Released; DP 1 sees the liquidation due date. |
+| GD1012026902032 | Funds: approved | Finance | Funds > To release: press Release on the row, type a voucher reference, Release cash. | Released; DP 1 sees the liquidation due date. |
 | GD1012026902034 | Funds: overdue notice | Finance, then DP 2 | Notifications: "liquidation overdue". DP 2: try a new cash request. | DP 2 and Finance have the overdue notice. DP 2's new requests are refused until it is liquidated or Finance grants an exception. |
 | GD1012026902035 | Funds: liquidated | Finance | Funds: close the advance. | Closed. |
 | GD1012026902036 | Funds: closed | Finance | Open the advance. | Closed, with the receipt and the history. |
 | GD1012026902051 | Fund transfer: requested | Finance | Funds > To approve: the FT · Fund transfer pill. Filter by type (FT), Download CSV, then approve it. | The list and the counts follow the type filter; the CSV has the Type column and only Fund transfers. |
-| GD1012026902052 | Fund transfer: approved (changed from Cash advance) | Finance | Funds > To release: open History on the card. Then Send transfer: reference number, transfer date, bank or e-wallet, account name, last 4 digits. | History shows "changed the type from Cash advance to Fund transfer" with the remarks. More than 4 digits is refused; only the last 4 are stored. |
+| GD1012026902052 | Fund transfer: approved (changed from Cash advance) | Finance | Funds > To release: open Details on the row, then History. Then Send: reference number, transfer date, bank or e-wallet, account name, last 4 digits, Send transfer. | History shows "changed the type from Cash advance to Fund transfer" with the remarks. More than 4 digits is refused; only the last 4 are stored. |
 | GD1012026902053 | Fund transfer: sent | DP 1 | My funds: the FT pill and "sent ... to BPI, DP 1, account ending 4821". Liquidate with a receipt. | Same liquidation as a cash advance. |
 | GD1012026902054 | Fund transfer: liquidated | Finance | Funds > Outstanding: close it. | Closed. |
 | GD1012026902055 | Fund transfer: closed | Finance | Funds > History. | Closed, with the FT pill. |
 | GD1012026902056 | Fund transfer: cash to settle after a return | DP 2, then Finance | My funds and Funds > Outstanding. | "Cash to settle" with the FT pill, as for a cash advance. |
 | GD1012026902057 | Fund transfer: overdue notice | DP 2, Finance | Notifications: "(Fund transfer): liquidation overdue". | Same overdue notice and block as GD1012026902034. |
 | GD1012026902037 | Funds: cash to settle after a return | DP 2, then LA 1 | DP 2: My funds shows Cash to settle. LA 1: confirm the Mortgage papers came back. | The return went ahead; the cash stays DP 2's to liquidate. LA 1 can send again only after confirming the papers. |
+| (none) | Expense kinds: Other must say what it is | DP 1 | My funds > Request: Add an expense, pick Other. Leave "What is this expense?" empty, then type "Courier". | Send to Finance stays off with "Say what this expense is" until 3 to 60 characters are typed. The request shows "Other: Courier". |
+| (none) | Expense kinds: often typed as Other | DP 1, then Finance | The kit has two "Other: Courier" expenses (DP 1, waiting for approval). DP 1 sends a third one (above). Finance: Settings > Expense kinds. | "Often typed as Other" lists Courier (typed 3 times). Add as a kind: pick the amount (for example Suggested 150), optionally tick "relabel"; Courier is now in every Expense kind dropdown, before Other. |
+| (none) | Expense kinds: + Add new kind | Finance | Funds > To approve: on an Other: Courier row open More, press Change Other: Courier, then "+ Add new kind", name it Parking, Add. | Parking is saved Active and selected at once; the history says who added it. DP 1 (no "Add and manage expense kinds" tick) has no "+ Add new kind" link. |
+| (none) | Expense kinds: fixed amount | Admin, then DP 1 | Settings > Expense kinds: Notary fee, Fixed amount 500, Save. DP 1: a Notary request line. | The amount is pre-filled and read only ("Fixed for this kind"). A rule's Suggested amount for the transaction still comes first. Old requests keep their amounts. |
 
 ## Admin
 

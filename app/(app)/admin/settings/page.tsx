@@ -11,7 +11,11 @@ import { RoleEditor } from "@/components/admin/role-editor";
 import { lastRoleChanges } from "@/lib/services/roles";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getSetting } from "@/lib/settings";
-import { EXPENSE_KINDS, EXPENSE_LABEL, decimalToCents, peso } from "@/lib/funds/rules";
+import { decimalToCents, peso } from "@/lib/funds/rules";
+import { OTHER, kindOptions, type AmountMode } from "@/lib/funds/kinds";
+import { allKinds, kindUsage, openRequestsUsing, otherSuggestionList } from "@/lib/services/expense-kinds";
+import { ExpenseKindForm, ExpenseKindsList, OtherSuggestions } from "@/components/admin/expense-kinds";
+import { CaRuleForm } from "@/components/admin/ca-rule-form";
 import { isTestMode } from "@/lib/test-mode";
 import { appEnv } from "@/lib/env";
 import { visibleSettingsGroups } from "@/lib/ui/settings-groups";
@@ -59,6 +63,7 @@ const AREAS = [
   { key: "roles", title: "Roles and access", desc: "What each role may do, and which branches it sees.", help: "Who can do what. A change applies on each person's next click or page.", Icon: UsersIcon },
   { key: "lto", title: "LTO offices", desc: "LTO offices a processor can be sent to.", help: "Add an office or rename it. Nothing is deleted: make it inactive instead.", Icon: MapPinIcon },
   { key: "cash-advance", title: "Cash-advance rules", desc: "Suggested and maximum amounts, carry-over and liquidation.", help: "Used when the processor asks Finance for funds. More than the maximum needs a typed reason.", Icon: CoinsIcon },
+  { key: "expense-kinds", title: "Expense kinds", desc: "What a cash advance or fund transfer can be for.", help: "Picked on every funds request line and Cash-advance rule. Other is built in and always last: the person must say what it is. A kind can have its own amount (suggested or fixed); a rule's Suggested amount comes first and the rule's maximum still applies. Nothing is deleted: make a kind inactive instead.", Icon: TagIcon },
   { key: "funds-types", title: "Funds types", desc: "Cash advance, Fund transfer: what Finance enters at release.", help: "Every type follows the same funds flow. The switches only change what Finance enters at release and whether receipts are needed. A switched-off type stays on old records; a rename never changes old records.", Icon: CoinsIcon },
   { key: "approval-bands", title: "Approval bands", desc: "Who approves a cash advance, by amount.", help: "The band with the highest \"from\" amount at or below the advance decides who approves it.", Icon: UsersIcon },
   { key: "problem-reasons", title: "Problem reasons", desc: "Why a job can be stuck.", help: "Offered when a job has a problem or an attempt was not processed. Nothing is deleted: make it inactive instead.", Icon: AlertIcon },
@@ -176,6 +181,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     "problem-reasons": n(reasons, "reason", "reasons"),
     "hold-reasons": n(holdReasons, "reason", "reasons"),
     "funds-types": n(await pair(prisma.fundsType), "type", "types"),
+    "expense-kinds": n(await pair(prisma.expenseKind), "kind", "kinds"),
     "return-reasons": n(returnReasons, "reason", "reasons"),
     "processing-stages": n(stages, "stage", "stages"),
     "myloans-sync": await syncStatusLine(),
@@ -246,6 +252,22 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
     return <SettingsModal {...common} footer={{ kind: "done" }}><TestKitPanel {...kitPanelData()} /></SettingsModal>;
   }
 
+  if (area.key === "expense-kinds" && step !== "import") return <ExpenseKindsArea common={common} edit={edit} user={user} />;
+  if (area.key === "cash-advance" && edit) {
+    const r = edit === "new" ? null : await prisma.cashAdvanceRule.findUnique({ where: { id: edit }, include: { transactionType: true, kindRef: true } });
+    if (edit !== "new" && !r) return null;
+    const [types, kinds] = await Promise.all([prisma.transactionType.findMany({ where: { requiresDp: true }, orderBy: { sortOrder: "asc" } }), allKinds()]);
+    return (
+      <SettingsModal {...common} title={r ? `${area.title}: ${r.transactionType.name} · ${r.kindRef.name}` : `${area.title}: Add rule`} backHref={listHref(area.key)} footer={{ kind: "save", formId: "settings-form", cancelHref: listHref(area.key) }}>
+        <CaRuleForm key={edit} id={r?.id ?? null} formId="settings-form" listHref={listHref(area.key)}
+          types={types.filter((t) => t.active || t.id === r?.transactionTypeId).map((t) => [t.id, t.name])}
+          kinds={kindOptions(kinds, r?.kind).map((k) => [k.code, `${k.name}${k.active ? "" : " · Inactive"}`])}
+          value={{ transactionTypeId: r?.transactionTypeId ?? types[0]?.id ?? "", kind: r?.kind ?? kindOptions(kinds)[0]?.code ?? OTHER, purpose: r?.purpose ?? "", suggestedAmount: r?.suggestedAmount == null ? "" : String(Number(r.suggestedAmount)), maxAmount: r ? String(Number(r.maxAmount)) : "" }} />
+        {r && <StatusPanel kind="caRule" id={r.id} active={r.active} noun="cash-advance rule" effect={await inactiveEffect("caRule", r.id)} />}
+      </SettingsModal>
+    );
+  }
+
   const importKey = area.key as ImportListKey;
   if (step === "import" && IMPORT_LISTS[importKey] && can(user, PERMISSIONS.SETTINGS_IMPORT)) {
     return (
@@ -289,6 +311,38 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
         />
       )}
       <SettingsList rows={list.rows} addHref={list.addLabel ? editHref(area.key, "new") : undefined} addLabel={list.addLabel} filterLabel={list.filterLabel ?? "Find"} statusKind={list.statusKind} />
+    </SettingsModal>
+  );
+}
+
+/** Settings, Expense kinds: the list, the "Often typed as Other" block, and the add / edit step. */
+async function ExpenseKindsArea({ common, edit, user }: { common: { id: string; title: string; help: string; closeHref: string; returnFocusId: string }; edit?: string; user: CurrentUser }) {
+  const manage = can(user, PERMISSIONS.FUNDS_KINDS_MANAGE);
+  const key = "expense-kinds";
+  const [kinds, usage] = await Promise.all([allKinds(), kindUsage()]);
+  if (edit && manage) {
+    const k = edit === "new" ? null : kinds.find((x) => x.id === edit);
+    if (edit !== "new" && !k) return null;
+    const rules = k ? await prisma.cashAdvanceRule.findMany({ where: { kind: k.code, active: true }, include: { transactionType: true } }) : [];
+    const lowest = rules.map((r) => ({ cents: decimalToCents(r.maxAmount) ?? 0, text: `${peso(decimalToCents(r.maxAmount) ?? 0)} (the ${r.transactionType.name} rule's maximum)` })).sort((a, b) => a.cents - b.cents)[0] ?? null;
+    return (
+      <SettingsModal {...common} title={k ? `Expense kinds: ${k.name}` : "Expense kinds: Add kind"} backHref={listHref(key)} footer={{ kind: "save", formId: "settings-form", cancelHref: listHref(key) }}>
+        <ExpenseKindForm key={edit} id={k?.id ?? null} formId="settings-form" listHref={listHref(key)} kind={k ? { name: k.name, builtIn: k.builtIn, amountMode: k.amountMode as AmountMode, amountCents: k.amountCents } : null}
+          openRequests={k ? await openRequestsUsing(k.code) : 0} maxRule={lowest} />
+        {k && <StatusPanel kind="expenseKind" id={k.id} active={k.active} noun="expense kind" effect={await inactiveEffect("expenseKind", k.id)} lockedReason={k.builtIn ? "Other is built in: it is always active, so there is always a kind for anything else." : undefined} />}
+      </SettingsModal>
+    );
+  }
+  const suggestions = manage ? await otherSuggestionList() : [];
+  return (
+    <SettingsModal {...common} footer={{ kind: "done" }} headerLink={manage && can(user, PERMISSIONS.SETTINGS_IMPORT) ? { href: importHref(key), label: "Import / Export" } : undefined}>
+      <div className="flex flex-col gap-4">
+        <OtherSuggestions items={suggestions} />
+        <ExpenseKindsList canManage={manage} addHref={editHref(key, "new")} rows={kinds.map((k) => ({
+          id: k.id, code: k.code, name: k.name, builtIn: k.builtIn, active: k.active, amountMode: k.amountMode as AmountMode, amountCents: k.amountCents,
+          rules: usage.get(k.code)?.rules ?? 0, lines: usage.get(k.code)?.lines ?? 0, editHref: editHref(key, k.id),
+        }))} />
+      </div>
     </SettingsModal>
   );
 }
@@ -469,12 +523,12 @@ async function loadListArea(key: AreaKey): Promise<ListArea | null> {
     }
     case "cash-advance": {
       const [rows, types] = await Promise.all([
-        prisma.cashAdvanceRule.findMany({ include: { transactionType: true }, orderBy: { createdAt: "asc" } }),
+        prisma.cashAdvanceRule.findMany({ include: { transactionType: true, kindRef: true }, orderBy: { createdAt: "asc" } }),
         prisma.transactionType.findMany({ where: { requiresDp: true }, orderBy: { sortOrder: "asc" } }),
       ]);
       const f = (r?: (typeof rows)[number]): FieldDef[] => [
         { name: "transactionTypeId", label: "Transaction", type: "select", value: r?.transactionTypeId ?? types[0]?.id, options: types.filter((t) => t.active || t.id === r?.transactionTypeId).map((t) => [t.id, t.name]) },
-        { name: "expenseKind", label: "Expense kind", type: "select", value: r?.kind ?? "OTHER", options: EXPENSE_KINDS.map((k) => [k, EXPENSE_LABEL[k]]) },
+        { name: "expenseKind", label: "Expense kind", type: "select", value: r?.kind ?? "OTHER", options: [[r?.kind ?? "OTHER", r?.kindRef.name ?? "Other"]] },
         { name: "purpose", label: "Purpose", type: "text", value: r?.purpose, width: "lg" },
         { name: "suggestedAmount", label: "Suggested (PHP, optional)", type: "number", value: r?.suggestedAmount == null ? "" : Number(r.suggestedAmount) },
         { name: "maxAmount", label: "Maximum per transaction (PHP)", type: "number", value: r ? Number(r.maxAmount) : "" },
@@ -482,7 +536,7 @@ async function loadListArea(key: AreaKey): Promise<ListArea | null> {
       return {
         kind: "caRule", statusKind: "caRule", noun: "cash-advance rule", addLabel: "Add rule", filterLabel: "Find a rule",
         rows: rows.map((r) => ({
-          id: r.id, title: `${r.transactionType.name} · ${EXPENSE_LABEL[r.kind]}`,
+          id: r.id, title: `${r.transactionType.name} · ${r.kindRef.name}${r.kind === OTHER ? " (and kinds without their own rule)" : ""}`,
           sub: `${r.purpose} · ${r.suggestedAmount == null ? "No suggested amount" : `Suggested ${peso(decimalToCents(r.suggestedAmount) ?? 0)}`} · up to ${peso(decimalToCents(r.maxAmount) ?? 0)}`,
           inactive: !r.active, href: editHref(key, r.id),
         })),

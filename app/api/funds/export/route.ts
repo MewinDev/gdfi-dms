@@ -3,7 +3,9 @@ import { prisma } from "@/lib/db";
 import { can, getCurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { cashToSettleIds } from "@/lib/services/funds";
-import { EXPENSE_LABEL, OPEN_ADVANCE, type ExpenseKindKey } from "@/lib/funds/rules";
+import { OPEN_ADVANCE } from "@/lib/funds/rules";
+import { kindNames, lineKindText } from "@/lib/services/expense-kinds";
+import { SOURCE_TEXT, OTHER, type AmountSource } from "@/lib/funds/kinds";
 import { businessDate } from "@/lib/time";
 import { fundsCsv, FUNDS_TAB_STATUS } from "@/lib/funds/export";
 
@@ -31,6 +33,7 @@ export async function GET(req: NextRequest) {
     },
     orderBy: { createdAt: "asc" },
   });
+  const names = await kindNames();
   const settle = await cashToSettleIds(rows.filter((a) => OPEN_ADVANCE.includes(a.status)).map((a) => ({ id: a.id, status: a.status, requestedById: a.requestedBy.id, lines: a.lines })));
   const csv = fundsCsv(rows.map((a) => ({
     number: a.number, typeCode: a.fundsTypeCode, typeName: a.fundsTypeName, status: a.status, processor: a.requestedBy.name, branch: a.branch.name, branchCode: a.branch.code ?? "", area: a.branch.area?.name ?? "",
@@ -39,7 +42,11 @@ export async function GET(req: NextRequest) {
     releasedOn: a.releasedAt ? businessDate(a.releasedAt) : "", releaseRef: a.releaseRef, transferDate: a.transferDate,
     accountProvider: a.accountProvider, accountName: a.accountName, accountLast4: a.accountLast4,
     liquidateBy: a.liquidationDueAt ? businessDate(a.liquidationDueAt) : "", cashToSettle: settle.has(a.id),
-    lines: a.lines.map((l) => `${EXPENSE_LABEL[l.kind as ExpenseKindKey]}${l.transaction ? ` ${l.transaction.loan.pn} ${l.transaction.type.name}` : ""}`).join("; "),
+    lines: a.lines.map((l) => `${lineKindText(names, l)}${l.transaction ? ` ${l.transaction.loan.pn} ${l.transaction.type.name}` : ""}`).join("; "),
+    otherDescriptions: a.lines.filter((l) => l.kind === OTHER).map((l) => l.otherDescription || "(not described)").join("; "),
+    presetAmounts: a.lines.map((l) => (l.presetCents === null ? "" : (l.presetCents / 100).toFixed(2))).join("; ").replace(/^(; )+$/, ""),
+    locked: a.lines.map((l) => (l.locked ? "Yes" : "No")).join("; "),
+    amountSources: a.lines.map((l) => SOURCE_TEXT[l.amountSource as AmountSource] ?? l.amountSource).join("; "),
   })));
   await prisma.auditLog.create({ data: { actorId: user.id, actorLabel: user.name, mode: "MANUAL", action: "funds_exported", entityType: "Report", summary: `Exported funds (${tab}${ftype ? `, type ${ftype}` : ""}): ${rows.length} row(s)`, details: { tab, ftype: ftype ?? null } } });
   return new NextResponse("﻿" + csv, {

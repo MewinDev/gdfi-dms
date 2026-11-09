@@ -98,7 +98,7 @@ async function simulateInner(user: CurrentUser, input: { loanId: string; action:
         if (a.transaction.advanceLines.some((l) => !l.denied && !["DENIED", "CANCELLED"].includes(l.advance.status))) throw new UserError("Funds were already requested for this job.");
         const rules = await tx.cashAdvanceRule.findMany({ where: { transactionTypeId: a.transaction.typeId, active: true } });
         const kinds = a.transaction.fundsKinds.length ? a.transaction.fundsKinds : ["OTHER" as const];
-        const lines = kinds.map((k) => ({ transactionId: a.transactionId, kind: k, requestedCents: decimalToCents(rules.find((r) => r.kind === k)?.suggestedAmount ?? null) ?? 100000 }));
+        const lines = kinds.map((k) => ({ transactionId: a.transactionId, kind: k, otherDescription: k === "OTHER" ? "Simulator test" : "", requestedCents: decimalToCents(rules.find((r) => r.kind === k)?.suggestedAmount ?? null) ?? 100000 }));
         const total = lines.reduce((x, l) => x + l.requestedCents, 0);
         const year = businessDate(now).slice(0, 4);
         const count = await tx.cashAdvance.count({ where: { number: { startsWith: `CA-${year}-` } } });

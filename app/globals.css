@@ -479,6 +479,411 @@ body {
     @apply rounded-full bg-fill-strong px-1.5 text-xs font-semibold text-ink-2;
   }
 
+  /* ---- Funds list (Funds page design pass) ------------------------------
+     One element per request. By the list's own width (container queries, so the sidebar is counted):
+     below 600px a card; 600-959px a two-line row (Request, Loan, Amount, Status, Details; the rest
+     opens with Details); 960px and up a table with a sticky header. */
+  .funds-page :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible,
+  .fl-menu :where(a, button, input, select, textarea):focus-visible {
+    outline: 3px solid var(--gold);
+    outline-offset: 1px;
+    box-shadow: 0 0 0 1px var(--navy); /* navy edge so the gold ring reads on white (non-text contrast) */
+  }
+  .funds-tabs .tab[aria-current="page"] {
+    border-color: var(--gold);
+  }
+  .tab-count {
+    @apply ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-fill-strong px-1.5 text-xs font-semibold tabular-nums text-ink-2;
+  }
+  .tab[aria-current="page"] .tab-count {
+    @apply bg-navy text-white;
+  }
+  .fl {
+    container-type: inline-size;
+  }
+  .fl-head {
+    display: none;
+  }
+  .fl-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .fl-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "req amt" "req status" "loan loan" "for for" "asked asked" "trail trail" "act act" "tog tog" "extra extra";
+    gap: 8px 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--white);
+    font-size: 13px;
+  }
+  .fl-row[hidden] {
+    display: none;
+  }
+  .fl-req { grid-area: req; min-width: 0; }
+  .fl-req [data-request-number] { white-space: nowrap; }
+  .fl-loan { grid-area: loan; min-width: 0; }
+  .fl-for { grid-area: for; min-width: 0; }
+  .fl-trail { grid-area: trail; min-width: 0; }
+  .fl-asked { grid-area: asked; min-width: 0; }
+  .fl-amt { grid-area: amt; text-align: right; font-variant-numeric: tabular-nums; }
+  .fl-status { grid-area: status; justify-self: end; text-align: right; }
+  .fl-act { grid-area: act; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .fl-tog { grid-area: tog; }
+  .fl-extra { grid-area: extra; min-width: 0; border-top: 1px solid var(--line-soft); padding-top: 8px; }
+  .fl-extra[hidden] {
+    display: none;
+  }
+  .fl-row:not([data-extra]) .fl-tog {
+    display: none;
+  }
+  .fl-lbl {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+  }
+  /* Phone: the tab's own numbers (balance, days outstanding) in a highlighted strip. */
+  .fl-trail {
+    border-radius: 10px;
+    background: var(--fill);
+    padding: 8px 10px;
+  }
+  .fl-act .fl-btn,
+  .fl-act > form,
+  .fl-act > .relative {
+    width: 100%;
+  }
+  .fl-act .fl-btn {
+    min-height: 44px;
+  }
+  .fl-msg {
+    flex-basis: 100%;
+  }
+  .fl-tog-btn {
+    @apply inline-flex min-h-11 items-center gap-1 rounded-md px-1 text-[13px] font-semibold text-navy hover:bg-fill;
+  }
+  /* "More actions": three dots. Phone: a full-width touch button; tablet and up: 32 x 32. */
+  .fl-dots {
+    @apply inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-line-strong bg-white text-[15px] font-semibold text-navy hover:bg-fill;
+  }
+  .fl-dots-text {
+    display: inline;
+  }
+  .fl-tog-details {
+    display: none;
+  }
+  /* The More list (in a portal on <body>): plain items, thin lines between groups. */
+  .fl-menu {
+    @apply fixed z-[60] flex w-max min-w-56 max-w-72 flex-col rounded-[10px] border border-line bg-white p-1 text-left text-[14px];
+    box-shadow: var(--shadow-soft), 0 12px 28px -12px rgb(12 35 64 / 0.25);
+  }
+  .fl-menu-group + .fl-menu-group {
+    @apply mt-1 border-t border-line-soft pt-1;
+  }
+  .fl-menu-group > *,
+  .fl-menu-group > * > form,
+  .fl-menu-group > form {
+    width: 100%;
+  }
+  .fl-menu :is(button, a):not(dialog *) {
+    @apply flex h-auto min-h-9 w-full items-center justify-start gap-2 rounded-md border-0 bg-transparent px-2.5 py-1 text-left text-[14px] font-medium text-ink shadow-none hover:bg-fill-strong;
+  }
+  .fl-menu form:not(dialog *) {
+    @apply flex w-full flex-wrap items-center gap-1 px-1;
+  }
+  .fl-menu form:not(dialog *) .input {
+    @apply h-9 min-h-9 w-full text-[13px];
+  }
+  /* Phone: the list is a bottom sheet with 48 px items. */
+  .fl-menu-sheet {
+    @apply inset-x-0 bottom-0 top-auto w-auto min-w-0 max-w-none rounded-b-none rounded-t-2xl p-2 pb-6;
+  }
+  .fl-menu-sheet :is(button, a):not(dialog *) {
+    @apply min-h-12 text-[15px];
+  }
+  .fl-menu-backdrop {
+    @apply fixed inset-0 z-[59] bg-navy/40;
+  }
+  .fl-lock {
+    @apply relative inline-flex min-h-8 items-center gap-1.5 rounded-lg text-ink-2;
+  }
+  .fl-lock-tip {
+    font-size: 12px;
+  }
+  .fl-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+  }
+  .fl-dot-bad { background: var(--bad-fg); }
+  .fl-dot-act { background: var(--hold-stripe); }
+  .fl-dot-mute { background: rgb(12 35 64 / 0.35); }
+  .fl-money {
+    @apply grid grid-cols-[auto_1fr] gap-x-3 tabular-nums;
+  }
+  .fl-money dd {
+    text-align: right;
+  }
+
+  @container (min-width: 37.5rem) {
+    .fl-rows {
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--white);
+    }
+    .fl-head,
+    .fl-row {
+      display: grid;
+      grid-template-columns: minmax(9.25rem, 1fr) minmax(0, 1.4fr) minmax(7rem, 0.8fr) minmax(9.25rem, 0.95fr) 2.75rem;
+      column-gap: 14px;
+      padding: 10px 16px;
+    }
+    .fl-head {
+      position: sticky;
+      top: 72px; /* under the sticky top bar */
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+      border-radius: 14px 14px 0 0;
+      background: var(--white);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-2);
+    }
+    .fl-head > :is(.h-for, .h-asked, .h-act) {
+      display: none;
+    }
+    .fl-head > .h-amt {
+      text-align: right;
+    }
+    .fl-hist :is(.fl-head, .fl-row) {
+      grid-template-columns: minmax(9.25rem, 1fr) minmax(0, 1.4fr) minmax(7rem, 0.8fr) minmax(9.25rem, 0.95fr) auto 2.75rem;
+    }
+    .fl-row {
+      grid-template-areas: "req loan amt status tog" "act act act act act" "for for asked asked asked" "trail trail trail trail trail" "extra extra extra extra extra";
+      row-gap: 6px;
+      border: 0;
+      border-top: 1px solid var(--line-soft);
+      border-radius: 0;
+    }
+    .fl-hist .fl-row {
+      grid-template-areas: "req loan amt status act tog" "for for for asked asked asked" "trail trail trail trail trail trail" "extra extra extra extra extra extra";
+    }
+    .fl-hist .fl-act {
+      align-self: center;
+    }
+    .fl-head + .fl-row,
+    .fl-row:first-child {
+      border-top: 0;
+    }
+    .fl-row:last-child {
+      border-radius: 0 0 14px 14px; /* keeps the list's rounded border whole */
+    }
+    .fl-row:not([data-open]) :is(.fl-for, .fl-asked, .fl-trail) {
+      display: none;
+    }
+    .fl-row .fl-tog,
+    .fl-row:not([data-extra]) .fl-tog {
+      display: block;
+      justify-self: end;
+    }
+    .fl-loan > .fl-lbl {
+      display: none;
+    }
+    .fl-act {
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .fl-act:empty {
+      display: none;
+    }
+    .fl-act {
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      gap: 6px;
+    }
+    .fl-act .fl-btn,
+    .fl-act > form {
+      width: auto;
+    }
+    /* Small row buttons: 32 px, 13 px text, 12 px padding (beats .dense's 44 px). */
+    .funds-compact .fl-act :is(.fl-btn, .btn-sm) {
+      @apply h-8 min-h-8 gap-1.5 whitespace-nowrap px-3 text-[13px];
+    }
+    .fl-dots {
+      @apply h-8 min-h-8 w-8 border-line-strong p-0 text-[13px];
+    }
+    .fl-dots-text {
+      display: none;
+    }
+    .fl-act .fl-msg {
+      flex-basis: auto;
+    }
+    .fl-tog-btn {
+      @apply h-6 min-h-6 px-0.5 text-[13px];
+    }
+    .fl-tog-more {
+      display: none;
+    }
+    .fl-tog-details {
+      display: inline;
+    }
+    .fl-tog-btn :is(.fl-tog-details) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .fl-lock {
+      @apply min-h-8 justify-center px-2 hover:bg-fill;
+    }
+    .fl-lock-tip {
+      @apply pointer-events-none absolute right-0 top-full z-20 mt-1 w-max max-w-64 rounded-lg bg-navy px-2.5 py-1.5 text-left text-white opacity-0;
+    }
+    .fl-lock:is(:hover, :focus) .fl-lock-tip {
+      opacity: 1;
+    }
+    .fl-trail {
+      background: none;
+      padding: 0;
+    }
+  }
+
+  @container (min-width: 60rem) {
+    .fl-head,
+    .fl-row {
+      grid-template-columns: minmax(8.5rem, 0.9fr) minmax(0, 1.3fr) minmax(0, 1.7fr) minmax(0, 1.1fr) minmax(7.5rem, 0.85fr) minmax(9.5rem, 0.95fr) 12.75rem;
+    }
+    .fl-hist :is(.fl-head, .fl-row) {
+      grid-template-columns: minmax(8.5rem, 0.9fr) minmax(0, 1.3fr) minmax(0, 1.7fr) minmax(0, 1.1fr) minmax(7.5rem, 0.85fr) minmax(9.5rem, 0.95fr) 12.75rem;
+    }
+    .fl-head > .h-act {
+      text-align: right;
+    }
+    .fl-noact :is(.fl-head, .fl-row) {
+      grid-template-columns: minmax(8.5rem, 0.9fr) minmax(0, 1.3fr) minmax(0, 1.8fr) minmax(0, 1.2fr) minmax(7.5rem, 0.85fr) minmax(10rem, 1fr);
+    }
+    .fl-head > :is(.h-for, .h-asked, .h-act) {
+      display: block;
+    }
+    .fl-row {
+      grid-template-areas: "req loan for asked amt status act" "tog loan for asked amt status act" "extra extra extra extra extra extra extra";
+      grid-template-rows: auto 1fr; /* the Details link sits right under the type pill */
+      align-items: start;
+      row-gap: 4px;
+    }
+    .fl-hist .fl-row {
+      grid-template-areas: "req loan for asked amt status act" "tog loan for asked amt status act" "extra extra extra extra extra extra extra";
+    }
+    /* Amount, Status and Action share one vertical centre; the buttons sit on one line, right aligned. */
+    .fl-row > :is(.fl-amt, .fl-status, .fl-act) {
+      align-self: center;
+    }
+    .fl-noact .fl-row {
+      grid-template-areas: "req loan for asked amt status" "tog loan for asked amt status" "extra extra extra extra extra extra";
+    }
+    .fl-trail-col .fl-row {
+      grid-template-areas: "req loan for asked amt status act" "tog loan trail asked amt status act" "extra extra extra extra extra extra extra";
+    }
+    .fl-trail-col.fl-noact .fl-row {
+      grid-template-areas: "req loan for asked amt status" "tog loan trail asked amt status" "extra extra extra extra extra extra";
+    }
+    .fl-row:hover {
+      background: #f8f9fb; /* a very light tint */
+    }
+    .fl-row:not([data-open]) :is(.fl-for, .fl-asked, .fl-trail),
+    .fl-row :is(.fl-for, .fl-asked, .fl-trail) {
+      display: block;
+    }
+    .fl-trail-col .fl-trail {
+      margin-top: 4px;
+    }
+    .fl-row .fl-tog {
+      justify-self: start;
+    }
+    .fl-row:not([data-extra]) .fl-tog {
+      display: none;
+    }
+    .fl-tog-btn :is(.fl-tog-details) {
+      position: static;
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip-path: none;
+    }
+    .fl-for > .fl-lbl,
+    .fl-asked > .fl-lbl {
+      display: none;
+    }
+    .fl-act {
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .fl-act:empty {
+      display: block;
+    }
+    .fl-extra {
+      margin-top: 6px;
+    }
+  }
+
+  @media (min-width: 37.5rem) {
+    .funds-compact .fl-csv {
+      @apply h-[34px] min-h-[34px] px-3 text-[13px];
+    }
+    /* My funds and other Funds buttons marked small: 32 px, 13 px. */
+    .funds-compact :is(.btn-sm):not(.fl-csv) {
+      @apply h-8 min-h-8 px-3 text-[13px];
+    }
+  }
+
+  /* ---- Liquidation report (Funds, Print): the GDFI print format ------- */
+  .print-sheet {
+    @apply mx-auto w-full min-w-0 max-w-[210mm] rounded-2xl border border-line bg-white p-4 text-ink sm:p-8;
+  }
+  /* Section titles have no rule of their own: the table header line is the only line under them. */
+  .print-h2 {
+    @apply mb-1.5 mt-5 text-[12px] font-bold uppercase tracking-wide text-navy;
+  }
+  .print-scroll {
+    @apply max-w-full overflow-x-auto; /* a phone scrolls a wide table inside itself, never the page */
+  }
+  .print-table {
+    @apply w-full border-collapse text-[12px];
+  }
+  .print-table th {
+    @apply border-b border-navy bg-fill px-2 py-1.5 text-left text-[11px] font-semibold text-ink;
+  }
+  .print-table td {
+    @apply border-b border-line-soft px-2 py-1.5 align-top;
+  }
+  .print-table :is(th, td).num {
+    @apply text-right tabular-nums;
+  }
+  .print-totals {
+    @apply grid min-w-[16rem] grid-cols-[1fr_auto] gap-x-6 gap-y-1 rounded-xl border border-line p-3 text-[13px] tabular-nums;
+  }
+  .print-totals dd {
+    @apply text-right font-semibold;
+  }
+  /* The Balance line: one rule across both columns (a single element). */
+  .print-total-row {
+    @apply col-span-2 mt-1 flex justify-between gap-6 border-t border-navy pt-1.5 text-[15px] font-bold text-navy;
+  }
+  .print-divider {
+    height: 2px;
+    margin: 16px 0;
+    background: var(--navy); /* one solid navy line on screen; black on paper */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
   /* ---- Login (frozen: the sign-in screen keeps its original look) ------ */
   .login-btn-primary,
   .login-btn-secondary {
@@ -501,6 +906,37 @@ body {
 @media print {
   .no-print {
     display: none !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+  .print-keep {
+    break-inside: avoid;
+  }
+  /* On paper the divider is one solid black line (no gold segment). */
+  .print-divider {
+    background: #000;
+  }
+  /* The report fills the page: no card border, no app padding. */
+  #main:has(.print-sheet) {
+    padding: 0 !important;
+  }
+  .print-sheet {
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+  }
+  .print-scroll {
+    overflow: visible;
+  }
+  .print-sheet :is(tr, .print-totals, section) {
+    break-inside: avoid;
+  }
+  .print-table th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   body {
     background: var(--white);

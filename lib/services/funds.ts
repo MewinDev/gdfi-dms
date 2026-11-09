@@ -10,8 +10,9 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getHolidaySet, getSetting } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
 import {
-  EXPENSE_KINDS, EXPENSE_LABEL, advanceBalance, bandFor, decimalToCents, isOverdue, liquidationDue, liquidationStatus, peso, type ExpenseKindKey,
+  advanceBalance, bandFor, decimalToCents, isOverdue, liquidationDue, liquidationStatus, peso,
 } from "@/lib/funds/rules";
+import { OTHER, kindText, lineAmountSource, otherDescriptionProblem, sortKinds, startingAmount, type AmountMode, type AmountSource } from "@/lib/funds/kinds";
 import { bandApprovers, fundsApprovers } from "./jobs";
 import { cashBlockReason } from "./source-blocks";
 import { recomputeStage } from "./stage";
@@ -45,19 +46,24 @@ export async function requestableJobs(u: CurrentUser) {
     include: { transaction: { include: { type: { include: { caRules: { where: { active: true } } } }, advanceLines: { include: { advance: true } } } }, loan: true, ltoOffice: true },
     orderBy: { endorsedAt: "asc" },
   });
+  const kinds = new Map((await prisma.expenseKind.findMany()).map((k) => [k.code, k]));
   return jobs
     .filter((j) => !j.transaction.advanceLines.some((l) => !l.denied && !["DENIED", "CANCELLED"].includes(l.advance.status)))
     .map((j) => ({
       transactionId: j.transactionId, loanId: j.loanId, loanPn: j.loan.pn, borrower: j.loan.borrowerName, typeName: j.transaction.type.name,
       // Where the processor takes it: the approver judges transport and time from it.
       lto: j.ltoOffice ? { id: j.ltoOffice.id, name: j.ltoOffice.name, estimate: ltoEstimate(j.ltoOffice) } : null,
-      kinds: (j.transaction.fundsKinds as ExpenseKindKey[]).map((k) => {
-        const rule = j.transaction.type.caRules.find((r) => r.kind === k);
-        // Transport: the office's suggested amount first (the DP can change it).
+      kinds: sortKinds(j.transaction.fundsKinds.map((code) => ({ code, sortOrder: kinds.get(code)?.sortOrder ?? 0, name: kinds.get(code)?.name ?? code }))).map(({ code: k }) => {
+        const kind = kinds.get(k) ?? null;
+        const rule = ruleFor(j.transaction.type.caRules, k);
+        // Transport: the office's suggested amount first (the DP can change it); then the rule's
+        // Suggested amount; then the kind's own amount (Settings > Expense kinds).
         const fromOffice = k === "TRANSPORT" ? j.ltoOffice?.suggestedTransportCents ?? null : null;
+        const start = startingAmount({ officeCents: fromOffice, ruleSuggestedCents: decimalToCents(rule?.suggestedAmount ?? null), kind: kind && { code: k, amountMode: kind.amountMode as AmountMode, amountCents: kind.amountCents } });
         return {
-          kind: k, label: EXPENSE_LABEL[k], suggestedCents: fromOffice ?? decimalToCents(rule?.suggestedAmount ?? null), maxCents: decimalToCents(rule?.maxAmount ?? null),
-          suggestedFrom: (fromOffice !== null ? "office" : rule?.suggestedAmount != null ? "rule" : null) as "office" | "rule" | null,
+          kind: k, label: kind?.name ?? k, suggestedCents: start.cents, maxCents: decimalToCents(rule?.maxAmount ?? null),
+          suggestedFrom: (start.source === "OFFICE" ? "office" : start.source === "RULE" ? "rule" : start.source === "PRESET" ? "preset" : null) as "office" | "rule" | "preset" | null,
+          locked: start.locked, source: start.source,
         };
       }),
     }));
@@ -66,14 +72,16 @@ export async function requestableJobs(u: CurrentUser) {
 export const requestSchema = z.object({
   lines: z.array(z.object({
     transactionId: z.string().min(1),
-    kind: z.enum(EXPENSE_KINDS),
+    kind: z.string().trim().min(1, "Pick the expense kind."),
     cents: z.number().int().positive("Each amount must be above zero."),
     overMaxReason: z.string().trim().max(300).default(""),
+    otherDescription: z.string().trim().max(200).default(""),
   })).default([]),
   others: z.array(z.object({
-    kind: z.enum(["TRANSPORT", "OTHER"]),
+    kind: z.string().trim().min(1, "Pick the expense kind."),
     cents: z.number().int().positive("Each amount must be above zero."),
-    note: z.string().trim().min(3, "Say what the other expense is for.").max(300),
+    note: z.string().trim().max(300).default(""),
+    otherDescription: z.string().trim().max(200).default(""),
   })).default([]),
   /** Funds type (Settings > Funds types). Blank: the default, Cash advance. */
   fundsTypeId: z.string().trim().optional(),
@@ -92,10 +100,24 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
     const blocked = await cashBlockReason(prisma, job.loanId);
     if (blocked) throw new UserError(`${job.loanPn}: ${blocked}`);
     const k = job.kinds.find((x) => x.kind === l.kind);
-    if (k?.maxCents && l.cents > k.maxCents && !l.overMaxReason) {
-      throw new UserError(`${job.loanPn} ${job.typeName}: ${EXPENSE_LABEL[l.kind]} is above the maximum of ${peso(k.maxCents)}. Type a reason.`, "overMaxReason");
+    if (!k) throw new UserError(`${job.loanPn} ${job.typeName}: the Loan Associate did not flag this kind. Pick one of the flagged kinds.`, "kind");
+    if (l.kind === OTHER) { const why = otherDescriptionProblem(l.otherDescription); if (why) throw new UserError(`${job.loanPn} ${job.typeName}: ${why}`, "otherDescription"); }
+    if (k.locked && l.cents !== k.suggestedCents) throw new UserError(`${job.loanPn} ${job.typeName}: ${k.label} has a fixed amount of ${peso(k.suggestedCents ?? 0)}. It cannot be changed.`, "cents");
+    if (k.maxCents && l.cents > k.maxCents && !l.overMaxReason) {
+      throw new UserError(`${job.loanPn} ${job.typeName}: ${k.label} is above the maximum of ${peso(k.maxCents)}. Type a reason.`, "overMaxReason");
     }
   }
+  // General expenses (not for one job): an active kind; Other says what it is; the rest say what for.
+  const kindRows = new Map((await prisma.expenseKind.findMany()).map((k) => [k.code, k]));
+  const otherStarts = d.others.map((o) => {
+    const k = kindRows.get(o.kind);
+    if (!k || !k.active) throw new UserError(k ? `${k.name} is inactive. Pick an active expense kind.` : "Pick an expense kind from the list.", "kind");
+    if (o.kind === OTHER) { const why = otherDescriptionProblem(o.otherDescription); if (why) throw new UserError(why, "otherDescription"); }
+    else if (o.note.length < 3) throw new UserError("Say what the other expense is for.", "note");
+    const start = startingAmount({ kind: { code: k.code, amountMode: k.amountMode as AmountMode, amountCents: k.amountCents } });
+    if (start.locked && o.cents !== start.cents) throw new UserError(`${k.name} has a fixed amount of ${peso(start.cents ?? 0)}. It cannot be changed.`, "cents");
+    return start;
+  });
   // The processor's home branch (Users, Edit, Branch access); else the first branch of their access.
   const branchId = u.homeBranchId ?? (await prisma.userBranch.findFirst({ where: { userId: u.id }, orderBy: { branch: { name: "asc" } } }))?.branchId;
   if (!branchId) throw new UserError("You have no home branch yet. Ask Admin to set it (Users, Edit, Branch access).");
@@ -124,8 +146,15 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
         lines: {
           create: [
             // Each job line keeps the office it had when the cash was asked for ("Office changed from X to Y").
-            ...d.lines.map((l) => ({ transactionId: l.transactionId, kind: l.kind, requestedCents: l.cents, overMaxReason: l.overMaxReason, ltoOfficeId: allowed.find((j) => j.transactionId === l.transactionId)?.lto?.id ?? null })),
-            ...d.others.map((l) => ({ kind: l.kind, requestedCents: l.cents, note: l.note })),
+            ...d.lines.map((l) => {
+              const job = allowed.find((j) => j.transactionId === l.transactionId)!;
+              const k = job.kinds.find((x) => x.kind === l.kind)!;
+              return {
+                transactionId: l.transactionId, kind: l.kind, requestedCents: l.cents, overMaxReason: l.overMaxReason, ltoOfficeId: job.lto?.id ?? null,
+                otherDescription: l.kind === OTHER ? l.otherDescription : "", ...lineAmountSource({ cents: k.suggestedCents, source: k.source, locked: k.locked }, l.cents),
+              };
+            }),
+            ...d.others.map((l, i) => ({ kind: l.kind, requestedCents: l.cents, note: l.note || l.otherDescription, otherDescription: l.kind === OTHER ? l.otherDescription : "", ...lineAmountSource(otherStarts[i], l.cents) })),
           ],
         },
       },
@@ -137,6 +166,77 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
     return { id: adv.id, number, total };
   });
 }
+
+/** The rule for a transaction type and kind: its own, else the OTHER rule ("any kind without its own rule"). */
+export function ruleFor<R extends { kind: string; active?: boolean }>(rules: R[], kind: string): R | undefined {
+  return rules.find((r) => r.kind === kind) ?? (kind === OTHER ? undefined : rules.find((r) => r.kind === OTHER));
+}
+
+const lineEditSchema = z.object({
+  kind: z.string().trim().min(1, "Pick the expense kind."),
+  otherDescription: z.string().trim().max(200).default(""),
+  cents: z.number({ message: "Enter the amount." }).int().positive("The amount must be above zero."),
+  overMaxReason: z.string().trim().max(300).default(""),
+  note: z.string().trim().max(300).default(""),
+});
+
+/**
+ * Finance or an approver changes a line, or adds one, before the request is decided (To approve). The
+ * kind follows Settings > Expense kinds (Other says what it is); the rule's maximum still needs a typed
+ * reason; a kind's fixed amount is changed only by a person with "Add and manage expense kinds", and the
+ * history says so. The total asked follows the lines.
+ */
+export async function saveAdvanceLine(u: CurrentUser, target: { lineId?: string; advanceId?: string }, raw: unknown) {
+  if (!can(u, PERMISSIONS.FUNDS_APPROVE) && !can(u, PERMISSIONS.FUNDS_RELEASE)) throw new UserError("Your role does not allow changing funds requests.");
+  const p = lineEditSchema.safeParse(raw);
+  if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
+  const d = p.data;
+  return prisma.$transaction(async (tx) => {
+    const line = target.lineId ? await tx.cashAdvanceLine.findUnique({ where: { id: target.lineId }, include: { transaction: { include: { type: { include: { caRules: { where: { active: true } } } }, loan: true } } } }) : null;
+    if (target.lineId && !line) throw new UserError("Line not found.");
+    const a = await tx.cashAdvance.findUnique({ where: { id: line?.advanceId ?? target.advanceId ?? "" }, include: { lines: true } });
+    if (!a) throw new UserError("Request not found.");
+    if (a.status !== "REQUESTED") throw new UserError("Lines can be changed only before the request is decided.");
+    if (a.requestedById === u.id) throw new UserError("You cannot change your own request.");
+    const k = await tx.expenseKind.findUnique({ where: { code: d.kind } });
+    if (!k) throw new UserError("Pick an expense kind from the list.", "kind");
+    if (!k.active && k.code !== line?.kind) throw new UserError(`${k.name} is inactive. Pick an active expense kind.`, "kind");
+    if (k.code === OTHER) { const why = otherDescriptionProblem(d.otherDescription); if (why) throw new UserError(why, "otherDescription"); }
+    else if (!line && d.note.length < 3) throw new UserError("Say what the expense is for.", "note");
+    const rule = line?.transaction ? ruleFor(line.transaction.type.caRules, k.code) : undefined;
+    const start = startingAmount({ ruleSuggestedCents: decimalToCents(rule?.suggestedAmount ?? null), kind: { code: k.code, amountMode: k.amountMode as AmountMode, amountCents: k.amountCents } });
+    const fixedChanged = start.locked && d.cents !== start.cents;
+    if (fixedChanged && !can(u, PERMISSIONS.FUNDS_KINDS_MANAGE)) throw new UserError(`${k.name} has a fixed amount of ${peso(start.cents ?? 0)}. Only a person who may manage expense kinds can change it.`, "cents");
+    const max = decimalToCents(rule?.maxAmount ?? null);
+    if (max && d.cents > max && !(d.overMaxReason || line?.overMaxReason)) throw new UserError(`${k.name} is above the maximum of ${peso(max)}. Type a reason.`, "overMaxReason");
+    const src = lineAmountSource(start, d.cents);
+    const data = { kind: k.code, otherDescription: k.code === OTHER ? d.otherDescription : "", requestedCents: d.cents, overMaxReason: d.overMaxReason || line?.overMaxReason || "", ...src };
+    const saved = line
+      ? await tx.cashAdvanceLine.update({ where: { id: line.id }, data })
+      : await tx.cashAdvanceLine.create({ data: { ...data, advanceId: a.id, note: d.note } });
+    const total = (await tx.cashAdvanceLine.findMany({ where: { advanceId: a.id } })).reduce((s, l) => s + l.requestedCents, 0);
+    await tx.cashAdvance.update({ where: { id: a.id }, data: { requestedCents: total } });
+    const what = kindText(k.code, k.name, d.otherDescription);
+    const before = line ? `${kindText(line.kind, (await tx.expenseKind.findUnique({ where: { code: line.kind } }))?.name, line.otherDescription)} ${peso(line.requestedCents)}` : null;
+    await writeAudit(tx, {
+      actor: actorOf(u), mode: "MANUAL", action: line ? "advance_line_changed" : "advance_line_added", entityType: "CashAdvance", entityId: a.id,
+      ...(line?.transaction ? { loanId: line.transaction.loanId, pn: line.transaction.loan.pn } : {}),
+      summary: `${a.number}: ${u.name} ${line ? `changed a line from ${before} to` : "added a line:"} ${what} ${peso(d.cents)} (${amountWords(src.amountSource, src.presetCents, src.locked, d.cents)})${fixedChanged ? `; changed the fixed amount of ${peso(start.cents ?? 0)} for this request only` : ""}; total ${peso(total)}`,
+      before: line ? { kind: line.kind, otherDescription: line.otherDescription, cents: line.requestedCents } : undefined, after: { lineId: saved.id, ...data },
+    });
+    return { id: saved.id, total };
+  });
+}
+
+/** "typed, preset was ₱500.00", "preset", "rule", "fixed" for the history and the Journey. */
+export function amountWords(source: string, presetCents: number | null, locked: boolean, cents: number): string {
+  if (source === "TYPED") return presetCents !== null && presetCents !== cents ? `typed; preset was ${peso(presetCents)}` : "typed";
+  if (source === "PRESET") return locked ? "fixed for the kind" : "preset for the kind";
+  if (source === "RULE") return "suggested by rule";
+  if (source === "OFFICE") return "suggested by the LTO office";
+  return source.toLowerCase();
+}
+export type { AmountSource };
 
 /** Can this person approve this amount (approval bands)? Never their own request. */
 async function requireApprover(tx: Tx, u: CurrentUser, amountCents: number, requesterId: string) {

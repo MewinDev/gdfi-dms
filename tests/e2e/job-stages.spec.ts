@@ -109,8 +109,9 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
   await page.goto("/funds?tab=release");
-  await page.getByLabel(/Reference/).fill("VOUCHER-0001");
-  await page.getByRole("button", { name: "Release cash", exact: true }).click();
+  await page.getByRole("button", { name: "Release", exact: true }).click();
+  await page.getByRole("dialog").getByLabel(/Reference/).fill("VOUCHER-0001");
+  await page.getByRole("dialog").getByRole("button", { name: "Release cash", exact: true }).click();
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("RELEASED");
 
   // Notarization with its evidence.

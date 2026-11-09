@@ -3,7 +3,7 @@
  *   npm run db:seed              reference data + test users (local)
  *   npm run db:seed:reference    reference data only (Supabase / live). Never seeds test users.
  */
-import { PrismaClient, ChecklistKind, ExpenseKind, Originality } from "@prisma/client";
+import { PrismaClient, ChecklistKind, Originality } from "@prisma/client";
 import { ROLE_DEFAULTS } from "../lib/auth/permissions";
 import { DEFAULT_OWN_STAGES, DEFAULT_SYSTEM_STAGES } from "../lib/stages/rules";
 import { SEEDED_FUNDS_TYPES } from "../lib/funds/types";
@@ -109,9 +109,9 @@ const LTO_OFFICES = [
 ] as const;
 
 const CA_RULES = [
-  ["NOTARY", "Notarial fees", 1500, 5000, ExpenseKind.NOTARY_FEE],
-  ["PPSR", "PPSR registration fee", 1000, 3000, ExpenseKind.PPSR_FEE],
-  ["MORTGAGE", "LTO annotation and processing fees", 2500, 8000, ExpenseKind.LTO_FEE],
+  ["NOTARY", "Notarial fees", 1500, 5000, "NOTARY_FEE"],
+  ["PPSR", "PPSR registration fee", 1000, 3000, "PPSR_FEE"],
+  ["MORTGAGE", "LTO annotation and processing fees", 2500, 8000, "LTO_FEE"],
 ] as const;
 
 /** Problem reasons (also the result of an attempt that was not processed). */

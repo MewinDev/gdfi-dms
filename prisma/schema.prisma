@@ -574,8 +574,10 @@ model CashAdvanceRule {
   id                String          @id @default(cuid())
   transactionTypeId String
   transactionType   TransactionType @relation(fields: [transactionTypeId], references: [id])
-  /// Expense kind this rule is for (one rule per transaction type and kind).
-  kind              ExpenseKind     @default(OTHER)
+  /// Expense kind this rule is for (one rule per transaction type and kind): the kind's code
+  /// (Settings > Expense kinds). An OTHER rule also applies to any kind without its own rule.
+  kind              String          @default("OTHER")
+  kindRef           ExpenseKind     @relation(fields: [kind], references: [code], onUpdate: Cascade)
   purpose           String
   /// Suggested amount; empty when the owner has not set one.
   suggestedAmount   Decimal?        @db.Decimal(14, 2)
@@ -778,7 +780,8 @@ model LoanTransaction {
   dpAssignments    DpAssignment[]
   /// LA flag: does this transaction need funds? (no amount; the DP asks Finance for it)
   fundsNeeded      FundsNeeded          @default(UNANSWERED)
-  fundsKinds       ExpenseKind[]
+  /// Codes of the expense kinds the LA flagged (Settings > Expense kinds).
+  fundsKinds       String[]
   /// Free text kept from older data (e.g. the old cash advance amount).
   fundsNote        String               @default("")
   fundsFlaggedAt   DateTime?
@@ -1226,12 +1229,38 @@ enum FundsNeeded {
   NO
 }
 
-enum ExpenseKind {
-  NOTARY_FEE
-  PPSR_FEE
-  LTO_FEE
-  TRANSPORT
-  OTHER
+/// How the amount field starts when a kind is picked (Settings > Expense kinds).
+enum ExpenseAmountMode {
+  /// Person enters it (the default; always for Other).
+  TYPED
+  /// Pre-filled with the kind's amount; the person may change it.
+  SUGGESTED
+  /// Pre-filled and cannot be changed by the processor (set fees only).
+  FIXED
+}
+
+/// What a cash advance or fund transfer line can be for. Nothing is deleted: a kind is made inactive.
+/// OTHER is built in: never renamed, never inactive, always last, and its lines say what they are.
+model ExpenseKind {
+  id              String            @id @default(cuid())
+  /// Stable code kept on rules and lines (NOTARY_FEE, PPSR_FEE, LTO_FEE, TRANSPORT, OTHER, or made from the name).
+  code            String            @unique
+  name            String
+  /// The name in lower case without spaces: names are unique ignoring case and spaces.
+  nameKey         String            @unique
+  /// Only OTHER: fixed, cannot be renamed or made inactive.
+  builtIn         Boolean           @default(false)
+  sortOrder       Int               @default(0)
+  amountMode      ExpenseAmountMode @default(TYPED)
+  /// The kind's own amount (Suggested or Fixed); null for "Person enters it".
+  amountCents     Int?
+  active          Boolean           @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  rules           CashAdvanceRule[]
+  lines           CashAdvanceLine[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 }
 
 enum AdvanceStatus {
@@ -1329,7 +1358,17 @@ model CashAdvanceLine {
   /// Null for a general expense (e.g. transport).
   transactionId  String?
   transaction    LoanTransaction?   @relation(fields: [transactionId], references: [id])
-  kind           ExpenseKind
+  /// The expense kind's code (Settings > Expense kinds).
+  kind           String
+  kindRef        ExpenseKind        @relation(fields: [kind], references: [code], onUpdate: Cascade)
+  /// Kind Other: what the expense is ("Courier"). Blank on old rows ("Other (not described)").
+  otherDescription String           @default("")
+  /// Where the amount came from: RULE (rule's suggested), PRESET (the kind's amount), OFFICE (LTO office transport), TYPED.
+  amountSource   String             @default("TYPED")
+  /// The starting value offered (rule, kind or office); kept so "Preset was ₱500" shows when it was changed.
+  presetCents    Int?
+  /// The kind's amount was Fixed when the line was made (the processor could not change it).
+  locked         Boolean            @default(false)
   note           String             @default("")
   /// Typed reason when the amount is above the maximum per transaction.
   overMaxReason  String             @default("")

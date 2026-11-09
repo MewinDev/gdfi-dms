@@ -23,7 +23,7 @@ import { saveDpCapacity } from "@/lib/services/dp-capacity";
 import { fileAdvisory, resolveAdvisory } from "@/lib/services/lto-advisories";
 import { saveSettingsRow } from "@/lib/services/admin";
 import { setRowActive } from "@/lib/services/settings-status";
-import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, SUPERVISOR_ROLE_NAME, NO_REFRESH_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
+import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, KIT_OTHER_SAMPLES, SUPERVISOR_ROLE_NAME, NO_REFRESH_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
 import { kitRefusal } from "./guard";
 import { branchGrants, writeUserAccess, type AccessInput } from "@/lib/services/access";
 import type { GrantLike } from "@/lib/branches/access";
@@ -384,6 +384,10 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
       await notifyOverdue();
     },
   };
+
+  // General expenses typed as Other (before any advance is overdue, so DP 1 may still ask).
+  for (const o of KIT_OTHER_SAMPLES) await requestAdvance(u.dp1, { others: [{ kind: "OTHER", cents: o.cents, otherDescription: o.description }], fundsTypeId: (await fundsType("CA")).id });
+  log(`Added ${KIT_OTHER_SAMPLES.length} sample "Other: Courier" expenses (DP 1, waiting for approval).`);
 
   for (const [pn, fn] of Object.entries(cases)) {
     try {

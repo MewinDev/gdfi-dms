@@ -14,7 +14,7 @@ import { openLoanFile } from "@/lib/services/loan-file";
 import { setKitConfigForTests, kitConfig, KIT_DATABASES, OUT_OF_DATE } from "@/lib/kit/guard";
 import { autoBackup, baselineStatus, buildBaseline, listSaves, readManifest, restoreSave, saveDump } from "@/lib/kit/core";
 import { buildSamples } from "@/lib/kit/build";
-import { KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_L1, KIT_LOANS, KIT_REPLACEMENT_PN } from "@/lib/kit/catalog";
+import { KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_L1, KIT_LOANS, KIT_OTHER_SAMPLES, KIT_REPLACEMENT_PN } from "@/lib/kit/catalog";
 import { shiftBusinessDays } from "@/lib/kit/rebase";
 import { examplePn, parsePn } from "@/lib/pn/format";
 import { asUser } from "./helpers";
@@ -110,6 +110,8 @@ describe("Manual Test Kit on the test database", () => {
     expect((await ft("GD1012026902057")).overdueNotifiedAt).not.toBeNull();
     expect(await prisma.auditLog.count({ where: { action: "funds_type_changed", entityId: (await ft("GD1012026902052")).id } })).toBe(1);
     expect((await prisma.cashAdvance.findMany()).filter((a) => a.fundsTypeCode === "CA").length).toBeGreaterThan(0);
+    // Expense kinds: two "Other: Courier" expenses (the suggestion block shows once a third is typed).
+    expect((await prisma.cashAdvanceLine.findMany({ where: { kind: "OTHER" } })).map((l) => l.otherDescription)).toEqual(KIT_OTHER_SAMPLES.map((o) => o.description));
     expect((await prisma.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1012026902028" }, type: { code: "NOTARY" } } })).status).toBe("COMPLETED");
     // MyLoans: material, status and replacement wait for Admin review; a minor change updates the copy by itself.
     for (const pn of ["GD1012026902042", "GD1012026902043", "GD1012026902044"]) expect(await prisma.sourceChange.count({ where: { loan: { pn }, state: "OPEN" } }), pn).toBe(1);

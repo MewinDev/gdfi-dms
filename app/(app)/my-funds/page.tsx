@@ -4,7 +4,10 @@ import { prisma } from "@/lib/db";
 import { requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { cashToSettleIds, notifyOverdue, requestableJobs } from "@/lib/services/funds";
-import { EXPENSE_LABEL, OPEN_ADVANCE, isOverdue, peso, type ExpenseKindKey } from "@/lib/funds/rules";
+import { OPEN_ADVANCE, isOverdue, peso } from "@/lib/funds/rules";
+import { allKinds, kindOption, lineKindText } from "@/lib/services/expense-kinds";
+import { can } from "@/lib/auth/current-user";
+import { presetWas } from "@/lib/funds/kinds";
 import { businessDate } from "@/lib/time";
 import { dayText } from "@/lib/ui/plain";
 import { PageHeader, ToneChip } from "@/components/ui/basics";
@@ -38,6 +41,8 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
     prisma.fundsException.findFirst({ where: { dpUserId: user.id, usedBy: null } }),
     prisma.fundsType.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, needsReference: true, needsAccount: true } }),
   ]);
+  const kindRows = await allKinds();
+  const names = new Map(kindRows.map((k) => [k.code, k.name]));
   const audit = advances.length ? await prisma.auditLog.findMany({ where: { entityType: "CashAdvance", entityId: { in: advances.map((a) => a.id) } }, orderBy: { at: "asc" }, select: { id: true, entityId: true, summary: true, at: true } }) : [];
   const historyOf = (id: string) => audit.filter((r) => r.entityId === id).map((r) => ({ id: r.id, text: r.summary, when: dayText(r.at) }));
   const overdue = advances.filter((a) => isOverdue(a, now));
@@ -46,14 +51,14 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
     : undefined;
   const lineLeft = (l: (typeof advances)[number]["lines"][number]) => l.releasedCents - l.receipts.reduce((s, r) => s + r.cents, 0) - l.returns.reduce((s, r) => s + r.cents, 0);
   const lineLabel = (l: (typeof advances)[number]["lines"][number]) =>
-    `${EXPENSE_LABEL[l.kind as ExpenseKindKey]}${l.transaction ? ` · ${l.transaction.loan.pn} ${l.transaction.type.name}` : l.note ? ` · ${l.note}` : ""}`;
+    `${lineKindText(names, l)}${l.transaction ? ` · ${l.transaction.loan.pn} ${l.transaction.type.name}` : l.note ? ` · ${l.note}` : ""}`;
   const open = advances.filter((a) => OPEN_ADVANCE.includes(a.status));
   // The job went back to the LA after the cash was released: still yours to settle.
   const toSettle = await cashToSettleIds(advances);
   const settleChip = (id: string) => toSettle.has(id) && <ToneChip tone="act" title="The job went back to the Loan Associate. Record what was spent and return the rest.">Cash to settle</ToneChip>;
 
   return (
-    <div className="dense flex w-full flex-col gap-4">
+    <div className="dense funds-compact flex w-full flex-col gap-4">
       <PageHeader title="My funds" help="Ask Finance for cash for your jobs, then liquidate with receipts and return the rest." />
       <nav aria-label="My funds tabs" className="flex overflow-x-auto border-b border-line">
         {TABS.map(([k, l]) => (
@@ -66,7 +71,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
 
       {tab === "request" && (
         <section aria-label="Request" className="card p-4 sm:p-5">
-          <RequestForm jobs={jobs} blocked={blocked} types={fundsTypes} defaultTypeId={defaultFundsType(fundsTypes)?.id ?? ""} />
+          <RequestForm jobs={jobs} blocked={blocked} types={fundsTypes} defaultTypeId={defaultFundsType(fundsTypes)?.id ?? ""} kinds={kindRows.map(kindOption)} canAddKind={can(user, PERMISSIONS.FUNDS_KINDS_MANAGE)} />
         </section>
       )}
 
@@ -94,7 +99,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
               <ul className="mt-2 flex flex-col gap-1.5">
                 {a.lines.map((l) => (
                   <li key={l.id} className="flex flex-wrap items-center gap-2 border-t border-line pt-1.5 text-[15px]">
-                    <span className="min-w-0 flex-1">{lineLabel(l)} · asked {peso(l.requestedCents)}{l.releasedCents ? ` · released ${peso(l.releasedCents)} · left ${peso(lineLeft(l))}` : ""}{l.denied ? " · not approved" : ""}</span>
+                    <span className="min-w-0 flex-1">{lineLabel(l)} · asked {peso(l.requestedCents)}{presetWas(l.presetCents, l.requestedCents) ? ` (${presetWas(l.presetCents, l.requestedCents)})` : ""}{l.releasedCents ? ` · released ${peso(l.releasedCents)} · left ${peso(lineLeft(l))}` : ""}{l.denied ? " · not approved" : ""}</span>
                     {l.topUps.filter((t) => t.status === "REQUESTED" || (t.status === "APPROVED" && !t.releasedAt)).map((t) => <ToneChip key={t.id} tone="wait">Top-up {peso(t.extraCents)} {t.status === "REQUESTED" ? "waiting" : "approved"}</ToneChip>)}
                     {l.carryOvers.filter((c) => c.status === "PENDING").map((c) => <ToneChip key={c.id} tone="wait">Carry-over waiting for approval</ToneChip>)}
                     {OPEN_ADVANCE.includes(a.status) && !l.denied && <TopUpButton lineId={l.id} label={lineLabel(l)} />}

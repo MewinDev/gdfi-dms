@@ -16,7 +16,7 @@ import { sendBlockReason } from "./source-blocks";
 import { createTransactionOfType, createTransactions } from "./loan-file";
 import { MissingPapersError, NotInScopeError, UserError } from "./errors";
 import { endHoldsOnCompletion } from "./holds";
-import { EXPENSE_KINDS } from "@/lib/funds/rules";
+import { validFlagKinds } from "./expense-kinds";
 import { checklistStatus, type CheckLine, type ChecklistStatus } from "@/lib/workflow/checklist";
 import { assertNotHeld } from "./locks";
 import { moveDocs } from "./custody";
@@ -435,7 +435,7 @@ export async function completeLaTransaction(user: CurrentUser, input: { transact
 export async function laSetFundsFlag(user: CurrentUser, input: { transactionId: string; needed: boolean; kinds: string[] }) {
   requireAllowed(user, PERMISSIONS.FUNDS_FLAG);
   const t0 = await loadTxnInScope(user, input.transactionId);
-  const kinds = [...new Set(input.kinds)].filter((k) => (EXPENSE_KINDS as readonly string[]).includes(k));
+  const kinds = await validFlagKinds(prisma, input.kinds, t0.fundsKinds);
   if (input.needed && kinds.length === 0) throw new UserError("Tick what the funds are for.", "fundsKinds");
   await withLoanLock(t0.loanId, async (tx) => {
     await assertNotHeld(tx, t0.id);
@@ -604,7 +604,7 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
     if (!lto) throw new UserError("Pick an active LTO office.", "ltoOfficeId");
   }
   if (input.fundsNeeded !== "YES" && input.fundsNeeded !== "NO") throw new UserError("Does this transaction need funds? Pick Yes or No.", "fundsNeeded");
-  const fundsKinds = [...new Set(input.fundsKinds)].filter((k) => (EXPENSE_KINDS as readonly string[]).includes(k));
+  const fundsKinds = await validFlagKinds(prisma, input.fundsKinds, t0.fundsKinds);
   if (input.fundsNeeded === "YES" && fundsKinds.length === 0) throw new UserError("Tick what the funds are for.", "fundsKinds");
   if (input.fundsNeeded === "YES" && !can(user, PERMISSIONS.FUNDS_FLAG)) throw new UserError("Your role does not allow flagging funds.", "fundsNeeded");
   const recommended = await recommendDp(dpBranch.id);

@@ -71,6 +71,9 @@ describe("the migration gives every role the new ticks for what it could already
     expect(statements.length).toBeGreaterThan(10);
     expect(sql).not.toMatch(/^\s*DROP INDEX/im);
     for (const s of statements) await prisma.$executeRawUnsafe(s);
+    // Later migrations' role steps run after it, as on a real database (20261119090005_expense_kinds adds the expense-kind ticks).
+    const later = readFileSync(path.join("prisma", "migrations", "20261119090005_expense_kinds", "migration.sql"), "utf8");
+    for (const s of later.split(/;\s*\n/).map((x) => x.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim()).filter((x) => x.startsWith('UPDATE "Role"'))) await prisma.$executeRawUnsafe(s);
     const after = new Set((await prisma.role.findUniqueOrThrow({ where: { id: legacy.id } })).permissions);
     for (const k of ["myloans:review", "myloans:manage", "branches:manage", "myloans:view", "loans:refresh", "myloans:sync", "branches:view", "branches:import", "branches:review", "access:manage", "settings:pn_format", "reports:tat_export", "email:view"]) expect(after.has(k), k).toBe(true);
     for (const k of ["source:review", "source:manage", "settings:branches"]) expect(after.has(k), k).toBe(false);
