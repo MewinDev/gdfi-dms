@@ -389,7 +389,7 @@ describe("Permissions", () => {
   it("the Operations Monitor role: read-only, all branches, monitors and advisories only", async () => {
     const role = await prisma.role.findUniqueOrThrow({ where: { key: "MONITOR" } });
     expect(role).toMatchObject({ name: "Operations Monitor", branchAccess: "ALL", builtIn: true });
-    expect([...monitor.permissions].sort()).toEqual([PERMISSIONS.LTO_REPORTS_MANAGE, PERMISSIONS.MONITOR_DP, PERMISSIONS.MONITOR_LTO].sort());
+    expect([...monitor.permissions].sort()).toEqual([PERMISSIONS.LTO_REPORTS_MANAGE, PERMISSIONS.LTO_REPORTS_NOTIFY, PERMISSIONS.MONITOR_DP, PERMISSIONS.MONITOR_LTO].sort());
     for (const p of [PERMISSIONS.MONITOR_DP, PERMISSIONS.MONITOR_LTO, PERMISSIONS.LTO_REPORTS_CREATE, PERMISSIONS.LTO_REPORTS_MANAGE, PERMISSIONS.DP_CAPACITY_MANAGE]) expect(admin.permissions.has(p), p).toBe(true);
     expect(fin.permissions.has(PERMISSIONS.MONITOR_DP)).toBe(false);
     expect(dp.permissions.has(PERMISSIONS.LTO_REPORTS_CREATE)).toBe(true);

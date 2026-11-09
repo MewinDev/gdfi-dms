@@ -154,7 +154,7 @@ export function UserEditForm({
   user: { id: string; name: string; email: string; roleId: string; active: boolean } | null;
   roles: { id: string; name: string; canSignIn: boolean; builtIn: boolean; active: boolean; permissions: string[]; admin?: boolean; allByDefault?: boolean }[];
   /** Branch access: the tree, this user's access, other users to copy from. */
-  access: { tree: AccessTreeDivision[]; hiddenPlaces: BranchPlace[]; initial: AccessValue; others: AccessOtherUser[] };
+  access: { tree: AccessTreeDivision[]; hiddenPlaces: BranchPlace[]; initial: AccessValue; others: AccessOtherUser[]; readOnlySummary?: string };
   formId: string;
   listHref: string;
   /** What making this user inactive does (asked before saving). */
@@ -245,12 +245,20 @@ export function UserEditForm({
           {fieldErr("roleId")}
         </div>
         <div className="sm:col-span-2">
+          {access.readOnlySummary !== undefined ? (
+            <div data-branch-access-readonly>
+              <p className="label">Branch access</p>
+              <p className="rounded-xl bg-fill px-3 py-2 text-sm">{access.readOnlySummary}</p>
+              <p className="help">Read only. Ask an Admin to turn on &ldquo;Change branch access&rdquo; for your role to change it.</p>
+            </div>
+          ) : (
           <BranchAccessField
             tree={access.tree} hiddenPlaces={access.hiddenPlaces} initial={access.initial} others={access.others.filter((o) => o.id !== user?.id)}
             adminRoleIds={roles.filter((r) => r.admin).map((r) => r.id)} roleSelectId={`u-role-${uid}`}
             allByDefaultRoleIds={user ? undefined : roles.filter((r) => r.allByDefault).map((r) => r.id)}
             error={err("access") ?? err("branchIds")} homeError={err("homeBranchId")}
           />
+          )}
         </div>
         <div className="sm:col-span-2">
           <label htmlFor={`u-active-${uid}`} className="inline-flex min-h-11 cursor-pointer items-center gap-3 text-[15px] font-medium">

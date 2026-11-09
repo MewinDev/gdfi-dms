@@ -2,10 +2,10 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
-import { ADMIN_ROLE_KEY, KIND_PERMISSION, PERMISSIONS } from "@/lib/auth/permissions";
-import { effectivePermissions } from "@/lib/auth/access";
+import { KIND_PERMISSION } from "@/lib/auth/permissions";
 import { UserError } from "./errors";
 import { branchWorkload } from "./branches";
+import { checkLockout } from "./lockout";
 
 /**
  * Inactive instead of delete. Nothing in Settings or Users is ever deleted: a row is made inactive
@@ -48,7 +48,7 @@ async function loadRow(kind: StatusKind, id: string): Promise<(Row & { builtIn?:
     case "processingStage": { const r = await prisma.processingStage.findUnique({ where: { id }, include: { type: true } }); return r && { id, active: r.active, label: `${r.type.name} · ${r.name}` }; }
     case "caRule": { const r = await prisma.cashAdvanceRule.findUnique({ where: { id }, include: { transactionType: true } }); return r && { id, active: r.active, label: `${r.transactionType.name} · ${r.purpose}` }; }
     case "holiday": { const r = await prisma.holidayCalendar.findUnique({ where: { id } }); return r && { id, active: r.active, label: `${r.name} (${r.date})` }; }
-    case "user": { const r = await prisma.user.findUnique({ where: { id }, include: { role: true } }); return r && { id, active: r.active, label: r.name, roleKey: r.role.key }; }
+    case "user": { const r = await prisma.user.findUnique({ where: { id }, include: { role: true } }); return r && { id, active: r.active, label: r.name }; }
   }
 }
 
@@ -74,22 +74,17 @@ async function activeCount(kind: StatusKind): Promise<number> {
  */
 export async function inactiveRefusal(
   kind: StatusKind,
-  row: { id: string; builtIn?: boolean; roleKey?: string; active?: boolean },
+  row: { id: string; builtIn?: boolean; active?: boolean },
   actor: { id: string },
-  counts?: { activeLeft?: number; activeAdminsLeft?: number },
+  counts?: { activeLeft?: number },
 ): Promise<string | null> {
   if (kind === "transactionType" && row.builtIn) return "The four built-in transaction types (Notary, For EDST, For Entry PPSR, Mortgage) are always active.";
   if (kind === "user") {
     if (row.id === actor.id) return "You cannot make yourself inactive.";
-    if (row.roleKey === ADMIN_ROLE_KEY) {
-      const admins = counts?.activeAdminsLeft ?? (await prisma.user.count({ where: { active: true, role: { key: ADMIN_ROLE_KEY } } }));
-      if (admins <= 1 && row.active !== false) return "This is the last active Admin. Make another Admin active first.";
-    }
+    // Lock-out (lib/services/lockout.ts): the last active person who can manage roles or change branch access.
     if (!counts && row.active !== false) {
-      const u = await prisma.user.findUnique({ where: { id: row.id }, include: { role: true } });
-      if (u && effectivePermissions(u.role).has(PERMISSIONS.ROLES_MANAGE) && (await countActiveManagers(row.id)) === 0) {
-        return "This is the last active person who can manage roles and access.";
-      }
+      const why = await checkLockout({ kind: "user", userId: row.id, active: false });
+      if (why) return why;
     }
   }
   const noun = NEEDS_ONE[kind];
@@ -199,15 +194,6 @@ export async function setRowActive(user: CurrentUser, kind: StatusKind, id: stri
       before: { active: row.active }, after: { active },
     });
   });
-}
-
-/**
- * Active people (active user, active role) who can manage roles and access, leaving out one user.
- * The app always keeps at least one.
- */
-export async function countActiveManagers(excludeUserId?: string): Promise<number> {
-  const users = await prisma.user.findMany({ where: { active: true, id: excludeUserId ? { not: excludeUserId } : undefined, role: { active: true } }, include: { role: true } });
-  return users.filter((u) => effectivePermissions(u.role).has(PERMISSIONS.ROLES_MANAGE)).length;
 }
 
 /** "4 branches" counts active rows only; "+1 inactive" when any. */

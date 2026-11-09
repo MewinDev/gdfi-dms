@@ -143,20 +143,25 @@ describe("A custom role grants and denies on the server", () => {
 });
 
 describe("Safety rules", () => {
-  it("Admin is locked", async () => {
+  it("Admin is an ordinary role: its ticks can change, its name cannot, and it cannot go inactive while people have it", async () => {
     const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
-    await refused(saveRole(admin, adminRole.id, { name: "Admin", description: adminRole.description, branchAccess: "ALL", permissions: [P.LOANS_VIEW] }), /Admin is locked/);
-    await refused(setRoleActive(admin, adminRole.id, false), /locked/);
+    const without = ROLE_DEFAULTS.ADMIN.permissions.filter((k) => k !== P.TESTDATA_RESET);
+    await saveRole(admin, adminRole.id, { name: "Admin", description: adminRole.description, branchAccess: "ALL", permissions: without });
+    expect(effectivePermissions(await prisma.role.findUniqueOrThrow({ where: { key: "ADMIN" } })).has(P.TESTDATA_RESET)).toBe(false);
+    await saveRole(admin, adminRole.id, { name: "Admin", description: adminRole.description, branchAccess: "ALL", permissions: ROLE_DEFAULTS.ADMIN.permissions });
+    await refused(setRoleActive(admin, adminRole.id, false), /this role/);
     await refused(saveRole(admin, adminRole.id, { name: "Administrator", description: "", branchAccess: "ALL", permissions: [] }), /Built-in role names cannot be changed/);
+    // The editor's own role cannot lose "Manage roles".
+    await refused(saveRole(admin, adminRole.id, { name: "Admin", description: "", branchAccess: "ALL", permissions: without.filter((k) => k !== P.ROLES_MANAGE) }), /your own role/);
   });
 
   it("cannot remove your own ability; the last people who can manage roles keep it", async () => {
     const { roleId, user: manager } = await customUser("Z Access Manager", [P.USERS_VIEW, P.ROLES_MANAGE]);
-    await refused(saveRole(manager, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] }), /cannot remove your own ability/);
+    await refused(saveRole(manager, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] }), /away from your own role/);
     // With every Admin inactive, the custom role is the last way to manage roles.
     await prisma.user.updateMany({ where: { role: { key: "ADMIN" } }, data: { active: false } });
     try {
-      await refused(saveRole(admin, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] }), /Nobody else could manage roles/);
+      await refused(saveRole(admin, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] }), /Nobody active could manage roles/);
       await refused(setRowActive(admin, "user", manager.id, false), /last active person who can manage roles/);
     } finally {
       await prisma.user.updateMany({ where: { email: "test.admin@gdfi.ph" }, data: { active: true } });
@@ -165,9 +170,9 @@ describe("Safety rules", () => {
     await saveRole(admin, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] });
   });
 
-  it("the last active Admin cannot be moved to another role", async () => {
+  it("nobody can move themselves to a role without \"Manage roles\"", async () => {
     const laRole = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
-    await refused(saveUser(admin, admin.id, { name: admin.name, email: admin.email, roleId: laRole.id, active: true, branchIds: [] }), /own Admin role/);
+    await refused(saveUser(admin, admin.id, { name: admin.name, email: admin.email, roleId: laRole.id, active: true }), /away from yourself/);
   });
 });
 

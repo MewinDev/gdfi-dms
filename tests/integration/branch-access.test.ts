@@ -206,11 +206,11 @@ describe("Users Import / Export", () => {
 });
 
 describe("Permissions and refusals", () => {
-  it("only users:edit changes access; Admin stays All", async () => {
+  it("only access:manage changes access (Change branch access); All branches is kept for the person, not by role name", async () => {
     const u = await zzUser("Guarded", { all: false, grants: [br("b1")], homeBranchId: null });
     await expect(saveUserAccess(la, u.id, { all: true, grants: [], homeBranchId: null })).rejects.toBeInstanceOf(UserError);
-    await expect(copyAccess(la, u.id, la.id)).rejects.toThrow(/does not allow changing users' branch access/);
-    await saveUserAccess(admin, admin.id, { all: false, grants: [br("b1")], homeBranchId: null });
+    await expect(copyAccess(la, u.id, la.id)).rejects.toThrow('Ask an Admin to turn on "Change branch access" for your role.');
+    await saveUserAccess(admin, admin.id, { all: true, grants: [], homeBranchId: null });
     expect(await asUser(admin.email).then((a) => a.scopeBranchIds)).toBeNull();
     expect((await prisma.user.findUniqueOrThrow({ where: { id: admin.id } })).allBranches).toBe(true);
     await expect(saveUserAccess(admin, u.id, "not json")).rejects.toThrow("The branch access could not be read.");
@@ -223,9 +223,11 @@ describe("Speed: 1,000 branches in 20 areas, 200 users", () => {
     const areas: string[] = [];
     for (let i = 0; i < 20; i++) areas.push((await prisma.area.create({ data: { name: `ZT Perf Area ${i}` } })).id);
     await prisma.branch.createMany({ data: Array.from({ length: 1000 }, (_, i) => ({ name: `ZT Perf Branch ${i}`, divisionId: div.id, areaId: areas[i % 20] })) });
-    const branches = await prisma.branch.findMany({ where: { name: { startsWith: "ZT Perf Branch" } }, select: { id: true } });
+    // In creation order (no orderBy would leave the order to the database, and the counts below depend on it).
+    const num = (s: string) => Number(s.match(/(\d+)\D*$/)![1]);
+    const branches = (await prisma.branch.findMany({ where: { name: { startsWith: "ZT Perf Branch" } }, select: { id: true, name: true } })).sort((x, y) => num(x.name) - num(y.name));
     await prisma.user.createMany({ data: Array.from({ length: 200 }, (_, i) => ({ email: `zz.ba.perf${i}@gdfi.ph`, name: `Zz Perf ${i}`, roleId: laRoleId, isTestUser: true })) });
-    const users = await prisma.user.findMany({ where: { email: { startsWith: "zz.ba.perf" } }, select: { id: true } });
+    const users = (await prisma.user.findMany({ where: { email: { startsWith: "zz.ba.perf" } }, select: { id: true, email: true } })).sort((x, y) => num(x.email) - num(y.email));
     // Mixed grants: two areas, a few single branches, an exception; every 10th a whole division.
     await prisma.userAccessGrant.createMany({
       data: users.flatMap((u, i): Prisma.UserAccessGrantCreateManyInput[] => i % 10 === 0

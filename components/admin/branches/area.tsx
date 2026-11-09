@@ -31,37 +31,42 @@ export interface BranchFilter { q?: string; area?: string; source?: string; show
 type Common = { id: string; title: string; help: string; closeHref: string; returnFocusId: string };
 
 export async function BranchesModal({ common, edit, step, user, filter }: { common: Common; edit?: string; step?: string; user: CurrentUser; filter: BranchFilter }) {
-  const manage = can(user, PERMISSIONS.SOURCE_MANAGE);
+  // Seeing is branches:view (the area). Each step and button needs its own tick; a step the person
+  // cannot use is not linked and its address falls back to the list.
+  const may: BranchMay = { manage: can(user, PERMISSIONS.BRANCHES_MANAGE), import: can(user, PERMISSIONS.BRANCHES_IMPORT), review: can(user, PERMISSIONS.BRANCHES_REVIEW) };
+  const listImport = may.manage && can(user, PERMISSIONS.SETTINGS_IMPORT);
   const back = href({});
-  if (step === "import" && can(user, PERMISSIONS.SETTINGS_IMPORT)) {
+  if (step === "import" && listImport) {
     return (
       <SettingsModal {...common} title="Branches: Import / Export" help="Download a file, fill it in Excel, then check and import it. Branches from MyLoans change only through Import from MyLoans." backHref={back} footer={{ kind: "done" }}>
         <ImportStep list="branches" />
       </SettingsModal>
     );
   }
-  if (step === "myloans" && manage) {
+  if (step === "myloans" && may.import) {
     return (
       <SettingsModal {...common} title="Branches: Import from MyLoans" help="MyLoans is the source of truth for branch codes, names, areas, divisions and status. Check the file first; nothing is saved until you confirm." backHref={back} footer={{ kind: "done" }}>
         <MyLoansImport />
       </SettingsModal>
     );
   }
-  if (step === "review" && manage) {
-    return <SettingsModal {...common} title="Branches: Branch review" help="Differences between MyLoans and the DMS. Accept applies one (after showing who gains or loses access); Ignore leaves the DMS as it is. Nothing is deleted." backHref={back} footer={{ kind: "done" }}><ReviewStep /></SettingsModal>;
+  if (step === "review") {
+    return <SettingsModal {...common} title="Branches: Branch review" help="Differences between MyLoans and the DMS. Accept applies one (after showing who gains or loses access); Ignore leaves the DMS as it is. Nothing is deleted." backHref={back} footer={{ kind: "done" }}><ReviewStep canDecide={may.review} /></SettingsModal>;
   }
-  if (step === "sync" && manage) {
+  if (step === "sync" && may.import) {
     return <SettingsModal {...common} title="Branches: from MyLoans" help="The branch list through the MyLoans API: now, or once a day. Differences go to the Branch review." backHref={back} footer={{ kind: "done" }}><SyncStep /></SettingsModal>;
   }
-  if (edit) return <EditStep common={common} id={edit === "new" ? null : edit} user={user} back={back} />;
+  if (edit && (edit !== "new" || may.manage)) return <EditStep common={common} id={edit === "new" ? null : edit} may={may} back={back} />;
   return (
-    <SettingsModal {...common} footer={{ kind: "done" }} headerLink={can(user, PERMISSIONS.SETTINGS_IMPORT) ? { href: href({ step: "import" }), label: "Import / Export" } : undefined}>
-      <ListStep filter={filter} manage={manage} />
+    <SettingsModal {...common} footer={{ kind: "done" }} headerLink={listImport ? { href: href({ step: "import" }), label: "Import / Export" } : undefined}>
+      <ListStep filter={filter} may={may} />
     </SettingsModal>
   );
 }
 
-async function ListStep({ filter, manage }: { filter: BranchFilter; manage: boolean }) {
+export interface BranchMay { manage: boolean; import: boolean; review: boolean }
+
+async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay }) {
   const [rows, areas, openReview] = await Promise.all([
     prisma.branch.findMany({ include: { area: true, division: true, usualLtoOffice: true } }),
     prisma.area.findMany({ orderBy: { name: "asc" } }),
@@ -81,14 +86,12 @@ async function ListStep({ filter, manage }: { filter: BranchFilter; manage: bool
   const needArea = rows.filter((b) => !b.areaId).length;
   return (
     <div className="flex flex-col gap-4" data-branches-list>
-      {manage && (
-        <nav aria-label="Branches from MyLoans" className="flex flex-wrap gap-2">
-          <Link href={href({ step: "review" })} scroll={false} className={openReview ? "btn-gold" : "btn-ghost"} data-review-link>Branch review{openReview ? ` (${openReview})` : ""}</Link>
-          <Link href={href({ step: "myloans" })} scroll={false} className="btn-ghost">Import from MyLoans</Link>
-          <Link href={href({ step: "sync" })} scroll={false} className="btn-ghost">Branches from MyLoans</Link>
-          <Link href={href({ edit: "new" })} scroll={false} className="btn-ghost sm:ml-auto">Add branch (not in MyLoans)</Link>
-        </nav>
-      )}
+      <nav aria-label="Branches from MyLoans" className="flex flex-wrap gap-2">
+        <Link href={href({ step: "review" })} scroll={false} className={openReview && may.review ? "btn-gold" : "btn-ghost"} data-review-link>Branch review{openReview ? ` (${openReview})` : ""}</Link>
+        {may.import && <Link href={href({ step: "myloans" })} scroll={false} className="btn-ghost">Import from MyLoans</Link>}
+        {may.import && <Link href={href({ step: "sync" })} scroll={false} className="btn-ghost">Branches from MyLoans</Link>}
+        {may.manage && <Link href={href({ edit: "new" })} scroll={false} className="btn-ghost sm:ml-auto">Add branch (not in MyLoans)</Link>}
+      </nav>
       {(needCode > 0 || needArea > 0) && (
         <p className="rounded-xl bg-act-bg px-4 py-2.5 text-sm font-semibold text-act-fg" data-needs-note>
           {[needCode && `${needCode} branch${needCode === 1 ? "" : "es"} need${needCode === 1 ? "s" : ""} a code`, needArea && `${needArea} need${needArea === 1 ? "s" : ""} an area`].filter(Boolean).join("; ")}. Codes are never guessed: import the MyLoans list or type the code.
@@ -141,7 +144,7 @@ async function ListStep({ filter, manage }: { filter: BranchFilter; manage: bool
                   {b.hidden && <span className="chip c-mute h-6 text-xs">Hidden</span>}
                 </span>
               </div>
-              <Link href={href({ edit: b.id })} scroll={false} className="btn-ghost btn-sm shrink-0" aria-label={`Edit ${title}`}>Edit</Link>
+              <Link href={href({ edit: b.id })} scroll={false} className="btn-ghost btn-sm shrink-0" aria-label={`${may.manage ? "Edit" : "View"} ${title}`}>{may.manage ? "Edit" : "View"}</Link>
             </li>
           );
         })}
@@ -152,7 +155,7 @@ async function ListStep({ filter, manage }: { filter: BranchFilter; manage: bool
   );
 }
 
-async function EditStep({ common, id, user, back }: { common: Common; id: string | null; user: CurrentUser; back: string }) {
+async function EditStep({ common, id, may, back }: { common: Common; id: string | null; may: BranchMay; back: string }) {
   const [b, divisions, areas, offices] = await Promise.all([
     id ? prisma.branch.findUnique({ where: { id } }) : null,
     prisma.division.findMany({ orderBy: { name: "asc" } }),
@@ -160,8 +163,8 @@ async function EditStep({ common, id, user, back }: { common: Common; id: string
     prisma.ltoOffice.findMany({ orderBy: { name: "asc" } }),
   ]);
   if (id && !b) return <SettingsModal {...common} backHref={back} footer={{ kind: "done" }}><p>Branch not found.</p></SettingsModal>;
-  const ro = b?.source === "MYLOANS";
-  const fromMl = ro ? "From MyLoans: changes only there (Branch review)." : undefined;
+  const ro = b?.source === "MYLOANS" || !may.manage;
+  const fromMl = b?.source === "MYLOANS" ? "From MyLoans: changes only there (Branch review)." : undefined;
   const fields: FieldDef[] = [
     { name: "code", label: "Branch code (3 digits)", type: "text", value: b?.code ?? "", width: "sm", readOnly: ro, help: fromMl ?? (b && !b.code ? "Code needed: type the MyLoans code when you know it. It is never guessed." : "As in MyLoans, 100 to 999.") },
     { name: "name", label: "Name", type: "text", value: b?.name, width: "lg", readOnly: ro, help: fromMl },
@@ -169,37 +172,39 @@ async function EditStep({ common, id, user, back }: { common: Common; id: string
     { name: "areaId", label: "Area", type: "select", value: b?.areaId ?? "", readOnly: ro, options: [["", "None (Area needed)"], ...areas.map((a) => [a.id, a.name] as [string, string])] },
     { name: "address", label: "Address (optional)", type: "text", value: b?.address ?? "", width: "lg", readOnly: ro },
     {
-      name: "usualLtoOfficeId", label: "Usual LTO office (optional)", type: "select", value: b?.usualLtoOfficeId ?? "", width: "lg",
+      name: "usualLtoOfficeId", label: "Usual LTO office (optional)", type: "select", value: b?.usualLtoOfficeId ?? "", width: "lg", readOnly: !may.manage,
       options: [["", "None"], ...offices.filter((o) => o.active || o.id === b?.usualLtoOfficeId).map((o) => [o.id, `${o.name}${o.active ? "" : " · Inactive"}`] as [string, string])],
       help: "The DMS's own field. Pre-selected when sending a transaction that needs LTO processing; the Loan Associate can change it.",
     },
   ];
   const work = b && !b.active ? await branchWorkload(b.id) : null;
   return (
-    <SettingsModal {...common} title={b ? `Branches: ${b.name}` : "Branches: Add branch"} backHref={back} footer={{ kind: "save", formId: "settings-form", cancelHref: back }}>
-      {ro && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-readonly-note>This branch comes from MyLoans: its code, name, division, area, address and status are read-only here. Only the usual LTO office is the DMS&apos;s own.{b?.lastSyncedAt ? ` Last sync ${fmtShort(b.lastSyncedAt)}.` : ""}</p>}
+    <SettingsModal {...common} title={b ? `Branches: ${b.name}` : "Branches: Add branch"} backHref={back} footer={may.manage ? { kind: "save", formId: "settings-form", cancelHref: back } : { kind: "done" }}>
+      {!may.manage && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask an Admin to turn on &ldquo;Change branches&rdquo; for your role to change it.</p>}
+      {may.manage && ro && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-readonly-note>This branch comes from MyLoans: its code, name, division, area, address and status are read-only here. Only the usual LTO office is the DMS&apos;s own.{b?.lastSyncedAt ? ` Last sync ${fmtShort(b.lastSyncedAt)}.` : ""}</p>}
       <SettingsEditForm key={id ?? "new"} kind="branch" id={id} fields={fields} formId="settings-form" listHref={back} />
-      {b && (
+      {b && may.manage && (
         <StatusPanel kind="branch" id={b.id} active={b.active} noun="branch" effect={await inactiveEffect("branch", b.id)}
           lockedReason={ro ? `${b.active ? "Active" : "Inactive"} in MyLoans. A branch from MyLoans is switched off or on there; the change reaches the Branch review.` : undefined} />
       )}
       {work && (work.activeUsers > 0 || work.openLoans > 0) && <p className="mt-2 text-sm font-medium text-act-fg" data-inactive-warning>Inactive, but still {work.activeUsers} active user{work.activeUsers === 1 ? "" : "s"} and {work.openLoans} open loan file{work.openLoans === 1 ? "" : "s"}. They stay; no new work can start here.</p>}
-      {b && can(user, PERMISSIONS.SOURCE_MANAGE) && <HidePanel id={b.id} hidden={b.hidden} name={b.name} />}
+      {b && (may.manage || may.review) && <HidePanel id={b.id} hidden={b.hidden} name={b.name} />}
     </SettingsModal>
   );
 }
 
 const SOURCE_WORD: Record<string, string> = { file: "file import", api: "MyLoans API", cron: "daily run", lookup: "seen in a lookup", seed: "built-in list" };
 
-async function ReviewStep() {
+async function ReviewStep({ canDecide }: { canDecide: boolean }) {
   const [open, decided] = await Promise.all([reviewRows("OPEN"), reviewRows("DECIDED", 30)]);
   return (
     <div className="flex flex-col gap-5" data-branch-review>
+      {!canDecide && <p className="rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask an Admin to turn on &ldquo;Decide branch changes&rdquo; for your role to accept or ignore them.</p>}
       <section aria-labelledby="rv-open">
         <h3 id="rv-open" className="text-base font-bold text-navy">Waiting for a decision ({open.length})</h3>
         <ul className="mt-2 divide-y divide-[rgb(12_35_64/0.1)] rounded-xl border border-line">
           {open.map((r) => (
-            <ReviewItem key={r.id} r={{ id: r.id, kind: r.kind, kindLabel: r.kindLabel, title: r.title, fields: r.fields, detected: fmtShort(r.detectedAt), source: SOURCE_WORD[r.source] ?? r.source, pn: r.pn, area: r.area, division: r.division, suggestHide: r.suggestHide, note: r.note, linkable: r.linkable }} />
+            <ReviewItem key={r.id} r={{ id: r.id, kind: r.kind, kindLabel: r.kindLabel, title: r.title, fields: r.fields, detected: fmtShort(r.detectedAt), source: SOURCE_WORD[r.source] ?? r.source, pn: r.pn, area: r.area, division: r.division, suggestHide: r.suggestHide, note: r.note, linkable: r.linkable }} canDecide={canDecide} />
           ))}
           {open.length === 0 && <li className="px-4 py-6 text-center text-sm text-ink-2">Nothing to review. The DMS matches the last MyLoans list.</li>}
         </ul>

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requirePermission, AuthzError } from "@/lib/auth/current-user";
+import { requireAnyPermission, requirePermission, AuthzError } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, type ActionState } from "@/lib/action";
 import { UserError } from "@/lib/services/errors";
@@ -15,7 +15,8 @@ import {
 
 /**
  * Settings, Branches: Import from MyLoans (preview, confirm), Branches from MyLoans (the API), the daily
- * schedule, the Branch review (accept, ignore, same branch) and Hide from DMS. Admin (source:manage).
+ * schedule (branches:import), the Branch review (accept, ignore, same branch: branches:review) and Hide from DMS
+ * (branches:manage or branches:review).
  */
 
 const BASE = "/admin/settings";
@@ -34,7 +35,7 @@ export type BranchImportState =
 
 export async function branchImportAction(_prev: BranchImportState, fd: FormData): Promise<BranchImportState> {
   try {
-    const user = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
+    const user = await requirePermission(PERMISSIONS.BRANCHES_IMPORT);
     const { bytes, name } = await fileBytes(fd);
     if (str(fd, "step") !== "confirm") return { ok: true, step: "preview", preview: await previewBranchFile(user, bytes, name) };
     const list = (k: string) => fd.getAll(k).map(String).filter(Boolean);
@@ -51,7 +52,7 @@ export async function branchImportAction(_prev: BranchImportState, fd: FormData)
 export async function branchSyncAction(_prev: ActionState, _fd: FormData): Promise<ActionState> {
   void _fd;
   return runAction(async () => {
-    const user = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
+    const user = await requirePermission(PERMISSIONS.BRANCHES_IMPORT);
     const r = await runBranchSync({ trigger: "api", user, mode: "full" });
     revalidatePath(BASE);
     if (!r) return "Another branch run is going. Try again in a minute.";
@@ -62,7 +63,7 @@ export async function branchSyncAction(_prev: ActionState, _fd: FormData): Promi
 
 export async function branchScheduleAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const user = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
+    const user = await requirePermission(PERMISSIONS.BRANCHES_IMPORT);
     const time = str(fd, "time");
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new UserError("Type the time as HH:MM, for example 02:00.", "time");
     const paused = fd.get("paused") === "on";
@@ -78,7 +79,7 @@ export async function branchScheduleAction(_prev: ActionState, fd: FormData): Pr
 
 export async function reviewImpactAction(id: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   try {
-    await requirePermission(PERMISSIONS.SOURCE_MANAGE);
+    await requirePermission(PERMISSIONS.BRANCHES_REVIEW);
     return { ok: true, text: (await reviewImpact(id)).text };
   } catch (e) {
     if (e instanceof UserError || e instanceof AuthzError) return { ok: false, error: e.message };
@@ -88,7 +89,7 @@ export async function reviewImpactAction(id: string): Promise<{ ok: true; text: 
 
 export async function reviewDecisionAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const user = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
+    const user = await requirePermission(PERMISSIONS.BRANCHES_REVIEW);
     const id = str(fd, "id");
     const cmd = str(fd, "cmd");
     let msg: string;
@@ -103,7 +104,7 @@ export async function reviewDecisionAction(_prev: ActionState, fd: FormData): Pr
 
 export async function branchHiddenAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const user = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
+    const user = await requireAnyPermission([PERMISSIONS.BRANCHES_MANAGE, PERMISSIONS.BRANCHES_REVIEW]);
     const hidden = str(fd, "hidden") === "true";
     await setBranchHidden(user, str(fd, "id"), hidden);
     revalidatePath(BASE);

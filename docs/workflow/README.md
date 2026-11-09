@@ -18,11 +18,12 @@ A live copy with the same diagrams is the artifact "DP Workflow Map". This folde
 | [One DP job](04-dp-job.md) | Accept, stages, LTO, check and verify, forward, receive. |
 | [Funds](05-funds.md) | Flag, request, approve, release, carry over, liquidate. |
 | [When something goes wrong](06-exceptions.md) | Missing paper, hold, problem, return, Pasuyo, MyLoans changes. |
-| [Rules and roles](07-rules-and-roles.md) | Automatic rules, turnaround targets, roles and permissions, branch access (Division, Area, Branch). |
+| [Rules and roles](07-rules-and-roles.md) | Automatic rules, turnaround targets, roles ("roles are just ticks"), branch access (Division, Area, Branch). |
 | [Systems](08-systems.md) | MyLoans sync, the PN check, the branch list from MyLoans (and no direct database access), email, environment. |
 | [Status and open questions](09-status-and-open-questions.md) | What is built, planned or later, and the open questions. |
 | [Processing stages](10-processing-stages.md) | The default stages of each transaction type, their evidence and targets. |
 | [Monitoring](11-monitoring.md) | DP and LTO office monitors, capacity and availability, LTO advisories: definitions and examples. |
+| [Permissions](12-permissions.md) | Roles are just ticks: every tick, who has it by default, the role editor, lock-out protection and the audit of the permissions pass. |
 
 To walk through these flows by hand, use the [Manual Test Kit](../MANUAL-TEST-KIT.md): sample accounts, one sample loan per case, and a test sheet of who signs in, what to do and what should happen.
 

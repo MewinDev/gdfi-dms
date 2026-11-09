@@ -302,15 +302,15 @@ describe("Hide from DMS, read-only MyLoans fields, permissions", () => {
     await prisma.branch.update({ where: { code: "165" }, data: { usualLtoOfficeId: (await prisma.ltoOffice.findUniqueOrThrow({ where: { code: "LTO-CEB" } })).id } });
   });
 
-  it("only Admin (Manage MyLoans source) imports, runs, decides and hides", async () => {
+  it("only the import, review and change ticks (Admin by default) import, run, decide and hide", async () => {
     const text = csv([zrow(1)]);
     for (const u of [la, dp, fin]) {
-      await expect(previewBranchFile(u, text, "x.csv")).rejects.toThrow(/Only Admin/);
-      await expect(confirmBranchFile(u, text, "x.csv", null)).rejects.toThrow(/Only Admin/);
-      await expect(runBranchSync({ trigger: "api", user: u })).rejects.toThrow(/Only Admin/);
-      await expect(acceptReview(u, "x")).rejects.toThrow(/Only Admin/);
-      await expect(ignoreReview(u, "x", "")).rejects.toThrow(/Only Admin/);
-      await expect(setBranchHidden(u, "x", true)).rejects.toThrow(/Only Admin/);
+      await expect(previewBranchFile(u, text, "x.csv")).rejects.toThrow('Ask an Admin to turn on "Import branches from MyLoans"');
+      await expect(confirmBranchFile(u, text, "x.csv", null)).rejects.toThrow(/Import branches from MyLoans/);
+      await expect(runBranchSync({ trigger: "api", user: u })).rejects.toThrow(/Import branches from MyLoans/);
+      await expect(acceptReview(u, "x")).rejects.toThrow(/Decide branch changes/);
+      await expect(ignoreReview(u, "x", "")).rejects.toThrow(/Decide branch changes/);
+      await expect(setBranchHidden(u, "x", true)).rejects.toThrow(/Change branches/);
       await expect(saveSettingsRow(u, "branch", null, { code: "873", name: "Z Nope" })).rejects.toThrow(/does not allow/);
     }
   });

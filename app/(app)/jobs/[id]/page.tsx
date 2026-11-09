@@ -349,7 +349,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 {canPass && (
                   <PasuyoForm
                     assignmentId={a.id} branches={passBranches} defaultBranchId={a.dpBranchId}
-                    processors={passProcessors.map((p) => ({ id: p.id, name: p.name, branchIds: p.allBranches || p.role.key === "ADMIN" ? passBranches.map((b) => b.id) : p.branches.map((b) => b.branchId) }))}
+                    processors={passProcessors.map((p) => ({ id: p.id, name: p.name, branchIds: p.allBranches ? passBranches.map((b) => b.id) : p.branches.map((b) => b.branchId) }))}
                     heldText={heldCents > 0 ? peso(heldCents) : null}
                   />
                 )}

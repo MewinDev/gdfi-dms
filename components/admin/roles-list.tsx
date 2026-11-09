@@ -17,6 +17,8 @@ export interface RoleRow {
   on: number;
   total: number;
   editHref: string;
+  /** "Last changed Nov 9, 2026 by Admin: added Refresh a loan from MyLoans", or null. */
+  lastChange: string | null;
 }
 
 /** Roles list: search, Active / Inactive / All, Add role, Download access matrix, Duplicate and Edit per row. */
@@ -60,7 +62,7 @@ export function RolesList({ rows, addHref, editHrefBase }: { rows: RoleRow[]; ad
       {state && !state.ok && <p role="alert" className="text-sm text-bad-fg">{state.error}</p>}
       <ul className="divide-y divide-[rgb(12_35_64/0.1)] rounded-xl border border-line">
         {shown.map((r) => (
-          <li key={r.id} className={`flex flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap ${r.active ? "" : "bg-fill-soft"}`}>
+          <li key={r.id} className={`flex flex-wrap items-center gap-3 px-4 py-3 sm:flex-nowrap ${r.active ? "" : "bg-fill-soft"}`} data-role-card={r.name}>
             <div className="min-w-0 flex-1">
               <p className={`flex flex-wrap items-center gap-2 text-[15px] font-semibold ${r.active ? "text-navy" : "text-ink-2"}`}>
                 {r.name}
@@ -68,8 +70,9 @@ export function RolesList({ rows, addHref, editHrefBase }: { rows: RoleRow[]; ad
                 {!r.active && <span className="chip c-mute h-6 text-xs">Inactive</span>}
               </p>
               <p className="text-sm text-ink-2">
-                {r.people} {r.people === 1 ? "person" : "people"} · {r.on} of {r.total} permissions
+                {r.people} {r.people === 1 ? "person" : "people"} · {r.on} of {r.total} permissions ticked
               </p>
+              {r.lastChange && <p className="text-xs text-ink-2" data-last-change>{r.lastChange}</p>}
             </div>
             <form action={action}>
               <input type="hidden" name="id" value={r.id} />

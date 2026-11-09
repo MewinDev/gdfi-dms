@@ -7,12 +7,13 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { writeAudit, type Actor } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
-import { ADMIN_ROLE_KEY, KIND_PERMISSION, PERMISSIONS } from "@/lib/auth/permissions";
+import { KIND_PERMISSION, PERMISSIONS } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { setSetting, getSetting, type SettingKey } from "@/lib/settings";
 import { UserError } from "./errors";
 import { isTestMode } from "@/lib/test-mode";
-import { countActiveManagers, inactiveRefusal } from "./settings-status";
+import { inactiveRefusal } from "./settings-status";
+import { checkLockout } from "./lockout";
 import { applyAccess, branchGrants, parseAccess, type AccessInput } from "./access";
 import { rebuildAccess } from "@/lib/branches/access";
 
@@ -44,6 +45,8 @@ export const USER_SCHEMA = z.object({
   access: z.unknown().optional(),
 });
 
+export const NO_ACCESS_MANAGE = "Ask an Admin to turn on \"Change branch access\" for your role.";
+
 export async function saveUser(user: CurrentUser, id: string | null, raw: Record<string, unknown>) {
   if (!can(user, PERMISSIONS.USERS_EDIT)) throw new UserError("Your role does not allow adding or editing users.");
   const p = USER_SCHEMA.safeParse(raw);
@@ -56,28 +59,25 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
   }
   if (!id && !role.active) throw new UserError(`${role.name} is inactive. Pick an active role.`, "roleId");
   if (id === user.id) {
-    if (user.roleKey === ADMIN_ROLE_KEY && role.key !== ADMIN_ROLE_KEY) throw new UserError("You cannot remove your own Admin role.", "roleId");
     if (can(user, PERMISSIONS.ROLES_MANAGE) && !effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE)) {
-      throw new UserError("You cannot remove your own ability to manage roles and access.", "roleId");
+      throw new UserError("You cannot take \"Manage roles\" away from yourself. Ask another person who can manage roles.", "roleId");
     }
   }
   if (id) {
     const cur = await prisma.user.findUnique({ where: { id }, include: { role: true } });
     if (!cur) throw new UserError("User not found.");
-    // Making inactive, or moving the last active Admin to another role: same hard limits as the button.
+    // Making inactive: same hard limits as the button.
     if (cur.active && !d.active) {
-      const refusal = await inactiveRefusal("user", { id, roleKey: cur.role.key, active: true }, user);
+      const refusal = await inactiveRefusal("user", { id, active: true }, user);
       if (refusal) throw new UserError(refusal, "active");
     }
-    if (cur.active && cur.role.key === ADMIN_ROLE_KEY && role.key !== ADMIN_ROLE_KEY) {
-      const admins = await prisma.user.count({ where: { active: true, role: { key: ADMIN_ROLE_KEY } } });
-      if (admins <= 1) throw new UserError("This is the last active Admin. Make another Admin active first.", "roleId");
-    }
-    // Someone must still be able to manage roles and access.
-    if (cur.active && effectivePermissions(cur.role).has(PERMISSIONS.ROLES_MANAGE) && (!d.active || !effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE))) {
-      if ((await countActiveManagers(id)) === 0) throw new UserError("This is the last active person who can manage roles and access.", d.active ? "roleId" : "active");
-    }
+    // Lock-out: someone active must keep "Manage roles" and "Change branch access".
+    const why = await checkLockout({ kind: "user", userId: id, roleId: role.id, active: d.active });
+    if (why) throw new UserError(why, d.active ? "roleId" : "active");
   }
+  // Branch access is its own tick ("Change branch access"): without it the form sends none and keeps it.
+  const sentAccess = (d.access !== undefined && d.access !== null && d.access !== "") || d.branchIds !== undefined;
+  if (sentAccess && !can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError(NO_ACCESS_MANAGE, "access");
   // Branch access: what the form sent; a new user without one gets the role's default (All, or none yet).
   const access: AccessInput | null = d.access !== undefined && d.access !== null && d.access !== ""
     ? parseAccess(d.access)

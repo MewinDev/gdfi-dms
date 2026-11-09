@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { getCurrentUser, inScope } from "@/lib/auth/current-user";
+import { can, getCurrentUser, inScope } from "@/lib/auth/current-user";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canSeeJob } from "@/lib/services/jobs";
 import { receiptStore } from "@/lib/storage/receipts";
 
@@ -10,6 +11,8 @@ import { receiptStore } from "@/lib/storage/receipts";
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; field: string }> }) {
   const user = await getCurrentUser();
   if (!user) return new Response("Sign in first.", { status: 401 });
+  // See loan files (loans:view), and the job or the loan file in the person's branches.
+  if (!can(user, PERMISSIONS.LOANS_VIEW)) return new Response("Not found.", { status: 404 });
   const { id, field } = await ctx.params;
   const st = await prisma.jobStage.findUnique({ where: { id }, include: { assignment: { include: { loan: { select: { branchId: true } } } } } });
   if (!st || !(canSeeJob(user, st.assignment) || inScope(user, st.assignment.loan.branchId))) return new Response("Not found.", { status: 404 });

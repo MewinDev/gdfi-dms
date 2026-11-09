@@ -126,7 +126,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
 
       {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
       {loan.cancelledAt && <Banner tone="bad">Closed: {loan.cancelReason ?? "Cancelled in MyLoans"} ({fmtDateTime(loan.cancelledAt)}). Nothing was deleted.</Banner>}
-      <SourceStrip loan={loan} />
+      <SourceStrip loan={loan} view={can(user, PERMISSIONS.MYLOANS_VIEW)} refresh={can(user, PERMISSIONS.LOANS_REFRESH)} />
       {!la && <Banner tone="wait">You are viewing this loan file. Your role does not include the steps on it.</Banner>}
 
       {!workTxn && <Stepper current={step} problem={loanProblem} hold={loanHold} />}
@@ -527,7 +527,8 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
   const hold = openHold(selected.holds);
   // On hold: the transaction is locked (readable, controls disabled) until the holder resumes it.
   const locked = hold ? lockedMessage(hold.raisedByLabel, hold.raisedAt, hold.ownerLabel) : null;
-  const round = la || user.roleKey === "ADMIN" ? roundChip(selected.dpAssignments) : null;
+  // The round chip: the LA, and whoever may change an automatic result (a supervisor).
+  const round = la || can(user, PERMISSIONS.RULES_OVERRIDE) ? roundChip(selected.dpAssignments) : null;
   // The missing-paper pop-up may also put it on hold (waiting on borrower) for the person who does the work.
   const canHold = ownsTxn(user, loan, selected) && can(user, PERMISSIONS.HOLDS_RAISE) && !openHold(selected.holds);
   const openMissing = loan.exceptions.some((e) => e.transactionId === selected.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN");
@@ -801,18 +802,22 @@ function sourceRow(r: ReviewData): OpenRow {
   };
 }
 
-/** "MyLoans · Last checked 2:10 PM" with Refresh, and the replacement links. */
-function SourceStrip({ loan }: { loan: LoanDetail }) {
+/**
+ * "MyLoans · Last checked 2:10 PM" (myloans:view) with Refresh (loans:refresh), and the replacement links.
+ * Without the ticks the strip stays tidy: no line, no button (never a dead button).
+ */
+function SourceStrip({ loan, view, refresh }: { loan: LoanDetail; view: boolean; refresh: boolean }) {
   const when = fmtShort(loan.lastCheckedAt ?? loan.retrievedAt);
+  if (!view && !refresh && !loan.replacesPn && !loan.replacedByPn) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]" data-source-strip>
       {loan.replacesPn && <Link href={`/loans/${loan.replacesPn}`} className="chip c-navy h-7 no-underline" data-replaces>Replaces {loan.replacesPn}</Link>}
       {loan.replacedByPn && <Link href={`/loans/${loan.replacedByPn}`} className="chip c-navy h-7 no-underline" data-replaced-by>Replaced by {loan.replacedByPn}</Link>}
       <span className="flex-1" />
-      {loan.sourceCurrent
+      {view && (loan.sourceCurrent
         ? <span className="text-ink-2" data-last-checked>MyLoans · Last checked {when}</span>
-        : <span className="chip c-act h-auto min-h-7 whitespace-normal py-1" data-last-checked>Last checked {when}. MyLoans did not answer.</span>}
-      <RefreshButton loanId={loan.id} />
+        : <span className="chip c-act h-auto min-h-7 whitespace-normal py-1" data-last-checked>Last checked {when}. MyLoans did not answer.</span>)}
+      {refresh && <RefreshButton loanId={loan.id} />}
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { savePnFormat } from "@/lib/services/pn-settings";
 /** Settings, System, PN format. */
 export async function savePnFormatAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const user = await requirePermission(PERMISSIONS.SETTINGS_SYSTEM);
+    const user = await requirePermission(PERMISSIONS.SETTINGS_PN_FORMAT);
     await savePnFormat(user, {
       enabled: fd.get("enabled") === "on",
       prefix: str(fd, "prefix"), branchDigits: str(fd, "branchDigits"), yearDigits: str(fd, "yearDigits"), system: str(fd, "system"), runningDigits: str(fd, "runningDigits"),

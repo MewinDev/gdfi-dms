@@ -66,7 +66,7 @@ async function branchMoveFor(loan: { id: string; pn: string; branchId: string },
   const was = await prisma.branch.findUniqueOrThrow({ where: { id: loan.branchId }, select: { id: true, name: true, code: true } });
   const to = await resolveLoanBranch(prisma, { branchCode: next.branchCode ?? null, branchName: next.branchName ?? null });
   const who = async (branchId: string) => (await prisma.user.findMany({
-    where: { active: true, OR: [{ allBranches: true }, { role: { key: "ADMIN" } }, { branches: { some: { branchId } } }], role: { permissions: { has: PERMISSIONS.LOANS_VIEW } } },
+    where: { active: true, OR: [{ allBranches: true }, { branches: { some: { branchId } } }], role: { permissions: { has: PERMISSIONS.LOANS_VIEW } } },
     select: { id: true, name: true, allBranches: true },
   }));
   const before = await who(was.id);

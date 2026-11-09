@@ -4,9 +4,12 @@ import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import {
-  ADMIN_PERMISSIONS, ADMIN_ROLE_KEY, PERMISSION_GROUPS, PERMISSIONS, ROLE_DEFAULTS, normalizePermissions, permissionLabel, type Permission,
+  PERMISSION_GROUPS, PERMISSIONS, ROLE_DEFAULTS, normalizePermissions, permissionLabel, type Permission,
 } from "@/lib/auth/permissions";
-import { effectivePermissions, isLockedAdminRole } from "@/lib/auth/access";
+import { effectivePermissions } from "@/lib/auth/access";
+import { checkLockout } from "./lockout";
+import { lastChangeWhat, roleImpact, type RoleImpact } from "@/lib/roles/impact";
+import { fmtDate } from "@/lib/time";
 import { toCsv } from "@/lib/import/csv";
 import { UserError } from "./errors";
 
@@ -26,6 +29,8 @@ export const ROLE_SCHEMA = z.object({
   description: z.string().trim().max(160, "Description: keep it to one line (160 characters).").default(""),
   branchAccess: z.enum(["ASSIGNED", "ALL"], { message: "Pick the branch access." }),
   permissions: z.array(z.string()).default([]),
+  /** New role only: the role whose ticks were copied ("Copy from another role"), for the audit row. */
+  copiedFromId: z.string().optional(),
 });
 
 type RoleRow = NonNullable<Awaited<ReturnType<typeof prisma.role.findUnique>>>;
@@ -44,19 +49,18 @@ export function permissionDiff(before: Iterable<string>, after: Iterable<string>
 }
 
 /**
- * Someone must always be able to manage roles: refuses a change that would leave no active role with
- * "Manage roles and access" that active people hold, or that removes the editor's own ability.
+ * Lock-out protection (lib/services/lockout.ts): someone active must always keep "Manage roles" and
+ * "Change branch access"; and the editor cannot take "Manage roles" away from their own role.
  */
-async function guardManageAbility(user: CurrentUser, role: RoleRow, next: { permissions: Set<string>; active: boolean }) {
+export async function lockoutReason(user: CurrentUser, role: RoleRow, next: { permissions: Set<string>; active: boolean }): Promise<string | null> {
   const had = effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE) && role.active;
   const keeps = next.permissions.has(PERMISSIONS.ROLES_MANAGE) && next.active;
-  if (!had || keeps) return;
-  if (user.roleKey === role.key) throw new UserError("You cannot remove your own ability to manage roles and access. Ask someone else to change your role.");
-  const others = await prisma.role.findMany({ where: { active: true, id: { not: role.id } } });
-  const managerRoles = others.filter((r) => effectivePermissions(r).has(PERMISSIONS.ROLES_MANAGE));
-  if (managerRoles.length === 0) throw new UserError("This is the last active role that can manage roles and access. Keep it on.");
-  const people = await prisma.user.count({ where: { active: true, roleId: { in: managerRoles.map((r) => r.id) } } });
-  if (people === 0) throw new UserError("Nobody else could manage roles and access after this change. Keep it on.");
+  if (had && !keeps && user.roleId === role.id) return "You cannot take \"Manage roles\" away from your own role. Ask another person who can manage roles.";
+  return checkLockout({ kind: "role", roleId: role.id, permissions: next.permissions, active: next.active });
+}
+async function guardManageAbility(user: CurrentUser, role: RoleRow, next: { permissions: Set<string>; active: boolean }) {
+  const why = await lockoutReason(user, role, next);
+  if (why) throw new UserError(why, "permissions");
 }
 
 async function uniqueNameOrThrow(name: string, exceptId?: string) {
@@ -85,6 +89,7 @@ export async function saveRole(user: CurrentUser, id: string | null, raw: unknow
   if (!id) {
     await uniqueNameOrThrow(d.name);
     const max = await prisma.role.aggregate({ _max: { sortOrder: true } });
+    const from = d.copiedFromId ? await prisma.role.findUnique({ where: { id: d.copiedFromId }, select: { id: true, name: true } }) : null;
     const role = await prisma.$transaction(async (tx) => {
       const created = await tx.role.create({
         data: {
@@ -94,8 +99,9 @@ export async function saveRole(user: CurrentUser, id: string | null, raw: unknow
       });
       await writeAudit(tx, {
         actor: actorOf(user), mode: "MANUAL", action: "role_created", entityType: "role", entityId: created.id,
-        summary: `Added role ${created.name} (${d.branchAccess === "ALL" ? "all branches" : "assigned branches"}): ${perms.size ? [...perms].map(permissionLabel).join(", ") : "no permissions"}`,
+        summary: `Added role ${created.name}${from ? ` (copied from ${from.name})` : ""} (${d.branchAccess === "ALL" ? "all branches" : "assigned branches"}): ${perms.size ? [...perms].map(permissionLabel).join(", ") : "no permissions"}`,
         after: { name: created.name, branchAccess: d.branchAccess, permissions: [...perms] },
+        details: { added: [...perms], removed: [], ...(from ? { copiedFrom: from.id } : {}) },
       });
       return created;
     });
@@ -107,12 +113,6 @@ export async function saveRole(user: CurrentUser, id: string | null, raw: unknow
   if (role.builtIn && d.name !== role.name) throw new UserError("Built-in role names cannot be changed.", "name");
   if (!role.builtIn) await uniqueNameOrThrow(d.name, id);
 
-  if (isLockedAdminRole(role)) {
-    const same = permissionDiff(ADMIN_PERMISSIONS, perms);
-    if (same.added.length || same.removed.length || d.branchAccess !== "ALL") {
-      throw new UserError("Admin is locked: it always has every permission (except the loan-file steps) and all branches.");
-    }
-  }
   await guardManageAbility(user, role, { permissions: perms, active: role.active });
 
   const diff = permissionDiff(effectivePermissions(role), perms);
@@ -125,7 +125,7 @@ export async function saveRole(user: CurrentUser, id: string | null, raw: unknow
   if (parts.length === 0) return id;
 
   await prisma.$transaction(async (tx) => {
-    await tx.role.update({ where: { id }, data: { name: d.name, description: d.description, branchAccess: d.branchAccess, permissions: isLockedAdminRole(role) ? ADMIN_PERMISSIONS : [...perms] } });
+    await tx.role.update({ where: { id }, data: { name: d.name, description: d.description, branchAccess: d.branchAccess, permissions: [...perms] } });
     await writeAudit(tx, {
       actor: actorOf(user), mode: "MANUAL", action: "role_updated", entityType: "role", entityId: id,
       summary: `Role ${d.name}: ${parts.join("; ")}`,
@@ -186,7 +186,6 @@ export async function setRoleActive(user: CurrentUser, id: string, active: boole
   if (!role) throw new UserError("Role not found.");
   if (role.active === active) return;
   if (!active) {
-    if (isLockedAdminRole(role)) throw new UserError("Admin is locked and always active.");
     const people = await prisma.user.count({ where: { roleId: id } });
     if (people > 0) throw new UserError(`${people} ${people === 1 ? "person has" : "people have"} this role. Move them to another role first.`, "people");
     await guardManageAbility(user, role, { permissions: effectivePermissions(role), active: false });
@@ -198,6 +197,38 @@ export async function setRoleActive(user: CurrentUser, id: string, active: boole
       summary: `Role ${role.name} made ${active ? "active" : "inactive"}`, before: { active: role.active }, after: { active },
     });
   });
+}
+
+/**
+ * The role editor's check before Save (and before Make inactive): who gains or loses what, and the
+ * lock-out reason when the change would be refused. Same rules as the save itself.
+ */
+export async function checkRoleChange(user: CurrentUser, id: string | null, keys: string[], active?: boolean): Promise<{ impact: RoleImpact; lockout: string | null }> {
+  requireManager(user);
+  const after = new Set<string>(normalizePermissions(keys));
+  if (!id) return { impact: roleImpact([], after, 0), lockout: null };
+  const role = await prisma.role.findUnique({ where: { id } });
+  if (!role) throw new UserError("Role not found. It may have been changed by someone else.");
+  const users = await prisma.user.count({ where: { roleId: id, active: true } });
+  const nextActive = active ?? role.active;
+  return {
+    impact: roleImpact(effectivePermissions(role), after, role.active ? users : 0),
+    lockout: await lockoutReason(user, role, { permissions: after, active: nextActive }),
+  };
+}
+
+/** The last recorded change of each role: "Last changed Nov 9, 2026 by Admin: added Refresh a loan from MyLoans". */
+export async function lastRoleChanges(ids: string[]): Promise<Map<string, string>> {
+  const rows = await prisma.auditLog.findMany({
+    where: { entityType: "role", entityId: { in: ids } },
+    orderBy: { at: "desc" }, select: { entityId: true, at: true, actorLabel: true, summary: true, details: true },
+  });
+  const out = new Map<string, string>();
+  for (const r of rows) {
+    if (!r.entityId || out.has(r.entityId)) continue;
+    out.set(r.entityId, `Last changed ${fmtDate(r.at)} by ${r.actorLabel}: ${lastChangeWhat(r)}`);
+  }
+  return out;
 }
 
 /** Access matrix: one row per permission, one column per role, Yes/No (read-only). */
@@ -217,4 +248,3 @@ export async function accessMatrixCsv(): Promise<string> {
   return toCsv(header, rows);
 }
 
-export { ADMIN_ROLE_KEY };

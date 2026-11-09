@@ -130,7 +130,7 @@ describe("Refresh rules", () => {
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 0, calls: 1 });
     await change("GD1012026901001", { address: "5 Mabini St" });
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 1, changes: 1, calls: 1 });
-    await expect(runSyncNow(la)).rejects.toThrow(/does not allow/);
+    await expect(runSyncNow(la)).rejects.toThrow('Ask an Admin to turn on "Run the MyLoans sync now" for your role.');
     await runSyncNow(admin);
     expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run" } })).toBeGreaterThan(0);
     // A loan closed as cancelled is not checked again (no tier).
@@ -142,7 +142,7 @@ describe("Refresh rules", () => {
 
   it("sync settings: Admin only, checked, audited", async () => {
     const ok = { refreshOnOpenMinutes: "15", backgroundMinutes: "60", businessHoursOnly: true, maxPerRun: "50", pauseMs: "500" };
-    await expect(saveSyncSettings(la, ok)).rejects.toThrow(/does not allow/);
+    await expect(saveSyncSettings(la, ok)).rejects.toThrow(/Ask an Admin to turn on "Change MyLoans sync settings"/);
     await expect(saveSyncSettings(admin, { ...ok, backgroundMinutes: "1" })).rejects.toThrow("At least 5 minutes.");
     await saveSyncSettings(admin, { ...ok, refreshOnOpenMinutes: "30" });
     expect(await getSetting("myloans.refreshOnOpenMinutes")).toBe(30);

@@ -294,10 +294,13 @@ test("Roles: the Monitoring group; Operations Monitor has the two monitors and M
   await page.goto(`/admin/settings?open=roles&edit=${role.id}`);
   const g = page.getByRole("region", { name: "Monitoring" });
   await expect(g).toBeVisible();
-  await expect(g.getByRole("switch", { name: /See the DP monitor/ })).toBeChecked();
-  await expect(g.getByRole("switch", { name: /See the LTO monitor/ })).toBeChecked();
-  await expect(g.getByRole("switch", { name: /Manage LTO advisories/ })).toBeChecked();
-  await expect(g.getByRole("switch", { name: /File an LTO advisory/ })).not.toBeChecked();
+  const tickOf = (key: string) => page.locator(`[data-perm="${key}"]`).getByRole("checkbox");
+  await expect(g.locator('[data-perm="monitor:dp"]').getByRole("checkbox")).toBeChecked();
+  await expect(g.locator('[data-perm="monitor:lto"]').getByRole("checkbox")).toBeChecked();
+  await expect(g.locator('[data-perm="ltoreports:manage"]').getByRole("checkbox")).toBeChecked();
+  await expect(g.locator('[data-perm="ltoreports:notify"]').getByRole("checkbox")).toBeChecked();
+  // Filing an advisory from a job is DP work (its own group); the Monitor does not have it.
+  await expect(tickOf("ltoreports:create")).not.toBeChecked();
   await g.scrollIntoViewIfNeeded();
   await shot(page, "roles-monitoring-group", false);
   // Settings, Processor capacity.

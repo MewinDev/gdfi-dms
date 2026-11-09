@@ -29,7 +29,8 @@ export interface SyncCardData {
 }
 
 /** Settings > System > MyLoans sync: health, the last runs, active loans per tier, and the settings. */
-export function MyLoansSyncForm({ d, formId }: { d: SyncCardData; formId: string }) {
+/** canManage: the settings form (myloans:manage); canRun: Run now (myloans:sync). The other part is read only. */
+export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: { d: SyncCardData; formId: string; canManage?: boolean; canRun?: boolean }) {
   const [state, action] = useActionState(async (prev: Awaited<ReturnType<typeof syncSettingsAction>>, fd: FormData) => {
     const r = await syncSettingsAction(prev, fd);
     if (r?.ok) window.dispatchEvent(new Event(SAVED_EVENT));
@@ -71,11 +72,13 @@ export function MyLoansSyncForm({ d, formId }: { d: SyncCardData; formId: string
         </ul>
         <p className="mt-1 text-[12px] text-ink-2">Closed and cancelled loans are never checked.</p>
       </section>
-      <form action={runAction} className="flex flex-wrap items-center gap-3">
-        <SubmitButton className="btn-secondary" pendingText="Checking loans...">Run now</SubmitButton>
-        <span className="text-[13px] text-ink-2">Checks the loans that are due now (the cap and the hourly limit apply). Recorded in the audit log.</span>
-        <div className="basis-full"><FormMessage state={run} /></div>
-      </form>
+      {canRun && (
+        <form action={runAction} className="flex flex-wrap items-center gap-3" data-sync-run-now>
+          <SubmitButton className="btn-secondary" pendingText="Checking loans...">Run now</SubmitButton>
+          <span className="text-[13px] text-ink-2">Checks the loans that are due now (the cap and the hourly limit apply). Recorded in the audit log.</span>
+          <div className="basis-full"><FormMessage state={run} /></div>
+        </form>
+      )}
       <section aria-labelledby={`${uid}-runs`}>
         <h3 id={`${uid}-runs`} className="mb-1.5 text-[15px] font-bold text-navy">Last runs</h3>
         {d.runs.length === 0 ? <p className="rounded-xl bg-fill px-3 py-3 text-sm text-ink-2">No runs yet.</p> : (
@@ -102,6 +105,19 @@ export function MyLoansSyncForm({ d, formId }: { d: SyncCardData; formId: string
           </div>
         )}
       </section>
+      {!canManage ? (
+        <section aria-label="Sync settings (read only)" data-sync-settings-readonly>
+          <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
+            {([
+              ["Refresh when opened if older than (minutes)", d.refreshOnOpenMinutes], ["Background run every (minutes)", d.backgroundMinutes],
+              ["Work in progress: check every (minutes)", d.tierA], ["Not yet sent: check every (minutes)", d.tierB], ["Finished, not closed: check every (minutes)", d.tierC],
+              ["Loans per run (at most)", d.maxPerRun], ["Pause between calls (milliseconds)", d.pauseMs], ["Calls to MyLoans per hour (at most)", d.hourlyCeiling],
+              ["Replacement: released within (days)", d.replacementWindowDays], ["Business hours only", d.businessHoursOnly ? "Yes" : "No"],
+            ] as const).map(([k, v]) => <div key={k} className="flex justify-between gap-3 border-b border-line py-1"><dt className="text-ink-2">{k}</dt><dd className="font-semibold text-navy">{v}</dd></div>)}
+          </dl>
+          <p className="mt-2 text-[13px] text-ink-2">Read only. Ask an Admin to turn on &ldquo;Change MyLoans sync settings&rdquo; for your role to change them.</p>
+        </section>
+      ) : (
       <form id={formId} data-track-dirty action={action} className="grid gap-4 sm:grid-cols-2">
         {field("refreshOnOpenMinutes", "Refresh when opened if older than (minutes)", "0 means every time a loan file is opened.", d.refreshOnOpenMinutes)}
         {field("backgroundMinutes", "Background run every (minutes)", "How often the sync runs; each loan is checked by its tier below.", d.backgroundMinutes)}
@@ -118,6 +134,7 @@ export function MyLoansSyncForm({ d, formId }: { d: SyncCardData; formId: string
         </label>
         {state && !state.ok && !["refreshOnOpenMinutes", "backgroundMinutes", "maxPerRun", "pauseMs", "tierA", "tierB", "tierC", "hourlyCeiling", "replacementWindowDays"].includes(state.field ?? "") && <div className="sm:col-span-2"><FormMessage state={state} /></div>}
       </form>
+      )}
     </div>
   );
 }

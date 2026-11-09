@@ -233,7 +233,8 @@ export interface ReviewItemView {
 }
 
 /** One open Branch review item: Accept (after the impact preview), Ignore (optional note), Same branch. */
-export function ReviewItem({ r }: { r: ReviewItemView }) {
+/** canDecide: Accept, Ignore and Same branch (branches:review). Without it the item is read only. */
+export function ReviewItem({ r, canDecide = true }: { r: ReviewItemView; canDecide?: boolean }) {
   const [state, action, pending] = useActionState(reviewDecisionAction, null);
   const [impact, setImpact] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
@@ -260,6 +261,7 @@ export function ReviewItem({ r }: { r: ReviewItemView }) {
       {r.fields.length > 0 && <ul className="text-sm">{r.fields.map((f) => <li key={f.label}>{f.label}: <span className="text-ink-2">{f.was}</span> -&gt; <span className="font-semibold">{f.now}</span></li>)}</ul>}
       {r.pn && <p className="text-sm">Seen in <span className="mono">{r.pn}</span>. The lookup went on; accepting adds a branch made in the DMS with this code (MyLoans fills the rest later).</p>}
       {r.note && <p className="text-sm text-act-fg">{r.note}</p>}
+      {canDecide && <>
       <form id={formId} action={action} className="flex flex-wrap items-center gap-x-5 gap-y-1">
         <input type="hidden" name="id" value={r.id} />
         <input type="hidden" name="cmd" value="accept" />
@@ -289,6 +291,7 @@ export function ReviewItem({ r }: { r: ReviewItemView }) {
           <button type="submit" className="btn-ghost" disabled={pending}>Link them</button>
         </form>
       )}
+      </>}
       {state && !state.ok && <p role="alert" className="text-sm text-bad-fg">{state.error}</p>}
       <ConfirmDialog open={asking && !state?.ok} title={`Accept: ${r.kindLabel}?`} body={<span data-review-impact>{impact}</span>} detail={r.title}
         confirmLabel="Accept and apply" cancelLabel="Not now" confirmForm={formId} pending={pending} onCancel={() => setAsking(false)} />
@@ -296,7 +299,7 @@ export function ReviewItem({ r }: { r: ReviewItemView }) {
   );
 }
 
-/** Hide from DMS (source:manage): not in pickers, trees, filters or counts; stays on old loans. */
+/** Hide from DMS (branches:manage or branches:review): not in pickers, trees, filters or counts; stays on old loans. */
 export function HidePanel({ id, hidden, name }: { id: string; hidden: boolean; name: string }) {
   const [state, action, pending] = useActionState(branchHiddenAction, null);
   useEffect(() => { if (state?.ok) window.dispatchEvent(new Event(SAVED_EVENT)); }, [state]);

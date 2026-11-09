@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requireAnyPermission, requirePermission, requireUser } from "@/lib/auth/current-user";
+import { requireAnyPermission, requirePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, type ActionState } from "@/lib/action";
 import { toCents } from "@/lib/funds/rules";
@@ -213,7 +213,7 @@ export async function raiseHoldAction(_p: ActionState, fd: FormData): Promise<Ac
 
 export async function resumeHoldAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requireUser(); // only the holder may resume (checked in resumeHold)
+    const u = await requirePermission(PERMISSIONS.HOLDS_RESOLVE); // and only the holder (checked in resumeHold)
     const h = await prisma.hold.findUnique({ where: { id: str(fd, "holdId") }, select: { transactionId: true, transaction: { select: { type: { select: { code: true, name: true } } } } } });
     await resumeHold(u, str(fd, "holdId"), str(fd, "note"));
     if (h) await refreshTxn(h.transactionId);
@@ -224,7 +224,7 @@ export async function resumeHoldAction(_p: ActionState, fd: FormData): Promise<A
 /** Older hold without remarks: the person who put it on hold (or Admin) adds them. */
 export async function addHoldDetailsAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requireUser(); // only the holder may add the details (checked in addHoldDetails)
+    const u = await requirePermission(PERMISSIONS.HOLDS_RESOLVE); // and only the holder (checked in addHoldDetails)
     const h = await prisma.hold.findUnique({ where: { id: str(fd, "holdId") }, select: { transactionId: true } });
     await addHoldDetails(u, str(fd, "holdId"), str(fd, "note"));
     if (h) await refreshTxn(h.transactionId);

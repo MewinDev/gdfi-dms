@@ -2,7 +2,7 @@
  * Who may sign in, and what a role effectively allows. Used by getCurrentUser (every request),
  * the test sign-in and the sign-in page, so the rule lives in one place.
  */
-import { ADMIN_PERMISSIONS, ADMIN_ROLE_KEY, permissionDef, type Permission } from "./permissions";
+import { RENAMED_PERMISSIONS, permissionDef, type Permission } from "./permissions";
 
 export interface RoleLike {
   key: string;
@@ -13,13 +13,12 @@ export interface RoleLike {
   branchAccess: "ASSIGNED" | "ALL";
 }
 
-/** Admin is built-in and locked. */
-export const isLockedAdminRole = (r: { key: string; builtIn: boolean }) => r.builtIn && r.key === ADMIN_ROLE_KEY;
-
-/** The permissions a role really grants (Admin: its locked set; others: the stored keys the app knows). */
-export function effectivePermissions(role: Pick<RoleLike, "key" | "builtIn" | "permissions">): Set<Permission> {
-  if (isLockedAdminRole(role)) return new Set(ADMIN_PERMISSIONS);
-  return new Set(role.permissions.filter((k) => permissionDef(k)) as Permission[]);
+/**
+ * The permissions a role really grants: its ticks (the stored keys the app knows). Every role, Admin
+ * included, is just its ticks; nothing depends on the role's name or key.
+ */
+export function effectivePermissions(role: Pick<RoleLike, "permissions">): Set<Permission> {
+  return new Set(role.permissions.map((k) => RENAMED_PERMISSIONS[k] ?? k).filter((k) => permissionDef(k)) as Permission[]);
 }
 
 /**

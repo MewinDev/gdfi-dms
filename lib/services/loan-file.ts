@@ -346,10 +346,12 @@ export async function createTransactionOfType(
 }
 
 // ---------------------------------------------------------------------------
-// Refresh from MyLoans (the button): a refresh now, with the result in plain words.
+// Refresh from MyLoans (the button, loans:refresh): a refresh now, with the result in plain words.
+export const NO_REFRESH = "Ask an Admin to turn on \"Refresh a loan from MyLoans\" for your role.";
 // ---------------------------------------------------------------------------
 
 export async function refreshFromMyLoans(user: CurrentUser, loanId: string): Promise<{ ok: true; changed: boolean; minor: boolean } | { ok: false; message: string }> {
+  if (!can(user, PERMISSIONS.LOANS_REFRESH)) throw new UserError(NO_REFRESH);
   const loan = await prisma.loan.findUnique({ where: { id: loanId } });
   if (!loan || !inScope(user, loan.branchId)) throw new UserError("Loan File not found.");
   const r = await refreshLoan(loan.id, { actor: { id: user.id, label: user.name }, mode: "MANUAL", trigger: "button" });

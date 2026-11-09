@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { requirePermission, getCurrentUser, AuthzError } from "@/lib/auth/current-user";
+import { requirePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, strOrNull, type ActionState } from "@/lib/action";
 import {
@@ -89,7 +89,7 @@ export async function syncSettingsAction(_prev: ActionState, fd: FormData): Prom
 
 export async function runSyncNowAction(): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
+    const u = await requirePermission(PERMISSIONS.MYLOANS_SYNC);
     const r = await runSyncNow(u);
     revalidatePath("/admin/settings");
     if (!r.ran) return r.reason;
@@ -100,8 +100,7 @@ export async function runSyncNowAction(): Promise<ActionState> {
 
 export async function simulateSourceAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await getCurrentUser();
-    if (!u) throw new AuthzError("Sign in first.");
+    const u = await requirePermission(PERMISSIONS.SIMULATOR_USE);
     const kind = str(fd, "kind") as SimSourceKind;
     if (!SIM_SOURCE_KINDS.includes(kind)) throw new UserError("Pick a change to simulate.");
     const loanId = str(fd, "loanId");

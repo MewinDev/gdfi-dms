@@ -5,7 +5,7 @@ import { prisma, type Tx } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
-import { MONITOR_ROLE_KEY, PERMISSIONS } from "@/lib/auth/permissions";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { fmtDateTime } from "@/lib/time";
 import { stageRows } from "./job-stages";
 import { UserError } from "./errors";
@@ -25,10 +25,10 @@ import { remarksSchema } from "@/lib/ui/holds";
 
 const firstIssue = (e: z.ZodError) => { const i = e.issues[0]; return new UserError(i.message, String(i.path[0] ?? "")); };
 
-/** The Operations Monitors (the people told about advisories). Processors are never told. */
+/** The people told about advisories (the "Be told about LTO advisories" tick). Processors are never told. */
 async function monitorIds(tx: Tx): Promise<string[]> {
   const rows = await tx.user.findMany({
-    where: { active: true, role: { active: true, key: MONITOR_ROLE_KEY, NOT: { permissions: { has: PERMISSIONS.DP_RECEIVE } } } },
+    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.LTO_REPORTS_NOTIFY }, NOT: { permissions: { has: PERMISSIONS.DP_RECEIVE } } } },
     select: { id: true },
   });
   return rows.map((r) => r.id);

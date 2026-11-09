@@ -10,7 +10,7 @@ import { businessDate } from "@/lib/time";
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  if (!can(user, PERMISSIONS.REPORTS_TAT) || !can(user, PERMISSIONS.LOANS_EXPORT)) return NextResponse.json({ error: "You do not have permission to export." }, { status: 403 });
+  if (!can(user, PERMISSIONS.REPORTS_TAT_EXPORT)) return NextResponse.json({ error: "You do not have permission to export." }, { status: 403 });
   const sp = req.nextUrl.searchParams;
   const f = { branch: sp.get("branch") || undefined, type: sp.get("type") || undefined, show: sp.get("show") || undefined, outside: sp.get("outside") || undefined, from: sp.get("from") || undefined, to: sp.get("to") || undefined, ftype: sp.get("ftype") || undefined };
   const esc = (v: unknown) => {
