@@ -112,7 +112,7 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
 // Settings (reference data). Every change is audited.
 // ---------------------------------------------------------------------------
 
-export type SettingsKind = "branch" | "transactionType" | "documentType" | "checklistRule" | "tat" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage";
+export type SettingsKind = "branch" | "transactionType" | "documentType" | "checklistRule" | "tat" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage" | "fundsType";
 
 /** An optional number (blank means none), within limits. */
 const optNumber = (label: string, min: number, max: number) => z.preprocess(
@@ -183,6 +183,11 @@ export const SETTINGS_SCHEMAS = {
   problemReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
   /** Hold reasons (waiting on something that is not a fault). */
   holdReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
+  /** Funds types (Cash advance, Fund transfer): what Finance enters at release, and whether receipts are needed. */
+  fundsType: z.object({
+    code: codeOf("Short code", 2, 10), name: text("Name"), sortOrder: int("Order", 0, 99),
+    needsReference: bool.default(false), needsAccount: bool.default(false), mustLiquidate: bool.default(true),
+  }),
   /** Return reasons (the processor returns an accepted job to the LA for papers). */
   returnReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
   /** Processing stages: the ordered stages of a transaction type (Settings > Processing stages). */
@@ -300,6 +305,7 @@ export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id:
     returnReason: tx.returnReason as unknown as Delegate,
     holiday: tx.holidayCalendar as unknown as Delegate,
     processingStage: tx.processingStage as unknown as Delegate,
+    fundsType: tx.fundsType as unknown as Delegate,
   });
 
   try {
@@ -307,8 +313,8 @@ export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id:
       const del = delegates(tx)[kind];
       const before = id ? await del.findUnique({ where: { id } }) : null;
       if (id && !before) throw new UserError("Row not found.");
-      // A hold reason saved by Admin is no longer "Proposed, to be confirmed with the team".
-      const saved = id ? await del.update({ where: { id }, data: kind === "holdReason" ? { ...data, proposed: false } : data }) : await del.create({ data });
+      // A hold reason or funds type saved by Admin is no longer "Proposed, to be confirmed".
+      const saved = id ? await del.update({ where: { id }, data: kind === "holdReason" || kind === "fundsType" ? { ...data, proposed: false } : data }) : await del.create({ data });
       await writeAudit(tx, {
         actor: actorOf(user), mode: "MANUAL", action: id ? "setting_updated" : "setting_created", entityType: kind, entityId: saved.id,
         summary: `${id ? "Updated" : "Added"} ${kind.replace(/([A-Z])/g, " $1").toLowerCase()} setting`,

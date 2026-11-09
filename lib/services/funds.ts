@@ -17,6 +17,7 @@ import { cashBlockReason } from "./source-blocks";
 import { recomputeStage } from "./stage";
 import { UserError } from "./errors";
 import { assertFundsNotHeld } from "./locks";
+import { checkRelease, defaultFundsType, isTransfer, releaseLine, typeChangeRemarks, type ReleaseInput } from "@/lib/funds/types";
 
 /**
  * Funds: the DP requests one cash advance for several flagged jobs; an approver (per the approval
@@ -74,6 +75,8 @@ export const requestSchema = z.object({
     cents: z.number().int().positive("Each amount must be above zero."),
     note: z.string().trim().min(3, "Say what the other expense is for.").max(300),
   })).default([]),
+  /** Funds type (Settings > Funds types). Blank: the default, Cash advance. */
+  fundsTypeId: z.string().trim().optional(),
 }).refine((r) => r.lines.length + r.others.length > 0, { message: "Tick at least one job or add an expense.", path: ["lines"] });
 
 /** The DP submits one advance covering several jobs. */
@@ -95,6 +98,9 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
   }
   const branchId = (await prisma.userBranch.findFirst({ where: { userId: u.id }, orderBy: { branch: { name: "asc" } } }))?.branchId;
   if (!branchId) throw new UserError("You are not assigned to a branch.");
+  const types = await prisma.fundsType.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  const type = d.fundsTypeId ? types.find((t) => t.id === d.fundsTypeId) : defaultFundsType(types);
+  if (!type) throw new UserError(d.fundsTypeId ? "Pick an active funds type." : "No funds type is active. Ask Admin (Settings, Funds types).", "fundsTypeId");
 
   return prisma.$transaction(async (tx) => {
     // Held transactions: no new cash goes out for them.
@@ -113,6 +119,7 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
     const adv = await tx.cashAdvance.create({
       data: {
         number, requestedById: u.id, branchId, requestedCents: total, exceptionId,
+        fundsTypeId: type.id, fundsTypeCode: type.code, fundsTypeName: type.name,
         lines: {
           create: [
             // Each job line keeps the office it had when the cash was asked for ("Office changed from X to Y").
@@ -122,8 +129,8 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
         },
       },
     });
-    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_requested", entityType: "CashAdvance", entityId: adv.id, summary: `${number} requested by ${u.name}: ${peso(total)} for ${d.lines.length} job line(s)${d.others.length ? ` and ${d.others.length} other expense(s)` : ""}${exceptionId ? " (with a one-time exception)" : ""}`, after: { total, lines: d.lines, others: d.others } });
-    await notify(tx, { email: { event: "advance_requested", to: await bandApprovers(tx, total), amountCents: total, vars: { number, who: u.name } }, userIds: await fundsApprovers(tx), title: `${number}: cash advance to approve`, body: `${u.name} asked for ${peso(total)}.`, link: "/funds?tab=approve" });
+    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_requested", entityType: "CashAdvance", entityId: adv.id, summary: `${number} (${type.name}) requested by ${u.name}: ${peso(total)} for ${d.lines.length} job line(s)${d.others.length ? ` and ${d.others.length} other expense(s)` : ""}${exceptionId ? " (with a one-time exception)" : ""}`, after: { total, lines: d.lines, others: d.others, fundsType: { id: type.id, code: type.code, name: type.name } } });
+    await notify(tx, { email: { event: "advance_requested", to: await bandApprovers(tx, total), amountCents: total, vars: { number, who: u.name, kind: type.name } }, userIds: await fundsApprovers(tx), title: `${number}: ${type.name} to approve`, body: `${u.name} asked for a ${type.name} of ${peso(total)}.`, link: "/funds?tab=approve" });
     const loanIds = await tx.loanTransaction.findMany({ where: { id: { in: d.lines.map((l) => l.transactionId) } }, select: { loanId: true } });
     for (const l of new Set(loanIds.map((x) => x.loanId))) await recomputeStage(tx, l);
     return { id: adv.id, number, total };
@@ -165,7 +172,7 @@ export async function decideAdvance(u: CurrentUser, advanceId: string, raw: unkn
       await tx.cashAdvanceLine.updateMany({ where: { advanceId: a.id }, data: { denied: true, approvedCents: 0 } });
       await afterDenied(tx, a.lines, `${a.number} was denied: ${d.note}`);
       await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_denied", entityType: "CashAdvance", entityId: a.id, summary: `${a.number} denied by ${u.name}: ${d.note}` });
-      await notify(tx, { email: { event: "advance_decided", vars: { number: a.number, status: "denied", who: u.name, reason: d.note ? `Note: ${d.note}` : "" } }, userIds: [a.requestedById], title: `${a.number} denied`, body: d.note, link: "/my-funds?tab=advances" });
+      await notify(tx, { email: { event: "advance_decided", vars: { number: a.number, kind: a.fundsTypeName, status: "denied", who: u.name, reason: d.note ? `Note: ${d.note}` : "" } }, userIds: [a.requestedById], title: `${a.number} (${a.fundsTypeName}) denied`, body: d.note, link: "/my-funds?tab=advances" });
       return;
     }
     let approved = 0;
@@ -185,8 +192,8 @@ export async function decideAdvance(u: CurrentUser, advanceId: string, raw: unkn
       return;
     }
     if (rejected.length) await afterDenied(tx, rejected, `${a.number}: some lines were not approved. ${d.note}`);
-    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_approved", entityType: "CashAdvance", entityId: a.id, summary: `${a.number} approved by ${u.name}: ${peso(approved)} of ${peso(a.requestedCents)}${d.note ? ` (${d.note})` : ""}`, after: { approved, lines: d.lines } });
-    await notify(tx, { email: { event: "advance_decided", to: [a.requestedById, ...(await financeIds(tx))], vars: { number: a.number, status: "approved", who: u.name, reason: "Finance will release it." } }, userIds: [a.requestedById], title: `${a.number} approved`, body: `${peso(approved)} approved. Finance will release it.`, link: "/my-funds?tab=advances" });
+    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_approved", entityType: "CashAdvance", entityId: a.id, summary: `${a.number} (${a.fundsTypeName}) approved by ${u.name}: ${peso(approved)} of ${peso(a.requestedCents)}${d.note ? ` (${d.note})` : ""}`, after: { approved, lines: d.lines } });
+    await notify(tx, { email: { event: "advance_decided", to: [a.requestedById, ...(await financeIds(tx))], vars: { number: a.number, kind: a.fundsTypeName, status: "approved", who: u.name, reason: "Finance will release it." } }, userIds: [a.requestedById], title: `${a.number} (${a.fundsTypeName}) approved`, body: `${peso(approved)} approved. Finance will release it.`, link: "/my-funds?tab=advances" });
   });
 }
 
@@ -222,16 +229,23 @@ async function afterDenied(tx: Tx, lines: { transactionId: string | null; transa
   }
 }
 
-/** Finance releases the approved money. The jobs become Funded; the DP and LAs are told. */
-export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: { ref: string; date?: string }, now: Date = new Date()) {
+/**
+ * Finance releases the approved money (Release cash), or sends it (Send transfer). What Finance enters
+ * follows the funds type (lib/funds/types.ts checkRelease): a fund transfer needs the transfer reference,
+ * the date and the receiving account (last 4 digits only). The jobs become Funded; the DP and LAs are told.
+ */
+export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: ReleaseInput, now: Date = new Date()) {
   need(u, PERMISSIONS.FUNDS_RELEASE, "Your role does not allow releasing funds.");
-  const ref = (raw.ref ?? "").trim();
-  if (ref.length < 2) throw new UserError("Add a reference note (voucher or transfer number).", "ref");
   return prisma.$transaction(async (tx) => {
-    const a = await tx.cashAdvance.findUnique({ where: { id: advanceId }, include: { lines: { include: { transaction: { include: { loan: true, type: true } } } } } });
+    const a = await tx.cashAdvance.findUnique({ where: { id: advanceId }, include: { fundsType: true, lines: { include: { transaction: { include: { loan: true, type: true } } } } } });
     if (!a) throw new UserError("Cash advance not found.");
     if (a.status !== "APPROVED") throw new UserError("Only an approved advance can be released.");
     if (a.requestedById === u.id) throw new UserError("You cannot release your own request.");
+    const checked = checkRelease(a.fundsType, raw);
+    if (!checked.ok) throw new UserError(checked.message, checked.field);
+    const r = checked.details;
+    const ref = r.ref;
+    const sent = isTransfer(a.fundsType);
     await assertFundsNotHeld(tx, a.lines.map((l) => l.transactionId));
     const holidays = await getHolidaySet(tx);
     const dueDays = await getSetting("funds.liquidationDueDays", tx);
@@ -241,16 +255,60 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: { r
       await tx.cashAdvanceLine.update({ where: { id: l.id }, data: { releasedCents: l.approvedCents } });
       total += l.approvedCents;
     }
-    await tx.cashAdvance.update({ where: { id: a.id }, data: { status: "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, liquidationDueAt: liquidationDue(now, dueDays, holidays) } });
-    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_released", entityType: "CashAdvance", entityId: a.id, summary: `${a.number} released by ${u.name}: ${peso(total)} (ref ${ref}); jobs Funded`, after: { released: total, ref } });
+    // A type that need not be liquidated with receipts is settled when it is released (no due date).
+    const settle = !a.fundsType.mustLiquidate;
+    await tx.cashAdvance.update({
+      where: { id: a.id },
+      data: {
+        status: settle ? "LIQUIDATED" : "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, liquidationDueAt: settle ? null : liquidationDue(now, dueDays, holidays),
+        transferDate: r.transferDate, accountProvider: r.accountProvider, accountName: r.accountName, accountLast4: r.accountLast4,
+      },
+    });
+    const line = releaseLine({ releaseRef: ref, ...r });
+    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_released", entityType: "CashAdvance", entityId: a.id, summary: `${a.number} (${a.fundsTypeName}) ${sent ? "sent" : "released"} by ${u.name}: ${peso(total)} (${line}); jobs Funded`, after: { released: total, ...r } });
     const loans = new Map<string, { pn: string; branchId: string }>();
     for (const l of a.lines) if (l.transaction) loans.set(l.transaction.loanId, l.transaction.loan);
-    await notify(tx, { email: { event: "advance_released", amountCents: total, vars: { number: a.number, who: u.name } }, userIds: [a.requestedById], title: `${a.number} released`, body: `${peso(total)} released. Liquidate with receipts.`, link: "/my-funds?tab=advances" });
+    await notify(tx, { email: { event: "advance_released", amountCents: total, vars: { number: a.number, who: u.name, kind: a.fundsTypeName, status: sent ? "sent" : "released" } }, userIds: [a.requestedById], title: `${a.number} (${a.fundsTypeName}) ${sent ? "sent" : "released"}`, body: `${peso(total)} ${sent ? `sent${r.accountLast4 ? ` to the account ending ${r.accountLast4}` : ""}` : "released"}.${settle ? "" : " Liquidate with receipts."}`, link: "/my-funds?tab=advances" });
     for (const [loanId, loan] of loans) {
       await notify(tx, { userIds: await branchLaUserIds(tx, loan.branchId), loanId, title: `${loan.pn}: funds released`, body: `${a.number}: the processor has the funds.`, link: `/loans/${loan.pn}` });
       await recomputeStage(tx, loanId);
     }
   });
+}
+
+const typeChangeSchema = z.object({ fundsTypeId: z.string({ message: "Pick the funds type." }).trim().min(1, "Pick the funds type."), remarks: typeChangeRemarks });
+
+/**
+ * Finance changes the funds type of a request before it is released (Requested or Approved), with
+ * remarks (5 to 500 characters). Audited and shown in the history; the processor is told. The record
+ * keeps the id and a copy of the new type's code and name.
+ */
+export async function changeFundsType(u: CurrentUser, advanceId: string, raw: unknown) {
+  need(u, PERMISSIONS.FUNDS_RELEASE, "Your role does not allow changing the funds type.");
+  const p = typeChangeSchema.safeParse(raw);
+  if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
+  return prisma.$transaction(async (tx) => {
+    const a = await tx.cashAdvance.findUnique({ where: { id: advanceId } });
+    if (!a) throw new UserError("Cash advance not found.");
+    if (!["REQUESTED", "APPROVED"].includes(a.status)) throw new UserError("The type can be changed only before the release.");
+    const next = await tx.fundsType.findFirst({ where: { id: p.data.fundsTypeId, active: true } });
+    if (!next) throw new UserError("Pick an active funds type.", "fundsTypeId");
+    if (next.id === a.fundsTypeId) throw new UserError(`It is already ${next.name}.`, "fundsTypeId");
+    await tx.cashAdvance.update({ where: { id: a.id }, data: { fundsTypeId: next.id, fundsTypeCode: next.code, fundsTypeName: next.name } });
+    // Top-ups not yet released follow their parent record.
+    await tx.cashAdvanceTopUp.updateMany({ where: { line: { advanceId: a.id }, releasedAt: null }, data: { fundsTypeId: next.id, fundsTypeCode: next.code, fundsTypeName: next.name } });
+    await writeAudit(tx, {
+      actor: actorOf(u), mode: "MANUAL", action: "funds_type_changed", entityType: "CashAdvance", entityId: a.id,
+      summary: `${a.number}: ${u.name} changed the type from ${a.fundsTypeName} to ${next.name}: ${p.data.remarks}`,
+      before: { fundsType: a.fundsTypeCode }, after: { fundsType: next.code, remarks: p.data.remarks },
+    });
+    await notify(tx, { userIds: [a.requestedById], title: `${a.number}: now a ${next.name}`, body: `${u.name} changed it from ${a.fundsTypeName} to ${next.name}: ${p.data.remarks}`, link: "/my-funds?tab=advances" });
+  });
+}
+
+/** The history of a record, oldest first: what happened, who, when (from the audit rows, so a type change shows). */
+export async function advanceHistory(advanceId: string) {
+  return prisma.auditLog.findMany({ where: { entityType: "CashAdvance", entityId: advanceId }, orderBy: { at: "asc" }, select: { id: true, summary: true, actorLabel: true, at: true, action: true } });
 }
 
 // ---------------------------------------------------------------------------
@@ -266,9 +324,10 @@ export async function requestTopUp(u: CurrentUser, lineId: string, extraCents: n
   if (!["RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"].includes(line.advance.status)) throw new UserError("Ask for more only on a released advance.");
   return prisma.$transaction(async (tx) => {
     await assertFundsNotHeld(tx, [line.transactionId]);
-    const t = await tx.cashAdvanceTopUp.create({ data: { lineId, extraCents, reason: reason.trim(), requestedById: u.id } });
+    // A top-up follows the type of its parent record (Finance may change it at release, with remarks).
+    const t = await tx.cashAdvanceTopUp.create({ data: { lineId, extraCents, reason: reason.trim(), requestedById: u.id, fundsTypeId: line.advance.fundsTypeId, fundsTypeCode: line.advance.fundsTypeCode, fundsTypeName: line.advance.fundsTypeName } });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "topup_requested", entityType: "CashAdvance", entityId: line.advanceId, summary: `${line.advance.number}: ${u.name} asked for ${peso(extraCents)} more (${reason.trim()})` });
-    await notify(tx, { email: { event: "advance_requested", to: await bandApprovers(tx, extraCents), amountCents: extraCents, vars: { number: line.advance.number, who: u.name, reason: "Top-up: more for the same job." } }, userIds: await fundsApprovers(tx), title: `${line.advance.number}: top-up to approve`, body: `${u.name} asked for ${peso(extraCents)} more.`, link: "/funds?tab=approve" });
+    await notify(tx, { email: { event: "advance_requested", to: await bandApprovers(tx, extraCents), amountCents: extraCents, vars: { number: line.advance.number, who: u.name, kind: line.advance.fundsTypeName, reason: "Top-up: more for the same job." } }, userIds: await fundsApprovers(tx), title: `${line.advance.number}: top-up to approve`, body: `${u.name} asked for ${peso(extraCents)} more.`, link: "/funds?tab=approve" });
     return t.id;
   });
 }
@@ -285,23 +344,44 @@ export async function decideTopUp(u: CurrentUser, topUpId: string, approve: bool
     if ((!approve || amount < t.extraCents) && note.trim().length < 3) throw new UserError("Add a short note.", "note");
     await tx.cashAdvanceTopUp.update({ where: { id: t.id }, data: { status: approve ? "APPROVED" : "DENIED", approvedCents: amount, approverId: u.id, decidedAt: new Date(), decisionNote: note.trim() } });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: approve ? "topup_approved" : "topup_denied", entityType: "CashAdvance", entityId: t.line.advanceId, summary: `${t.line.advance.number}: top-up ${approve ? `approved ${peso(amount)}` : "denied"} by ${u.name}` });
-    await notify(tx, { email: { event: "advance_decided", to: approve ? [t.requestedById, ...(await financeIds(tx))] : undefined, vars: { number: t.line.advance.number, status: approve ? "top-up approved" : "top-up denied", who: u.name, reason: approve ? "Finance will release it." : note.trim() } }, userIds: [t.requestedById], title: `${t.line.advance.number}: top-up ${approve ? "approved" : "denied"}`, body: approve ? `${peso(amount)} more. Finance will release it.` : note.trim(), link: "/my-funds?tab=advances" });
+    await notify(tx, { email: { event: "advance_decided", to: approve ? [t.requestedById, ...(await financeIds(tx))] : undefined, vars: { number: t.line.advance.number, kind: t.fundsTypeName, status: approve ? "top-up approved" : "top-up denied", who: u.name, reason: approve ? "Finance will release it." : note.trim() } }, userIds: [t.requestedById], title: `${t.line.advance.number}: top-up ${approve ? "approved" : "denied"}`, body: approve ? `${peso(amount)} more. Finance will release it.` : note.trim(), link: "/my-funds?tab=advances" });
   });
 }
 
-export async function releaseTopUp(u: CurrentUser, topUpId: string) {
+/**
+ * Finance releases an approved top-up. It follows the type of its parent record; Finance may change it
+ * here, with remarks (5 to 500 characters, audited). A transfer type needs the same release details as
+ * the parent would; for Cash advance the top-up release stays as it was (no reference needed).
+ */
+export async function releaseTopUp(u: CurrentUser, topUpId: string, raw: ReleaseInput & { fundsTypeId?: string; remarks?: string } = {}) {
   need(u, PERMISSIONS.FUNDS_RELEASE, "Your role does not allow releasing funds.");
   return prisma.$transaction(async (tx) => {
-    const t = await tx.cashAdvanceTopUp.findUnique({ where: { id: topUpId }, include: { line: { include: { advance: true } } } });
+    const t = await tx.cashAdvanceTopUp.findUnique({ where: { id: topUpId }, include: { fundsType: true, line: { include: { advance: true } } } });
     if (!t || t.status !== "APPROVED" || t.releasedAt) throw new UserError("Only an approved top-up can be released.");
     await assertFundsNotHeld(tx, [t.line.transactionId]);
+    let type = t.fundsType;
+    const changing = !!raw.fundsTypeId && raw.fundsTypeId !== t.fundsTypeId;
+    if (changing) {
+      const next = await tx.fundsType.findFirst({ where: { id: raw.fundsTypeId, active: true } });
+      if (!next) throw new UserError("Pick an active funds type.", "fundsTypeId");
+      const why = typeChangeRemarks.safeParse(raw.remarks ?? "");
+      if (!why.success) throw new UserError(why.error.issues[0].message, "remarks");
+      await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "funds_type_changed", entityType: "CashAdvance", entityId: t.line.advanceId, summary: `${t.line.advance.number}: ${u.name} changed the top-up from ${t.fundsTypeName} to ${next.name}: ${why.data}`, before: { fundsType: t.fundsTypeCode }, after: { fundsType: next.code, remarks: why.data, topUpId: t.id } });
+      type = next;
+    }
+    const checked = isTransfer(type) ? checkRelease(type, raw) : { ok: true as const, details: { ref: (raw.ref ?? "").trim().slice(0, 60), transferDate: "", accountProvider: "", accountName: "", accountLast4: "" } };
+    if (!checked.ok) throw new UserError(checked.message, checked.field);
+    const r = checked.details;
     const c = t.approvedCents ?? 0;
-    await tx.cashAdvanceTopUp.update({ where: { id: t.id }, data: { releasedCents: c, releasedAt: new Date() } });
+    await tx.cashAdvanceTopUp.update({
+      where: { id: t.id },
+      data: { releasedCents: c, releasedAt: new Date(), fundsTypeId: type.id, fundsTypeCode: type.code, fundsTypeName: type.name, releaseRef: r.ref, transferDate: r.transferDate, accountProvider: r.accountProvider, accountName: r.accountName, accountLast4: r.accountLast4 },
+    });
     await tx.cashAdvanceLine.update({ where: { id: t.lineId }, data: { releasedCents: { increment: c } } });
     await tx.cashAdvance.update({ where: { id: t.line.advanceId }, data: { releasedCents: { increment: c } } });
     await refreshAdvance(tx, t.line.advanceId);
-    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "topup_released", entityType: "CashAdvance", entityId: t.line.advanceId, summary: `${t.line.advance.number}: top-up of ${peso(c)} released by ${u.name}` });
-    await notify(tx, { email: { event: "advance_released", amountCents: c, vars: { number: t.line.advance.number, who: u.name } }, userIds: [t.requestedById], title: `${t.line.advance.number}: top-up released`, body: `${peso(c)} more released.`, link: "/my-funds?tab=advances" });
+    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "topup_released", entityType: "CashAdvance", entityId: t.line.advanceId, summary: `${t.line.advance.number}: top-up (${type.name}) of ${peso(c)} ${isTransfer(type) ? "sent" : "released"} by ${u.name}${r.ref || r.accountLast4 ? ` (${releaseLine({ releaseRef: r.ref, ...r })})` : ""}` });
+    await notify(tx, { email: { event: "advance_released", amountCents: c, vars: { number: t.line.advance.number, who: u.name, kind: type.name, status: isTransfer(type) ? "top-up sent" : "top-up released" } }, userIds: [t.requestedById], title: `${t.line.advance.number}: top-up (${type.name}) ${isTransfer(type) ? "sent" : "released"}`, body: `${peso(c)} more ${isTransfer(type) ? "sent" : "released"}.`, link: "/my-funds?tab=advances" });
   });
 }
 
@@ -319,7 +399,7 @@ export async function decideCarryOver(u: CurrentUser, carryId: string, approve: 
       await tx.cashAdvance.update({ where: { id: c.line.advanceId }, data: { overdueNotifiedAt: null, liquidationDueAt: liquidationDue(now, await getSetting("funds.liquidationDueDays", tx), holidays) } });
     }
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: approve ? "carryover_approved" : "carryover_denied", entityType: "CashAdvance", entityId: c.line.advanceId, summary: `${c.line.advance.number}: carry-over of ${peso(c.cents)} ${approve ? "approved" : "denied (return the cash)"} by ${u.name}` });
-    await notify(tx, { email: { event: "advance_decided", vars: { number: c.line.advance.number, status: approve ? "carry-over approved" : "carry-over denied", who: u.name, reason: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance." } }, userIds: [c.line.advance.requestedById], title: `${c.line.advance.number}: carry-over ${approve ? "approved" : "denied"}`, body: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance.", link: "/my-funds?tab=advances" });
+    await notify(tx, { email: { event: "advance_decided", vars: { number: c.line.advance.number, kind: c.line.advance.fundsTypeName, status: approve ? "carry-over approved" : "carry-over denied", who: u.name, reason: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance." } }, userIds: [c.line.advance.requestedById], title: `${c.line.advance.number}: carry-over ${approve ? "approved" : "denied"}`, body: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance.", link: "/my-funds?tab=advances" });
   });
 }
 
@@ -329,10 +409,13 @@ export async function decideCarryOver(u: CurrentUser, carryId: string, approve: 
 
 /** Recomputes Released / Partially liquidated / Liquidated from receipts and returns. */
 export async function refreshAdvance(tx: Tx, advanceId: string) {
-  const a = await tx.cashAdvance.findUniqueOrThrow({ where: { id: advanceId }, include: { lines: { include: { receipts: true } }, returns: true } });
+  const a = await tx.cashAdvance.findUniqueOrThrow({ where: { id: advanceId }, include: { fundsType: true, lines: { include: { receipts: true } }, returns: true } });
   const receiptCents = a.lines.flatMap((l) => l.receipts).reduce((s, r) => s + r.cents, 0);
   const returnedCents = a.returns.reduce((s, r) => s + r.cents, 0);
-  const status = liquidationStatus({ releasedCents: a.releasedCents, receiptCents, returnedCents, status: a.status });
+  // Only the type's "Must be liquidated with receipts" switch changes liquidation: when it is off, a
+  // released record counts as settled (Finance closes it). On (the default for every type): as before.
+  const settled = !a.fundsType.mustLiquidate && OPEN_ADVANCE.concat("LIQUIDATED").includes(a.status);
+  const status = settled ? "LIQUIDATED" : liquidationStatus({ releasedCents: a.releasedCents, receiptCents, returnedCents, status: a.status });
   if (status !== a.status) await tx.cashAdvance.update({ where: { id: a.id }, data: { status: status as never } });
   // Jobs of a settled advance may now let the loan move on (step 5.3).
   const loanIds = await tx.loanTransaction.findMany({ where: { advanceLines: { some: { advanceId } } }, select: { loanId: true } });
@@ -452,7 +535,7 @@ export async function notifyOverdue(now: Date = new Date()) {
   for (const a of open) {
     await prisma.$transaction(async (tx) => {
       await tx.cashAdvance.update({ where: { id: a.id }, data: { overdueNotifiedAt: now } });
-      await notify(tx, { email: { event: "liquidation_due", dedupeKey: `liq-overdue:${a.id}`, vars: { number: a.number, status: "overdue", reason: "Liquidate with receipts or return the cash." } }, userIds: [a.requestedById, ...(await financeIds(tx))], title: `${a.number}: liquidation overdue`, body: "Liquidate with receipts or return the cash.", link: "/my-funds?tab=liquidation" });
+      await notify(tx, { email: { event: "liquidation_due", dedupeKey: `liq-overdue:${a.id}`, vars: { number: a.number, kind: a.fundsTypeName, status: "overdue", reason: "Liquidate with receipts or return the cash." } }, userIds: [a.requestedById, ...(await financeIds(tx))], title: `${a.number} (${a.fundsTypeName}): liquidation overdue`, body: "Liquidate with receipts or return the cash.", link: "/my-funds?tab=liquidation" });
     });
   }
 }

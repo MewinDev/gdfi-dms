@@ -6,9 +6,9 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { signOut } from "@/app/login/actions";
 import { Avatar } from "./basics";
-import { BellIcon, ChecklistIcon, CoinsIcon, FolderIcon, HomeIcon, ListIcon, LogOutIcon, SettingsIcon, UsersIcon } from "./icons";
+import { BellIcon, ChartIcon, ChecklistIcon, CoinsIcon, FolderIcon, HomeIcon, ListIcon, LogOutIcon, SettingsIcon, UsersIcon } from "./icons";
 
-export type NavIcon = "home" | "loans" | "updates" | "users" | "settings" | "audit" | "jobs" | "funds";
+export type NavIcon = "home" | "loans" | "updates" | "users" | "settings" | "audit" | "jobs" | "funds" | "monitor";
 export interface ShellNavItem {
   href: string;
   label: string;
@@ -18,7 +18,7 @@ export interface ShellNavItem {
 }
 
 const ICONS: Record<NavIcon, (p: { size?: number }) => React.ReactNode> = {
-  home: HomeIcon, loans: FolderIcon, updates: BellIcon, users: UsersIcon, settings: SettingsIcon, audit: ListIcon, jobs: ChecklistIcon, funds: CoinsIcon,
+  home: HomeIcon, loans: FolderIcon, updates: BellIcon, users: UsersIcon, settings: SettingsIcon, audit: ListIcon, jobs: ChecklistIcon, funds: CoinsIcon, monitor: ChartIcon,
 };
 
 function isActive(pathname: string, href: string) {

@@ -10,7 +10,7 @@ import { getSetting, setSetting } from "@/lib/settings";
 import { isTestMode } from "@/lib/test-mode";
 import { fmtDateTime } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
-import { EMAIL_EVENTS, fillLines, fill, isEmailEvent, renderEmail, unknownPlaceholders, type EmailEventKey, type EmailVars } from "./templates";
+import { EMAIL_EVENTS, fillLines, fill, isEmailEvent, renderEmail, unknownPlaceholders, type EmailEventKey, type EmailVars, EVENT_DEFAULT_VARS } from "./templates";
 import { graphConfig, sendMail, type SendResult } from "./graph";
 import { isSimulatedContext } from "./context";
 
@@ -80,7 +80,7 @@ export async function queueEmails(
     if (key && (await tx.emailOutbox.findUnique({ where: { dedupeKey: key }, select: { id: true } }))) continue;
     const seesAmounts = effectivePermissions(u.role).has(PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
     const vars: EmailVars = {
-      when: fmtDateTime(now), recipient: u.name, ...spec.vars,
+      when: fmtDateTime(now), recipient: u.name, ...EVENT_DEFAULT_VARS[spec.event], ...spec.vars,
       ...(spec.amountCents !== undefined ? { amount: seesAmounts ? peso(spec.amountCents) : "an amount" } : {}),
     };
     const toName = `${u.name} (${roleLabel(u.role)})`;

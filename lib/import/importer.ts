@@ -444,6 +444,41 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
       }
       break;
     }
+    case "funds-types": {
+      const existing = await db.fundsType.findMany();
+      const counter = new ActiveCounter(existing.filter((b) => b.active).length);
+      const flag = (row: (typeof rows)[number], col: string, cur: boolean | undefined, fallback: boolean) => {
+        const cell = (row.cells[col] ?? "").trim();
+        const v = cell ? yesNo(cell) : cur ?? fallback;
+        if (v === "bad") row.bad(col, "type Yes or No.");
+        return v;
+      };
+      for (const row of rows) {
+        const code = (row.cells.code ?? "").toUpperCase();
+        const cur = existing.find((b) => b.code === code) ?? null;
+        const ref = flag(row, "needs_reference", cur?.needsReference, false);
+        const acc = flag(row, "needs_account", cur?.needsAccount, false);
+        const liq = flag(row, "must_liquidate", cur?.mustLiquidate, true);
+        const data = validate(row, SETTINGS_SCHEMAS.fundsType,
+          { code: row.cells.code, name: row.cells.name, sortOrder: row.cells.order, needsReference: ref === true, needsAccount: acc === true, mustLiquidate: liq === true },
+          { code: "code", name: "name", sortOrder: "order", needsReference: "needs_reference", needsAccount: "needs_account", mustLiquidate: "must_liquidate" });
+        const s = statusOf(row.cells.status);
+        if (s === "bad") row.bad("status", "type Active or Inactive.");
+        const active = s === "bad" || s === null ? cur?.active ?? true : s;
+        if (!data || ref === "bad" || acc === "bad" || liq === "bad" || row.problems.length) { finish(row, code, null); continue; }
+        const lim = counter.change(cur ? cur.active : null, active);
+        if (lim) { row.bad("status", lim); finish(row, code, null); continue; }
+        const changes = cur ? diff({ name: "Name", sortOrder: "Order", needsReference: "Release needs a reference number", needsAccount: "Release needs receiving account details", mustLiquidate: "Must be liquidated with receipts", active: "Status" }, cur, { ...data, active }) : [];
+        finish(row, data.code, {
+          action: !cur ? "new" : changes.length ? "changed" : "unchanged", changes,
+          apply: async (tx, actor) => {
+            if (!cur) await tx.fundsType.create({ data: { ...data, ...statusData(active, actor) } });
+            else await tx.fundsType.update({ where: { id: cur.id }, data: { name: data.name, sortOrder: data.sortOrder, needsReference: data.needsReference, needsAccount: data.needsAccount, mustLiquidate: data.mustLiquidate, proposed: false, ...(cur.active !== active ? statusData(active, actor) : {}) } });
+          },
+        });
+      }
+      break;
+    }
     case "hold-reasons": {
       const existing = await db.holdReason.findMany();
       const counter = new ActiveCounter(existing.filter((b) => b.active).length);
@@ -683,6 +718,11 @@ export async function currentDataRows(list: ImportListKey): Promise<Record<strin
       }));
     case "problem-reasons":
       return (await prisma.problemReason.findMany({ orderBy: { sortOrder: "asc" } })).map((r) => ({ code: r.code, name: r.name, order: String(r.sortOrder), status: st(r.active), notes: "" }));
+    case "funds-types":
+      return (await prisma.fundsType.findMany({ orderBy: { sortOrder: "asc" } })).map((r) => ({
+        code: r.code, name: r.name, order: String(r.sortOrder), needs_reference: yn(r.needsReference), needs_account: yn(r.needsAccount), must_liquidate: yn(r.mustLiquidate),
+        status: st(r.active), notes: r.proposed ? "Proposed, to be confirmed with Finance" : "",
+      }));
     case "hold-reasons":
       return (await prisma.holdReason.findMany({ orderBy: { sortOrder: "asc" } })).map((r) => ({ code: r.code, name: r.name, order: String(r.sortOrder), status: st(r.active), notes: "" }));
     case "return-reasons":

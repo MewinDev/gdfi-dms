@@ -2,7 +2,7 @@
 
 What is built today, what is planned, and the questions still open for the business.
 
-Last updated: 8 November 2026 (PHT)
+Last updated: 9 November 2026 (PHT)
 
 ## Status
 
@@ -30,6 +30,16 @@ Checked against the code and the tests on 8 November 2026. Each row gives one li
 | Settings, Processing stages (`stages:manage`, Admin only): stages, evidence fields, targets, Inactive, Import / Export | Built | Integration tests: add, rename, reorder, Inactive with confirmation, Import / Export, refused for LA and DP. |
 | The Received tick at Accept and "Some papers are missing" (Return to LA with those papers pre-selected) | Built | Integration test: one Received by the processor movement per paper received; the missing papers go back to the LA. |
 | Phone bottom bar on the DP Job page (main next action, 48 px) | Built | Playwright at 390: bar visible above the bottom navigation, 48 px high; hidden at 820 and 1440. |
+| Funds types: Cash advance (CA) and Fund transfer (FT) as a managed list (`fundtypes:manage`, seeded "Proposed, to be confirmed with Finance"), with Import / Export | Built | Integration test funds-types: seeded list, rename keeps old records' copy, refused without the permission, Import / Export round trip; Playwright Settings screen on 9 November 2026. |
+| The DP picks the type on the request; Finance changes it before release with remarks (audited, in the record's history); top-ups and carry-overs follow the record | Built | Integration test: default Cash advance, Fund transfer chosen, change refused after release and without 5-character remarks, top-up inherits and can change at release. |
+| Release by type: Fund transfer needs the reference number, transfer date and receiving account (last 4 digits only, a longer number refused); Cash advance unchanged | Built | Unit tests of the release rules; integration test of both releases; Playwright release form for each type at 1440 and 390. |
+| Type pill and words everywhere funds appear (My funds, Finance lists, job and loan transaction, Open items, history, notifications and emails, TAT report, CSV), filters and counts by type, funds CSV with a Type column | Built | Playwright Finance list with both pills and the type filter, CSV with the Type column; integration test of the email and notification text. |
+| Existing records backfilled as Cash advance (migration 20261119090001_funds_types) | Built | The migration ran on the kit database and on gdfi_dms_test; every existing record became CA with no data lost; integration test checks old records read as Cash advance. |
+| Monitoring page: DPs and LTO offices tabs (`monitor:dp`, `monitor:lto`), dates filter with Custom From and To, branch and transaction filters in the URL, Totals and By day (weeks over 92 days), groups with subtotals, drill-downs, Download CSV | Built | Integration test monitoring: every count and average against known data (business days over a holiday and a weekend, a job finished outside the period, branch scope, filters, By day and by week, CSV following the filters); Playwright monitoring at 1440, 820 and 390 on 9 November 2026. |
+| Processor capacity and availability (default 10, own capacity, On leave until a day; Available, Busy, Full, On leave) in Monitoring and the Send panel; on-leave processor disabled in the Send panel and refused on the server | Built | Integration test: availability maths and thresholds, leave left out of the average, never recommended, Send refused; Playwright Send panel with the chips and the disabled processor on leave. |
+| LTO advisories: filed from a DP job at an LTO stage or from Monitoring, resolved with remarks, warnings on the office choice and the DP job, the 24-hour prompt, Operations told (in-app and email outbox) | Built | Integration test: who may file, resolve and edit, remarks limits, start time, notifications to Operations only, not in the Journey; Playwright advisory form and the warning in Check documents. |
+| Operations Monitor role (read-only, all branches) and the Monitoring permissions group in Roles | Built | Migration 20261119090002_monitoring and the seed; integration test of the role's permissions; Playwright Roles with the Monitoring group. |
+| Monitoring speed on a large data set | Built | Integration test monitoring-perf on 20,000 loan files: DP page 84 ms, LTO page 244 ms, drill-downs under 140 ms (9 November 2026). |
 | Phases 6 to 10 (transmittal, vault, DigiCur, pull-out, QA, closure, archival, retention) | Later | Not checked (later phase). |
 
 When a planned item is built, change its status to Built only after checking it in the app.
@@ -44,6 +54,17 @@ When a planned item is built, change its status to Built only after checking it 
   - whether starting LTO drop off should stay blocked until the job is funded (today it follows the "At the LTO" funds block).
 - Finance: carry-over days, overnight cash, who approves top-ups, block or only warn at "At the LTO" when unfunded, and who confirms liquidation.
 - Holds: the hold reasons list ("Proposed, to be confirmed with the team").
+- Funds types (Finance):
+  - confirm the names and codes, Cash advance (CA) and Fund transfer (FT) ("Proposed, to be confirmed with Finance");
+  - whether a Fund transfer needs a different approval limit (today both use the same approval bands);
+  - who may change a type (today Finance, with `funds:release`, before release only);
+  - whether other types are needed (for example a check);
+  - whether a Fund transfer should get its own number series (today every record is numbered CA-year-number).
+- Monitoring (Operations):
+  - confirm the availability thresholds (Available from 40%, Busy 1% to 39%, Full 0%) and the default capacity of 10 open jobs;
+  - whether LTO advisories should end by themselves after some time (today they stay active until someone resolves them; after 24 hours people who can resolve them see "Still active? Please confirm");
+  - whether DPs belong to one home branch (today a processor of two branches is grouped under both names together);
+  - whether Finance or branch supervisors should get the monitor permissions (today only Admin and the Operations Monitor have them).
 - MyLoans team: lookup by PN, search, a changed-since feed, a field linking a replacement PN, status values, a payments field, plate, chassis and engine numbers, rate limit, response time, and a test environment.
 
 [Back to the workflow index](README.md)

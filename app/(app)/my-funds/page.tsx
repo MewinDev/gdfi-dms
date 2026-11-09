@@ -10,6 +10,9 @@ import { dayText } from "@/lib/ui/plain";
 import { PageHeader, ToneChip } from "@/components/ui/basics";
 import { RequestForm, ReceiptForm, ReturnCashForm, TopUpButton } from "@/components/funds/forms";
 import { AdvanceStatusChip } from "@/components/funds/advance-status";
+import { FundsTypePill } from "@/components/funds/funds-type-pill";
+import { RecordHistory } from "@/components/funds/record-history";
+import { defaultFundsType, releaseLine } from "@/lib/funds/types";
 
 export const metadata: Metadata = { title: "My funds" };
 
@@ -22,7 +25,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
   const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : "request";
   const now = new Date();
   const today = businessDate(now);
-  const [jobs, advances, exception] = await Promise.all([
+  const [jobs, advances, exception, fundsTypes] = await Promise.all([
     requestableJobs(user),
     prisma.cashAdvance.findMany({
       where: { requestedById: user.id },
@@ -33,7 +36,10 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
       },
     }),
     prisma.fundsException.findFirst({ where: { dpUserId: user.id, usedBy: null } }),
+    prisma.fundsType.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, needsReference: true, needsAccount: true } }),
   ]);
+  const audit = advances.length ? await prisma.auditLog.findMany({ where: { entityType: "CashAdvance", entityId: { in: advances.map((a) => a.id) } }, orderBy: { at: "asc" }, select: { id: true, entityId: true, summary: true, at: true } }) : [];
+  const historyOf = (id: string) => audit.filter((r) => r.entityId === id).map((r) => ({ id: r.id, text: r.summary, when: dayText(r.at) }));
   const overdue = advances.filter((a) => isOverdue(a, now));
   const blocked = overdue.length > 0 && !exception
     ? `${overdue.map((a) => a.number).join(", ")} ${overdue.length === 1 ? "is" : "are"} overdue and not yet liquidated. Liquidate first, or ask Finance for a one-time exception.`
@@ -60,7 +66,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
 
       {tab === "request" && (
         <section aria-label="Request" className="card p-4 sm:p-5">
-          <RequestForm jobs={jobs} blocked={blocked} />
+          <RequestForm jobs={jobs} blocked={blocked} types={fundsTypes} defaultTypeId={defaultFundsType(fundsTypes)?.id ?? ""} />
         </section>
       )}
 
@@ -71,13 +77,15 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
             <article key={a.id} className="card p-4 sm:p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="mr-auto text-[17px] font-bold text-navy">{a.number}</h2>
+                <FundsTypePill code={a.fundsTypeCode} name={a.fundsTypeName} />
                 {settleChip(a.id)}
                 <AdvanceStatusChip status={a.status} overdue={isOverdue(a, now)} />
               </div>
               <p className="mt-1 text-[13px] text-ink-2">
                 Asked {peso(a.requestedCents)} on {dayText(a.createdAt)}
                 {a.approvedCents !== null ? ` · approved ${peso(a.approvedCents)}` : ""}
-                {a.releasedAt ? ` · released ${peso(a.releasedCents)} on ${dayText(a.releasedAt)}` : ""}
+                {a.releasedAt ? ` · ${a.transferDate || a.accountLast4 ? "sent" : "released"} ${peso(a.releasedCents)} on ${dayText(a.releasedAt)}` : ""}
+                {a.releasedAt && (a.transferDate || a.accountLast4) ? ` (${releaseLine(a)})` : ""}
                 {a.liquidationDueAt && OPEN_ADVANCE.includes(a.status) ? ` · liquidate by ${dayText(a.liquidationDueAt)}` : ""}
               </p>
               {a.deniedReason && <p className="mt-1 text-[15px] text-bad-fg">Denied: {a.deniedReason}</p>}
@@ -93,6 +101,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
                   </li>
                 ))}
               </ul>
+              <RecordHistory rows={historyOf(a.id)} />
             </article>
           ))}
         </section>
@@ -110,6 +119,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
               <article key={a.id} className="card flex flex-col gap-3 p-4 sm:p-5" data-advance={a.number} data-cash-to-settle={toSettle.has(a.id) || undefined}>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="mr-auto text-[17px] font-bold text-navy">{a.number}</h2>
+                  <FundsTypePill code={a.fundsTypeCode} name={a.fundsTypeName} />
                   {settleChip(a.id)}
                   <AdvanceStatusChip status={a.status} overdue={isOverdue(a, now)} />
                 </div>

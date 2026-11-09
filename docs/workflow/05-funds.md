@@ -1,8 +1,8 @@
 # Funds
 
-How cash advances are flagged, requested, approved, released, carried over and liquidated.
+How cash advances and fund transfers are flagged, requested, approved, released, carried over and liquidated.
 
-Last updated: 8 November 2026 (PHT)
+Last updated: 9 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -10,13 +10,15 @@ See the [colour key](README.md#colour-key).
 flowchart TD
   A["LA flags: needs funds, with the kinds, or no funds. No amount"]:::la
   A --> B["DP accepts the job"]:::dp
-  B --> C["DP requests one cash advance for several jobs: amount per line, LTO office and estimate shown"]:::dp
+  B --> C["DP requests funds for several jobs and picks the type: Cash advance (default) or Fund transfer. Amount per line, LTO office and estimate shown"]:::dp
   C --> D{"DP has an overdue, unliquidated advance?"}
   D -->|Yes| D1["Blocked, unless Finance grants a one-time exception"]:::fin
   D1 --> C
   D -->|No| E["Approver checks the request against the approval band"]:::fin
+  E -.->|"Before release"| T["Finance may change the type, with remarks (in the history)"]:::fin
+  T -.-> E
   E -->|Denied| E1["Transaction shows No funds: DP or LA reschedules"]:::prob
-  E -->|"Approved, full or lower with a note"| F["Finance releases cash and records the reference"]:::fin
+  E -->|"Approved, full or lower with a note"| F["Cash advance: Release cash with the reference. Fund transfer: Send transfer with the reference number, date and account (last 4 digits)"]:::fin
   F --> G["Job is Funded, DP and LA are notified"]:::sys
   G --> H["DP works an attempt and spends money"]:::dp
   H --> I["Receipts added: date, amount, number, file"]:::dp
@@ -44,7 +46,10 @@ flowchart TD
   classDef sys fill:#e6e8ec,stroke:#56627a,color:#14213a
 ```
 
-- The LA only flags whether funds are needed. The DP asks for the amount, one advance for several jobs.
+- The LA only flags whether funds are needed. The DP asks for the amount, one advance for several jobs, and picks the funds type: Cash advance (default) or Fund transfer.
+- Both types follow the same flow: approval bands, release, receipts, carry-over, top-up, liquidation, overdue notice, holds and permissions are the same. Only what Finance enters at release differs (Settings, Funds types), and a type's "Must be liquidated with receipts" switch (on for both by default).
+- Finance can change the type before release, with remarks (5 to 500 characters); top-ups and carry-overs follow their record's type, and Finance can change a top-up's type at release.
+- The type shows as a pill everywhere funds appear (My funds, the Finance lists, the job and loan transaction, Open items, notifications and emails, the TAT report and the CSV exports), with filters and counts by type on the Finance lists and the TAT report.
 - The LTO office gives the approver an estimate of distance, time and transport.
 - Carry-over is free for 3 business days by default, then Finance approves it. Liquidation is due 10 business days after release, restarting at each carry-over decision.
 - Cash amounts are visible only to people with the permission `journey:view_amounts`.

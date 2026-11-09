@@ -68,9 +68,11 @@ export async function passJob(u: CurrentUser, assignmentId: string, raw: unknown
         // The balance moves to the second processor on a new advance (released, same due date); the old line shows it as handed over.
         const number = await nextNumber(tx, now);
         const branchId = to.branches[0]?.branchId ?? a.dpBranchId;
+        // The handed-over balance keeps the funds type of the record it came from.
+        const parent = await tx.cashAdvance.findUniqueOrThrow({ where: { id: h.advanceId }, select: { fundsTypeId: true, fundsTypeCode: true, fundsTypeName: true } });
         const adv = await tx.cashAdvance.create({
           data: {
-            number, requestedById: to.id, branchId, status: "RELEASED", requestedCents: h.balance, approvedCents: h.balance, releasedCents: h.balance,
+            ...parent, number, requestedById: to.id, branchId, status: "RELEASED", requestedCents: h.balance, approvedCents: h.balance, releasedCents: h.balance,
             approvedAt: now, releasedAt: now, releaseRef: `Pasuyo from ${h.number}`, liquidationDueAt: h.dueAt,
             note: `Handed over from ${h.number} by ${u.name} (Pasuyo) for ${a.loan.pn} ${a.transaction.type.name}.`,
             lines: { create: { transactionId: a.transactionId, kind: h.kind as never, requestedCents: h.balance, approvedCents: h.balance, releasedCents: h.balance, note: `Handed over from ${h.number}` } },

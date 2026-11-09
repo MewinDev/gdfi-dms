@@ -12,7 +12,7 @@ import {
 } from "@/lib/services/jobs";
 import { storeEvidenceFile } from "@/lib/services/job-stages";
 import {
-  addReceipt, closeAdvance, confirmReturn, decideAdvance, decideCarryOver, decideTopUp, grantException, recordReturn, releaseAdvance, releaseTopUp, requestAdvance, requestTopUp,
+  addReceipt, changeFundsType, closeAdvance, confirmReturn, decideAdvance, decideCarryOver, decideTopUp, grantException, recordReturn, releaseAdvance, releaseTopUp, requestAdvance, requestTopUp,
 } from "@/lib/services/funds";
 import { UserError } from "@/lib/services/errors";
 import { passJob } from "@/lib/services/pasuyo";
@@ -368,9 +368,9 @@ export async function decideAdvanceAction(_p: ActionState, fd: FormData): Promis
 export async function releaseAdvanceAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.FUNDS_RELEASE);
-    await releaseAdvance(u, str(fd, "advanceId"), { ref: str(fd, "ref") });
+    await releaseAdvance(u, str(fd, "advanceId"), releaseFields(fd));
     await refresh();
-    return "Released. The jobs are Funded.";
+    return "Done. The jobs are Funded.";
   });
 }
 
@@ -387,9 +387,24 @@ export async function decideTopUpAction(_p: ActionState, fd: FormData): Promise<
 export async function releaseTopUpAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.FUNDS_RELEASE);
-    await releaseTopUp(u, str(fd, "topUpId"));
+    await releaseTopUp(u, str(fd, "topUpId"), { ...releaseFields(fd), fundsTypeId: str(fd, "fundsTypeId") || undefined, remarks: str(fd, "remarks") });
     await refresh();
-    return "Top-up released.";
+    return "Top-up done.";
+  });
+}
+
+/** What Finance typed at release (the service checks which fields the funds type needs). */
+function releaseFields(fd: FormData) {
+  return { ref: str(fd, "ref"), transferDate: str(fd, "transferDate"), accountProvider: str(fd, "accountProvider"), accountName: str(fd, "accountName"), accountLast4: str(fd, "accountLast4") };
+}
+
+/** Finance changes the funds type before the release (remarks 5 to 500 characters). */
+export async function changeFundsTypeAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const u = await requirePermission(PERMISSIONS.FUNDS_RELEASE);
+    await changeFundsType(u, str(fd, "advanceId"), { fundsTypeId: str(fd, "fundsTypeId"), remarks: str(fd, "remarks") });
+    await refresh();
+    return "Type changed. It is in the history.";
   });
 }
 

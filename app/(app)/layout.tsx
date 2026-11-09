@@ -10,15 +10,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const unread = await unreadNotificationCount(user.id);
   // Every item follows the person's permissions (no role names).
   const worksLoans = can(user, PERMISSIONS.CHECKLIST_TICK); // Loan Associate workspace: "My loans", Find loan
-  const settings = SETTINGS_PERMISSIONS.some((p) => can(user, p)) || can(user, PERMISSIONS.ROLES_MANAGE) || can(user, PERMISSIONS.TESTDATA_RESET);
+  const settings = SETTINGS_PERMISSIONS.some((p) => can(user, p)) || can(user, PERMISSIONS.ROLES_MANAGE) || can(user, PERMISSIONS.TESTDATA_RESET) || can(user, PERMISSIONS.DP_CAPACITY_MANAGE);
+  const monitoring = can(user, PERMISSIONS.MONITOR_DP) || can(user, PERMISSIONS.MONITOR_LTO);
   const admin = [can(user, PERMISSIONS.USERS_VIEW), settings, can(user, PERMISSIONS.AUDIT_VIEW)];
   const items: ShellNavItem[] = [
-    { href: "/dashboard", label: "Home", icon: "home" },
+    ...([PERMISSIONS.LOANS_VIEW, PERMISSIONS.JOBS_WORK, PERMISSIONS.FUNDS_VIEW_ALL].some((p) => can(user, p)) ? [{ href: "/dashboard", label: "Home", icon: "home" as const }] : []),
     // The processor works from Jobs (and sees each loan file from there), so Loans is not in their nav.
     ...(can(user, PERMISSIONS.JOBS_WORK) ? [{ href: "/jobs", label: "Jobs", icon: "jobs" as const }] : []),
     ...(can(user, PERMISSIONS.FUNDS_REQUEST) ? [{ href: "/my-funds", label: "My funds", short: "Funds", icon: "funds" as const }] : []),
     ...(can(user, PERMISSIONS.FUNDS_VIEW_ALL) ? [{ href: "/funds", label: "Funds", icon: "funds" as const }] : []),
     ...(can(user, PERMISSIONS.LOANS_VIEW) && !(can(user, PERMISSIONS.JOBS_WORK) && !worksLoans) ? [worksLoans ? { href: "/loans", label: "My loans", short: "Loans", icon: "loans" as const } : { href: "/loans", label: "Loans", icon: "loans" as const }] : []),
+    ...(monitoring ? [{ href: "/monitoring", label: "Monitoring", short: "Monitor", icon: "monitor" as const }] : []),
     // Updates sits in the nav when there are no admin items (otherwise the bell in the top bar is enough).
     ...(admin.some(Boolean) ? [] : [{ href: "/notifications", label: "Updates", icon: "updates" as const, badge: unread }]),
     ...(admin[0] ? [{ href: "/admin/users", label: "Users", icon: "users" as const }] : []),

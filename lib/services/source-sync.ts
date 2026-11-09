@@ -561,9 +561,11 @@ export async function moveCashToNewPn(u: CurrentUser, id: string, lineId: string
     const target = nw.transactions.find((t) => t.type.code === cash.txnCode && t.status !== "CANCELLED") ?? nw.transactions.find((t) => t.status !== "CANCELLED");
     if (!target) throw new UserError(`${nw.pn} has no open transaction to move the cash to.`);
     const number = await nextNumber(tx, new Date());
+    // The moved balance keeps the funds type of the record it came from.
+    const parent = (await tx.cashAdvanceLine.findUniqueOrThrow({ where: { id: lineId }, select: { advance: { select: { fundsTypeId: true, fundsTypeCode: true, fundsTypeName: true } } } })).advance;
     const adv = await tx.cashAdvance.create({
       data: {
-        number, requestedById: cash.dp.id, branchId: nw.branchId, status: "REQUESTED", requestedCents: cash.cents, movedFromLineId: lineId,
+        ...parent, number, requestedById: cash.dp.id, branchId: nw.branchId, status: "REQUESTED", requestedCents: cash.cents, movedFromLineId: lineId,
         note: `Move ${peso(cash.cents)} from ${cash.number} (${old.pn}, replaced) to ${nw.pn}. Asked by ${u.name}.`,
         lines: { create: { transactionId: target.id, kind: cash.kind as never, requestedCents: cash.cents, note: `Moved from ${cash.number} (${old.pn})` } },
       },
@@ -573,7 +575,7 @@ export async function moveCashToNewPn(u: CurrentUser, id: string, lineId: string
     }
     await notify(tx, {
       userIds: await bandApprovers(tx, cash.cents), loanId: nw.id, title: `${number}: move cash to ${nw.pn}`, body: `${old.pn} was replaced by ${nw.pn}. Approve moving the balance of ${cash.number}.`, link: "/funds?tab=approve",
-      email: { event: "advance_requested", amountCents: cash.cents, vars: { number, who: u.name, reason: `Move the cash from ${cash.number} (${old.pn}) to ${nw.pn}.` } },
+      email: { event: "advance_requested", amountCents: cash.cents, vars: { number, who: u.name, kind: parent.fundsTypeName, reason: `Move the cash from ${cash.number} (${old.pn}) to ${nw.pn}.` } },
     });
     return { number };
   });

@@ -4,10 +4,15 @@ import { useActionState, useEffect, useId, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form-status";
 import { Sheet } from "@/components/ui/sheet";
 import {
-  addReceiptAction, closeAdvanceAction, confirmReturnAction, decideAdvanceAction, decideCarryOverAction, decideTopUpAction, grantExceptionAction,
+  addReceiptAction, changeFundsTypeAction, closeAdvanceAction, confirmReturnAction, decideAdvanceAction, decideCarryOverAction, decideTopUpAction, grantExceptionAction,
   recordReturnAction, releaseAdvanceAction, releaseTopUpAction, requestAdvanceAction, requestTopUpAction,
 } from "@/app/actions/jobs";
 import type { ActionState } from "@/lib/action";
+import { isTransfer, releaseVerb } from "@/lib/funds/types";
+import { FundsTypePill } from "./funds-type-pill";
+
+/** A funds type as the forms need it (Settings > Funds types). */
+export interface FundsTypeOption { id: string; code: string; name: string; needsReference: boolean; needsAccount: boolean }
 
 const peso = (c: number) => `₱${(c / 100).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const toC = (t: string) => {
@@ -31,7 +36,8 @@ export interface RequestJob {
   kinds: { kind: string; label: string; suggestedCents: number | null; maxCents: number | null; suggestedFrom?: "office" | "rule" | null }[];
 }
 
-export function RequestForm({ jobs, blocked }: { jobs: RequestJob[]; blocked?: string }) {
+export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "" }: { jobs: RequestJob[]; blocked?: string; types?: FundsTypeOption[]; defaultTypeId?: string }) {
+  const [typeId, setTypeId] = useState(defaultTypeId);
   const init = () => Object.fromEntries(jobs.flatMap((j) => j.kinds.map((k) => [`${j.transactionId}|${k.kind}`, { on: true, amount: k.suggestedCents ? (k.suggestedCents / 100).toFixed(2) : "", reason: "" }])));
   const [lines, setLines] = useState<Record<string, { on: boolean; amount: string; reason: string }>>(init);
   const [others, setOthers] = useState<{ kind: "TRANSPORT" | "OTHER"; amount: string; note: string }[]>([]);
@@ -48,6 +54,7 @@ export function RequestForm({ jobs, blocked }: { jobs: RequestJob[]; blocked?: s
   const payload = JSON.stringify({
     lines: chosen.map(({ j, k, key }) => ({ transactionId: j.transactionId, kind: k.kind, cents: toC(lines[key].amount) ?? 0, overMaxReason: lines[key].reason })),
     others: others.map((o) => ({ kind: o.kind, cents: toC(o.amount) ?? 0, note: o.note })),
+    fundsTypeId: typeId || undefined,
   });
 
   return (
@@ -92,6 +99,20 @@ export function RequestForm({ jobs, blocked }: { jobs: RequestJob[]; blocked?: s
             </li>
           ))}
         </ul>
+      )}
+      {types.length > 0 && (
+        <fieldset className="rounded-xl border border-line p-3" data-funds-type-choice>
+          <legend className="px-1 text-[15px] font-semibold">Type of funds</legend>
+          <p className="help">How Finance gives you the money. The same steps follow for every type: approval, release, receipts, liquidation.</p>
+          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
+            {types.map((t) => (
+              <label key={t.id} className="inline-flex min-h-11 items-center gap-2 text-[15px]">
+                <input type="radio" name="fundsTypeChoice" value={t.id} checked={typeId === t.id} onChange={() => setTypeId(t.id)} className="h-5 w-5 accent-[var(--navy)]" />
+                <FundsTypePill code={t.code} name={t.name} />
+              </label>
+            ))}
+          </div>
+        </fieldset>
       )}
       <fieldset className="rounded-xl border border-line p-3">
         <legend className="px-1 text-[15px] font-semibold">Other expenses (not for one job)</legend>
@@ -229,14 +250,103 @@ export function DecideAdvanceForm({ advanceId, lines }: { advanceId: string; lin
   );
 }
 
-export function ReleaseForm({ advanceId }: { advanceId: string }) {
+/** The release fields for a type: today's reference note for Cash advance; for a transfer the reference, the date and the receiving account (last 4 digits only). */
+function ReleaseFields({ type, uid, today, field }: { type: Pick<FundsTypeOption, "needsReference" | "needsAccount">; uid: string; today: string; field?: string }) {
+  return (
+    <>
+      <div className="min-w-0 flex-1">
+        <label htmlFor={`${uid}-r`} className="label">{type.needsReference ? "Transfer reference number" : "Reference (voucher or transfer no.)"}</label>
+        <input id={`${uid}-r`} name="ref" required={type.needsReference} minLength={type.needsReference ? 4 : 2} maxLength={60} className="input" aria-invalid={field === "ref"} />
+      </div>
+      {type.needsReference && (
+        <div><label htmlFor={`${uid}-td`} className="label">Transfer date</label><input id={`${uid}-td`} type="date" name="transferDate" max={today} defaultValue={today} required className="input" aria-invalid={field === "transferDate"} /></div>
+      )}
+      {type.needsAccount && (
+        <fieldset className="grid gap-2 rounded-xl border border-line p-3 sm:basis-full sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_8rem]" data-account-fields>
+          <legend className="px-1 text-[15px] font-semibold">Receiving account</legend>
+          <div><label htmlFor={`${uid}-ap`} className="label">Bank or e-wallet</label><input id={`${uid}-ap`} name="accountProvider" required maxLength={60} placeholder="BPI, GCash" className="input" aria-invalid={field === "accountProvider"} /></div>
+          <div><label htmlFor={`${uid}-an`} className="label">Account name</label><input id={`${uid}-an`} name="accountName" required maxLength={80} className="input" aria-invalid={field === "accountName"} /></div>
+          <div>
+            <label htmlFor={`${uid}-a4`} className="label">Last 4 digits</label>
+            <input id={`${uid}-a4`} name="accountLast4" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" className="input" aria-invalid={field === "accountLast4"} aria-describedby={`${uid}-a4h`} />
+          </div>
+          <p id={`${uid}-a4h`} className="help sm:col-span-3">Only the last 4 digits. The full account number is never stored.</p>
+        </fieldset>
+      )}
+    </>
+  );
+}
+
+export function ReleaseForm({ advanceId, type, today }: { advanceId: string; type: Pick<FundsTypeOption, "code" | "name" | "needsReference" | "needsAccount">; today: string }) {
   const [state, action] = useActionState(releaseAdvanceAction, null);
   const uid = useId();
   return (
-    <form action={action} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+    <form action={action} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end" data-release-form={type.code}>
       <Hidden v={{ advanceId }} />
-      <div className="min-w-0 flex-1"><label htmlFor={`${uid}-r`} className="label">Reference (voucher or transfer no.)</label><input id={`${uid}-r`} name="ref" required minLength={2} maxLength={80} className="input" /></div>
-      <SubmitButton>Release</SubmitButton>
+      <ReleaseFields type={type} uid={uid} today={today} field={state?.field} />
+      <SubmitButton>{releaseVerb(type)}</SubmitButton>
+      {state && <div className="sm:basis-full"><FormMessage state={state} /></div>}
+    </form>
+  );
+}
+
+/** Finance: change the type before the release, with remarks (5 to 500 characters). */
+export function ChangeTypeForm({ advanceId, current, types }: { advanceId: string; current: string; types: FundsTypeOption[] }) {
+  const [open, setOpen] = useState(false);
+  const [state, action] = useActionState(changeFundsTypeAction, null);
+  const close = useMemo(() => () => setOpen(false), []);
+  useCloseOnOk(state, close);
+  const uid = useId();
+  const others = types.filter((t) => t.id !== current);
+  if (!others.length) return null;
+  return (
+    <>
+      <button type="button" className="btn-ghost btn-sm" onClick={() => setOpen(true)}>Change type</button>
+      <Sheet open={open} onClose={close} title="Change the funds type">
+        <form action={action} className="flex flex-col gap-3">
+          <Hidden v={{ advanceId }} />
+          <div>
+            <label htmlFor={`${uid}-t`} className="label">New type</label>
+            <select id={`${uid}-t`} name="fundsTypeId" className="input" defaultValue={others[0].id}>
+              {others.map((t) => <option key={t.id} value={t.id}>{t.code} · {t.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`${uid}-m`} className="label">Remarks</label>
+            <textarea id={`${uid}-m`} name="remarks" required minLength={5} maxLength={500} rows={3} className="input h-auto py-2" aria-invalid={state?.field === "remarks"} />
+            <p className="help">5 to 500 characters. Saved in the history; the processor is told.</p>
+          </div>
+          <FormMessage state={state} />
+          <div className="flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={close}>Cancel</button><SubmitButton>Change type</SubmitButton></div>
+        </form>
+      </Sheet>
+    </>
+  );
+}
+
+/** Finance releases an approved top-up: it follows the parent's type; changing it needs remarks. */
+export function TopUpReleaseForm({ topUpId, currentTypeId, types, today }: { topUpId: string; currentTypeId: string; types: FundsTypeOption[]; today: string }) {
+  const [state, action] = useActionState(releaseTopUpAction, null);
+  const [typeId, setTypeId] = useState(currentTypeId);
+  const uid = useId();
+  const type = types.find((t) => t.id === typeId) ?? types.find((t) => t.id === currentTypeId);
+  const changed = typeId !== currentTypeId;
+  return (
+    <form action={action} className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end" data-topup-release={type?.code}>
+      <Hidden v={{ topUpId }} />
+      {types.length > 1 && (
+        <div>
+          <label htmlFor={`${uid}-t`} className="label">Type</label>
+          <select id={`${uid}-t`} name="fundsTypeId" value={typeId} onChange={(e) => setTypeId(e.target.value)} className="input">
+            {types.map((t) => <option key={t.id} value={t.id}>{t.code} · {t.name}{t.id === currentTypeId ? " (as the advance)" : ""}</option>)}
+          </select>
+        </div>
+      )}
+      {changed && (
+        <div className="min-w-0 flex-1"><label htmlFor={`${uid}-m`} className="label">Why change the type?</label><input id={`${uid}-m`} name="remarks" required minLength={5} maxLength={500} className="input" aria-invalid={state?.field === "remarks"} /></div>
+      )}
+      {type && isTransfer(type) && <ReleaseFields type={type} uid={uid} today={today} field={state?.field} />}
+      <SubmitButton className="btn-primary btn-sm">{type ? `${releaseVerb(type)} (top-up)` : "Release top-up"}</SubmitButton>
       {state && <div className="sm:basis-full"><FormMessage state={state} /></div>}
     </form>
   );

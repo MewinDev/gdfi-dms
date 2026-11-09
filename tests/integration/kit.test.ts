@@ -92,10 +92,34 @@ describe("Manual Test Kit on the test database", () => {
     expect((await prisma.cashAdvance.findFirstOrThrow({ where: { lines: { some: { transaction: { loan: { pn: "PN-0002034" } } } } } })).overdueNotifiedAt).not.toBeNull();
     expect(await adv("PN-0002035")).toBe("LIQUIDATED");
     expect(await adv("PN-0002036")).toBe("CLOSED");
+    // Fund transfers in the same states, with the type and the transfer details.
+    const ft = async (pn: string) => prisma.cashAdvance.findFirstOrThrow({ where: { lines: { some: { transaction: { loan: { pn } } } } } });
+    for (const [pn, status] of [["PN-0002051", "REQUESTED"], ["PN-0002052", "APPROVED"], ["PN-0002053", "RELEASED"], ["PN-0002054", "LIQUIDATED"], ["PN-0002055", "CLOSED"], ["PN-0002056", "RELEASED"], ["PN-0002057", "RELEASED"]] as const) {
+      expect(await ft(pn), pn).toMatchObject({ status, fundsTypeCode: "FT", fundsTypeName: "Fund transfer" });
+    }
+    expect(await ft("PN-0002053")).toMatchObject({ accountProvider: "BPI", accountLast4: "4821" });
+    expect((await ft("PN-0002057")).overdueNotifiedAt).not.toBeNull();
+    expect(await prisma.auditLog.count({ where: { action: "funds_type_changed", entityId: (await ft("PN-0002052")).id } })).toBe(1);
+    expect((await prisma.cashAdvance.findMany()).filter((a) => a.fundsTypeCode === "CA").length).toBeGreaterThan(0);
     expect((await prisma.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0002028" }, type: { code: "NOTARY" } } })).status).toBe("COMPLETED");
     // MyLoans: material, status and replacement wait for Admin review; a minor change updates the copy by itself.
     for (const pn of ["PN-0002042", "PN-0002043", "PN-0002044"]) expect(await prisma.sourceChange.count({ where: { loan: { pn }, state: "OPEN" } }), pn).toBe(1);
     expect(await prisma.auditLog.count({ where: { pn: "PN-0002041", action: "source_minor_updated" } })).toBe(1);
+    // Monitoring: capacity and leave, finished jobs with different times, an overdue job, three advisories.
+    const dp3 = await prisma.user.findUniqueOrThrow({ where: { email: "kit.dp3@example.test" } });
+    const dp4 = await prisma.user.findUniqueOrThrow({ where: { email: "kit.dp4@example.test" } });
+    expect(dp3).toMatchObject({ dpOnLeave: true });
+    expect(dp3.dpLeaveUntil! > businessDate(new Date())).toBe(true);
+    expect(dp4).toMatchObject({ dpCapacity: 5, dpOnLeave: false });
+    expect((await prisma.user.findUniqueOrThrow({ where: { email: "kit.monitor@example.test" }, include: { role: true } })).role.key).toBe("MONITOR");
+    for (const pn of ["PN-0002060", "PN-0002061", "PN-0002062"]) expect((await job(pn, "NOTARY")).status, pn).toBe("CLOSED");
+    expect((await job("PN-0002063", "NOTARY")).status).toBe("PENDING_ACCEPTANCE");
+    const finished = await prisma.jobStage.findFirstOrThrow({ where: { kind: "VERIFY", assignment: { loan: { pn: "PN-0002060" } } } });
+    expect(finished.finishedAt!.getTime()).toBeLessThan(Date.now() - 86_400_000);
+    const advisories = await prisma.ltoAdvisory.findMany({ include: { ltoOffice: true } });
+    expect(advisories).toHaveLength(3);
+    expect(advisories.filter((a) => a.resolvedAt)).toHaveLength(1);
+    expect(advisories.filter((a) => !a.resolvedAt && Date.now() - a.startedAt.getTime() > 24 * 3_600_000).map((a) => a.ltoOffice.code)).toEqual(["LTO-CEB"]);
     // Release dates: N business days before today (TAT cases).
     const holidays = new Set((await prisma.holidayCalendar.findMany()).map((h) => h.date));
     const late = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0002040" } });

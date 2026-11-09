@@ -2,7 +2,7 @@
 
 The automatic rules, the turnaround targets, the roles and examples of permissions.
 
-Last updated: 8 November 2026 (PHT)
+Last updated: 9 November 2026 (PHT)
 
 ### Automatic rules (run once, when the LA clicks Open Loan File)
 
@@ -49,10 +49,13 @@ Details and evidence fields: [Processing stages](10-processing-stages.md).
 | Role | Main work |
 |---|---|
 | LA | Search and open loans, check papers, flag funds, send, receive forwarded packages, EDST |
-| DP | Accept or decline, stages, attempts, cash advance requests, liquidation, return to LA, Pasuyo, check and verify, forward to a branch |
-| Finance and approvers | Approve and release cash advances, confirm returns, close advances, follow up overdue liquidation |
+| DP | Accept or decline, stages, attempts, funds requests (Cash advance or Fund transfer), liquidation, return to LA, Pasuyo, check and verify, forward to a branch |
+| Finance and approvers | Approve and release cash advances, send fund transfers, change a request's funds type before release (with remarks), confirm returns, close advances, follow up overdue liquidation |
 | Admin | Settings, roles and access, Audit Log, TAT reports, review of MyLoans changes, closing cancelled loans |
+| Operations Monitor | Read-only, all branches: the Monitoring page (DPs and LTO offices) and LTO advisories (resolve, edit, file from Monitoring). No loan files and no amounts. Told when an advisory is filed or resolved |
 
-Permissions are switches in Settings, Roles and access, enforced on the server. Examples: `funds:flag`, `funds:request`, `funds:approve`, `funds:release`, `jobs:work`, `jobs:pasuyo`, `jobs:return_to_la`, `holds:raise`, `holds:resolve` (resume: only the hold owner), `holds:transfer` (transfer a hold; Admin and Finance by default, Finance being the role that approves cash advances), `holds:manage` (Settings, Hold reasons; Admin only by default), `problems:raise`, `problems:resolve`, `journey:view_amounts`, `source:review`, `source:manage`, `email:manage` and `stages:manage` (Settings, Processing stages; Admin only by default).
+Permissions are switches in Settings, Roles and access, enforced on the server. Examples: `funds:flag`, `funds:request`, `funds:approve`, `funds:release`, `jobs:work`, `jobs:pasuyo`, `jobs:return_to_la`, `holds:raise`, `holds:resolve` (resume: only the hold owner), `holds:transfer` (transfer a hold; Admin and Finance by default, Finance being the role that approves cash advances), `holds:manage` (Settings, Hold reasons; Admin only by default), `problems:raise`, `problems:resolve`, `journey:view_amounts`, `source:review`, `source:manage`, `email:manage`, `stages:manage` (Settings, Processing stages; Admin only by default) and `fundtypes:manage` (Settings, Funds types; Admin only by default). Changing a request's funds type before release goes with `funds:release` (Finance).
+
+Monitoring (group "Monitoring" in Roles): `monitor:dp` (the DP monitor), `monitor:lto` (the LTO monitor), `ltoreports:create` (file an LTO advisory from a job at an LTO stage; DP by default), `ltoreports:manage` (resolve or edit any advisory, file one from Monitoring; Admin and Operations Monitor by default) and `dpcapacity:manage` (Settings, Processor capacity: the default capacity, a processor's own capacity and On leave; Admin only by default). Admin has them all. They are not given to Finance or any other role by default. A monitor sees counts, times and PN lists; opening a loan needs `loans:view` in that branch and amounts need `journey:view_amounts`. Definitions: [Monitoring](11-monitoring.md).
 
 [Back to the workflow index](README.md)

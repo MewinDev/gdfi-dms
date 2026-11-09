@@ -2,7 +2,7 @@
 
 Index of the workflow documents: how a released loan moves from MyLoans to the vault gate.
 
-Last updated: 8 November 2026 (PHT)
+Last updated: 9 November 2026 (PHT)
 
 Plain-language map of how a released loan moves through GDFI-DMS: the Loan Associate (LA), the Document Processor (DP), Finance and approvers, and Admin. Written on 8 November 2026. It combines the original phases 1 to 5 with the decisions made since (funds, holds, returns, Pasuyo, LTO, MyLoans sync, email).
 
@@ -22,6 +22,7 @@ A live copy with the same diagrams is the artifact "DP Workflow Map". This folde
 | [Systems](08-systems.md) | MyLoans sync, email, environment. |
 | [Status and open questions](09-status-and-open-questions.md) | What is built, planned or later, and the open questions. |
 | [Processing stages](10-processing-stages.md) | The default stages of each transaction type, their evidence and targets. |
+| [Monitoring](11-monitoring.md) | DP and LTO office monitors, capacity and availability, LTO advisories: definitions and examples. |
 
 To walk through these flows by hand, use the [Manual Test Kit](../MANUAL-TEST-KIT.md): sample accounts, one sample loan per case, and a test sheet of who signs in, what to do and what should happen.
 

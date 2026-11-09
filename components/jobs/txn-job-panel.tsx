@@ -1,4 +1,5 @@
 import { mayReceive } from "@/lib/services/jobs";
+import { advisoryWarnings } from "@/lib/services/lto-advisories";
 import { prisma } from "@/lib/db";
 import { can, type CurrentUser, inScope } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -6,7 +7,8 @@ import type { LoanDetail } from "@/lib/services/queries";
 import type { TatMap } from "@/lib/workflow/tat";
 import { EXPENSE_LABEL, type ExpenseKindKey } from "@/lib/funds/rules";
 import { liveAssignment } from "@/lib/ui/plain";
-import { openHold, openProblem, txnFunds, txnTat } from "@/lib/jobs/view";
+import { openHold, openProblem, txnFunds, txnFundsType, txnTat } from "@/lib/jobs/view";
+import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { FundsChip, LabelsChip, TatChip } from "./chips";
 import { FundsFlagForm, PutOnHoldForm, RaiseProblemForm, ReceivePackageForm } from "./forms";
 import { AttemptTimeline } from "./timeline";
@@ -74,6 +76,7 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
       <div className="flex flex-wrap items-center gap-2">
         {/* Before Send, the send step asks the funds question; the chip follows once it is sent. */}
         {txn.type.requiresDp && !["FOR_CHECKLIST", "READY", "RETURNED"].includes(txn.status) && <FundsChip status={funds} />}
+        {(() => { const ft = txnFundsType(txn); return ft ? <FundsTypePill code={ft.code} name={ft.name} /> : null; })()}
         {docs.length > 0 && <LabelsChip printed={labelsPrinted} />}
         {a?.ltoOffice && <span className="chip c-wait" data-lto-chip><MapPinIcon size={14} strokeWidth={2.4} />At {a.ltoOffice.name}</span>}
         {a && !statusText && <span className="chip c-mute">{DP_STATUS[a.status] ?? a.status} · {a.dpUser.name}</span>}
@@ -87,7 +90,7 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
             <UpdatePapersButton target={`papers-${txn.id}`} />
             {canFlag && <FundsFlagForm transactionId={txn.id} needed={txn.fundsNeeded} kinds={txn.fundsKinds} label="Change funds" />}
             <ChangeProcessorForm transactionId={txn.id} current={{ dpId: a.dpUserId, secondId: a.secondaryDpUserId }} processors={processors} />
-            {txn.type.needsLto && <ChangeLtoOfficeForm mode="la" id={txn.id} offices={offices} currentId={a.ltoOfficeId} />}
+            {txn.type.needsLto && <ChangeLtoOfficeForm mode="la" id={txn.id} offices={offices} currentId={a.ltoOfficeId} warnings={offices.length ? await advisoryWarnings() : undefined} />}
             <ProcessorNoteForm transactionId={txn.id} />
             <PullBackForm transactionId={txn.id} dpName={a.dpUser.name} />
           </div>

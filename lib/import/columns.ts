@@ -6,7 +6,7 @@
 
 export type ImportListKey =
   | "branches" | "lto" | "loan-types" | "transaction-types" | "document-types"
-  | "checklist" | "tat" | "holidays" | "cash-advance" | "users" | "problem-reasons" | "hold-reasons" | "return-reasons" | "processing-stages";
+  | "checklist" | "tat" | "holidays" | "cash-advance" | "users" | "problem-reasons" | "hold-reasons" | "return-reasons" | "processing-stages" | "funds-types";
 
 export interface ImportColumn {
   /** Column name in the file (first row). */
@@ -203,6 +203,23 @@ export const IMPORT_LISTS: Record<ImportListKey, ImportListDef> = {
     examples: [
       { code: "LTO-STRIKE", name: "LTO staff on strike", order: "8", status: "Active", notes: EXAMPLE_NOTE },
       { code: "TYPHOON", name: "Typhoon or flood", order: "9", status: "Active", notes: EXAMPLE_NOTE },
+    ],
+  },
+  "funds-types": {
+    key: "funds-types", title: "Funds types", slug: "funds-types", keyColumns: ["code"],
+    keyHelp: "Rows are matched by short code. A new code adds a type; an existing code updates it. Old records keep the name they had.",
+    columns: [
+      { name: "code", label: "Short code", what: "Short code shown on the pill.", required: "yes", allowed: "2 to 10 capital letters or numbers", example: "CHK", text: true },
+      { name: "name", label: "Name", what: "The type in plain words.", required: "yes", allowed: "Text", example: "Check", text: true },
+      { name: "order", label: "Order", what: "Position in lists (smaller first).", required: "yes", allowed: "Whole number 0 to 99", example: "3" },
+      { name: "needs_reference", label: "Release needs a reference number", what: "Finance enters the transfer reference number and date at release.", required: "no", allowed: "Yes, No (blank keeps it; new rows No)", example: "Yes" },
+      { name: "needs_account", label: "Release needs receiving account details", what: "Bank or e-wallet, account name and the last 4 digits.", required: "no", allowed: "Yes, No (blank keeps it; new rows No)", example: "No" },
+      { name: "must_liquidate", label: "Must be liquidated with receipts", what: "Receipts and the liquidation due date, as for every advance.", required: "no", allowed: "Yes, No (blank keeps it; new rows Yes)", example: "Yes" },
+      status, notes,
+    ],
+    examples: [
+      { code: "CHK", name: "Check", order: "3", needs_reference: "Yes", needs_account: "No", must_liquidate: "Yes", status: "Active", notes: EXAMPLE_NOTE },
+      { code: "GC", name: "GCash payout", order: "4", needs_reference: "Yes", needs_account: "Yes", must_liquidate: "Yes", status: "Active", notes: EXAMPLE_NOTE },
     ],
   },
   "hold-reasons": {

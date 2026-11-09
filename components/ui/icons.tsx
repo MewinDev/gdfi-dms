@@ -46,3 +46,6 @@ export const MapPinIcon = (p: P) => <Svg {...p}><path d="M12 21s-7-6.2-7-12a7 7 
 export const CoinsIcon = (p: P) => <Svg {...p}><ellipse cx="9" cy="7" rx="6" ry="3" /><path d="M3 7v5c0 1.7 2.7 3 6 3s6-1.3 6-3V7" /><path d="M15 11c3.3 0 6 1.3 6 3v3c0 1.7-2.7 3-6 3-1.6 0-3.1-.3-4.2-.9" /></Svg>;
 export const CalendarIcon = (p: P) => <Svg {...p}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></Svg>;
 export const FlaskIcon = (p: P) => <Svg {...p}><path d="M9 3h6M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.5L14 9V3" /><path d="M7 15h10" /></Svg>;
+/** Two arrows passing each other: a fund transfer. */
+export const ChartIcon = (p: P) => <Svg {...p}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></Svg>;
+export const TransferIcon = (p: P) => <Svg {...p}><path d="M4 8h14l-3-3" /><path d="M20 16H6l3 3" /></Svg>;

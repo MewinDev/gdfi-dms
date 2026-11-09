@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { txnFundsType } from "@/lib/jobs/view";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -6,7 +7,10 @@ import { can, inScope, requirePagePermission, type CurrentUser } from "@/lib/aut
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getLoanContext, getLoanForUser, type LoanDetail } from "@/lib/services/queries";
 import { PAPERS_BACK_FIRST, checklistStatusOf, recommendDp } from "@/lib/services/workflow";
-import { businessDate, fmtDateTime, fmtShort } from "@/lib/time";
+import { businessDate, fmtDate, fmtDateTime, fmtShort } from "@/lib/time";
+import { openJobCounts, processors } from "@/lib/services/monitoring";
+import { advisoryWarnings } from "@/lib/services/lto-advisories";
+import { availability, leaveText } from "@/lib/monitoring/rules";
 import { JOURNEY_STEP_COUNT, dayText, deadlineChip, liveAssignment, peso, plainMessage, progressStep, stageWords, timeAgo, txnName } from "@/lib/ui/plain";
 import { Banner, ToneChip } from "@/components/ui/basics";
 import { AlertIcon, ChevronRightIcon, PauseIcon, PrinterIcon } from "@/components/ui/icons";
@@ -424,13 +428,13 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
 // ===========================================================================
 
 async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOptions> {
-  const [branches, dps, ltoOffices] = await Promise.all([
+  const [branches, dps, ltoOffices, openCounts, ltoWarnings] = await Promise.all([
     prisma.branch.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    prisma.user.findMany({
-      where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } }, orderBy: { name: "asc" },
-      select: { id: true, name: true, branches: { select: { branchId: true } }, _count: { select: { dpAssignments: { where: { status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] } } } } } },
-    }),
+    processors(),
     prisma.ltoOffice.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    // Open jobs = assigned + in process + on hold (the same count as the Monitoring page).
+    openJobCounts(),
+    advisoryWarnings(),
   ]);
   const labelDocs = loan.documents.filter((d) => d.transactionId === t.id && d.documentId);
   const lastLto = loan.transactions.flatMap((x) => x.dpAssignments).filter((a) => a.ltoOfficeId).sort((a, b) => b.endorsedAt.getTime() - a.endorsedAt.getTime())[0]?.ltoOfficeId ?? null;
@@ -441,7 +445,12 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
   return {
     loanId: loan.id,
     branches: branches.map((b) => ({ id: b.id, name: b.name })),
-    dps: dps.map((d) => ({ id: d.id, name: d.name, branchIds: d.branches.map((x) => x.branchId), open: d._count.dpAssignments })),
+    dps: dps.map((d) => {
+      const open = openCounts.get(d.id) ?? 0;
+      const a = availability(d.capacity, open, d.onLeave);
+      return { id: d.id, name: d.name, branchIds: d.branchIds, open, capacity: a.capacity, availPct: a.pct, availStatus: a.status, leave: d.onLeave ? leaveText(d.leaveUntil, fmtDate) : null };
+    }),
+    ltoWarnings,
     recommended,
     ltoOffices: ltoOffices.map((l) => ({ id: l.id, name: l.name })),
     defaultBranchId: previous?.dpBranchId ?? loan.branchId,
@@ -776,7 +785,7 @@ function backRows(loan: LoanDetail, user: CurrentUser): OpenRow[] {
     return [{
       id: `back-${t.id}`, kind: "returned" as const, badge: sb.kind === "declined" ? "Declined by the DP" : "Returned by the DP", txnCode: t.type.code, txnName: txnName(t.type.code, t.type.name),
       reason: sb.findings || "No findings were written.", who: `${sb.dpName} (DP) · ${fmtDateTime(sb.at)} · Round ${sb.round}${note ? ` · ${note}` : ""}`, since: "",
-      days: 0, href: `/loans/${loan.pn}?tab=todo&tx=${t.type.code}`, target: "", canResume: false,
+      days: 0, href: `/loans/${loan.pn}?tab=todo&tx=${t.type.code}`, target: "", canResume: false, funds: txnFundsType(t),
     }];
   });
 }
@@ -815,7 +824,7 @@ function openRows(loan: LoanDetail, opens: OpenItem[], user: CurrentUser): OpenR
     const owns = ownsTxn(user, loan, t);
     const h = i.kind === "hold" ? t.holds.find((x) => x.id === i.id) : undefined;
     return {
-      id: i.id, kind: i.kind, txnCode: i.txnCode, txnName: i.txnName, reason: i.reason, target, days: i.days,
+      id: i.id, kind: i.kind, txnCode: i.txnCode, txnName: i.txnName, reason: i.reason, target, days: i.days, funds: txnFundsType(t),
       who: i.kind === "missing" ? askedText(i, now) : i.kind === "hold" ? `Put on hold by ${i.by}` : `Raised by ${i.by}`,
       since: i.kind === "missing" ? "" : `since ${i.days} day${i.days === 1 ? "" : "s"}`,
       href: `/loans/${loan.pn}?tab=todo&tx=${i.txnCode}&focus=${target}`,

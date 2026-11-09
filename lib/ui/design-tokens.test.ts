@@ -40,6 +40,18 @@ export function contrast(fgCss: string, bgCss: string): number {
 
 const STATUSES = ["hold", "missing", "problem", "sent", "done", "neutral"] as const;
 
+describe("Funds type pills (a label, not a status)", () => {
+  it.each(["ftype-ca", "ftype-ft"])("%s: soft background, dark text, AA contrast, a border", (t) => {
+    expect(lum(parse(token(`${t}-bg`)))).toBeGreaterThan(0.8);
+    expect(contrast(token(`${t}-fg`), token(`${t}-bg`))).toBeGreaterThanOrEqual(4.5);
+    expect(() => token(`${t}-line`)).not.toThrow();
+  });
+  it("the two types have different colours", () => {
+    expect(token("ftype-ca-bg")).not.toBe(token("ftype-ft-bg"));
+    expect(token("ftype-ca-fg")).not.toBe(token("ftype-ft-fg"));
+  });
+});
+
 describe("Soft status palette", () => {
   it.each(STATUSES)("%s: a very light background, a dark text colour and a thin border", (s) => {
     const bg = parse(token(`${s}-bg`));

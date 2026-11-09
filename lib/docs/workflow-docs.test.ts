@@ -13,10 +13,10 @@ const read = (f: string) => readFileSync(path.join(DIR, f), "utf8");
 const slug = (h: string) => h.trim().toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-");
 
 describe("docs/workflow", () => {
-  it("has the index and the ten documents", () => {
+  it("has the index and the eleven documents", () => {
     expect(files).toEqual([
       "01-glossary.md", "02-big-picture.md", "03-loan-associate.md", "04-dp-job.md", "05-funds.md",
-      "06-exceptions.md", "07-rules-and-roles.md", "08-systems.md", "09-status-and-open-questions.md", "10-processing-stages.md", "README.md",
+      "06-exceptions.md", "07-rules-and-roles.md", "08-systems.md", "09-status-and-open-questions.md", "10-processing-stages.md", "11-monitoring.md", "README.md",
     ]);
   });
 
@@ -54,11 +54,25 @@ describe("docs/workflow", () => {
 
   it("the glossary defines the agreed words; the rules name holds:manage and holds:transfer", () => {
     const g = read("01-glossary.md");
-    for (const w of ["Missing paper", "On hold", "Hold owner", "Locked", "Transfer hold", "Papers handed over", "Cash to settle", "Round", "Problem", "Pull back", "Decline", "Return to LA: papers needed"]) {
+    for (const w of ["Missing paper", "On hold", "Hold owner", "Locked", "Transfer hold", "Papers handed over", "Cash to settle", "Round", "Problem", "Pull back", "Decline", "Return to LA: papers needed", "Cash advance", "Fund transfer", "Funds type", "Capacity", "Availability", "Overdue", "LTO advisory"]) {
       expect(g.split(/\r?\n/).some((line) => line.startsWith(`| **${w}** |`)), w).toBe(true);
     }
     expect(read("07-rules-and-roles.md")).toContain("holds:manage");
     expect(read("07-rules-and-roles.md")).toContain("holds:transfer");
+    expect(read("07-rules-and-roles.md")).toContain("fundtypes:manage");
+    for (const k of ["monitor:dp", "monitor:lto", "ltoreports:create", "ltoreports:manage", "dpcapacity:manage", "Operations Monitor"]) expect(read("07-rules-and-roles.md"), k).toContain(k);
+  });
+
+  it("the monitoring document defines every count and the advisories", () => {
+    const m = read("11-monitoring.md");
+    for (const w of ["Includes time on hold", "Assigned", "In process", "On hold", "Overdue", "Time to accept", "Processing time", "Availability %", "On leave", "At the LTO now", "Avg time at the LTO", "Still active? Please confirm"]) expect(m, w).toContain(w);
+    expect(read("09-status-and-open-questions.md")).toMatch(/Monitoring \(Operations\)[\s\S]*availability thresholds/);
+  });
+
+  it("the funds diagram and notes cover both funds types and the type change before release", () => {
+    const f = read("05-funds.md");
+    for (const w of ["Cash advance", "Fund transfer", "Send transfer", "Release cash", "change the type"]) expect(f, w).toContain(w);
+    expect(read("09-status-and-open-questions.md")).toMatch(/Funds types[\s\S]*confirm the names and codes/);
   });
 
   it("the five diagram files each hold one diagram", () => {

@@ -8,7 +8,8 @@ import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { assignDeadline } from "@/lib/workflow/tat";
-import { businessDate } from "@/lib/time";
+import { businessDate, fmtDate } from "@/lib/time";
+import { leaveText, onLeaveToday } from "@/lib/monitoring/rules";
 import { transactionsFor, TRANSACTION_LABEL, TRANSACTION_ORDER, type TransactionCode } from "@/lib/rules";
 import { recomputeStage } from "./stage";
 import { sendBlockReason } from "./source-blocks";
@@ -458,14 +459,16 @@ export async function laSetFundsFlag(user: CurrentUser, input: { transactionId: 
 
 /** Recommends the active DP in the branch with the fewest open assignments. */
 export async function recommendDp(dpBranchId: string) {
-  const dps = await prisma.user.findMany({
-    where: { active: true, role: PROCESSOR_ROLE, branches: { some: { branchId: dpBranchId } } },
-    select: { id: true, name: true, _count: { select: { dpAssignments: { where: { status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] } } } } } },
-    orderBy: { name: "asc" },
-  });
+  // The processor of the branch with the most free places (capacity minus open jobs: assigned + in
+  // process + on hold, the Monitoring count); then the fewest open jobs; then the name. Never one on
+  // leave. A Full processor is recommended only when everyone in the branch is full.
+  const { processors, openJobCounts } = await import("./monitoring");
+  const dps = (await processors(businessDate(new Date()))).filter((d) => d.branchIds.includes(dpBranchId) && !d.onLeave);
   if (dps.length === 0) return null;
-  const best = dps.reduce((a, b) => (b._count.dpAssignments < a._count.dpAssignments ? b : a));
-  return { id: best.id, name: best.name, openAssignments: best._count.dpAssignments };
+  const open = await openJobCounts(dps.map((d) => d.id));
+  const free = (d: (typeof dps)[number]) => d.capacity - (open.get(d.id) ?? 0);
+  const best = [...dps].sort((a, b) => free(b) - free(a) || (open.get(a.id) ?? 0) - (open.get(b.id) ?? 0) || a.name.localeCompare(b.name))[0];
+  return { id: best.id, name: best.name, openAssignments: open.get(best.id) ?? 0 };
 }
 
 export interface AssignInput {
@@ -582,6 +585,8 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
     where: { id: input.dpUserId, active: true, role: PROCESSOR_ROLE, branches: { some: { branchId: dpBranch.id } } },
   });
   if (!dp) throw new UserError("Pick an active DP of the selected DP branch.", "dpUserId");
+  // On leave (Settings, Processor capacity): shown disabled in the Send panel, and refused here too.
+  if (onLeaveToday(dp, businessDate(new Date()))) throw new UserError(`${dp.name} is ${leaveText(dp.dpLeaveUntil, fmtDate).toLowerCase()}. Pick another processor.`, "dpUserId");
   let secondary: { id: string; name: string } | null = null;
   if (input.pasuyo) {
     secondary = await prisma.user.findFirst({ where: { id: input.secondaryDpUserId ?? "", active: true, role: PROCESSOR_ROLE }, select: { id: true, name: true } });

@@ -42,6 +42,13 @@
   --neutral-bg: #f3f5f7; /* Neutral, not started, cancelled: light grey */
   --neutral-fg: #3c4857;
   --neutral-line: #dfe3e8;
+  /* Funds types (a label, not a status): two soft colours of their own, never the only signal (code, name, icon). */
+  --ftype-ca-bg: #ecf6f6; /* Cash advance: soft teal */
+  --ftype-ca-fg: #0e5555;
+  --ftype-ca-line: #bddcdc;
+  --ftype-ft-bg: #f3f0fb; /* Fund transfer (and other types): soft violet */
+  --ftype-ft-fg: #47368a;
+  --ftype-ft-line: #d8cff0;
 
   /* ---- Names used by the components, mapped onto the soft palette ----- */
   --cream: var(--white); /* page background is white */
@@ -196,6 +203,14 @@ body {
   :where([tabindex="-1"]):focus {
     outline: none;
   }
+  /* Phone: the top bar and the bottom bar stay on screen, so a control scrolled into view (keyboard focus,
+     a jump link) stops clear of them instead of underneath. */
+  @media (max-width: 37.4999rem) {
+    html {
+      scroll-padding-top: 4.5rem;
+      scroll-padding-bottom: 9rem;
+    }
+  }
   /* On the navy sidebar and phone top bar the ring is white. */
   :where(.bg-navy) :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
     outline-color: var(--white);
@@ -276,6 +291,16 @@ body {
   .c-hold {
     @apply border-hold-line bg-hold-bg text-hold-fg;
   }
+  .c-ftype-ca {
+    border-color: var(--ftype-ca-line);
+    background-color: var(--ftype-ca-bg);
+    color: var(--ftype-ca-fg);
+  }
+  .c-ftype-ft {
+    border-color: var(--ftype-ft-line);
+    background-color: var(--ftype-ft-bg);
+    color: var(--ftype-ft-fg);
+  }
   .c-wait {
     @apply border-wait-line bg-wait-bg text-wait-fg;
   }
@@ -322,6 +347,22 @@ body {
   }
   .table tbody tr:hover {
     @apply bg-hover;
+  }
+  /* Monitoring tables: many narrow columns, so headers wrap and cells sit in the middle. */
+  .mon-table :is(th, td) {
+    @apply px-2 py-2 align-middle;
+  }
+  .mon-table thead th {
+    @apply whitespace-normal text-center leading-tight;
+  }
+  .mon-table thead th:first-child {
+    @apply text-left;
+  }
+  .mon-table tbody th[scope="row"] {
+    @apply whitespace-normal bg-transparent text-sm;
+  }
+  .mon-table tbody th[scope="rowgroup"] {
+    @apply bg-transparent;
   }
 
   /* ---- Type ------------------------------------------------------------ */
