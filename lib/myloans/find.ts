@@ -1,7 +1,9 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { getMyLoansAdapter, looksLikePn } from "@/lib/myloans";
+import { getMyLoansAdapter } from "@/lib/myloans";
+import { getPnFormat, cleanPn, describePn, isPnAttempt, parsePn, pnHeadline } from "@/lib/pn";
+import { inBranches } from "./data-check";
 import type { MyLoansAdapter } from "./types";
 
 /**
@@ -25,26 +27,32 @@ export async function findLoans(user: CurrentUser, query: string, opts: { adapte
   const q = query.trim();
   const exactOnly = !adapter.capabilities.search;
   if (q.length < FIND_MIN) return { ok: true, exactOnly, hits: [] };
-  const allowed = user.scopeBranchIds === null ? null : new Set(user.branchNames.map((b) => b.toLowerCase()));
-  const key = `${allowed ? [...allowed].sort().join("|") : "*"}::${q.toUpperCase()}`;
+  const allowed = user.scopeBranchIds === null ? null : user.branchNames.map((name, i) => ({ name, code: user.branchCodes[i] ?? null }));
+  const key = `${allowed ? allowed.map((b) => b.code ?? b.name).sort().join("|") : "*"}::${q.toUpperCase()}`;
   const now = opts.now ?? Date.now();
   const hit = cache.get(key);
   if (hit && now - hit.at < CACHE_MS) return hit.value;
 
-  let rows: { pn: string; borrowerName: string; status: string | null; releaseDate: string | null; branchName: string | null }[] = [];
+  // The shared PN check: a wrong PN never reaches MyLoans. A part of a PN (still typing) is searched.
+  const fmt = await getPnFormat();
+  const parsed = parsePn(q, fmt);
+  if (!parsed.ok && isPnAttempt(q, fmt) && (exactOnly || cleanPn(q).length >= describePn(fmt).length)) {
+    return { ok: false, exactOnly, message: `${pnHeadline(fmt)}. ${parsed.message}` };
+  }
+  let rows: { pn: string; borrowerName: string; status: string | null; releaseDate: string | null; branchName: string | null; branchCode?: string | null }[] = [];
   if (exactOnly) {
     // Exact PN only: one indexed lookup at the source.
-    const pn = looksLikePn(q);
-    if (!pn) return { ok: true, exactOnly, hits: [] };
+    if (!parsed.ok) return { ok: true, exactOnly, hits: [] };
+    const pn = parsed.pn;
     const r = await adapter.getByPn(pn);
     if (!r.ok) return r.reason === "NOT_FOUND" ? { ok: true, exactOnly, hits: [] } : { ok: false, exactOnly, message: r.message };
     rows = [{ ...r.record }];
   } else {
-    const r = await adapter.search(q, FIND_LIMIT);
+    const r = await adapter.search(parsed.ok ? parsed.pn : q, FIND_LIMIT);
     if (!r.ok) return { ok: false, exactOnly, message: r.message };
     rows = r.hits.slice(0, FIND_LIMIT);
   }
-  rows = rows.filter((r) => !allowed || allowed.has((r.branchName ?? "").toLowerCase()));
+  rows = rows.filter((r) => !allowed || inBranches({ branchCode: r.branchCode ?? null, branchName: r.branchName }, allowed));
   // Which of them are open here (the local PN index), and which have a MyLoans change waiting.
   const local = await prisma.loan.findMany({ where: { pn: { in: rows.map((r) => r.pn) } }, select: { pn: true, sourceChanges: { where: { state: "OPEN" }, select: { id: true } } } });
   const hits = rows.map((r) => {

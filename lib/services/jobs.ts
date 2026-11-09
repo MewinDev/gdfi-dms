@@ -17,6 +17,7 @@ import { remarksSchema } from "@/lib/ui/holds";
 import { DECLINE_REASONS } from "@/lib/ui/rounds";
 import { currentStageIdFor, finishStageCore, requireVerified, somethingMissingCore, stagesForCompletion, startStageCore, verifyPaperCore } from "./job-stages";
 import { assertNotHeld } from "./locks";
+import { worksAtWhere } from "@/lib/branches/access";
 
 /**
  * The processor (DP) side: accept, decline, return, attempts, complete, forward, and the receiving
@@ -325,8 +326,8 @@ export const forwardSchema = z.object({
 });
 export type ForwardInput = z.input<typeof forwardSchema>;
 
-/** People who may receive a forwarded package at a branch: active, may accept returned papers, assigned to that branch. */
-export const receiverWhere = (branchId: string) => ({ active: true, role: { active: true, permissions: { has: PERMISSIONS.RETURNS_ACCEPT } }, branches: { some: { branchId } } }) satisfies Prisma.UserWhereInput;
+/** People who may receive a forwarded package at a branch: active, may accept returned papers, the branch in their access (or All branches). */
+export const receiverWhere = (branchId: string) => ({ active: true, role: { active: true, permissions: { has: PERMISSIONS.RETURNS_ACCEPT } }, ...worksAtWhere(branchId) }) satisfies Prisma.UserWhereInput;
 
 /**
  * Forward to branch: manual, never automatic. The DP chose the branch, then the named LA of that

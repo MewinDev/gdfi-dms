@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
+import { CURRENT_USER_INCLUDE, toCurrentUser } from "@/lib/auth/build-user";
 import { resetLoanData } from "@/lib/test-data/reset-core";
-import { effectivePermissions } from "@/lib/auth/access";
 import { setSetting } from "@/lib/settings";
 import { assertTestDatabase } from "@/lib/env/test-db";
 
@@ -10,13 +10,7 @@ assertTestDatabase("The integration tests");
 
 /** Builds the same CurrentUser the app builds from the session. */
 export async function asUser(email: string): Promise<CurrentUser> {
-  const u = await prisma.user.findUniqueOrThrow({ where: { email }, include: { role: true, branches: { include: { branch: true } } } });
-  const permissions = effectivePermissions(u.role) as Set<string>; // same rule as the app
-  const branchIds = u.branches.map((b) => b.branchId);
-  return {
-    id: u.id, email: u.email, name: u.name, roleKey: u.role.key, roleName: u.role.name, permissions, branchIds,
-    branchNames: u.branches.map((b) => b.branch.name), scopeBranchIds: u.role.branchAccess === "ALL" ? null : branchIds,
-  };
+  return toCurrentUser(await prisma.user.findUniqueOrThrow({ where: { email }, include: CURRENT_USER_INCLUDE }));
 }
 
 /** No loan files, MyLoans reachable. (No audit row: test setup, not a user action.) */

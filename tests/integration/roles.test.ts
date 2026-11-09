@@ -12,6 +12,7 @@ import { accessMatrixCsv, duplicateRole, resetRoleToDefault, saveRole, setRoleAc
 import { lookupPn, openLoanFile } from "@/lib/services/loan-file";
 import { assignToDp, markLabelsPrinted, saveChecklist } from "@/lib/services/workflow";
 import { saveSettingsRow, saveUser } from "@/lib/services/admin";
+import { saveUserAccess } from "@/lib/services/access";
 import { setRowActive } from "@/lib/services/settings-status";
 import { getLoanForUser } from "@/lib/services/queries";
 import { checkImport } from "@/lib/import/importer";
@@ -52,10 +53,10 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-/** A custom role and a test user who has it (Quezon City). */
+/** A custom role and a test user who has it (Antipolo). */
 async function customUser(name: string, permissions: string[], branchAccess: "ASSIGNED" | "ALL" = "ASSIGNED") {
   const roleId = await saveRole(admin, null, { name, description: "", branchAccess, permissions });
-  const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "QC" } });
+  const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
   const email = `zz.${name.toLowerCase().replace(/[^a-z]+/g, ".")}@gdfi.ph`;
   await saveUser(admin, null, { name: `Zed ${name}`, email, roleId, active: true, branchIds: [qc.id] });
   return { roleId, user: await asUser(email) };
@@ -72,16 +73,16 @@ describe("Seeded roles after the migration", () => {
 
 describe("A custom role grants and denies on the server", () => {
   it("five actions across areas", async () => {
-    const { user } = await customUser("Z Cebu Reviewer", [P.LOANS_VIEW, P.LOANS_SEARCH, P.CHECKLIST_TICK, P.LABELS_PRINT]);
+    const { user } = await customUser("Z Angono Reviewer", [P.LOANS_VIEW, P.LOANS_SEARCH, P.CHECKLIST_TICK, P.LABELS_PRINT]);
     expect(user.permissions.has(P.LABELS_PRINT)).toBe(true);
 
     // Allowed: find a loan (MyLoans preview).
-    expect((await lookupPn(user, "PN-0001001")).kind).toBe("preview");
+    expect((await lookupPn(user, "GD1012026901001")).kind).toBe("preview");
     // Refused: open a loan file (no "Open a loan file").
-    await refused(openLoanFile(user, { pn: "PN-0001001" }), /does not allow opening loan files/);
+    await refused(openLoanFile(user, { pn: "GD1012026901001" }), /does not allow opening loan files/);
 
-    await openLoanFile(la, { pn: "PN-0001001" });
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001001" }, include: { transactions: { include: { type: true, checks: true } } } });
+    await openLoanFile(la, { pn: "GD1012026901001" });
+    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026901001" }, include: { transactions: { include: { type: true, checks: true } } } });
     const notary = loan.transactions.find((t) => t.type.code === "NOTARY")!;
     // Allowed: tick papers.
     await saveChecklist(user, { transactionId: notary.id, checkedIds: [notary.checks[0].id], newOthers: [] });
@@ -97,15 +98,22 @@ describe("A custom role grants and denies on the server", () => {
     await refused(saveUser(user, null, { name: "X", email: "zz.x@gdfi.ph", roleId: user.id, active: true, branchIds: [] }), /does not allow adding or editing users/);
   });
 
-  it("Branch access: assigned branches only, or all branches", async () => {
+  it("Branch access is per user; the role's branch access is only the default for new users", async () => {
     const { roleId, user } = await customUser("Z Viewer", [P.LOANS_VIEW]);
-    await openLoanFile(la, { pn: "PN-0001004", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }); // Cebu, Financing
+    await openLoanFile(la, { pn: "GD1652026901004", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }); // Angono, Financing
     expect(user.scopeBranchIds).not.toBeNull();
-    expect(await getLoanForUser(user, "PN-0001004")).toBeNull();
+    expect(await getLoanForUser(user, "GD1652026901004")).toBeNull();
+    // Changing the role's default does not change existing people.
     await saveRole(admin, roleId, { name: "Z Viewer", description: "", branchAccess: "ALL", permissions: [P.LOANS_VIEW] });
+    expect((await asUser(user.email)).scopeBranchIds).not.toBeNull();
+    // The person's own access does.
+    await saveUserAccess(admin, user.id, { all: true, grants: [], homeBranchId: null });
     const again = await asUser(user.email);
     expect(again.scopeBranchIds).toBeNull();
-    expect(await getLoanForUser(again, "PN-0001004")).not.toBeNull();
+    expect(await getLoanForUser(again, "GD1652026901004")).not.toBeNull();
+    // A new user of the role starts with the role's default (All).
+    await saveUser(admin, null, { name: "Zed New Viewer", email: "zz.new.viewer@gdfi.ph", roleId, active: true });
+    expect((await asUser("zz.new.viewer@gdfi.ph")).scopeBranchIds).toBeNull();
   });
 
   it("custom-role test users sign in only in test mode", async () => {
@@ -122,7 +130,7 @@ describe("A custom role grants and denies on the server", () => {
   it("processors: a custom role appears only with \"Receive and process transactions\"", async () => {
     const { user } = await customUser("Z Processor", [P.LOANS_VIEW, P.DP_RECEIVE]);
     const { recommendDp } = await import("@/lib/services/workflow");
-    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "QC" } });
+    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
     const role = await prisma.role.findFirstOrThrow({ where: { name: "Z Processor" } });
     // Fewest open jobs wins: the new processor has none, like the seeded ones; it is now a candidate.
     const candidates = await prisma.user.findMany({ where: { active: true, role: { active: true, permissions: { has: P.DP_RECEIVE } }, branches: { some: { branchId: qc.id } } } });
@@ -179,7 +187,7 @@ describe("Duplicate, rename, inactive, reset, audit, matrix", () => {
     const { roleId, user } = await customUser("Z Temp", [P.LOANS_VIEW]);
     await refused(setRoleActive(admin, roleId, false), /1 person has this role/);
     const laRole = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
-    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "QC" } });
+    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
     await saveUser(admin, user.id, { name: user.name, email: user.email, roleId: laRole.id, active: true, branchIds: [qc.id] });
     await setRoleActive(admin, roleId, false);
     expect((await prisma.role.findUniqueOrThrow({ where: { id: roleId } })).active).toBe(false);
@@ -188,15 +196,15 @@ describe("Duplicate, rename, inactive, reset, audit, matrix", () => {
   });
 
   it("one audit row per change, with the exact permissions added and removed; reset to default", async () => {
-    const roleId = await saveRole(admin, null, { name: "Z Cebu Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.TXN_ADD] });
+    const roleId = await saveRole(admin, null, { name: "Z Angono Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.TXN_ADD] });
     const before = await prisma.auditLog.count({ where: { entityId: roleId } });
-    await saveRole(admin, roleId, { name: "Z Cebu Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.LABELS_PRINT] });
+    await saveRole(admin, roleId, { name: "Z Angono Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.LABELS_PRINT] });
     const rows = await prisma.auditLog.findMany({ where: { entityId: roleId }, orderBy: { at: "asc" } });
     expect(rows.length).toBe(before + 1);
-    expect(rows.at(-1)!.summary).toBe("Role Z Cebu Checker: added Print labels; removed Add a transaction");
+    expect(rows.at(-1)!.summary).toBe("Role Z Angono Checker: added Print labels; removed Add a transaction");
     expect(rows.at(-1)!.actorId).toBe(admin.id);
     // Saving with no change writes nothing.
-    await saveRole(admin, roleId, { name: "Z Cebu Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.LABELS_PRINT] });
+    await saveRole(admin, roleId, { name: "Z Angono Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.LABELS_PRINT] });
     expect(await prisma.auditLog.count({ where: { entityId: roleId } })).toBe(before + 1);
 
     const laRole = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
@@ -222,8 +230,8 @@ describe("Duplicate, rename, inactive, reset, audit, matrix", () => {
   it("user import accepts custom role names (any case) and refuses unknown roles plainly", async () => {
     await saveRole(admin, null, { name: "Z Importable Role", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW] });
     const plan = await checkImport(admin, "users", "u.csv", toCsv(["name", "email", "role", "branches", "status"], [
-      { name: "Zed One", email: "zz.one@gdfi.ph", role: "z importable role", branches: "QC", status: "Active" },
-      { name: "Zed Two", email: "zz.two@gdfi.ph", role: "Wizard", branches: "QC", status: "Active" },
+      { name: "Zed One", email: "zz.one@gdfi.ph", role: "z importable role", branches: "101", status: "Active" },
+      { name: "Zed Two", email: "zz.two@gdfi.ph", role: "Wizard", branches: "101", status: "Active" },
     ]));
     if (!plan.ok) throw new Error(plan.error);
     expect(plan.rows[0].action).toBe("new");

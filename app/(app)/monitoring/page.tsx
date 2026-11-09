@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import { can, requireUser, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -7,7 +8,7 @@ import { businessDate, fmtDate } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
 import {
   dpByDay, dpDrill, dpMonitor, filterOptions, measured, ltoByDay, ltoDrill, ltoMonitor, monitorHref, parseMonitorQuery,
-  type Avg, type ByDay, type DpMonitor, type DpRow, type DrillJob, type LtoDrillJob, type LtoMonitor, type LtoRow, type MonitorQuery, type MonitorSearch,
+  type Avg, type ByDay, type DpGroup, type DpMonitor, type DpRow, type DrillJob, type LtoDrillJob, type LtoMonitor, type LtoRow, type MonitorQuery, type MonitorSearch,
 } from "@/lib/services/monitoring";
 import { AVAILABILITY, AVAILABILITY_LABEL, AVAILABILITY_TONE, daysText, type Availability } from "@/lib/monitoring/rules";
 import type { AdvisoryView } from "@/lib/services/lto-advisories";
@@ -50,8 +51,8 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
         </div>
       </nav>
       <FilterBar
-        tab={q.tab} view={q.view} preset={q.range.preset} from={q.range.from} to={q.range.to} today={today} branch={q.branchId ?? ""} type={q.typeCode ?? ""}
-        branches={opts.branches} types={opts.types}
+        tab={q.tab} view={q.view} preset={q.range.preset} from={q.range.from} to={q.range.to} today={today} area={q.areaId ?? ""} branch={q.branchId ?? ""} type={q.typeCode ?? ""}
+        areas={opts.areas} branches={opts.branches} types={opts.types}
         who={q.view === "day" ? (q.tab === "dp" ? { name: "dp", label: "Processor", value: q.dpId ?? "", options: opts.dps } : { name: "office", label: "LTO office", value: q.officeId ?? "", options: opts.offices }) : null}
       />
       {q.range.error && <p role="alert" className="rounded-xl border border-bad-line bg-bad-bg px-4 py-2 text-[15px] text-bad-fg">{q.range.error} Showing {q.range.label} instead.</p>}
@@ -130,6 +131,7 @@ async function DpTab({ user, q, now }: { user: CurrentUser; q: MonitorQuery; now
         <RouteSheet title={drill.name} closeHref={monitorHref(q, { open: null, dp: null })}>
           <div className="flex flex-col gap-4">
             <p className="text-[15px]">{drill.group} · <StatusChip a={drill.avail} until={drill.leaveUntil} /> <span className="text-ink-2">{drill.avail.text}</span></p>
+            <BranchChips names={drill.branches} />
             <p className="text-[13px] text-ink-2">Open jobs as of now. Declined and returned: {q.range.label}. {HOLD_NOTE}.</p>
             <DrillList title="Open jobs" rows={drill.open} empty="No open jobs." kind="open" />
             <DrillList title="Declined in the period" rows={drill.declined} empty="None declined." kind="back" />
@@ -156,15 +158,38 @@ function DpTiles({ m }: { m: DpMonitor }) {
   );
 }
 
+function BranchChips({ names }: { names: string[] }) {
+  if (!names.length) return null;
+  const shown = names.slice(0, 6);
+  return (
+    <span className="mt-0.5 flex flex-wrap gap-1" data-branch-chips>
+      {shown.map((n) => <span key={n} className="chip c-mute h-6 text-[12px] font-medium">{n}</span>)}
+      {names.length > shown.length && <span className="chip c-mute h-6 text-[12px] font-medium">+{names.length - shown.length} more</span>}
+    </span>
+  );
+}
+
+function SubCells({ s }: { s: DpGroup["sub"] }) {
+  return (
+    <>
+      <td className="text-center">{s.assigned}</td><td className="text-center">{s.inProcess}</td><td className="text-center">{s.onHold}</td><td className="text-center">{s.overdue}</td>
+      <td className="text-center">{s.declined}</td><td className="text-center">{s.returned}</td>
+      <td className="text-center"><AvgCell a={s.accept} /></td><td className="text-center"><AvgCell a={s.processing} /></td><td className="text-center"><AvgCell a={s.total} /></td>
+      <td className="text-center">-</td><td className="text-center">{s.availPct === null ? "-" : `${s.availPct}% average`}</td><td />
+    </>
+  );
+}
+
 function DpTable({ m, q }: { m: DpMonitor; q: MonitorQuery }) {
   if (!m.rows.length) return <p className="card px-4 py-5 text-[15px] text-ink-2">No processors in these branches.</p>;
   const link = (r: DpRow) => monitorHref(q, { dp: r.id, open: "1" });
+  const count = (n: number) => `${n} processor${n === 1 ? "" : "s"}`;
   return (
     <section aria-label="Processors" className="flex flex-col gap-3">
-      {/* Desktop: one table, grouped by branch with subtotals. */}
+      {/* Desktop: one table, grouped by Area, then Branch, with subtotals at both levels. */}
       <div className="card hidden overflow-x-auto lg:block">
         <table className="table mon-table w-full text-[13px]" data-dp-table>
-          <caption className="sr-only">Processors by branch. Assigned, in process, on hold and overdue as of now; the rest for {q.range.label}.</caption>
+          <caption className="sr-only">Processors by area, then branch. Assigned, in process, on hold and overdue as of now; the rest for {q.range.label}.</caption>
           <thead>
             <tr>
               <th scope="col" className="text-left">Processor</th>
@@ -176,29 +201,43 @@ function DpTable({ m, q }: { m: DpMonitor; q: MonitorQuery }) {
           </thead>
           {m.groups.map((g) => {
             const open = !q.collapsed.includes(g.key);
+            const several = g.branches.length > 1;
             return (
               <tbody key={g.key} data-group={g.label}>
                 <tr className="bg-fill">
-                  <th scope="rowgroup" colSpan={13} className="text-left"><GroupToggle q={q} k={g.key} label={g.label} open={open} /> <span className="text-[13px] font-normal text-ink-2">{g.rows.length} processor{g.rows.length === 1 ? "" : "s"}</span></th>
+                  <th scope="rowgroup" colSpan={13} className="text-left"><GroupToggle q={q} k={g.key} label={g.label} open={open} /> <span className="text-[13px] font-normal text-ink-2">{count(g.rows.length)}</span></th>
                 </tr>
-                {open && g.rows.map((r) => (
-                  <tr key={r.id} data-dp-row={r.name}>
-                    <th scope="row" className="text-left font-semibold"><Link href={link(r)} scroll={false} className="link" aria-label={`${r.name}: open jobs, declined and returned`}>{r.name}</Link></th>
-                    <td className="text-center">{r.assigned}</td><td className="text-center">{r.inProcess}</td><td className="text-center">{r.onHold}</td>
-                    <td className={`text-center ${r.overdue ? "font-semibold text-bad-fg" : ""}`}>{r.overdue}</td>
-                    <td className="text-center">{r.declined}</td><td className="text-center">{r.returned}</td>
-                    <td className="text-center"><AvgCell a={r.accept} /></td><td className="text-center"><AvgCell a={r.processing} /></td><td className="text-center"><AvgCell a={r.total} /></td>
-                    <td className="text-center">{r.avail.capacity}</td>
-                    <td className="text-center"><AvailCell a={r.avail} /></td>
-                    <td><StatusChip a={r.avail} until={r.leaveUntil} stacked /></td>
-                  </tr>
+                {open && g.branches.map((bg) => (
+                  <Fragment key={bg.key}>
+                    <tr data-branch-group={bg.label}>
+                      <th scope="rowgroup" colSpan={13} className="pl-6 text-left text-[13px] font-semibold text-ink-2">{bg.label} <span className="font-normal">· {count(bg.rows.length)}</span></th>
+                    </tr>
+                    {bg.rows.map((r) => (
+                      <tr key={r.id} data-dp-row={r.name}>
+                        <th scope="row" className="pl-6 text-left font-semibold">
+                          <Link href={link(r)} scroll={false} className="link" aria-label={`${r.name}: open jobs, declined and returned`}>{r.name}</Link>
+                          {r.branches.length > 1 && <BranchChips names={r.branches} />}
+                        </th>
+                        <td className="text-center">{r.assigned}</td><td className="text-center">{r.inProcess}</td><td className="text-center">{r.onHold}</td>
+                        <td className={`text-center ${r.overdue ? "font-semibold text-bad-fg" : ""}`}>{r.overdue}</td>
+                        <td className="text-center">{r.declined}</td><td className="text-center">{r.returned}</td>
+                        <td className="text-center"><AvgCell a={r.accept} /></td><td className="text-center"><AvgCell a={r.processing} /></td><td className="text-center"><AvgCell a={r.total} /></td>
+                        <td className="text-center">{r.avail.capacity}</td>
+                        <td className="text-center"><AvailCell a={r.avail} /></td>
+                        <td><StatusChip a={r.avail} until={r.leaveUntil} stacked /></td>
+                      </tr>
+                    ))}
+                    {several && (
+                      <tr className="text-ink-2" data-branch-subtotal={bg.label}>
+                        <th scope="row" className="pl-6 text-left text-[13px] font-semibold">Subtotal {bg.label}</th>
+                        <SubCells s={bg.sub} />
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
                 <tr className="border-t-2 border-line text-ink-2" data-subtotal={g.label}>
-                  <th scope="row" className="text-left text-[13px] font-semibold">Subtotal</th>
-                  <td className="text-center">{g.sub.assigned}</td><td className="text-center">{g.sub.inProcess}</td><td className="text-center">{g.sub.onHold}</td><td className="text-center">{g.sub.overdue}</td>
-                  <td className="text-center">{g.sub.declined}</td><td className="text-center">{g.sub.returned}</td>
-                  <td className="text-center"><AvgCell a={g.sub.accept} /></td><td className="text-center"><AvgCell a={g.sub.processing} /></td><td className="text-center"><AvgCell a={g.sub.total} /></td>
-                  <td className="text-center">-</td><td className="text-center">{g.sub.availPct === null ? "-" : `${g.sub.availPct}% average`}</td><td />
+                  <th scope="row" className="text-left text-[13px] font-semibold">Subtotal {g.label}</th>
+                  <SubCells s={g.sub} />
                 </tr>
               </tbody>
             );
@@ -215,22 +254,31 @@ function DpTable({ m, q }: { m: DpMonitor; q: MonitorQuery }) {
                 <GroupToggle q={q} k={g.key} label={g.label} open={open} />
                 <span className="text-[13px] text-ink-2">{g.sub.assigned + g.sub.inProcess + g.sub.onHold} open · {g.sub.overdue} overdue</span>
               </div>
-              {open && g.rows.map((r) => (
-                <Link key={r.id} href={link(r)} scroll={false} className="card flex flex-col gap-2 p-3 no-underline hover:bg-fill" data-dp-row={r.name}>
-                  <span className="flex items-start justify-between gap-2">
-                    <span className="text-[16px] font-bold text-navy">{r.name}</span>
-                    <StatusChip a={r.avail} until={r.leaveUntil} />
-                  </span>
-                  <span className="text-[13px] text-ink-2">{r.avail.text}</span>
-                  <span className="grid grid-cols-2 gap-x-3 gap-y-1 text-[13px] sm:grid-cols-4">
-                    <span>Assigned <strong>{r.assigned}</strong></span><span>In process <strong>{r.inProcess}</strong></span>
-                    <span>On hold <strong>{r.onHold}</strong></span><span className={r.overdue ? "font-semibold text-bad-fg" : ""}>Overdue <strong>{r.overdue}</strong></span>
-                    <span>Declined <strong>{r.declined}</strong></span><span>Returned <strong>{r.returned}</strong></span>
-                  </span>
-                  <span className="flex flex-col text-[13px] text-ink">
-                    <span>To accept: {avgText(r.accept)}</span><span>Processing: {avgText(r.processing)}</span><span>Total: {avgText(r.total)}</span>
-                  </span>
-                </Link>
+              {open && g.branches.map((bg) => (
+                <div key={bg.key} className="flex flex-col gap-2" data-branch-group={bg.label}>
+                  <p className="flex flex-wrap items-center justify-between gap-2 px-1 text-[13px] font-semibold text-ink-2">
+                    <span>{bg.label}</span>
+                    {g.branches.length > 1 && <span className="font-normal">{bg.sub.assigned + bg.sub.inProcess + bg.sub.onHold} open · {bg.sub.overdue} overdue</span>}
+                  </p>
+                  {bg.rows.map((r) => (
+                    <Link key={r.id} href={link(r)} scroll={false} className="card flex flex-col gap-2 p-3 no-underline hover:bg-fill" data-dp-row={r.name}>
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="text-[16px] font-bold text-navy">{r.name}</span>
+                        <StatusChip a={r.avail} until={r.leaveUntil} />
+                      </span>
+                      {r.branches.length > 1 && <BranchChips names={r.branches} />}
+                      <span className="text-[13px] text-ink-2">{r.avail.text}</span>
+                      <span className="grid grid-cols-2 gap-x-3 gap-y-1 text-[13px] sm:grid-cols-4">
+                        <span>Assigned <strong>{r.assigned}</strong></span><span>In process <strong>{r.inProcess}</strong></span>
+                        <span>On hold <strong>{r.onHold}</strong></span><span className={r.overdue ? "font-semibold text-bad-fg" : ""}>Overdue <strong>{r.overdue}</strong></span>
+                        <span>Declined <strong>{r.declined}</strong></span><span>Returned <strong>{r.returned}</strong></span>
+                      </span>
+                      <span className="flex flex-col text-[13px] text-ink">
+                        <span>To accept: {avgText(r.accept)}</span><span>Processing: {avgText(r.processing)}</span><span>Total: {avgText(r.total)}</span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
               ))}
             </div>
           );
@@ -448,7 +496,7 @@ function ByDayTable({ d, q, what }: { d: ByDay; q: MonitorQuery; what: "processo
   const unit = d.unit === "day" ? "Day" : "Week";
   return (
     <section aria-label={`By ${d.unit}`} className="flex flex-col gap-2" data-by-day={d.unit}>
-      <p className="text-[13px] text-ink-2">{d.unit === "week" ? "Over 92 days: one row per week (Monday to Sunday). " : ""}Counted on the day each thing happened, in Philippine time. {what === "processor" ? "Grouped by the processors' branches" : "Grouped by area"} unless one is picked.</p>
+      <p className="text-[13px] text-ink-2">{d.unit === "week" ? "Over 92 days: one row per week (Monday to Sunday). " : ""}Counted on the day each thing happened, in Philippine time. {what === "processor" ? "Grouped by the processors' area (Several areas when their branches are in more than one)" : "Grouped by the office's area (city)"} unless one is picked.</p>
       {d.groups.length === 0 ? <p className="card px-4 py-5 text-[15px] text-ink-2">Nothing happened in {q.range.label}.</p> : (
         <div className="card overflow-x-auto">
           <table className="table mon-table w-full text-[13px]">
@@ -491,7 +539,8 @@ function HowCounted({ tab }: { tab: "dp" | "lto" }) {
             <li><strong>Time to accept:</strong> sent to accepted. <strong>Processing:</strong> accepted to Check and verify done. <strong>Total:</strong> sent to Check and verify done. Averages use the jobs finished (Check and verify done) in the dates chosen, with the number of jobs.</li>
             <li><strong>Declined / Returned:</strong> by the processor in the dates chosen. A job passed to a second processor (Pasuyo) counts for the second processor once accepted.</li>
             <li><strong>Capacity:</strong> the processor&rsquo;s own number, or the default in Settings ({AVAILABILITY.defaultCapacity} unless changed). <strong>Availability</strong> = free places (capacity minus open jobs, never below 0) divided by capacity, rounded. Available from {AVAILABILITY.availableFrom}%, Busy from 1% to {AVAILABILITY.availableFrom - 1}%, Full at 0%. On leave counts as 0% and is left out of the average availability.</li>
-            <li>Grouped by the processor&rsquo;s branches (a processor of two branches has one group with both names).</li>
+            <li>Grouped by <strong>Area, then Branch</strong>, with subtotals for each. A processor whose branches are all in one Area is under that Area (and under their branch, or their branches together); a processor with branches in more than one Area is under <strong>Several areas</strong>. Their branches show as chips on the row. Each processor is counted once, so subtotals and totals never count anyone twice.</li>
+            <li>The <strong>Area</strong> and <strong>Branch</strong> filters keep the jobs of loans in that Area or Branch, and a processor when <em>any</em> of their branches matches.</li>
           </ul>
         ) : (
           <ul className="list-disc pl-5">

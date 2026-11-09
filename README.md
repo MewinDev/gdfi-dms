@@ -61,7 +61,7 @@ Five Document Processors are seeded (no sign-in yet) so the LA can assign transa
 
 ### Mock MyLoans PNs
 
-`PN-0001001` to `PN-0001011` and `PN-9999999` behave exactly as listed in the build prompt, section 9. Release dates are relative to today (0 to 3 business days ago) so the TAT badges can be seen. In **Settings > System and test mode** an Admin can:
+`GD1012026901001` to `GD1652026901011` and `GD1012026999999` behave exactly as listed in the build prompt, section 9. Release dates are relative to today (0 to 3 business days ago) so the TAT badges can be seen. In **Settings > System and test mode** an Admin can:
 
 - simulate **MyLoans unavailable**;
 - turn on the **test-mode simulator** (shown on each Loan File's Journey tab);
@@ -71,7 +71,7 @@ Five Document Processors are seeded (no sign-in yet) so the LA can assign transa
 
 Never set in live. When on:
 
-- **Sample loans.** Home and Find a loan show three sample cards: PN-0001001, PN-0001003 and PN-0001004. Pressing a card only fills the PN box; the tester still presses Find loan, and nothing is saved until Open loan file. Each card shows "Opened" once a loan file exists, and "Try it" before that. All the other mock PNs still work when typed, but are not listed.
+- **Sample loans.** Home and Find a loan show three sample cards: GD1012026901001, GD1652026901003 and GD1652026901004. Pressing a card only fills the PN box; the tester still presses Find loan, and nothing is saved until Open loan file. Each card shows "Opened" once a loan file exists, and "Try it" before that. All the other mock PNs still work when typed, but are not listed.
 - **Settings > Test data.**
   - **Show data-check test PNs** (default off) lists the refusal and edge-case PNs as a second group on Find a loan.
   - Starting over is **Settings > Test kit** (the Manual Test Kit), on a local test setup with `gdfi_dms` only.
@@ -86,7 +86,7 @@ npm run test:e2e                 # Playwright at 1440, 820 and 390 px; starts it
 # Your own gdfi_dms is never used by a test run (see docs/ENVIRONMENT.md, "Two local databases").
 ```
 
-The integration tests (`tests/integration`) and the Playwright helpers (`tests/e2e/db.ts`) only run against the test database on `localhost`. They **remove all loan files** there before each test. Each test then opens its own loan file. Playwright also adds a Davao fixture, `PN-0009007`, to check that an LA gets 404 for another branch's file.
+The integration tests (`tests/integration`) and the Playwright helpers (`tests/e2e/db.ts`) only run against the test database on `localhost`. They **remove all loan files** there before each test. Each test then opens its own loan file. Playwright also adds a Davao fixture, `GD3902026909007`, to check that an LA gets 404 for another branch's file.
 
 ---
 
@@ -214,7 +214,7 @@ Full-height shells use `100dvh`. Checked with no horizontal scroll at 1440, 1280
 5. **Mortgage thresholds are fixed by Rule 4** (New PHP 500,000; Renewal PHP 1,000,000, inclusive). Loan types in Settings only change the display name.
 6. **Loan File fields keep the values used for the automatic decisions.** A refresh stores a new snapshot, updates `Retrieved at`, records field differences, and raises a **Source change** exception (LA and Supervisor notified, in-app and email outbox) only when the automatic result would change or the record fails the Data Check. Transactions are never changed by a refresh; a Supervisor override is the way to apply a change.
 7. **Checklist completeness** = every active Required item ticked and at least one item ticked in each One-of group. "Others" items are free text, present when added, and get a Document ID with type code `OTH`.
-8. **Document IDs** are generated when an item is first ticked; un-ticking keeps the ID (never reused) and moves the item back to Expected. Sequence is per PN and document type (`PN-0001001-ORCR-01`, `-02`, ...).
+8. **Document IDs** are generated when an item is first ticked; un-ticking keeps the ID (never reused) and moves the item back to Expected. Sequence is per PN and document type (`GD1012026901001-ORCR-01`, `-02`, ...).
 9. **Custody hand-over at Assign to DP:** labelled items become In Transit with the LA still accountable until the DP acknowledges (simulated "DP accepts").
 10. **Legal Docs Completion** is raised by the LA ("Request missing documents") and closes automatically when that checklist becomes complete.
 11. **Fund status** options: No funds needed, For funding, Funded (needs a released cash advance). Cash-advance limits come from Settings > Cash-advance rules.

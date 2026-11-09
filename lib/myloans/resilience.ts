@@ -1,4 +1,4 @@
-import type { MyLoansAdapter, MyLoansChanged, MyLoansLookup, MyLoansSearch } from "./types";
+import type { ListBranchesOptions, MyLoansAdapter, MyLoansBranches, MyLoansChanged, MyLoansLookup, MyLoansSearch } from "./types";
 import { UNAVAILABLE_MESSAGE } from "./types";
 
 /**
@@ -65,5 +65,10 @@ export class ResilientAdapter implements MyLoansAdapter {
   getChangedSince(since: Date, limit: number): Promise<MyLoansChanged> {
     if (!this.capabilities.changedSince) return this.inner.getChangedSince(since, limit);
     return this.run(() => this.inner.getChangedSince(since, limit), (message) => ({ ok: false, reason: "UNAVAILABLE", message }), (r) => !r.ok && r.reason === "UNAVAILABLE");
+  }
+  listBranches(o: ListBranchesOptions): Promise<MyLoansBranches> {
+    const inner = this.inner.listBranches?.bind(this.inner);
+    if (!inner || !this.capabilities.branches) return Promise.resolve({ ok: false, reason: "UNSUPPORTED", message: "MyLoans has no branch list yet. Use Import from MyLoans (a file)." });
+    return this.run(() => inner(o), (message) => ({ ok: false, reason: "UNAVAILABLE", message }), (r) => !r.ok && r.reason === "UNAVAILABLE");
   }
 }

@@ -5,6 +5,7 @@ import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { ADMIN_ROLE_KEY, KIND_PERMISSION, PERMISSIONS } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { UserError } from "./errors";
+import { branchWorkload } from "./branches";
 
 /**
  * Inactive instead of delete. Nothing in Settings or Users is ever deleted: a row is made inactive
@@ -104,8 +105,8 @@ export async function inactiveEffect(kind: StatusKind, id: string): Promise<stri
   switch (kind) {
     case "branch": {
       const b = await prisma.branch.findUniqueOrThrow({ where: { id } });
-      const open = await prisma.loan.count({ where: { branchId: id, stage: { in: OPEN_STAGES } } });
-      return `${b.name} has ${open} open loan file${open === 1 ? "" : "s"}. They stay as they are, but no new loan files can be opened for ${b.name}. Make inactive?`;
+      const { activeUsers, openLoans } = await branchWorkload(id);
+      return `${b.name} still has ${activeUsers} active user${activeUsers === 1 ? "" : "s"} and ${openLoans} open loan file${openLoans === 1 ? "" : "s"}. They stay as they are, but no new work can start at ${b.name} (no new loan files). Make inactive?`;
     }
     case "documentType": {
       const n = await prisma.checklistRule.count({ where: { documentTypeId: id } });
@@ -165,6 +166,9 @@ export async function setRowActive(user: CurrentUser, kind: StatusKind, id: stri
   const row = await loadRow(kind, id);
   if (!row) throw new UserError("Not found. It may have been changed by someone else.");
   if (row.active === active) return;
+  if (kind === "branch" && (await prisma.branch.findUnique({ where: { id }, select: { source: true } }))?.source === "MYLOANS") {
+    throw new UserError("This branch comes from MyLoans: it is switched off or on there, and the change reaches the Branch review.");
+  }
   if (!active) {
     const refusal = await inactiveRefusal(kind, row, user);
     if (refusal) throw new UserError(refusal, "active");

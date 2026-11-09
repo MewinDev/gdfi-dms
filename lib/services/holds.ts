@@ -9,6 +9,7 @@ import { adminIds, ownsTransaction } from "./jobs";
 import { currentStageIdFor } from "./job-stages";
 import { NotInScopeError, UserError } from "./errors";
 import { NO_OWNER, holdRemarksSchema, journeyHoldTransferred, mayAddDetails, mayResumeHold, onlyHolderMessage, remarksSchema, resumeRemarksSchema } from "@/lib/ui/holds";
+import { worksAtWhere } from "@/lib/branches/access";
 
 /**
  * Holds: a transaction waits on something that is not a fault (the borrower, another team, an LTO
@@ -155,7 +156,7 @@ export async function transferCandidates(u: CurrentUser, holdId: string): Promis
     where: {
       active: true, id: { notIn: [u.id, ...(h.ownerId ? [h.ownerId] : [])] },
       role: { active: true, ...(roleId ? { id: roleId } : {}), permissions: { has: kind === "DP" ? PERMISSIONS.JOBS_WORK : PERMISSIONS.CHECKLIST_TICK } },
-      ...(kind === "LA" ? { OR: [{ branches: { some: { branchId: h.loan.branchId } } }, { role: { branchAccess: "ALL" } }] } : {}),
+      ...(kind === "LA" ? worksAtWhere(h.loan.branchId) : {}),
     },
     orderBy: { name: "asc" }, select: { id: true, name: true },
   });

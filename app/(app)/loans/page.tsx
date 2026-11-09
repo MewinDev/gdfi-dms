@@ -45,20 +45,27 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
     stage: sp.stage || undefined,
     classification: sp.classification || undefined,
     branch: sp.branch || undefined,
+    area: sp.area || undefined,
     loanType: sp.loanType || undefined,
     tat: sp.tat || undefined,
     needsAction: sp.needsAction || undefined,
     holdReason: sp.holdReason || undefined,
     q: sp.q || undefined,
   };
-  const branches = await prisma.branch.findMany({ where: user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }, orderBy: { name: "asc" } });
+  // Filter choices: branches as "Name (code)" in the person's scope (hidden branches left out), and their Areas.
+  const branchRows = await prisma.branch.findMany({
+    where: { hidden: false, ...(user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }) }, orderBy: { name: "asc" },
+    select: { id: true, name: true, code: true, area: { select: { id: true, name: true } } },
+  });
+  const branches = branchRows.map((b) => ({ id: b.id, name: b.code ? `${b.name} (${b.code})` : b.name }));
+  const areas = [...new Map(branchRows.filter((b) => b.area).map((b) => [b.area!.id, { id: b.area!.id, name: b.area!.name }])).values()].sort((a, z) => a.name.localeCompare(z.name));
   // Each tab with its count (same filters).
   const perTab = await Promise.all(tabs.map((t) => listLoans(user, { ...f, tab: t.key })));
   const rows = perTab[tabs.findIndex((t) => t.key === f.tab)];
   const counts = Object.fromEntries(tabs.map((t, i) => [t.key, perTab[i].length]));
   return la
     ? <LaList f={f} sp={sp} rows={rows} branches={branches} counts={counts} />
-    : <AdminList user={user} f={f} rows={rows} branches={branches} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)} />;
+    : <AdminList user={user} f={f} rows={rows} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)} />;
 }
 
 function qs(f: LoanListFilters, over: Record<string, string | undefined>) {
@@ -172,18 +179,19 @@ async function holdReasonCounts(user: CurrentUser) {
   };
 }
 
-function AdminList({ user, f, rows, branches, tabs, counts, holds }: { user: CurrentUser; f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>> }) {
+function AdminList({ user, f, rows, branches, areas, byArea, tabs, counts, holds }: { user: CurrentUser; f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>> }) {
   const exportAllowed = can(user, PERMISSIONS.LOANS_EXPORT);
   const fields: FilterField[] = [
     { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, s]) },
     { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"]] },
+    { name: "area", label: "Area", value: f.area, options: areas.map((a) => [a.id, a.name]) },
     { name: "branch", label: "Branch", value: f.branch, options: branches.map((b) => [b.id, b.name]) },
     { name: "loanType", label: "Loan type", value: f.loanType, options: [["New", "New"], ["Renewal", "Renewal"]] },
     { name: "tat", label: "TAT", value: f.tat, options: TAT_OPTIONS },
     { name: "needsAction", label: "Needs action", value: f.needsAction, options: [["1", "Yes"]] },
     { name: "holdReason", label: "On hold", value: f.holdReason, options: holds.options },
   ];
-  const params = { tab: f.tab, stage: f.stage, classification: f.classification, branch: f.branch, loanType: f.loanType, tat: f.tat, needsAction: f.needsAction, holdReason: f.holdReason, q: f.q };
+  const params = { tab: f.tab, stage: f.stage, classification: f.classification, area: f.area, branch: f.branch, loanType: f.loanType, tat: f.tat, needsAction: f.needsAction, holdReason: f.holdReason, q: f.q, by: byArea ? "area" : undefined };
   const chips = activeChips(fields, params);
   const filtersOn = chips.length > 0 || !!f.q;
   return (
@@ -191,7 +199,7 @@ function AdminList({ user, f, rows, branches, tabs, counts, holds }: { user: Cur
       <PageHeader title="Loans" help="Read-only view of all branches." />
       <LoansToolbar
         search={{ action: "/loans", defaultValue: f.q ?? "", required: false, hidden: { ...params, q: undefined } }}
-        filters={{ fields, hidden: { tab: f.tab, q: f.q }, activeCount: chips.length, clearHref: clearAllHref(params) }}
+        filters={{ fields, hidden: { tab: f.tab, q: f.q, by: params.by }, activeCount: chips.length, clearHref: clearAllHref(params) }}
         exportHref={exportAllowed ? `/api/loans/export${qs(f, {})}` : undefined}
         resultCount={rows.length}
       />
@@ -207,10 +215,15 @@ function AdminList({ user, f, rows, branches, tabs, counts, holds }: { user: Cur
           ))}
         </nav>
       )}
-      <ResultLine count={rows.length} chips={chips} clearHref={clearAllHref(params)} extra={f.q ? ` matching "${f.q}"` : ""} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <ResultLine count={rows.length} chips={chips} clearHref={clearAllHref(params)} extra={f.q ? ` matching "${f.q}"` : ""} />
+        <Link href={listHref({ ...params, by: byArea ? undefined : "area" })} className="link inline-flex min-h-11 items-center text-sm" aria-pressed={byArea} data-group-by-area>
+          {byArea ? "Show as one list" : "Group by area and branch"}
+        </Link>
+      </div>
       {rows.length === 0
         ? <EmptyLoans filtersOn={filtersOn} clearHref={listHref({ tab: f.tab })} testMode={isTestMode()} />
-        : <LoanTable rows={rows} />}
+        : <LoanTable rows={rows} grouped={byArea} />}
     </div>
   );
 }

@@ -76,7 +76,7 @@ describe("Dependencies", () => {
 describe("In plain words", () => {
   it("summarises the switches", () => {
     const w = plainWords([P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.DP_SEND], "ASSIGNED");
-    expect(w).toContain("Can see loan files, find loans and open new loan files in assigned branches.");
+    expect(w).toContain("Can see loan files, find loans and open new loan files in the branches of their own access.");
     expect(w).toContain("Can tick papers.");
     expect(w).toContain("Can send to a processor.");
     expect(w).toContain("Cannot change Settings.");

@@ -20,15 +20,15 @@ export async function resetLoans() {
   }
 }
 
-/** A Davao loan file, to prove an LA cannot open another branch's file by URL. */
+/** A Alaminos loan file, to prove an LA cannot open another branch's file by URL. */
 export async function addDavaoFixture() {
-  const davao = await db.branch.findUniqueOrThrow({ where: { code: "DVO" } });
+  const davao = await db.branch.findUniqueOrThrow({ where: { code: "390" } });
   const admin = await db.user.findUniqueOrThrow({ where: { email: "test.admin@gdfi.ph" } });
   await db.loan.upsert({
-    where: { pn: "PN-0009007" },
+    where: { pn: "GD3902026909007" },
     update: {},
     create: {
-      pn: "PN-0009007", borrowerName: "E2E Davao Fixture", branchId: davao.id, loanType: "New", productName: "Auto Financing",
+      pn: "GD3902026909007", borrowerName: "E2E Alaminos Fixture", branchId: davao.id, loanType: "New", productName: "Auto Financing",
       totalReleasedAmount: 400000, releasedAt: new Date(), sourceStatus: "RELEASED", retrievedAt: new Date(), openedById: admin.id,
       classification: "REFINANCING", mortgageResult: "MORTGAGE", ruleFired: "E2E fixture", stage: "For checklist",
     },
@@ -54,11 +54,12 @@ export async function cleanSettingsTestRows() {
   await db.holidayCalendar.deleteMany({ where: { date: { startsWith: "2099-" } } });
   await db.user.deleteMany({ where: { email: { startsWith: "zz." } } });
   const reactivate = { active: true, deactivatedAt: null, deactivatedById: null };
-  await db.branch.updateMany({ where: { active: false }, data: reactivate });
+  // Alicia-Inactive (718) is inactive in the seed (MyLoans closed it): it stays so.
+  await db.branch.updateMany({ where: { active: false, code: { not: "718" } }, data: reactivate });
   await db.documentType.updateMany({ where: { active: false }, data: reactivate });
   await db.ltoOffice.updateMany({ where: { active: false }, data: reactivate });
   await db.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.la@gdfi.ph"] } }, data: reactivate });
-  await db.branch.update({ where: { code: "MKT" }, data: { name: "Makati" } });
+  await db.branch.update({ where: { code: "168" }, data: { name: "A. Mabini" } });
 }
 
 /** Removes custom roles the e2e tests add (names starting with Z or "Copy of") and their zz.* users. Test clean-up only. */

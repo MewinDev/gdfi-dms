@@ -33,18 +33,18 @@ async function noSideways(page: Page) {
   expect(over, `page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
 }
 
-/** LA opens PN-0001003 and sends Mortgage (needs funds: LTO fee) to the test DP, who accepts. */
+/** LA opens GD1652026901003 and sends Mortgage (needs funds: LTO fee) to the test DP, who accepts. */
 async function acceptedMortgageNeedingFunds(page: Page) {
   await signInAs(page, "la");
-  await page.goto("/loans?fill=PN-0001003");
+  await page.goto("/loans?fill=GD1652026901003");
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001003/);
-  const t = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code: "MORTGAGE" } } });
-  await page.goto(`/loans/PN-0001003?tab=todo&work=${t.id}`);
+  await expect(page).toHaveURL(/\/loans\/GD1652026901003/);
+  const t = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code: "MORTGAGE" } } });
+  await page.goto(`/loans/GD1652026901003?tab=todo&work=${t.id}`);
   const group = page.getByRole("group", { name: /papers$/ }).first();
   for (const box of await group.getByRole("checkbox").all()) if (!(await box.isChecked())) await box.check();
   await expect(page.locator('[id^="send-why-"]')).toHaveText(/funds question/);

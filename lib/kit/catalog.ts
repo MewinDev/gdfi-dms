@@ -3,9 +3,12 @@
  * creates them; docs/MANUAL-TEST-KIT.md is the test sheet; tests check the two agree.
  */
 
+import { buildPn } from "@/lib/pn/format";
+
 export const KIT_EMAIL_DOMAIN = "@example.test";
 
-export type KitAccountKey = "admin" | "finance" | "supervisor" | "la1" | "la2" | "laDavao" | "dp1" | "dp2" | "laMakati" | "laInactive" | "dp3" | "dp4" | "monitor";
+export type KitAccountKey = "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
+  | "areaSupervisor" | "laAreaExcept" | "laRoving" | "laAlicia";
 
 export interface KitAccount {
   key: KitAccountKey;
@@ -13,40 +16,52 @@ export interface KitAccount {
   name: string;
   /** Built-in role key, or SUPERVISOR for the kit's own "Branch Supervisor" role. */
   role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR";
-  branches: ("QC" | "CEB" | "DVO" | "MKT")[];
+  /** "ALL": All branches. Otherwise single-branch grants (the first is the home branch). */
+  branches: KitBranch[] | "ALL";
+  /** Extra grants: whole areas (Division, Area), and exceptions (branches unticked inside them). */
+  access?: { areas?: { division: string; area: string }[]; except?: KitBranch[]; home?: KitBranch };
   inactive?: boolean;
 }
 
-const ALL = ["QC", "CEB", "DVO", "MKT"] as KitAccount["branches"];
+export const KIT_L1 = { division: "Branch Division", area: "LUZON 1 (NGMA + RIZAL)" };
+
 
 export const KIT_ACCOUNTS: KitAccount[] = [
-  { key: "admin", email: `kit.admin${KIT_EMAIL_DOMAIN}`, name: "Admin", role: "ADMIN", branches: ALL },
-  { key: "finance", email: `kit.finance${KIT_EMAIL_DOMAIN}`, name: "Finance", role: "FIN", branches: ALL },
-  { key: "supervisor", email: `kit.supervisor${KIT_EMAIL_DOMAIN}`, name: "Branch Supervisor", role: "SUPERVISOR", branches: ["QC", "CEB"] },
-  { key: "la1", email: `kit.la1${KIT_EMAIL_DOMAIN}`, name: "LA 1", role: "LA", branches: ["QC", "CEB"] },
-  { key: "la2", email: `kit.la2${KIT_EMAIL_DOMAIN}`, name: "LA 2", role: "LA", branches: ["QC", "CEB"] },
-  { key: "laDavao", email: `kit.la.davao${KIT_EMAIL_DOMAIN}`, name: "LA Davao", role: "LA", branches: ["DVO"] },
-  { key: "dp1", email: `kit.dp1${KIT_EMAIL_DOMAIN}`, name: "DP 1", role: "DP", branches: ["QC", "CEB"] },
-  { key: "dp2", email: `kit.dp2${KIT_EMAIL_DOMAIN}`, name: "DP 2", role: "DP", branches: ["QC", "CEB"] },
-  { key: "laMakati", email: `kit.la.makati${KIT_EMAIL_DOMAIN}`, name: "Receiving LA Makati", role: "LA", branches: ["MKT"] },
-  { key: "laInactive", email: `kit.la.inactive${KIT_EMAIL_DOMAIN}`, name: "Inactive LA", role: "LA", branches: ["QC", "CEB"], inactive: true },
-  // Monitoring: a Davao processor on leave, a Makati processor with her own capacity, and Operations.
-  { key: "dp3", email: `kit.dp3${KIT_EMAIL_DOMAIN}`, name: "DP 3", role: "DP", branches: ["DVO"] },
-  { key: "dp4", email: `kit.dp4${KIT_EMAIL_DOMAIN}`, name: "DP 4", role: "DP", branches: ["MKT"] },
-  { key: "monitor", email: `kit.monitor${KIT_EMAIL_DOMAIN}`, name: "Operations Monitor", role: "MONITOR", branches: ALL },
+  { key: "admin", email: `kit.admin${KIT_EMAIL_DOMAIN}`, name: "Admin", role: "ADMIN", branches: "ALL" },
+  { key: "finance", email: `kit.finance${KIT_EMAIL_DOMAIN}`, name: "Finance", role: "FIN", branches: "ALL" },
+  { key: "supervisor", email: `kit.supervisor${KIT_EMAIL_DOMAIN}`, name: "Branch Supervisor", role: "SUPERVISOR", branches: ["101", "165"] },
+  { key: "la1", email: `kit.la1${KIT_EMAIL_DOMAIN}`, name: "LA 1", role: "LA", branches: ["101", "165"] },
+  { key: "la2", email: `kit.la2${KIT_EMAIL_DOMAIN}`, name: "LA 2", role: "LA", branches: ["101", "165"] },
+  { key: "laAlaminos", email: `kit.la.alaminos${KIT_EMAIL_DOMAIN}`, name: "LA Alaminos", role: "LA", branches: ["390"] },
+  { key: "dp1", email: `kit.dp1${KIT_EMAIL_DOMAIN}`, name: "DP 1", role: "DP", branches: ["101", "165"] },
+  { key: "dp2", email: `kit.dp2${KIT_EMAIL_DOMAIN}`, name: "DP 2", role: "DP", branches: ["101", "165"] },
+  { key: "laMabini", email: `kit.la.mabini${KIT_EMAIL_DOMAIN}`, name: "Receiving LA A. Mabini", role: "LA", branches: ["168"] },
+  { key: "laInactive", email: `kit.la.inactive${KIT_EMAIL_DOMAIN}`, name: "Inactive LA", role: "LA", branches: ["101", "165"], inactive: true },
+  // Monitoring: an Alaminos processor on leave, an A. Mabini processor with her own capacity, and Operations.
+  { key: "dp3", email: `kit.dp3${KIT_EMAIL_DOMAIN}`, name: "DP 3", role: "DP", branches: ["390"] },
+  { key: "dp4", email: `kit.dp4${KIT_EMAIL_DOMAIN}`, name: "DP 4", role: "DP", branches: ["168"] },
+  { key: "monitor", email: `kit.monitor${KIT_EMAIL_DOMAIN}`, name: "Operations Monitor", role: "MONITOR", branches: "ALL" },
+  // Branch access samples (Users, Edit, Branch access): a whole Area plus one extra branch, an Area with an
+  // exception, All branches, and a user of a branch that MyLoans closed (with an open loan there).
+  { key: "areaSupervisor", email: `kit.area.supervisor${KIT_EMAIL_DOMAIN}`, name: "Area Supervisor Luzon 1", role: "SUPERVISOR", branches: ["390"], access: { areas: [KIT_L1], home: "101" } },
+  { key: "laAreaExcept", email: `kit.la.luzon1${KIT_EMAIL_DOMAIN}`, name: "LA Luzon 1 (not Amang Rodriguez)", role: "LA", branches: [], access: { areas: [KIT_L1], except: ["174"], home: "165" } },
+  { key: "laRoving", email: `kit.la.roving${KIT_EMAIL_DOMAIN}`, name: "Roving LA", role: "LA", branches: "ALL" },
+  { key: "laAlicia", email: `kit.la.alicia${KIT_EMAIL_DOMAIN}`, name: "LA Alicia", role: "LA", branches: ["709", "718"] },
 ];
 
 /** The kit's own role for the hold transfer: no built-in Branch Supervisor role exists. */
 export const SUPERVISOR_ROLE_NAME = "Branch Supervisor";
 
-export type KitGroup = "Rules" | "Loan Associate" | "Exceptions" | "DP" | "Funds" | "TAT" | "MyLoans" | "Find loan" | "Monitoring";
+export type KitGroup = "Rules" | "Loan Associate" | "Exceptions" | "DP" | "Funds" | "TAT" | "MyLoans" | "Find loan" | "Monitoring" | "Branches";
 
 export interface KitLoan {
   pn: string;
+  /** The made-up sample PN it had before the real PN format (the old to new table in the test sheet). */
+  oldPn: string;
   /** Short name that says the case. */
   name: string;
   group: KitGroup;
-  branch: "QC" | "CEB" | "DVO" | "MKT";
+  branch: KitBranch;
   product: string;
   loanType: "New" | "Renewal";
   amount: number;
@@ -61,11 +76,14 @@ export interface KitLoan {
   picks?: { financingType: "UNDERTAKING" | "NON_UNDERTAKING"; orcrStatus: "TRANSFERRED" | "UNTRANSFERRED" };
   /** Who opened it (default LA 1). */
   openedBy?: KitAccountKey;
+  /** The branch code in the PN when it is not the loan's branch (the "unknown code" sample). */
+  pnBranch?: string;
 }
 
 const REFI = "Auto Refinancing";
-const L = (pn: number, name: string, group: KitGroup, over: Partial<KitLoan> = {}): KitLoan => ({
-  pn: `PN-000${pn}`, name, group, branch: "QC", product: REFI, loanType: "New", amount: 400_000, daysAgo: 0, borrower: "", opened: true, ...over,
+/** Real PN format: GD + the branch code + 2026 + 9 + a 5-digit running number (the old sample number). */
+const L = (n: number, name: string, group: KitGroup, over: Partial<KitLoan> = {}): KitLoan => ({
+  pn: buildPn(over.pnBranch ?? over.branch ?? "101", 2026, n), oldPn: n >= 2070 ? "(new)" : `PN-000${n}`, name, group, branch: "101", product: REFI, loanType: "New", amount: 400_000, daysAgo: 0, borrower: "", opened: true, ...over,
 });
 
 export const KIT_LOANS: KitLoan[] = [
@@ -77,8 +95,8 @@ export const KIT_LOANS: KitLoan[] = [
   L(2005, "Financing, Untransferred (Notary and EDST)", "Rules", { product: "Auto Financing", amount: 300_000, borrower: "Emilio Garcia", picks: { financingType: "UNDERTAKING", orcrStatus: "UNTRANSFERRED" } }),
   L(2006, "New at 500,000 (Mortgage)", "Rules", { amount: 500_000, borrower: "Fe Villanueva" }),
   L(2007, "New at 500,001 (no Mortgage)", "Rules", { amount: 500_001, borrower: "Gilbert Ramos" }),
-  L(2008, "Renewal at 1,000,000 (Mortgage)", "Rules", { branch: "CEB", loanType: "Renewal", amount: 1_000_000, borrower: "Hilda Aquino" }),
-  L(2009, "Renewal at 1,000,001 (no Mortgage)", "Rules", { branch: "CEB", loanType: "Renewal", amount: 1_000_001, borrower: "Ignacio Torres" }),
+  L(2008, "Renewal at 1,000,000 (Mortgage)", "Rules", { branch: "165", loanType: "Renewal", amount: 1_000_000, borrower: "Hilda Aquino" }),
+  L(2009, "Renewal at 1,000,001 (no Mortgage)", "Rules", { branch: "165", loanType: "Renewal", amount: 1_000_001, borrower: "Ignacio Torres" }),
   L(2010, "Auto Finance is not the word Financing (Refinancing)", "Rules", { product: "Auto Finance", amount: 600_000, borrower: "Josefa Lim" }),
 
   // Loan Associate journey.
@@ -100,7 +118,7 @@ export const KIT_LOANS: KitLoan[] = [
   L(2024, "Pasuyo (cash decision first)", "DP", { borrower: "Xavier Tan" }),
   L(2025, "Hold a supervisor can transfer", "Exceptions", { borrower: "Yolanda Perez" }),
   L(2026, "Problem at the LTO", "Exceptions", { borrower: "Zaldy Gomez" }),
-  L(2027, "Forwarded to a receiving LA (Makati)", "DP", { borrower: "Amparo Luna" }),
+  L(2027, "Forwarded to a receiving LA (A. Mabini)", "DP", { borrower: "Amparo Luna" }),
   L(2028, "Complete", "DP", { amount: 650_000, borrower: "Benito Rosales" }),
   L(2029, "Incomplete, back to the DP", "DP", { borrower: "Cora Medina" }),
 
@@ -134,21 +152,43 @@ export const KIT_LOANS: KitLoan[] = [
   L(2044, "MyLoans: replaced by a new PN", "MyLoans", { borrower: "Samuel Javier" }),
   L(2045, "Same borrower: first unit", "MyLoans", { borrower: "Teresita Gonzales", cin: "CIN-KIT-2045" }),
   L(2046, "Same borrower: additional unit (not opened)", "MyLoans", { borrower: "Teresita Gonzales", cin: "CIN-KIT-2045", opened: false }),
-  L(2047, "Davao branch (another branch)", "Loan Associate", { branch: "DVO", borrower: "Ulysses Bravo", openedBy: "laDavao" }),
+  L(2047, "Alaminos branch (another branch)", "Loan Associate", { branch: "390", borrower: "Ulysses Bravo", openedBy: "laAlaminos" }),
 
   // Monitoring (finished jobs with different times, an overdue job, a job at the LTO, a processor on leave).
   L(2060, "Monitoring: finished by DP 2 in 5 business days", "Monitoring", { borrower: "Alma Concepcion" }),
   L(2061, "Monitoring: finished by DP 2 in 1 business day", "Monitoring", { borrower: "Bernardo Yap" }),
-  L(2062, "Monitoring: finished by DP 4 in 4 business days (Makati)", "Monitoring", { branch: "MKT", borrower: "Clarissa Ong", openedBy: "laMakati" }),
-  L(2063, "Monitoring: DP 4 overdue, not accepted for 3 business days", "Monitoring", { branch: "MKT", borrower: "Dominador Reyes", openedBy: "laMakati" }),
-  L(2064, "Monitoring: DP 4 at LTO Makati now", "Monitoring", { branch: "MKT", borrower: "Estela Marquez", openedBy: "laMakati" }),
-  L(2065, "Monitoring: sent to DP 3 before the leave (Davao)", "Monitoring", { branch: "DVO", borrower: "Florante Diaz", openedBy: "laDavao" }),
+  L(2062, "Monitoring: finished by DP 4 in 4 business days (A. Mabini)", "Monitoring", { branch: "168", borrower: "Clarissa Ong", openedBy: "laMabini" }),
+  L(2063, "Monitoring: DP 4 overdue, not accepted for 3 business days", "Monitoring", { branch: "168", borrower: "Dominador Reyes", openedBy: "laMabini" }),
+  L(2064, "Monitoring: DP 4 at LTO Makati now", "Monitoring", { branch: "168", borrower: "Estela Marquez", openedBy: "laMabini" }),
+  L(2065, "Monitoring: sent to DP 3 before the leave (Alaminos)", "Monitoring", { branch: "390", borrower: "Florante Diaz", openedBy: "laAlaminos" }),
 
   // Find loan.
   L(2050, "Not opened yet: open it from Find loan", "Find loan", { borrower: "Vilma Estrada", opened: false }),
+
+  // Branches and the PN format.
+  L(2070, "Unknown branch code 777 in the PN (loan at Antipolo)", "Branches", { borrower: "Wenceslao Ramirez", opened: false, pnBranch: "777" }),
+  L(2071, "MyLoans moved it to another branch: waiting for review", "Branches", { borrower: "Ximena Robles" }),
+  L(2072, "Opened at Antipolo, now at Angono (branch change applied)", "Branches", { borrower: "Yasmin Dela Paz" }),
+  L(2073, "Open loan at a branch MyLoans closed (Alicia-Inactive)", "Branches", { branch: "718", borrower: "Zosimo Tolentino", openedBy: "laAlicia" }),
 ];
 
-/** The new PN the MyLoans "replaced" simulation gives PN-0002044 (the first free number from 9100). */
-export const KIT_REPLACEMENT_PN = "PN-0009100";
+/** MyLoans branch changes waiting in the Branch review (sample MyLoans list): a rename and a code change. */
+export const KIT_BRANCH_CHANGES = {
+  rename: { branchId: 3, code: "174", from: "Amang Rodriguez", to: "Amang Rodriguez - Pasig" },
+  code: { branchId: 398, name: "Alicia", from: "709", to: "710" },
+} as const;
 
-export const BRANCH_NAMES = { QC: "Quezon City", CEB: "Cebu", DVO: "Davao", MKT: "Makati" } as const;
+/** A PN typed the way people paste it (the test sheet): spaces, dashes and lower case. */
+export const KIT_PASTED_PN = { typed: "gd 101-2026-9-02050", pn: "GD1012026902050" } as const;
+
+/** The new PN the MyLoans "replaced" simulation gives GD1012026902044 (the first free number from 9100). */
+export const KIT_REPLACEMENT_PN = "GD1012026909100";
+
+/** The kit's branches (real MyLoans branches; see lib/branches/builtin.ts). */
+export const BRANCH_NAMES = { "101": "Antipolo", "165": "Angono", "390": "Alaminos", "168": "A. Mabini", "174": "Amang Rodriguez", "189": "Angono - Car Financing", "709": "Alicia", "718": "Alicia-Inactive" } as const;
+export type KitBranch = keyof typeof BRANCH_NAMES;
+
+/** The old made-up sample branches and the real branches that replaced them. */
+export const OLD_BRANCHES: { old: string; code: KitBranch }[] = [
+  { old: "Quezon City (QC)", code: "101" }, { old: "Cebu (CEB)", code: "165" }, { old: "Davao (DVO)", code: "390" }, { old: "Makati (MKT)", code: "168" },
+];

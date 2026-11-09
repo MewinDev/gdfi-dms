@@ -6,22 +6,16 @@ import { execSync } from "node:child_process";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
+import { CURRENT_USER_INCLUDE, toCurrentUser } from "@/lib/auth/build-user";
 import { resetTestData } from "@/lib/services/test-data";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { effectivePermissions } from "@/lib/auth/access";
 import { setSetting } from "@/lib/settings";
 
 const url = process.env.DATABASE_URL ?? "";
 if (!/@(localhost|127\.0\.0\.1)[:/]/.test(url)) throw new Error("Integration tests only run against a local database.");
 
 async function asUser(email: string): Promise<CurrentUser> {
-  const u = await prisma.user.findUniqueOrThrow({ where: { email }, include: { role: true, branches: { include: { branch: true } } } });
-  const permissions = effectivePermissions(u.role) as Set<string>; // same rule as the app
-  const branchIds = u.branches.map((b) => b.branchId);
-  return {
-    id: u.id, email: u.email, name: u.name, roleKey: u.role.key, roleName: u.role.name, permissions, branchIds,
-    branchNames: u.branches.map((b) => b.branch.name), scopeBranchIds: u.role.branchAccess === "ALL" ? null : branchIds,
-  };
+  return toCurrentUser(await prisma.user.findUniqueOrThrow({ where: { email }, include: CURRENT_USER_INCLUDE }));
 }
 
 let admin: CurrentUser;
@@ -55,8 +49,8 @@ describe("Reset test data", () => {
 
   it("removes loan files, keeps users and writes exactly one audit row", async () => {
     // Each test opens its own loan file.
-    await openLoanFile(la, { pn: "PN-0001001" });
-    await openLoanFile(la, { pn: "PN-0001004", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
+    await openLoanFile(la, { pn: "GD1012026901001" });
+    await openLoanFile(la, { pn: "GD1652026901004", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     const usersBefore = await prisma.user.count();
     const branchesBefore = await prisma.branch.count();
     const rulesBefore = await prisma.checklistRule.count();

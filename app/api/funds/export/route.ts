@@ -26,14 +26,14 @@ export async function GET(req: NextRequest) {
       ...(tab === "all" ? {} : { status: { in: FUNDS_TAB_STATUS[tab] as never } }),
     },
     include: {
-      requestedBy: { select: { id: true, name: true } }, branch: { select: { name: true } }, returns: true,
+      requestedBy: { select: { id: true, name: true } }, branch: { select: { name: true, code: true, area: { select: { name: true } } } }, returns: true,
       lines: { include: { receipts: true, transaction: { include: { loan: { select: { pn: true } }, type: { select: { name: true } } } } } },
     },
     orderBy: { createdAt: "asc" },
   });
   const settle = await cashToSettleIds(rows.filter((a) => OPEN_ADVANCE.includes(a.status)).map((a) => ({ id: a.id, status: a.status, requestedById: a.requestedBy.id, lines: a.lines })));
   const csv = fundsCsv(rows.map((a) => ({
-    number: a.number, typeCode: a.fundsTypeCode, typeName: a.fundsTypeName, status: a.status, processor: a.requestedBy.name, branch: a.branch.name,
+    number: a.number, typeCode: a.fundsTypeCode, typeName: a.fundsTypeName, status: a.status, processor: a.requestedBy.name, branch: a.branch.name, branchCode: a.branch.code ?? "", area: a.branch.area?.name ?? "",
     requestedCents: a.requestedCents, approvedCents: a.approvedCents, releasedCents: a.releasedCents,
     receiptCents: a.lines.flatMap((l) => l.receipts).reduce((s, r) => s + r.cents, 0), returnedCents: a.returns.reduce((s, r) => s + r.cents, 0),
     releasedOn: a.releasedAt ? businessDate(a.releasedAt) : "", releaseRef: a.releaseRef, transferDate: a.transferDate,

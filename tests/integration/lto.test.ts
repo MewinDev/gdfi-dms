@@ -41,8 +41,8 @@ afterAll(async () => {
 });
 
 async function ready(code: string) {
-  await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
-  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+  await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
+  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
   const txn = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code } }, include: { checks: true } });
   await saveChecklist(la, { transactionId: txn.id, checkedIds: txn.checks.map((c) => c.id), newOthers: [] });
   return { loan, txn };
@@ -76,7 +76,7 @@ describe("Needs LTO processing", () => {
       await prisma.transactionType.update({ where: { code: "NOTARY" }, data: { needsLto: true } });
     }
     const custom = await prisma.transactionType.create({ data: { code: "ZCOURIER", name: "Z Courier", requiresDp: true, needsLto: true, ownerRole: "DP", sortOrder: 90 } });
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
     await addCustomTransaction(la, { loanId: loan.id, typeId: custom.id });
     const ct = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, typeId: custom.id } });
     await saveChecklist(la, { transactionId: ct.id, checkedIds: [], newOthers: [] });
@@ -171,12 +171,12 @@ describe("LTO office list and the branch's usual office", () => {
     expect(plan.counts).toMatchObject({ changed: 1, problem: 0 });
     await runImport(admin, "lto", "l.csv", file);
     expect(await prisma.ltoOffice.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ distanceKm: 20, travelHours: null, suggestedTransportCents: 40000, active: true });
-    const branch = await prisma.branch.findUniqueOrThrow({ where: { code: "CEB" } });
+    const branch = await prisma.branch.findUniqueOrThrow({ where: { code: "165" } });
     try {
-      await saveSettingsRow(admin, "branch", branch.id, { code: "CEB", name: branch.name, usualLtoOfficeId: t.id });
+      await saveSettingsRow(admin, "branch", branch.id, { code: "165", name: branch.name, usualLtoOfficeId: t.id });
       expect((await prisma.branch.findUniqueOrThrow({ where: { id: branch.id } })).usualLtoOfficeId).toBe(t.id);
     } finally {
-      await prisma.branch.update({ where: { id: branch.id }, data: { usualLtoOfficeId: null } });
+      await prisma.branch.update({ where: { id: branch.id }, data: { usualLtoOfficeId: branch.usualLtoOfficeId } });
     }
   });
 });

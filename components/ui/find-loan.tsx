@@ -9,7 +9,7 @@ import { LiveFindInput } from "./live-find-input";
  */
 export function FindLoan({
   defaultValue = "", autoFocus = false, strong = false, action = "/search", hidden = {}, buttonLabel = "Find loan", required = true,
-  placeholder = "PN number, e.g. PN-0001001", suggest,
+  placeholder = "PN number, e.g. GD1012026901001", suggest,
 }: {
   /** Live MyLoans suggestions (Find loan for the Loan Associate). */
   suggest?: { exactOnly: boolean };
@@ -31,7 +31,7 @@ export function FindLoan({
           <span className="text-navy"><SearchIcon size={20} /></span>
           {suggest ? (
             <LiveFindInput defaultValue={defaultValue} autoFocus={autoFocus} required={required} exactOnly={suggest.exactOnly}
-              placeholder={suggest.exactOnly ? "Whole PN, e.g. PN-0001001" : "PN or borrower name, e.g. PN-0001001"}
+              placeholder={suggest.exactOnly ? "Whole PN, e.g. GD1012026901001" : "PN or borrower name, e.g. GD1012026901001"}
               className="h-[50px] w-full min-w-0 bg-transparent text-base text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none sm:text-[17px]" />
           ) : (
             <input

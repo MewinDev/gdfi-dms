@@ -16,8 +16,8 @@ test("fresh start: Home shows the empty state and the three sample loans", async
 
   // Home has no search box: a card opens My loans with the PN in its box. Nothing is searched or saved.
   await samples.getByRole("button", { name: /Ana Villanueva/ }).click();
-  await expect(page).toHaveURL(/\/loans\?fill=PN-0001003/);
-  await expect(visibleSearchBox(page)).toHaveValue("PN-0001003");
+  await expect(page).toHaveURL(/\/loans\?fill=GD1652026901003/);
+  await expect(visibleSearchBox(page)).toHaveValue("GD1652026901003");
   await expect(visibleSearchBox(page)).toBeFocused();
   expect(await db.loan.count()).toBe(0);
 });
@@ -28,18 +28,18 @@ test("Find a loan: only the 3 samples are listed; a card fills the box; other mo
   const samples = page.getByRole("region", { name: "Sample loans" });
   const cards = samples.getByRole("button");
   await expect(cards).toHaveCount(3);
-  for (const s of ["PN-0001001", "PN-0001003", "PN-0001004"]) await expect(samples.getByText(new RegExp(s))).toBeVisible();
+  for (const s of ["GD1012026901001", "GD1652026901003", "GD1652026901004"]) await expect(samples.getByText(new RegExp(s))).toBeVisible();
   for (const c of await cards.all()) await expect(c).toContainText("Try it");
-  await expect(page.getByText("PN-0001008")).toHaveCount(0);
+  await expect(page.getByText("GD1652026901008")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Data-check samples" })).toHaveCount(0);
 
   await samples.getByRole("button", { name: /Maria Santos/ }).click();
   const box = page.getByRole("main").getByLabel("Find a loan");
-  await expect(box).toHaveValue("PN-0001001");
+  await expect(box).toHaveValue("GD1012026901001");
   expect(await db.loan.count()).toBe(0);
 
   // Not listed, but still works when typed: refused by the Data Check, nothing saved.
-  await box.fill("PN-0001008");
+  await box.fill("GD1652026901008");
   await page.getByRole("main").getByRole("button", { name: /^Find/ }).click();
   await expect(page.getByText("This loan is not released yet.")).toBeVisible();
   expect(await db.loan.count()).toBe(0);
@@ -48,9 +48,9 @@ test("Find a loan: only the 3 samples are listed; a card fills the box; other mo
 test("Admin: Show data-check test PNs; starting over is the Test kit, which is not offered on the test database", async ({ page }) => {
   // Something to reset
   await signIn(page, "la");
-  await page.goto("/search?q=PN-0001001");
+  await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001001/);
+  await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
   await page.context().clearCookies();
 
   await signIn(page, "admin");
@@ -65,7 +65,7 @@ test("Admin: Show data-check test PNs; starting over is the Test kit, which is n
   await signIn(page, "la");
   await page.goto("/loans");
   const extra = page.getByRole("region", { name: "Data-check samples" });
-  await expect(extra.getByText("PN-9999999")).toBeVisible();
+  await expect(extra.getByText("GD1012026999999")).toBeVisible();
   await expect(extra.getByText(/Not released yet/)).toBeVisible();
 
   // Turn it back off

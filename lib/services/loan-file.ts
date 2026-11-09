@@ -4,7 +4,9 @@ import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getMyLoansAdapter, looksLikePn, type MyLoansRecord } from "@/lib/myloans";
+import { getMyLoansAdapter, type MyLoansRecord } from "@/lib/myloans";
+import { getPnFormat, parsePn, pnHeadline } from "@/lib/pn";
+import { reportUnknownBranchCode, resolveLoanBranch } from "./branches";
 import { runDataCheck, type DataCheckField } from "@/lib/myloans/data-check";
 import {
   classifyProductName,
@@ -29,7 +31,7 @@ import { UserError } from "./errors";
 
 export type PnLookupResult =
   | { kind: "existing"; pn: string; refreshed: boolean; refreshMessage?: string }
-  | { kind: "invalid"; message: string }
+  | { kind: "invalid"; message: string; part?: string }
   | { kind: "not_found"; pn: string; message: string }
   | { kind: "unavailable"; pn: string; message: string }
   | { kind: "refused"; pn: string; field: DataCheckField; fieldLabel: string; message: string; record: MyLoansRecord }
@@ -52,9 +54,9 @@ export type PnLookupResult =
 
 /** Inactive branch or loan type (Settings): no NEW loan files. Existing loan files are not affected. */
 async function inactiveRefusal(record: MyLoansRecord): Promise<{ field: DataCheckField; fieldLabel: string; message: string } | null> {
-  const branch = await prisma.branch.findFirst({ where: { name: { equals: record.branchName ?? "", mode: "insensitive" } } });
-  if (branch && !branch.active) {
-    return { field: "branch", fieldLabel: "Inactive branch", message: `${branch.name} is inactive in Settings, so no new loan files can be opened for it.` };
+  const branch = await resolveLoanBranch(prisma, record);
+  if (branch && (!branch.active || branch.hidden)) {
+    return { field: "branch", fieldLabel: "Inactive branch", message: `${branch.name}${branch.code ? ` (${branch.code})` : ""} is ${branch.hidden ? "hidden" : "inactive"} in Settings, so no new loan files can be opened for it.` };
   }
   const lt = record.loanType ? await prisma.loanType.findUnique({ where: { code: record.loanType } }) : null;
   if (lt && !lt.active) {
@@ -63,14 +65,38 @@ async function inactiveRefusal(record: MyLoansRecord): Promise<{ field: DataChec
   return null;
 }
 
-async function allowedBranchNames(user: CurrentUser): Promise<string[] | null> {
-  return user.scopeBranchIds === null ? null : user.branchNames;
+function allowedBranches(user: CurrentUser): { code: string | null; name: string }[] | null {
+  return user.scopeBranchIds === null ? null : user.branchNames.map((name, i) => ({ name, code: user.branchCodes[i] ?? null }));
+}
+
+/**
+ * The shared PN check (Settings, System, PN format): a wrong PN never reaches MyLoans. Returns the PN as
+ * it will be stored, or the message naming the wrong part.
+ */
+async function pnOf(input: string): Promise<{ ok: true; pn: string } | { ok: false; message: string; part: string }> {
+  const f = await getPnFormat();
+  const r = parsePn(input, f);
+  return r.ok ? { ok: true, pn: r.pn } : { ok: false, message: `${pnHeadline(f)}. ${r.message}`, part: r.part };
+}
+
+/**
+ * Codes MyLoans uses that no DMS branch has (the PN's "opened at" code, the loan's branch code): the
+ * Branch review is told; the lookup is never blocked by it.
+ */
+async function noteUnknownCodes(rec: MyLoansRecord) {
+  const f = await getPnFormat();
+  const p = parsePn(rec.pn, f);
+  const codes = new Map<string, string | null>();
+  if (p.ok && p.parts) codes.set(p.parts.branchCode, null);
+  if (rec.branchCode && /^\d{3}$/.test(rec.branchCode)) codes.set(rec.branchCode, rec.branchName);
+  for (const [code, name] of codes) await reportUnknownBranchCode(code, rec.pn, name).catch(() => null);
 }
 
 export async function lookupPn(user: CurrentUser, input: string): Promise<PnLookupResult> {
   if (!can(user, PERMISSIONS.LOANS_SEARCH)) throw new UserError("You do not have permission to search MyLoans.");
-  const pn = looksLikePn(input);
-  if (!pn) return { kind: "invalid", message: 'Enter a PN Number such as "PN-0001001".' };
+  const checked = await pnOf(input);
+  if (!checked.ok) return { kind: "invalid", message: checked.message, part: checked.part };
+  const pn = checked.pn;
 
   // Existing Loan File: open it and refresh from MyLoans. Rules never run again.
   const existing = await prisma.loan.findUnique({ where: { pn }, select: { id: true, branchId: true } });
@@ -91,7 +117,8 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
       ? { kind: "not_found", pn, message: lookup.message }
       : { kind: "unavailable", pn, message: lookup.message };
   }
-  const check = runDataCheck(lookup.record, { allowedBranchNames: await allowedBranchNames(user), today: businessDate(new Date()) });
+  await noteUnknownCodes(lookup.record);
+  const check = runDataCheck(lookup.record, { allowedBranches: allowedBranches(user), today: businessDate(new Date()) });
   if (!check.ok) {
     return { kind: "refused", pn, field: check.field, fieldLabel: check.fieldLabel, message: check.message, record: lookup.record };
   }
@@ -139,8 +166,9 @@ export interface OpenLoanInput {
 
 export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Promise<{ pn: string; alreadyOpen: boolean }> {
   if (!can(user, PERMISSIONS.LOANS_OPEN)) throw new UserError("Your role does not allow opening loan files.");
-  const pn = looksLikePn(input.pn);
-  if (!pn) throw new UserError('Enter a PN Number such as "PN-0001001".', "pn");
+  const checked = await pnOf(input.pn);
+  if (!checked.ok) throw new UserError(checked.message, "pn");
+  const pn = checked.pn;
 
   const already = await prisma.loan.findUnique({ where: { pn }, select: { branchId: true } });
   if (already) {
@@ -151,12 +179,16 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
   // Never trust the preview: call MyLoans again and re-run the Data Check on the server.
   const lookup = await getMyLoansAdapter().getByPn(pn);
   if (!lookup.ok) throw new UserError(lookup.message, "pn");
-  const check = runDataCheck(lookup.record, { allowedBranchNames: await allowedBranchNames(user), today: businessDate(new Date()) });
+  const check = runDataCheck(lookup.record, { allowedBranches: allowedBranches(user), today: businessDate(new Date()) });
   if (!check.ok) throw new UserError(check.message, check.field);
   const off = await inactiveRefusal(lookup.record);
   if (off) throw new UserError(off.message, off.field);
-  const branch = await prisma.branch.findFirst({ where: { name: { equals: lookup.record.branchName ?? "", mode: "insensitive" } } });
-  if (!branch || !inScope(user, branch.id)) throw new UserError("Outside your branch access.", "branch");
+  const branch = await resolveLoanBranch(prisma, lookup.record);
+  if (!branch) {
+    await noteUnknownCodes(lookup.record);
+    throw new UserError(`MyLoans puts this loan at ${lookup.record.branchName ?? "a branch"}${lookup.record.branchCode ? ` (${lookup.record.branchCode})` : ""}, which is not a branch here yet. Admin was told (Branch review).`, "branch");
+  }
+  if (!inScope(user, branch.id)) throw new UserError("Outside your branch access.", "branch");
 
   let outcome: RuleOutcome;
   try {
@@ -210,7 +242,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
         actor, mode: "MANUAL", action: "loan_file_opened", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn,
         journeyStep: "1.4",
         summary: `Opened Loan File from the MyLoans record (retrieved ${lookup.retrievedAt.toISOString()})`,
-        after: { pn, branch: branch.name, loanType: check.normalized.loanType, amount: check.normalized.totalReleasedAmount, productName: check.normalized.productName },
+        after: { pn, branch: branch.name, branchCode: branch.code, loanType: check.normalized.loanType, amount: check.normalized.totalReleasedAmount, productName: check.normalized.productName },
         details: { dataCheck: "passed", adapter: lookup.adapter },
       });
 

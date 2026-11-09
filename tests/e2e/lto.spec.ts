@@ -25,13 +25,13 @@ async function noSideways(page: Page) {
   expect(over, `page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
 }
 async function openPn3(page: Page) {
-  await page.goto("/loans?fill=PN-0001003");
+  await page.goto("/loans?fill=GD1652026901003");
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001003/);
+  await expect(page).toHaveURL(/\/loans\/GD1652026901003/);
 }
 
 async function cleanOffices() {
@@ -110,9 +110,9 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   // LA: open the loan file; the branch's usual LTO office is pre-selected for Notary.
   await signInAs(page, "la");
   await openPn3(page);
-  const loan = await db.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" }, include: { branch: true } });
+  const loan = await db.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" }, include: { branch: true } });
   await db.branch.update({ where: { id: loan.branchId }, data: { usualLtoOfficeId: mandaue.id } });
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const papers = page.getByRole("group", { name: /papers$/ }).first();
   for (const box of await papers.getByRole("checkbox").all()) if (!(await box.isChecked())) await box.check();
   const why = page.locator('[id^="send-why-"]');
@@ -138,11 +138,11 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   if (await late.count()) await late.fill("Test run");
   await page.getByRole("button", { name: /^Send to (?!processor)/ }).click();
   await page.getByRole("dialog", { name: "Send it now?" }).getByRole("button", { name: "Send", exact: true }).click();
-  const txn = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code: "NOTARY" } } });
+  const txn = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code: "NOTARY" } } });
   await expect.poll(async () => (await db.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } })).status).toBe("ASSIGNED");
 
   // EDST: done by the LA, no processor, so no LTO office is asked.
-  await page.goto("/loans/PN-0001003?tab=todo&tx=EDST");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=EDST");
   await expect(page.getByRole("region", { name: "EDST", exact: true })).toBeVisible();
   await expect(page.getByLabel("LTO office", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "No LTO office chosen" })).toHaveCount(0);
@@ -150,7 +150,7 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await noSideways(page);
 
   // Sent card: "At Z LTO Mandaue"; the LA changes the office before the processor accepts.
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const job = page.getByRole("region", { name: "Notary: job" });
   await expect(job.locator("[data-lto-chip]")).toHaveText("At Z LTO Mandaue");
   await job.getByRole("button", { name: "Change LTO office" }).click();
@@ -161,9 +161,9 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   const dp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
   expect(await db.notification.count({ where: { userId: dp.id, title: { contains: "LTO office changed" } } })).toBe(1);
   // The Transactions list stays short (one pill, one line); the office is in the transaction detail.
-  await page.goto("/loans/PN-0001003?tab=todo");
+  await page.goto("/loans/GD1652026901003?tab=todo");
   await expect(page.locator("[data-txn-row=NOTARY]")).not.toContainText("LTO");
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   await expect(page.locator("[data-lto-chip]").filter({ visible: true }).first()).toHaveText("At Z LTO Cebu City");
 
   // DP: accept; "Process at" with the estimate; change it after accepting (a note is required).

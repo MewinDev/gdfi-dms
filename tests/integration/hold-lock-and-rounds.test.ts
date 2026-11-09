@@ -25,7 +25,7 @@ import { setSetting } from "@/lib/settings";
 import { allPapers, asUser, cleanLoans } from "./helpers";
 
 let la: CurrentUser, dp: CurrentUser, admin: CurrentUser, la2: CurrentUser;
-const PN = "PN-0001003";
+const PN = "GD1652026901003";
 const REMARKS = "Waiting for the client to sign page 2";
 
 beforeAll(async () => {

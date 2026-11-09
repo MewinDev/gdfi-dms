@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { can, loanScope, requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getMyLoansAdapter, looksLikePn } from "@/lib/myloans";
+import { getMyLoansAdapter } from "@/lib/myloans";
+import { examplePn, getPnFormat, isPnAttempt, parsePn, pnHeadline } from "@/lib/pn";
 import { lookupPn, type PnLookupResult } from "@/lib/services/loan-file";
 import { TRANSACTION_LABEL } from "@/lib/rules";
 import { dayText, peso, stageWords, txnName } from "@/lib/ui/plain";
@@ -33,9 +34,13 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
       })
     : null;
 
-  // PN: open the existing loan file (refreshed), or look it up in MyLoans
-  const pn = q ? looksLikePn(q) : null;
+  // PN: the shared check first (Settings, System, PN format). A wrong PN never reaches MyLoans.
+  const fmt = await getPnFormat();
+  const parsed = parsePn(q, fmt);
+  const pn = parsed.ok && (parsed.parts || isPnAttempt(q, { ...fmt, enabled: true })) ? parsed.pn : null;
+  const badPn = !doc && !parsed.ok && isPnAttempt(q, fmt) ? parsed.message : null;
   let result: PnLookupResult | null = null;
+  // PN: open the existing loan file (refreshed), or look it up in MyLoans
   if (!doc && pn) {
     const existing = await prisma.loan.findFirst({ where: { pn, ...loanScope(user) }, select: { pn: true } });
     if (can(user, PERMISSIONS.LOANS_SEARCH)) {
@@ -49,7 +54,7 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
   // CIN / CIF / part of a PN, among loan files
   // Loan files here: prefix first (the PN index), then part of a PN or the borrower's name (trigram indexes); at most 20.
   const include = { branch: true, documents: { where: { documentId: { not: null } }, orderBy: { documentId: "asc" as const } } };
-  const searchLocal = q && !doc && (!result || result.kind === "invalid");
+  const searchLocal = q && !doc && !badPn && (!result || result.kind === "invalid");
   const prefix = searchLocal
     ? await prisma.loan.findMany({
         where: { ...loanScope(user), OR: [{ pn: { startsWith: q, mode: "insensitive" } }, { cin: { equals: q, mode: "insensitive" } }, { cif: { equals: q, mode: "insensitive" } }, { borrowerName: { startsWith: q, mode: "insensitive" } }] },
@@ -79,6 +84,12 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
 
     <div className={`grid w-full gap-6 ${showSide ? "xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start" : ""}`}>
       <div className="flex min-w-0 flex-col gap-6">
+      {badPn && (
+        <div role="alert" className="card border-l-4 border-l-[var(--bad-fg)] p-5 text-[15px]" data-pn-error>
+          <p className="font-semibold text-navy">{pnHeadline(fmt)}</p>
+          <p className="mt-1 text-ink-2" data-pn-part>{badPn}</p>
+        </div>
+      )}
       {result?.kind === "preview" ? (
         <Preview r={result} />
       ) : result && result.kind !== "invalid" ? (
@@ -92,10 +103,10 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
         </section>
       )}
 
-      {q && !doc && !result && matches.length === 0 && (
+      {q && !doc && !badPn && !result && matches.length === 0 && (
         <div role="status" className="card p-5 text-[15px]">
           <p className="font-semibold text-navy">We could not find &ldquo;{q}&rdquo;.</p>
-          <p className="mt-1 text-ink-2">Type the full PN number, for example PN-0001001. You can also use a CIN, CIF or the code printed on a label.</p>
+          <p className="mt-1 text-ink-2">Type the full PN number, for example {examplePn(fmt)}. You can also use a CIN, CIF or the code printed on a label.</p>
         </div>
       )}
 
@@ -105,7 +116,7 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
             <Avatar name={m.borrowerName} />
             <span className="min-w-0 flex-1 leading-snug">
               <span className="block text-base font-bold">{m.borrowerName}</span>
-              <span className="block text-sm text-ink-2">{m.pn} · {m.branch.name} · CIN {m.cin}</span>
+              <span className="block text-sm text-ink-2"><span className="font-mono">{m.pn}</span> · {m.branch.code ? `${m.branch.name} (${m.branch.code})` : m.branch.name} · CIN {m.cin}</span>
             </span>
             <span className="hidden text-sm font-semibold sm:block">{stageWords(m.stage)}</span>
             <span className="btn-ghost">Open</span>

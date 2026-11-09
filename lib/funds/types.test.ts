@@ -73,15 +73,15 @@ describe("Funds types (pure rules)", () => {
 
 describe("Funds CSV", () => {
   const row = {
-    number: "CA-2026-0001", typeCode: "FT", typeName: "Fund transfer", status: "RELEASED", processor: "Joy", branch: "Quezon City",
+    number: "CA-2026-0001", typeCode: "FT", typeName: "Fund transfer", status: "RELEASED", processor: "Joy", branch: "Antipolo", branchCode: "101", area: "LUZON 1 (NGMA + RIZAL)",
     requestedCents: 350_000, approvedCents: 350_000, releasedCents: 350_000, receiptCents: 100_000, returnedCents: 0, releasedOn: "2026-11-09",
-    releaseRef: "FT-1", transferDate: "2026-11-09", accountProvider: "BPI", accountName: "Joy", accountLast4: "4821", liquidateBy: "2026-11-23", cashToSettle: false, lines: "LTO fee PN-0001003 Mortgage",
+    releaseRef: "FT-1", transferDate: "2026-11-09", accountProvider: "BPI", accountName: "Joy", accountLast4: "4821", liquidateBy: "2026-11-23", cashToSettle: false, lines: "LTO fee GD1652026901003 Mortgage",
   };
   it("has a Type column and the account ending only", () => {
     expect(FUNDS_CSV_HEADER.slice(0, 3)).toEqual(["Number", "Type", "Type name"]);
     const [head, line] = fundsCsv([row]).split("\r\n");
     expect(head).toBe(FUNDS_CSV_HEADER.join(","));
-    expect(line.startsWith("CA-2026-0001,FT,Fund transfer,RELEASED,")).toBe(true);
+    expect(line.startsWith("CA-2026-0001,FT,Fund transfer,RELEASED,Joy,Antipolo,101,LUZON 1 (NGMA + RIZAL),")).toBe(true);
     expect(line).toContain("\"BPI, Joy, ending 4821\"");
     expect(line).toContain("\"₱2,500.00\""); // balance
   });

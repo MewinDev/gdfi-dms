@@ -30,7 +30,7 @@ import { businessDate } from "@/lib/time";
 import { asUser, cleanLoans, workStages, allPapers } from "./helpers";
 
 let la: CurrentUser, dp: CurrentUser, dp2: CurrentUser, fin: CurrentUser, admin: CurrentUser, laDvo: CurrentUser;
-const PN = "PN-0001003"; // Cebu
+const PN = "GD1652026901003"; // Angono
 const today = () => businessDate(new Date());
 
 beforeAll(async () => {
@@ -39,10 +39,10 @@ beforeAll(async () => {
   dp2 = await asUser("dp.paolo@gdfi.ph");
   fin = await asUser("test.finance@gdfi.ph");
   admin = await asUser("test.admin@gdfi.ph");
-  // A Loan Associate who works only at Davao (another branch than the loan's).
+  // A Loan Associate who works only at Alaminos (another branch than the loan's).
   const role = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
-  const dvo = await prisma.branch.findUniqueOrThrow({ where: { code: "DVO" } });
-  const u = await prisma.user.upsert({ where: { email: "it.la.davao@gdfi.ph" }, create: { email: "it.la.davao@gdfi.ph", name: "IT Davao LA", roleId: role.id, isTestUser: true }, update: { active: true, roleId: role.id } });
+  const dvo = await prisma.branch.findUniqueOrThrow({ where: { code: "390" } });
+  const u = await prisma.user.upsert({ where: { email: "it.la.davao@gdfi.ph" }, create: { email: "it.la.davao@gdfi.ph", name: "IT Alaminos LA", roleId: role.id, isTestUser: true }, update: { active: true, roleId: role.id } });
   await prisma.userBranch.deleteMany({ where: { userId: u.id } });
   await prisma.userBranch.create({ data: { userId: u.id, branchId: dvo.id } });
   laDvo = await asUser("it.la.davao@gdfi.ph");
@@ -304,8 +304,8 @@ describe("Forward to branch (manual, never automatic) and the receiving LA", () 
     expect((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } })).status).toBe("IN_PROCESS"); // never automatic
     await expect(forwardJob(dp, job.id, { branchId: "", receivingLaId: la.id })).rejects.toThrow("Choose the branch.");
     await expect(forwardJob(dp, job.id, { branchId: loan.branchId, receivingLaId: "" })).rejects.toThrow("Choose the Loan Associate.");
-    const dvo = await prisma.branch.findUniqueOrThrow({ where: { code: "DVO" } });
-    await expect(forwardJob(dp, job.id, { branchId: dvo.id, receivingLaId: la.id })).rejects.toThrow("Choose a Loan Associate who is active at Davao.");
+    const dvo = await prisma.branch.findUniqueOrThrow({ where: { code: "390" } });
+    await expect(forwardJob(dp, job.id, { branchId: dvo.id, receivingLaId: la.id })).rejects.toThrow("Choose a Loan Associate who is active at Alaminos.");
     await expect(forwardJob(dp, job.id, { branchId: loan.branchId, receivingLaId: dp2.id })).rejects.toThrow(/Choose a Loan Associate who is active/);
   });
 
@@ -314,21 +314,21 @@ describe("Forward to branch (manual, never automatic) and the receiving LA", () 
     const { job, txn } = await verified();
     await workStages(dp, job.id);
     await completeJob(dp, job.id, {});
-    const dvo = await prisma.branch.findUniqueOrThrow({ where: { code: "DVO" } });
+    const dvo = await prisma.branch.findUniqueOrThrow({ where: { code: "390" } });
     await forwardJob(dp, job.id, { branchId: dvo.id, receivingLaId: laDvo.id, note: "Original OR inside" });
     const moved = await prisma.documentMovement.findFirstOrThrow({ where: { action: "FORWARDED_TO_BRANCH", documentItem: { transactionId: txn.id } } });
-    expect(moved.location).toBe("Forwarded to IT Davao LA, Davao");
+    expect(moved.location).toBe("Forwarded to IT Alaminos LA, Alaminos");
     expect(await prisma.notification.count({ where: { userId: laDvo.id, title: { contains: "package forwarded to you" } } })).toBe(1);
     expect(await prisma.emailOutbox.count({ where: { event: "package_moved", userId: laDvo.id, createdAt: { gte: since } } })).toBe(1);
     const todo = await packagesFor(laDvo);
     expect(todo).toHaveLength(1);
-    expect(todo[0]).toMatchObject({ pn: PN, branch: "Davao", href: `/receive/${job.id}` });
+    expect(todo[0]).toMatchObject({ pn: PN, branch: "Alaminos", href: `/receive/${job.id}` });
     expect(todo[0].tat?.text).toMatch(/of 2|Due today|Processing/); // the 2 business day receiving target
-    // The loan's own LA (Cebu) is not the one asked; the Davao LA receives it.
+    // The loan's own LA (Angono) is not the one asked; the Alaminos LA receives it.
     await expect(receivePackage(la, job.id, { result: "complete", note: "" })).rejects.toThrow();
     await receivePackage(laDvo, job.id, { result: "complete", note: "" });
     expect((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } })).status).toBe("COMPLETED");
-    expect((await prisma.documentItem.findFirstOrThrow({ where: { transactionId: txn.id, documentId: { not: null } } })).location).toBe("Davao branch");
+    expect((await prisma.documentItem.findFirstOrThrow({ where: { transactionId: txn.id, documentId: { not: null } } })).location).toBe("Alaminos branch");
     expect(await prisma.notification.count({ where: { userId: dp.id, title: { contains: "papers received" } } })).toBe(1);
     expect(await packagesFor(laDvo)).toHaveLength(0);
   });
@@ -357,7 +357,7 @@ describe("Forward to branch (manual, never automatic) and the receiving LA", () 
   });
 
   it("forwarding does not wait for liquidation; the vault gate opens from real DP output once funds are settled", async () => {
-    // Every transaction of PN-0001003 done for real: EDST by the LA, the others by the DP.
+    // Every transaction of GD1652026901003 done for real: EDST by the LA, the others by the DP.
     await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: PN }, include: { transactions: { include: { type: true } } } });
     const { completeLaTransaction, recordEdst } = await import("@/lib/services/workflow");

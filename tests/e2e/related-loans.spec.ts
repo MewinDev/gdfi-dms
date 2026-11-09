@@ -6,7 +6,7 @@ import { db, resetLoans } from "./db";
  * the no-payment confirmation, and Copy reusable papers for an additional unit. Mock MyLoans.
  */
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin" } as const;
-const OLD = "PN-0001003";
+const OLD = "GD1652026901003";
 
 async function signInAs(page: Page, who: keyof typeof BUTTONS) {
   await page.context().clearCookies();
@@ -30,7 +30,7 @@ async function newPn(pn: string, over: Record<string, unknown> = {}) {
   const row = await db.setting.findUnique({ where: { key: "myloans.mockExtra" } });
   const list = ((row?.value as unknown[]) ?? []).slice();
   list.push({
-    pn, cin: "CIN-771003", cif: "CIF-551003", sourceLoanId: `ML-${pn}`, borrowerName: "Ana Villanueva", branchName: "Cebu", branchCode: "CEB", status: "RELEASED",
+    pn, cin: "CIN-771003", cif: "CIF-551003", sourceLoanId: `ML-${pn}`, borrowerName: "Ana Villanueva", branchName: "Angono", branchCode: "165", status: "RELEASED",
     loanType: "Renewal", productName: "Auto Financing", totalReleasedAmount: 1_000_000, releaseDate: today(),
     vehicle: { plateNo: "NAB 1003", engineNo: "ENG-90003", chassisNo: "CHS-70003", make: "Toyota Vios" }, ...over,
   });
@@ -70,11 +70,11 @@ test("Additional unit: Related loans says Additional; Copy reusable papers copie
   await openPn(page, OLD);
   await tickAll(page, "NOTARY");
   await tickAll(page, "MORTGAGE");
-  await newPn("PN-0009301", { totalReleasedAmount: 900_000, vehicle: { plateNo: "NEW 9301", engineNo: "E9301", chassisNo: "C9301", make: "Toyota Wigo" } });
-  await page.goto("/search?q=PN-0009301");
+  await newPn("GD1012026909301", { totalReleasedAmount: 900_000, vehicle: { plateNo: "NEW 9301", engineNo: "E9301", chassisNo: "C9301", make: "Toyota Wigo" } });
+  await page.goto("/search?q=GD1012026909301");
   await expect(page.locator("[data-other-loans]")).toContainText(`This borrower has another loan: ${OLD}`);
-  await openPn(page, "PN-0009301");
-  await page.goto("/loans/PN-0009301?tab=todo");
+  await openPn(page, "GD1012026909301");
+  await page.goto("/loans/GD1012026909301?tab=todo");
   await expect(related(page)).toContainText("Related loans (1)");
   await expect(related(page).locator('[data-related-row="ADDITIONAL"]')).toContainText(OLD);
   await expect(related(page)).not.toContainText("₱"); // no amounts without journey:view_amounts
@@ -83,7 +83,7 @@ test("Additional unit: Related loans says Additional; Copy reusable papers copie
   await noSideways(page);
 
   await signInAs(page, "admin");
-  await page.goto("/loans/PN-0009301?tab=todo");
+  await page.goto("/loans/GD1012026909301?tab=todo");
   await expect(related(page)).toContainText("₱1,000,000");
   const card = page.locator('[data-copy-papers="additional"]');
   await expect(card).toContainText(`Copy reusable papers from ${OLD}`);
@@ -103,9 +103,9 @@ test("Additional unit: Related loans says Additional; Copy reusable papers copie
 test("Replacement: the review pop-up asks to confirm no payment; linked, both files say so", async ({ page }) => {
   await signInAs(page, "la");
   await openPn(page, OLD);
-  await newPn("PN-0009302");
-  await openPn(page, "PN-0009302");
-  await page.goto("/loans/PN-0009302?tab=todo");
+  await newPn("GD1012026909302");
+  await openPn(page, "GD1012026909302");
+  await page.goto("/loans/GD1012026909302?tab=todo");
   await expect(related(page).locator('[data-related-row="ADDITIONAL"]')).toContainText(OLD); // still active: not a replacement yet
   await change(OLD, { status: "CANCELLED" });
 
@@ -116,7 +116,7 @@ test("Replacement: the review pop-up asks to confirm no payment; linked, both fi
   await page.goto(`/loans/${OLD}?tab=todo&review=1`);
   const review = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
   const repl = review.locator("[data-source-replacement]");
-  await expect(repl).toContainText("Possible replacement: PN-0009302");
+  await expect(repl).toContainText("Possible replacement: GD1012026909302");
   await expect(repl).toContainText("Matches: Product name, Loan type, Amount, Plate number, Chassis number, Engine number");
   await expect(repl.locator("[data-confirm-no-payment]")).toContainText("I confirmed no payment was made on the old PN");
   await review.getByLabel("Note (required)").fill("Unit issue found after release");
@@ -126,10 +126,10 @@ test("Replacement: the review pop-up asks to confirm no payment; linked, both fi
   await expect(review.locator("[data-source-error]")).toContainText("I confirmed no payment was made on the old PN");
   await repl.locator("[data-confirm-no-payment]").getByRole("checkbox").check();
   await review.getByRole("button", { name: "Link as replacement" }).click();
-  await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: "PN-0009302" } })).replacesPn).toBe(OLD);
-  expect((await db.loan.findUniqueOrThrow({ where: { pn: "PN-0009302" } })).replacementEvidence).toMatch(/confirmed no payment was made on PN-0001003/);
+  await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: "GD1012026909302" } })).replacesPn).toBe(OLD);
+  expect((await db.loan.findUniqueOrThrow({ where: { pn: "GD1012026909302" } })).replacementEvidence).toMatch(/confirmed no payment was made on GD1652026901003/);
   await page.goto(`/loans/${OLD}?tab=todo`);
-  await expect(page.locator("[data-replaced-by]")).toHaveText("Replaced by PN-0009302");
+  await expect(page.locator("[data-replaced-by]")).toHaveText("Replaced by GD1012026909302");
   await expect(related(page).locator('[data-related-row="REPLACES"]')).toContainText("Replaces this loan");
   await related(page).scrollIntoViewIfNeeded();
   await shot(page, "related-replacement");

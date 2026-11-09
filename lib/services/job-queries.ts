@@ -26,6 +26,9 @@ export interface JobRow {
   pn: string;
   borrower: string;
   branch: string;
+  /** The loan's branch code (3 digits) and Area, for reports and CSV. */
+  branchCode: string | null;
+  area: string;
   typeCode: string;
   typeName: string;
   dpName: string;
@@ -54,7 +57,7 @@ export interface JobRow {
 }
 
 const include = {
-  loan: { select: { pn: true, borrowerName: true, replacesPn: true, branch: { select: { name: true } } } },
+  loan: { select: { pn: true, borrowerName: true, replacesPn: true, branch: { select: { name: true, code: true, area: { select: { name: true } } } } } },
   dpUser: { select: { name: true } },
   secondaryDpUser: { select: { name: true } },
   pasuyoEvents: { orderBy: { createdAt: "desc" }, take: 1, select: { fromLabel: true, toLabel: true } },
@@ -96,7 +99,7 @@ export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = 
       ? doneTat(t.type.code, a.decidedAt, a.forwardedAt ?? a.closedAt ?? now, tats, holidays)
       : tab === "returned" ? null : txnTat(t, tats, holidays, now);
     return {
-      id: a.id, pn: a.loan.pn, borrower: a.loan.borrowerName, branch: a.loan.branch.name, typeCode: t.type.code, typeName: t.type.name,
+      id: a.id, pn: a.loan.pn, borrower: a.loan.borrowerName, branch: a.loan.branch.name, branchCode: a.loan.branch.code, area: a.loan.branch.area?.name ?? "", typeCode: t.type.code, typeName: t.type.name,
       dpName: a.dpUser.name, tab, endorsedAt: a.endorsedAt, tat, funds: txnFunds(t), fundsType: txnFundsType(t),
       problem: p ? { id: p.id, reason: p.reason.name, days: Math.max(1, problemDays([p], holidays, now)), outsideControl: p.outsideControl } : null,
       problemDaysTotal: problemDays(t.problems, holidays, now),

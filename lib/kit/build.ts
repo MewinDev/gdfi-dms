@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { effectivePermissions } from "@/lib/auth/access";
+import { CURRENT_USER_INCLUDE, toCurrentUser } from "@/lib/auth/build-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getHolidaySet, setSetting } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
@@ -13,14 +13,20 @@ import { stageRows, verifiablePapers } from "@/lib/services/job-stages";
 import { returnToLa } from "@/lib/services/return-to-la";
 import { addReceipt, changeFundsType, closeAdvance, decideAdvance, notifyOverdue, releaseAdvance, requestAdvance } from "@/lib/services/funds";
 import { raiseHold } from "@/lib/services/holds";
-import { simulateSourceChange } from "@/lib/services/source-sync";
+import { applySourceChange, simulateSourceChange } from "@/lib/services/source-sync";
+import { acceptReview, importBranchRowsAsSystem, runBranchSync } from "@/lib/services/branches";
+import { BUILTIN_BRANCHES, BUILTIN_USUAL_LTO, KIT_BRANCH_FILE } from "@/lib/branches/builtin";
+import { looksLikeTestBranch } from "@/lib/branches/file";
+import { readKitBranchFile } from "@/lib/branches/kit-file";
 import { saveRole } from "@/lib/services/roles";
 import { saveDpCapacity } from "@/lib/services/dp-capacity";
 import { fileAdvisory, resolveAdvisory } from "@/lib/services/lto-advisories";
 import { saveSettingsRow } from "@/lib/services/admin";
 import { setRowActive } from "@/lib/services/settings-status";
-import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_LOANS, SUPERVISOR_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
+import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, SUPERVISOR_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
 import { kitRefusal } from "./guard";
+import { branchGrants, writeUserAccess, type AccessInput } from "@/lib/services/access";
+import type { GrantLike } from "@/lib/branches/access";
 import { shiftBusinessDays } from "./rebase";
 
 /**
@@ -35,19 +41,28 @@ type Users = Record<KitAccountKey, CurrentUser>;
 type Log = (line: string) => void;
 
 async function asUser(email: string): Promise<CurrentUser> {
-  const u = await prisma.user.findUniqueOrThrow({ where: { email }, include: { role: true, branches: { include: { branch: true } } } });
-  const branchIds = u.branches.map((b) => b.branchId);
-  return {
-    id: u.id, email: u.email, name: u.name, roleKey: u.role.key, roleName: u.role.name, permissions: effectivePermissions(u.role) as Set<string>, branchIds,
-    branchNames: u.branches.map((b) => b.branch.name), scopeBranchIds: u.role.branchAccess === "ALL" ? null : branchIds,
-  };
+  return toCurrentUser(await prisma.user.findUniqueOrThrow({ where: { email }, include: CURRENT_USER_INCLUDE }));
+}
+
+/** A kit account's branch access: All, single branches, whole areas (by division and area name) and exceptions. */
+async function kitAccess(a: (typeof KIT_ACCOUNTS)[number], branchId: (code: string) => Promise<string>): Promise<AccessInput> {
+  if (a.branches === "ALL") return { all: true, grants: [], homeBranchId: null };
+  const grants: GrantLike[] = branchGrants(await Promise.all(a.branches.map(branchId)));
+  for (const g of a.access?.areas ?? []) {
+    const area = await prisma.area.findFirstOrThrow({ where: { name: g.area } });
+    const division = await prisma.division.findFirstOrThrow({ where: { name: g.division } });
+    grants.push({ kind: "AREA", divisionId: division.id, areaId: area.id, branchId: null, exclude: false });
+  }
+  for (const code of a.access?.except ?? []) grants.push({ kind: "BRANCH", divisionId: null, areaId: null, branchId: await branchId(code), exclude: true });
+  const home = a.access?.home ?? a.branches[0];
+  return { all: false, grants, homeBranchId: home ? await branchId(home) : null };
 }
 
 async function createAccounts(log: Log): Promise<Users> {
   const branchId = async (code: string) => (await prisma.branch.findUniqueOrThrow({ where: { code } })).id;
   const create = async (a: (typeof KIT_ACCOUNTS)[number], roleId: string) => {
-    const branches = await Promise.all(a.branches.map(branchId));
-    await prisma.user.create({ data: { email: a.email, name: a.name, roleId, isTestUser: true, branches: { create: branches.map((id) => ({ branchId: id })) } } });
+    const made = await prisma.user.create({ data: { email: a.email, name: a.name, roleId, isTestUser: true } });
+    await prisma.$transaction(async (tx) => writeUserAccess(tx, made.id, await kitAccess(a, branchId)));
   };
   const roleId = async (key: string) => (await prisma.role.findUniqueOrThrow({ where: { key } })).id;
   // The Admin first: it makes the kit's Branch Supervisor role through the Roles screen's own code.
@@ -85,11 +100,35 @@ async function sourceRecords(today: string, holidays: ReadonlySet<string>) {
   await setSetting("myloans.mockExtra", records);
 }
 
+/**
+ * The kit's branches, through the same import code as Settings, Branches, Import from MyLoans: the real
+ * MyLoans list (storage/kit/myloans-branches.csv, Git-ignored) when it is there, otherwise the built-in
+ * subset. The sample branches of the subset are always added (Alicia-Inactive is not in the export). Rows
+ * that look like test or unused branches are left out, so a manual Import shows them as suggestions.
+ */
+async function importKitBranches(log: Log) {
+  const file = readKitBranchFile();
+  const codes = new Set((file?.rows ?? []).map((r) => r.code));
+  const rows = [...(file?.rows ?? []).filter((r) => !looksLikeTestBranch(r)), ...BUILTIN_BRANCHES.filter((r) => !codes.has(r.code))];
+  const r = await importBranchRowsAsSystem(rows, file ? KIT_BRANCH_FILE : "built-in subset");
+  for (const [code, lto] of Object.entries(BUILTIN_USUAL_LTO)) {
+    const office = await prisma.ltoOffice.findUnique({ where: { code: lto } });
+    if (office) await prisma.branch.updateMany({ where: { code }, data: { usualLtoOfficeId: office.id } });
+  }
+  const [d, a, b] = await Promise.all([prisma.division.count(), prisma.area.count(), prisma.branch.count()]);
+  log(file
+    ? `Imported the real MyLoans branch list from ${KIT_BRANCH_FILE}: ${d} divisions, ${a} areas, ${b} branches (${r.applied} added; ${file.rows.filter(looksLikeTestBranch).length} test-looking rows left for the Import preview${file.problems ? `; ${file.problems} rows with a problem skipped` : ""}).`
+    : `Imported the built-in branch subset (${KIT_BRANCH_FILE} not found): ${d} divisions, ${a} areas, ${b} branches.`);
+}
+
 export async function buildSamples(log: Log = console.log): Promise<void> {
   const why = kitRefusal();
   if (why) throw new Error(why);
   const today = businessDate(new Date());
   const holidays = await getHolidaySet();
+  await importKitBranches(log);
+  // Alicia-Inactive was still open when its loan was opened; MyLoans closes it below (Branch review).
+  await prisma.branch.update({ where: { code: "718" }, data: { active: true, deactivatedAt: null, deactivatedById: null } });
   const u = await createAccounts(log);
   await sourceRecords(today, holidays);
   await setSetting("email.active", false);
@@ -99,9 +138,10 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
   // ---- helpers (each one is the same call a screen makes) ----
   const loan = (pn: string) => prisma.loan.findUniqueOrThrow({ where: { pn } });
   const txn = (pn: string, code: string) => prisma.loanTransaction.findFirstOrThrow({ where: { loan: { pn }, type: { code } }, include: { checks: { include: { rule: true }, orderBy: { createdAt: "asc" } } } });
+  /** The branch's usual LTO office (Settings, Branches), as the Send panel pre-selects it. */
   const office = async (pn: string) => {
     const l = await prisma.loan.findUniqueOrThrow({ where: { pn }, include: { branch: true } });
-    return (await prisma.ltoOffice.findFirstOrThrow({ where: { active: true, code: `LTO-${l.branch.code}` } })).id;
+    return l.branch.usualLtoOfficeId ?? (await prisma.ltoOffice.findFirstOrThrow({ where: { active: true, code: "LTO-QC" } })).id;
   };
   const open = (l: KitLoan) => openLoanFile(u[l.openedBy ?? "la1"], { pn: l.pn, financingType: l.picks?.financingType, orcrStatus: l.picks?.orcrStatus });
   const tick = async (by: CurrentUser, pn: string, code: string, leave: string[] = []) => {
@@ -183,42 +223,42 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
 
   const cases: Record<string, () => Promise<unknown>> = {
     // Loan Associate
-    "PN-0002011": () => tick(u.la1, "PN-0002011", "MORTGAGE"),
-    "PN-0002012": async () => {
-      const t = await txn("PN-0002012", "NOTARY");
+    "GD1012026902011": () => tick(u.la1, "GD1012026902011", "MORTGAGE"),
+    "GD1012026902012": async () => {
+      const t = await txn("GD1012026902012", "NOTARY");
       const missing = t.checks.find((c) => c.required)!;
-      await tick(u.la1, "PN-0002012", "NOTARY", [missing.id]);
+      await tick(u.la1, "GD1012026902012", "NOTARY", [missing.id]);
       await requestMissingDocuments(u.la1, { transactionId: t.id, checkIds: [missing.id], askedFrom: "BORROWER", note: "The borrower brings it on Monday." });
     },
-    "PN-0002013": async () => {
-      await raiseHold(u.la1, { transactionId: (await txn("PN-0002013", "NOTARY")).id, reasonId: await reason.hold("CLIENT-PAPERS"), note: "Waiting for the signed deed of sale from the borrower." });
-      await raiseHold(u.la2, { transactionId: (await txn("PN-0002013", "PPSR")).id, reasonId: await reason.hold("BRANCH-HEAD"), note: "Branch head to approve the PPSR fee first." });
+    "GD1012026902013": async () => {
+      await raiseHold(u.la1, { transactionId: (await txn("GD1012026902013", "NOTARY")).id, reasonId: await reason.hold("CLIENT-PAPERS"), note: "Waiting for the signed deed of sale from the borrower." });
+      await raiseHold(u.la2, { transactionId: (await txn("GD1012026902013", "PPSR")).id, reasonId: await reason.hold("BRANCH-HEAD"), note: "Branch head to approve the PPSR fee first." });
     },
-    "PN-0002014": () => send("PN-0002014", "NOTARY", u.dp1),
-    "PN-0002015": () => send("PN-0002015", "NOTARY", u.dp1),
-    "PN-0002016": () => send("PN-0002016", "NOTARY", u.dp2),
-    "PN-0002017": async () => {
-      const { t, job } = await accepted("PN-0002017", "NOTARY", u.dp1);
+    "GD1012026902014": () => send("GD1012026902014", "NOTARY", u.dp1),
+    "GD1012026902015": () => send("GD1012026902015", "NOTARY", u.dp1),
+    "GD1012026902016": () => send("GD1012026902016", "NOTARY", u.dp2),
+    "GD1012026902017": async () => {
+      const { t, job } = await accepted("GD1012026902017", "NOTARY", u.dp1);
       const id = t.checks.find((c) => c.required && /ID/i.test(c.rule?.label ?? ""))?.id ?? t.checks.find((c) => c.required)!.id;
       await returnToLa(u.dp1, job.id, { reasonId: await reason.ret("MISSING"), checkIds: [id], note: "The ID copy is unreadable. Bring a clear copy.", handedOver: await papers(t.id) });
     },
-    "PN-0002018": async () => {
-      const { t, job } = await accepted("PN-0002018", "NOTARY", u.dp1);
+    "GD1012026902018": async () => {
+      const { t, job } = await accepted("GD1012026902018", "NOTARY", u.dp1);
       await returnToLa(u.dp1, job.id, { reasonId: await reason.ret("OTHER"), note: "The deed of sale must be signed on every page.", handedOver: await papers(t.id) });
       await confirmPapersBack(u.la1, { transactionId: t.id, notReceived: [] });
-      await send("PN-0002018", "NOTARY", u.dp1); // round 2, waiting for DP 1
+      await send("GD1012026902018", "NOTARY", u.dp1); // round 2, waiting for DP 1
     },
-    "PN-0002019": async () => {
-      const { job } = await send("PN-0002019", "NOTARY", u.dp1, { by: u.laInactive });
-      await declineJob(u.dp1, job.id, { reasons: ["Wrong job for me"], remarks: "This one is for the Cebu processor." });
+    "GD1012026902019": async () => {
+      const { job } = await send("GD1012026902019", "NOTARY", u.dp1, { by: u.laInactive });
+      await declineJob(u.dp1, job.id, { reasons: ["Wrong job for me"], remarks: "This one is for the Angono processor." });
       await setRowActive(u.admin, "user", u.laInactive.id, false); // the sender has since left
     },
     // DP stages
-    "PN-0002020": async () => { const { job } = await accepted("PN-0002020", "NOTARY", u.dp1); await work(u.dp1, job.id, 1); },
-    "PN-0002021": async () => { const { job } = await accepted("PN-0002021", "PPSR", u.dp1); await work(u.dp1, job.id, 1); },
-    "PN-0002022": async () => { const { job } = await accepted("PN-0002022", "MORTGAGE", u.dp1); await work(u.dp1, job.id, 1); },
-    "PN-0002023": async () => {
-      const { job } = await accepted("PN-0002023", "NOTARY", u.dp1);
+    "GD1012026902020": async () => { const { job } = await accepted("GD1012026902020", "NOTARY", u.dp1); await work(u.dp1, job.id, 1); },
+    "GD1012026902021": async () => { const { job } = await accepted("GD1012026902021", "PPSR", u.dp1); await work(u.dp1, job.id, 1); },
+    "GD1012026902022": async () => { const { job } = await accepted("GD1012026902022", "MORTGAGE", u.dp1); await work(u.dp1, job.id, 1); },
+    "GD1012026902023": async () => {
+      const { job } = await accepted("GD1012026902023", "NOTARY", u.dp1);
       await work(u.dp1, job.id, "VERIFY");
       const a = await loadAssignment(prisma, job.id);
       const v = (await stageRows(prisma, a)).find((r) => r.kind === "VERIFY")!;
@@ -228,102 +268,110 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
       await verifyPaper(u.dp1, job.id, vid, docs[0].id);
       await somethingMissing(u.dp1, job.id, vid, [docs[1].id], "Not in the folder that came back from the notary.");
     },
-    "PN-0002024": async () => { await accepted("PN-0002024", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("PN-0002024", u.dp1, "released"); },
-    "PN-0002025": async () => {
-      const { t } = await accepted("PN-0002025", "NOTARY", u.dp1);
+    "GD1012026902024": async () => { await accepted("GD1012026902024", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("GD1012026902024", u.dp1, "released"); },
+    "GD1012026902025": async () => {
+      const { t } = await accepted("GD1012026902025", "NOTARY", u.dp1);
       await raiseHold(u.dp1, { transactionId: t.id, reasonId: await reason.hold("CLIENT-DECISION"), note: "The borrower is deciding whether to add a co-maker." });
     },
-    "PN-0002026": async () => {
-      const { t } = await accepted("PN-0002026", "NOTARY", u.dp1);
+    "GD1012026902026": async () => {
+      const { t } = await accepted("GD1012026902026", "NOTARY", u.dp1);
       await raiseProblem(u.dp1, { transactionId: t.id, reasonId: await reason.problem("LTO_DOWN"), note: "LTO system down the whole morning." });
     },
-    "PN-0002027": async () => {
-      const { job } = await accepted("PN-0002027", "NOTARY", u.dp1);
+    "GD1012026902027": async () => {
+      const { job } = await accepted("GD1012026902027", "NOTARY", u.dp1);
       await work(u.dp1, job.id, "ALL");
       await completeJob(u.dp1, job.id, {});
-      await forwardJob(u.dp1, job.id, { branchId: (await prisma.branch.findUniqueOrThrow({ where: { code: "MKT" } })).id, receivingLaId: u.laMakati.id, note: "The borrower collects at Makati." });
+      await forwardJob(u.dp1, job.id, { branchId: (await prisma.branch.findUniqueOrThrow({ where: { code: "168" } })).id, receivingLaId: u.laMabini.id, note: "The borrower collects at A. Mabini." });
     },
-    "PN-0002028": async () => {
-      const e = await tick(u.la1, "PN-0002028", "EDST");
+    "GD1012026902028": async () => {
+      const e = await tick(u.la1, "GD1012026902028", "EDST");
       await recordEdst(u.la1, { transactionId: e.id, reference: "EDST-2028" });
-      const { job } = await accepted("PN-0002028", "NOTARY", u.dp1);
+      const { job } = await accepted("GD1012026902028", "NOTARY", u.dp1);
       await work(u.dp1, job.id, "ALL");
       await completeJob(u.dp1, job.id, {});
-      await forwardJob(u.dp1, job.id, { branchId: (await loan("PN-0002028")).branchId, receivingLaId: u.la1.id });
+      await forwardJob(u.dp1, job.id, { branchId: (await loan("GD1012026902028")).branchId, receivingLaId: u.la1.id });
       await receivePackage(u.la1, job.id, { result: "complete", note: "" });
     },
-    "PN-0002029": async () => {
-      const { job } = await accepted("PN-0002029", "NOTARY", u.dp1);
+    "GD1012026902029": async () => {
+      const { job } = await accepted("GD1012026902029", "NOTARY", u.dp1);
       await work(u.dp1, job.id, "ALL");
       await completeJob(u.dp1, job.id, {});
-      await forwardJob(u.dp1, job.id, { branchId: (await loan("PN-0002029")).branchId, receivingLaId: u.la1.id });
+      await forwardJob(u.dp1, job.id, { branchId: (await loan("GD1012026902029")).branchId, receivingLaId: u.la1.id });
       await receivePackage(u.la1, job.id, { result: "incomplete", note: "The notarized deed of sale is missing from the package." });
     },
     // Funds
-    "PN-0002030": () => accepted("PN-0002030", "MORTGAGE", u.dp1, ["LTO_FEE"]),
-    "PN-0002031": async () => { await accepted("PN-0002031", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("PN-0002031", u.dp1, "requested"); },
-    "PN-0002032": async () => { await accepted("PN-0002032", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("PN-0002032", u.dp1, "approved"); },
-    "PN-0002033": async () => { await accepted("PN-0002033", "MORTGAGE", u.dp2, ["LTO_FEE"]); await fund("PN-0002033", u.dp2, "released"); },
-    "PN-0002035": async () => {
-      await accepted("PN-0002035", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      const { lineId } = await fund("PN-0002035", u.dp2, "released");
+    "GD1012026902030": () => accepted("GD1012026902030", "MORTGAGE", u.dp1, ["LTO_FEE"]),
+    "GD1012026902031": async () => { await accepted("GD1012026902031", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("GD1012026902031", u.dp1, "requested"); },
+    "GD1012026902032": async () => { await accepted("GD1012026902032", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("GD1012026902032", u.dp1, "approved"); },
+    "GD1012026902033": async () => { await accepted("GD1012026902033", "MORTGAGE", u.dp2, ["LTO_FEE"]); await fund("GD1012026902033", u.dp2, "released"); },
+    "GD1012026902035": async () => {
+      await accepted("GD1012026902035", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      const { lineId } = await fund("GD1012026902035", u.dp2, "released");
       await addReceipt(u.dp2, { lineId, date: today, cents: 350_000, number: "OR-2035" }, null);
     },
-    "PN-0002036": async () => {
-      await accepted("PN-0002036", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      const { advanceId, lineId } = await fund("PN-0002036", u.dp2, "released");
+    "GD1012026902036": async () => {
+      await accepted("GD1012026902036", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      const { advanceId, lineId } = await fund("GD1012026902036", u.dp2, "released");
       await addReceipt(u.dp2, { lineId, date: today, cents: 350_000, number: "OR-2036" }, null);
       await closeAdvance(u.finance, advanceId);
     },
-    "PN-0002037": async () => {
-      const { t, job } = await accepted("PN-0002037", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      await fund("PN-0002037", u.dp2, "released");
+    "GD1012026902037": async () => {
+      const { t, job } = await accepted("GD1012026902037", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      await fund("GD1012026902037", u.dp2, "released");
       await returnToLa(u.dp2, job.id, { reasonId: await reason.ret("OTHER-TXN"), note: "Needs the PPSR entry done first.", handedOver: await papers(t.id) });
     },
     // TAT: papers ticked, ready to send
-    "PN-0002038": () => tick(u.la1, "PN-0002038", "NOTARY"),
-    "PN-0002039": () => tick(u.la1, "PN-0002039", "NOTARY"),
-    "PN-0002040": () => tick(u.la1, "PN-0002040", "NOTARY"),
+    "GD1012026902038": () => tick(u.la1, "GD1012026902038", "NOTARY"),
+    "GD1012026902039": () => tick(u.la1, "GD1012026902039", "NOTARY"),
+    "GD1012026902040": () => tick(u.la1, "GD1012026902040", "NOTARY"),
     // MyLoans changes (the simulator in Settings, as Admin)
-    "PN-0002041": async () => simulateSourceChange(u.admin, (await loan("PN-0002041")).id, "name"),
-    "PN-0002042": async () => simulateSourceChange(u.admin, (await loan("PN-0002042")).id, "amount"),
-    "PN-0002043": async () => simulateSourceChange(u.admin, (await loan("PN-0002043")).id, "cancel"),
-    "PN-0002044": async () => simulateSourceChange(u.admin, (await loan("PN-0002044")).id, "replace"),
+    "GD1012026902041": async () => simulateSourceChange(u.admin, (await loan("GD1012026902041")).id, "name"),
+    "GD1012026902042": async () => simulateSourceChange(u.admin, (await loan("GD1012026902042")).id, "amount"),
+    "GD1012026902043": async () => simulateSourceChange(u.admin, (await loan("GD1012026902043")).id, "cancel"),
+    "GD1012026902044": async () => simulateSourceChange(u.admin, (await loan("GD1012026902044")).id, "replace"),
+    // Branches: MyLoans moved a loan to another branch (waiting; and applied by Admin).
+    "GD1012026902071": async () => simulateSourceChange(u.admin, (await loan("GD1012026902071")).id, "branch"),
+    "GD1012026902072": async () => {
+      const l = await loan("GD1012026902072");
+      await simulateSourceChange(u.admin, l.id, "branch");
+      const item = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: l.id, state: "OPEN" } });
+      await applySourceChange(u.admin, item.id, { note: "The borrower now pays at Angono; MyLoans moved the account." });
+    },
     // Last: an overdue advance blocks the processor's next request (as it should), so it comes after the others.
     // Fund transfers, in the same states (DP 1 and DP 2).
-    "PN-0002051": async () => { await accepted("PN-0002051", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("PN-0002051", u.dp1, "requested", true); },
-    "PN-0002052": async () => {
+    "GD1012026902051": async () => { await accepted("GD1012026902051", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("GD1012026902051", u.dp1, "requested", true); },
+    "GD1012026902052": async () => {
       // Asked as a Cash advance; Finance changed it to a Fund transfer (with remarks) before approving.
-      await accepted("PN-0002052", "MORTGAGE", u.dp1, ["LTO_FEE"]);
-      const { advanceId } = await fund("PN-0002052", u.dp1, "requested");
+      await accepted("GD1012026902052", "MORTGAGE", u.dp1, ["LTO_FEE"]);
+      const { advanceId } = await fund("GD1012026902052", u.dp1, "requested");
       await changeFundsType(u.finance, advanceId, { fundsTypeId: (await fundsType("FT")).id, remarks: "DP 1 is at the LTO all week: send it to the account instead of cash." });
       await decideAdvance(u.finance, advanceId, { approve: true });
     },
-    "PN-0002053": async () => { await accepted("PN-0002053", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("PN-0002053", u.dp1, "released", true); },
-    "PN-0002054": async () => {
-      await accepted("PN-0002054", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      const { lineId } = await fund("PN-0002054", u.dp2, "released", true);
+    "GD1012026902053": async () => { await accepted("GD1012026902053", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("GD1012026902053", u.dp1, "released", true); },
+    "GD1012026902054": async () => {
+      await accepted("GD1012026902054", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      const { lineId } = await fund("GD1012026902054", u.dp2, "released", true);
       await addReceipt(u.dp2, { lineId, date: today, cents: 350_000, number: "OR-2054" }, null);
     },
-    "PN-0002055": async () => {
-      await accepted("PN-0002055", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      const { advanceId, lineId } = await fund("PN-0002055", u.dp2, "released", true);
+    "GD1012026902055": async () => {
+      await accepted("GD1012026902055", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      const { advanceId, lineId } = await fund("GD1012026902055", u.dp2, "released", true);
       await addReceipt(u.dp2, { lineId, date: today, cents: 350_000, number: "OR-2055" }, null);
       await closeAdvance(u.finance, advanceId);
     },
-    "PN-0002056": async () => {
-      const { t, job } = await accepted("PN-0002056", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      await fund("PN-0002056", u.dp2, "released", true);
+    "GD1012026902056": async () => {
+      const { t, job } = await accepted("GD1012026902056", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      await fund("GD1012026902056", u.dp2, "released", true);
       await returnToLa(u.dp2, job.id, { reasonId: await reason.ret("OTHER-TXN"), note: "Needs the PPSR entry done first.", handedOver: await papers(t.id) });
     },
     // Last: an overdue record blocks the processor's next request (as it should). Both overdue samples
     // (Cash advance and Fund transfer, DP 2) are released first, then due dates move into the past and
     // the daily overdue check runs.
-    "PN-0002034": async () => {
-      await accepted("PN-0002034", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      await accepted("PN-0002057", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      const ca = await fund("PN-0002034", u.dp2, "released");
-      const ft = await fund("PN-0002057", u.dp2, "released", true);
+    "GD1012026902034": async () => {
+      await accepted("GD1012026902034", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      await accepted("GD1012026902057", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      const ca = await fund("GD1012026902034", u.dp2, "released");
+      const ft = await fund("GD1012026902057", u.dp2, "released", true);
       await pastDue(ca.advanceId);
       await pastDue(ft.advanceId);
       await notifyOverdue();
@@ -338,7 +386,31 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     }
   }
   log(`Prepared ${Object.keys(cases).length} sample cases through the app's own steps.`);
+  await buildBranchReview(u, log);
   await buildMonitoring(u, { today, holidays, send, accepted, work, loan, log });
+}
+
+/**
+ * The Branch review samples, through "Branches from MyLoans" (the sample MyLoans list): a rename and a
+ * code change waiting for Admin, and Alicia-Inactive closed by MyLoans and accepted by Admin (it keeps its
+ * user and its open loan file).
+ */
+async function buildBranchReview(u: Users, log: Log) {
+  const { rename, code } = KIT_BRANCH_CHANGES;
+  await setSetting("myloans.mockBranches", {
+    overrides: {
+      [String(rename.branchId)]: { name: rename.to, updatedAt: new Date().toISOString() },
+      [String(code.branchId)]: { code: code.to, updatedAt: new Date().toISOString() },
+      "code:718": { active: false, updatedAt: new Date().toISOString() },
+    },
+    extra: [],
+  });
+  const run = await runBranchSync({ trigger: "api", user: u.admin, mode: "full" });
+  if (!run?.ok) throw new Error(`Branches from MyLoans: ${run?.message ?? "did not run"}`);
+  const closed = await prisma.branchReview.findFirst({ where: { state: "OPEN", kind: { in: ["CLOSED", "NOT_IN_LIST"] }, code: "718" } });
+  if (closed) await acceptReview(u.admin, closed.id);
+  const open = await prisma.branchReview.count({ where: { state: "OPEN" } });
+  log(`Branches from MyLoans: ${run.message} Alicia-Inactive closed (accepted); ${open} item${open === 1 ? "" : "s"} wait in the Branch review.`);
 }
 
 /** n business days before today at a time of day (PHT); today: a few minutes ago. */
@@ -400,16 +472,16 @@ async function buildMonitoring(
   }
 
   const steps: Record<string, () => Promise<unknown>> = {
-    "PN-0002060": async () => backdate(await finish("PN-0002060", u.dp2, u.la1), { sent: 6, accepted: 5, stages: { OWN: 5, LTO_DROP: 4, LTO_PICKUP: 2, VERIFY: 1 } }),
-    "PN-0002061": async () => backdate(await finish("PN-0002061", u.dp2, u.la1), { sent: 2, accepted: 2, stages: { OWN: 2, LTO_DROP: 2, LTO_PICKUP: 1, VERIFY: 1 } }),
-    "PN-0002062": async () => backdate(await finish("PN-0002062", u.dp4, u.laMakati), { sent: 4, accepted: 3, stages: { OWN: 3, LTO_DROP: 3, LTO_PICKUP: 1, VERIFY: 0 } }),
-    "PN-0002063": async () => { const { job } = await h.send("PN-0002063", "NOTARY", u.dp4, { by: u.laMakati }); await backdate(job.id, { sent: 3 }); },
-    "PN-0002064": async () => {
-      const { job } = await acceptedBy("PN-0002064", u.dp4, u.laMakati);
+    "GD1012026902060": async () => backdate(await finish("GD1012026902060", u.dp2, u.la1), { sent: 6, accepted: 5, stages: { OWN: 5, LTO_DROP: 4, LTO_PICKUP: 2, VERIFY: 1 } }),
+    "GD1012026902061": async () => backdate(await finish("GD1012026902061", u.dp2, u.la1), { sent: 2, accepted: 2, stages: { OWN: 2, LTO_DROP: 2, LTO_PICKUP: 1, VERIFY: 1 } }),
+    "GD1682026902062": async () => backdate(await finish("GD1682026902062", u.dp4, u.laMabini), { sent: 4, accepted: 3, stages: { OWN: 3, LTO_DROP: 3, LTO_PICKUP: 1, VERIFY: 0 } }),
+    "GD1682026902063": async () => { const { job } = await h.send("GD1682026902063", "NOTARY", u.dp4, { by: u.laMabini }); await backdate(job.id, { sent: 3 }); },
+    "GD1682026902064": async () => {
+      const { job } = await acceptedBy("GD1682026902064", u.dp4, u.laMabini);
       await h.work(u.dp4, job.id, 2); // Notarization, then LTO drop off: now at LTO Makati
       await backdate(job.id, { sent: 3, accepted: 2, stages: { OWN: 2, LTO_DROP: 1 } });
     },
-    "PN-0002065": async () => { const { job } = await h.send("PN-0002065", "NOTARY", u.dp3, { by: u.laDavao }); await backdate(job.id, { sent: 1 }); },
+    "GD3902026902065": async () => { const { job } = await h.send("GD3902026902065", "NOTARY", u.dp3, { by: u.laAlaminos }); await backdate(job.id, { sent: 1 }); },
   };
   for (const [pn, fn] of Object.entries(steps)) {
     try { await fn(); } catch (e) { throw new Error(`Sample loan ${pn}: ${e instanceof Error ? e.message : String(e)}`); }
@@ -421,9 +493,9 @@ async function buildMonitoring(
 
   // Three advisories: active (2 hours ago), resolved, and one older than 24 hours.
   const job = async (pn: string) => prisma.dpAssignment.findFirstOrThrow({ where: { loan: { pn }, transaction: { type: { code: { in: ["NOTARY", "MORTGAGE"] } } } }, orderBy: { createdAt: "desc" } });
-  const qc = await fileAdvisory(u.dp1, { assignmentId: (await job("PN-0002022")).id, type: "SYSTEM_DOWN", remarks: "The LTMS terminals are offline; the guard says maybe after lunch." });
+  const qc = await fileAdvisory(u.dp1, { assignmentId: (await job("GD1012026902022")).id, type: "SYSTEM_DOWN", remarks: "The LTMS terminals are offline; the guard says maybe after lunch." });
   await prisma.ltoAdvisory.update({ where: { id: qc.id }, data: { startedAt: new Date(Date.now() - 2 * 3_600_000), createdAt: new Date(Date.now() - 2 * 3_600_000) } });
-  const mkt = await fileAdvisory(u.dp4, { assignmentId: (await job("PN-0002064")).id, type: "OFFICE_CLOSED", remarks: "Closed for the morning: staff seminar." });
+  const mkt = await fileAdvisory(u.dp4, { assignmentId: (await job("GD1682026902064")).id, type: "OFFICE_CLOSED", remarks: "Closed for the morning: staff seminar." });
   await prisma.ltoAdvisory.update({ where: { id: mkt.id }, data: { startedAt: at(1, "08:00"), createdAt: at(1, "08:05") } });
   await resolveAdvisory(u.monitor, mkt.id, { remarks: "Open again from 1 PM, confirmed by phone." });
   const ceb = await prisma.ltoOffice.findUniqueOrThrow({ where: { code: "LTO-CEB" } });

@@ -3,7 +3,7 @@ import { db, resetLoans } from "./db";
 import { completeAndForwardUi, workStagesUi } from "./helpers";
 
 /**
- * Full path with PN-0001003: LA sends Mortgage flagged for an LTO fee → DP accepts (labels) →
+ * Full path with GD1652026901003: LA sends Mortgage flagged for an LTO fee → DP accepts (labels) →
  * "At the LTO" blocked → DP requests funds → Finance approves and releases → DP logs Not processed
  * (problem, red) → Resume → Done → Complete → Forward → LA receives (Phase 5).
  * Screenshots go to SHOTS_DIR when it is set.
@@ -34,24 +34,24 @@ async function noSideways(page: Page) {
 }
 
 async function openPn3(page: Page) {
-  await page.goto("/loans?fill=PN-0001003");
+  await page.goto("/loans?fill=GD1652026901003");
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001003/);
+  await expect(page).toHaveURL(/\/loans\/GD1652026901003/);
 }
 
 async function txnId(code: string) {
-  const t = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code } } });
+  const t = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code } } });
   return t.id;
 }
 
 /** Ticks every paper of one transaction and sends it to the test DP with the given funds answer. */
 async function sendTxn(page: Page, code: string, funds: "YES" | "NO", kinds: string[] = []) {
   const id = await txnId(code);
-  await page.goto(`/loans/PN-0001003?tab=todo&work=${id}`);
+  await page.goto(`/loans/GD1652026901003?tab=todo&work=${id}`);
   const group = page.getByRole("group", { name: /papers$/ }).first();
   for (const box of await group.getByRole("checkbox").all()) if (!(await box.isChecked())) await box.check();
   // Ticking the last paper makes it Ready and redraws the send card: wait for that first.
@@ -69,7 +69,7 @@ async function sendTxn(page: Page, code: string, funds: "YES" | "NO", kinds: str
   return id;
 }
 
-test("Full path with PN-0001003: flag, accept, LTO block, request, approve, release, problem, resume, complete, forward, receive", async ({ page }) => {
+test("Full path with GD1652026901003: flag, accept, LTO block, request, approve, release, problem, resume, complete, forward, receive", async ({ page }) => {
   await signInAs(page, "la");
   await openPn3(page);
   const mortgage = await sendTxn(page, "MORTGAGE", "YES", ["LTO fee"]);
@@ -80,7 +80,7 @@ test("Full path with PN-0001003: flag, accept, LTO block, request, approve, rele
   await page.getByRole("dialog", { name: "Send it now?" }).getByRole("button", { name: "Send", exact: true }).click();
   // Sending moves on to the next transaction that needs the LA; come back to Mortgage.
   await expect.poll(async () => (await db.loanTransaction.findUniqueOrThrow({ where: { id: mortgage } })).status).toBe("ASSIGNED");
-  await page.goto("/loans/PN-0001003?tab=todo&tx=MORTGAGE");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=MORTGAGE");
   await expect(page.getByText(/Waiting for them to accept\./)).toBeVisible();
   await expect(page.getByRole("region", { name: "Mortgage: job" }).locator('[data-funds="NEEDED"]')).toBeVisible();
 
@@ -152,11 +152,11 @@ test("Full path with PN-0001003: flag, accept, LTO block, request, approve, rele
   await sheet.getByRole("button", { name: "Save attempt" }).click();
   await expect(page.getByText(/Attempt 2 ·/)).toBeVisible();
   await workStagesUi(page, { orNumber: "OR-12345" });
-  await completeAndForwardUi(page, "Cebu");
+  await completeAndForwardUi(page, "Angono");
 
   // LA: the real Phase 5 receive.
   await signInAs(page, "la");
-  await page.goto(`/loans/PN-0001003?tab=todo&work=${mortgage}`);
+  await page.goto(`/loans/GD1652026901003?tab=todo&work=${mortgage}`);
   await page.getByRole("button", { name: "Received complete" }).click();
   await expect.poll(async () => (await db.loanTransaction.findUniqueOrThrow({ where: { id: mortgage } })).status).toBe("COMPLETED");
   await expect(page.getByRole("button", { name: "Received complete" })).toHaveCount(0);
@@ -169,10 +169,10 @@ test("TAT chips: Waiting, Processing, Due today, Overdue, Problem and Done on th
     await sendTxn(page, code, "NO");
     await page.getByRole("button", { name: /^Send to (?!processor)/ }).click();
     await page.getByRole("dialog", { name: "Send it now?" }).getByRole("button", { name: "Send", exact: true }).click();
-    await expect.poll(async () => (await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code } } })).status).toBe("ASSIGNED");
+    await expect.poll(async () => (await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code } } })).status).toBe("ASSIGNED");
   }
   // Shape the clocks directly (test setup): accept two jobs and move their start back.
-  const jobs = await db.dpAssignment.findMany({ where: { loan: { pn: "PN-0001003" } }, include: { transaction: { include: { type: true } } } });
+  const jobs = await db.dpAssignment.findMany({ where: { loan: { pn: "GD1652026901003" } }, include: { transaction: { include: { type: true } } } });
   const now = Date.now();
   const day = 86_400_000;
   for (const j of jobs) {

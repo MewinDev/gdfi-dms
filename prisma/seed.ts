@@ -19,12 +19,9 @@ if (withTestUsers && process.env.APP_ENV?.trim().toLowerCase() === "production")
 // Built-in roles come from the same defaults that "Reset to default" restores (lib/auth/permissions.ts).
 const ROLES = Object.entries(ROLE_DEFAULTS).map(([key, r]) => ({ key, ...r, permissions: [...r.permissions], builtIn: true }));
 
-const BRANCHES = [
-  { code: "QC", name: "Quezon City" },
-  { code: "CEB", name: "Cebu" },
-  { code: "DVO", name: "Davao" },
-  { code: "MKT", name: "Makati" },
-];
+// Branches, areas and divisions come from MyLoans (Settings, Branches, Import from MyLoans). A local or
+// test database gets the built-in subset of the real list (lib/branches/builtin.ts) through the same
+// import code; reference data only (live) seeds no branches.
 
 const TRANSACTION_TYPES = [
   { code: "NOTARY", name: "Notary", requiresDp: true, needsLto: true, ownerRole: "DP", sortOrder: 1, description: "Notarization of loan documents." },
@@ -149,8 +146,6 @@ async function main() {
     // Existing roles keep their switches and branch access (changed in Settings); only the fixed parts are refreshed.
     await prisma.role.upsert({ where: { key: r.key }, create: r, update: { name: r.name, canSignIn: r.canSignIn, builtIn: true } });
   }
-  // Branches
-  for (const b of BRANCHES) await prisma.branch.upsert({ where: { code: b.code }, create: b, update: { name: b.name } });
   // Loan types (exact MyLoans values)
   await prisma.loanType.upsert({ where: { code: "New" }, create: { code: "New", name: "New", description: "Mortgage when amount is PHP 500,000 or below" }, update: {} });
   await prisma.loanType.upsert({ where: { code: "Renewal" }, create: { code: "Renewal", name: "Renewal", description: "Mortgage when amount is PHP 1,000,000 or below" }, update: {} });
@@ -222,35 +217,52 @@ async function main() {
   console.log(`Seed complete (${withTestUsers ? "reference data + test users" : "reference data only"}).`);
 }
 
+/**
+ * The built-in subset of the real MyLoans branch list (12 branches, 3 divisions), through the same import
+ * code as Settings, Branches, Import from MyLoans. Only for a local or test database (never live).
+ * Sample branches: Antipolo 101, Angono 165, Alaminos 390 and A. Mabini 168 (each with its usual LTO office).
+ */
+async function seedBranches() {
+  const { BUILTIN_BRANCHES, BUILTIN_USUAL_LTO } = await import("../lib/branches/builtin");
+  const { importBranchRowsAsSystem } = await import("../lib/services/branches");
+  if ((await prisma.branch.count({ where: { code: { in: BUILTIN_BRANCHES.map((b) => b.code) } } })) < BUILTIN_BRANCHES.length) {
+    await importBranchRowsAsSystem(BUILTIN_BRANCHES);
+  }
+  for (const [code, lto] of Object.entries(BUILTIN_USUAL_LTO)) {
+    const office = await prisma.ltoOffice.findUnique({ where: { code: lto } });
+    if (office) await prisma.branch.updateMany({ where: { code, usualLtoOfficeId: null }, data: { usualLtoOfficeId: office.id } });
+  }
+}
+
 async function seedTestUsers() {
+  await seedBranches();
+  const { writeUserAccess, branchGrants } = await import("../lib/services/access");
   const role = async (key: string) => (await prisma.role.findUniqueOrThrow({ where: { key } })).id;
   const branch = async (code: string) => (await prisma.branch.findUniqueOrThrow({ where: { code } })).id;
-  const users: { email: string; name: string; role: string; branches: string[]; isTestUser: boolean }[] = [
-    { email: "test.admin@gdfi.ph", name: "Test Admin", role: "ADMIN", branches: ["QC", "CEB", "DVO", "MKT"], isTestUser: true },
-    { email: "test.la@gdfi.ph", name: "Test Loan Associate", role: "LA", branches: ["QC", "CEB"], isTestUser: true },
+  // "ALL": All branches. Codes: Antipolo 101, Angono 165, Alaminos 390 (the "other branch").
+  const users: { email: string; name: string; role: string; branches: string[] | "ALL"; isTestUser: boolean }[] = [
+    { email: "test.admin@gdfi.ph", name: "Test Admin", role: "ADMIN", branches: "ALL", isTestUser: true },
+    { email: "test.la@gdfi.ph", name: "Test Loan Associate", role: "LA", branches: ["101", "165"], isTestUser: true },
     // Test mode only: sign in as a processor or as Finance to walk the funds flow.
-    { email: "test.dp@gdfi.ph", name: "Test Document Processor", role: "DP", branches: ["QC", "CEB"], isTestUser: true },
-    { email: "test.finance@gdfi.ph", name: "Test Finance", role: "FIN", branches: ["QC", "CEB", "DVO", "MKT"], isTestUser: true },
+    { email: "test.dp@gdfi.ph", name: "Test Document Processor", role: "DP", branches: ["101", "165"], isTestUser: true },
+    { email: "test.finance@gdfi.ph", name: "Test Finance", role: "FIN", branches: "ALL", isTestUser: true },
     // Operations Monitor (read-only, all branches): the Monitoring page and LTO advisories.
-    { email: "test.monitor@gdfi.ph", name: "Test Operations Monitor", role: "MONITOR", branches: ["QC", "CEB", "DVO", "MKT"], isTestUser: true },
+    { email: "test.monitor@gdfi.ph", name: "Test Operations Monitor", role: "MONITOR", branches: "ALL", isTestUser: true },
     // Document Processors: no sign-in yet, needed so the LA can assign transactions.
-    { email: "dp.rico@gdfi.ph", name: "Rico Dela Cruz", role: "DP", branches: ["QC"], isTestUser: false },
-    { email: "dp.joy@gdfi.ph", name: "Joy Navarro", role: "DP", branches: ["QC"], isTestUser: false },
-    { email: "dp.paolo@gdfi.ph", name: "Paolo Lim", role: "DP", branches: ["CEB"], isTestUser: false },
-    { email: "dp.grace@gdfi.ph", name: "Grace Tan", role: "DP", branches: ["CEB"], isTestUser: false },
-    { email: "dp.ben@gdfi.ph", name: "Ben Ocampo", role: "DP", branches: ["DVO"], isTestUser: false },
+    { email: "dp.rico@gdfi.ph", name: "Rico Dela Cruz", role: "DP", branches: ["101"], isTestUser: false },
+    { email: "dp.joy@gdfi.ph", name: "Joy Navarro", role: "DP", branches: ["101"], isTestUser: false },
+    { email: "dp.paolo@gdfi.ph", name: "Paolo Lim", role: "DP", branches: ["165"], isTestUser: false },
+    { email: "dp.grace@gdfi.ph", name: "Grace Tan", role: "DP", branches: ["165"], isTestUser: false },
+    { email: "dp.ben@gdfi.ph", name: "Ben Ocampo", role: "DP", branches: ["390"], isTestUser: false },
   ];
   for (const u of users) {
     const roleId = await role(u.role);
-    const user = await prisma.user.upsert({
-      where: { email: u.email },
-      create: { email: u.email, name: u.name, roleId, isTestUser: u.isTestUser },
-      update: {},
-    });
-    for (const code of u.branches) {
-      const branchId = await branch(code);
-      await prisma.userBranch.upsert({ where: { userId_branchId: { userId: user.id, branchId } }, create: { userId: user.id, branchId }, update: {} });
-    }
+    const existing = await prisma.user.findUnique({ where: { email: u.email } });
+    const user = existing ?? (await prisma.user.create({ data: { email: u.email, name: u.name, roleId, isTestUser: u.isTestUser } }));
+    // Existing users keep the access they have (changed in Users); a new one gets the default.
+    if (existing && (existing.allBranches || (await prisma.userAccessGrant.count({ where: { userId: existing.id } })) > 0)) continue;
+    const ids = u.branches === "ALL" ? [] : await Promise.all(u.branches.map(branch));
+    await prisma.$transaction((tx) => writeUserAccess(tx, user.id, { all: u.branches === "ALL", grants: branchGrants(ids), homeBranchId: ids[0] ?? null }));
   }
 }
 

@@ -3,7 +3,7 @@ import { db, resetLoans } from "./db";
 import { completeAndForwardUi, workStagesUi } from "./helpers";
 
 /**
- * The one Journey (replaces History): PN-0001003 Notary goes Send → DP accepts → On hold (Waiting on
+ * The one Journey (replaces History): GD1652026901003 Notary goes Send → DP accepts → On hold (Waiting on
  * borrower) → Resume → Problem → Resolve → finish; then the Journey tab: order, nested sub-rows,
  * durations and PHT times, scope and filters, bars and their table, the Documents custody trail.
  * Cash amounts: Finance sees them, the LA and the DP see the status only, until the LA role gets the
@@ -32,20 +32,20 @@ async function noSideways(page: Page) {
   expect(over, `page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
 }
 async function openPn3(page: Page) {
-  await page.goto("/loans?fill=PN-0001003");
+  await page.goto("/loans?fill=GD1652026901003");
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001003/);
+  await expect(page).toHaveURL(/\/loans\/GD1652026901003/);
 }
-const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code } } });
+const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code } } });
 
 /** Ticks every paper and sends the transaction to the test DP. */
 async function sendToTestDp(page: Page, code: string, funds: "YES" | "NO", kinds: string[] = []) {
   const t = await txnOf(code);
-  await page.goto(`/loans/PN-0001003?tab=todo&work=${t.id}`);
+  await page.goto(`/loans/GD1652026901003?tab=todo&work=${t.id}`);
   const group = page.getByRole("group", { name: /papers$/ }).first();
   for (const box of await group.getByRole("checkbox").all()) if (!(await box.isChecked())) await box.check();
   await expect(page.locator('[id^="send-why-"]')).toHaveText(/funds question/);
@@ -71,13 +71,13 @@ test("Journey: hold, resume, problem, resolve, finish; list, scope, filters, bar
   const notary = await sendToTestDp(page, "NOTARY", "NO");
 
   // The old History address opens the Journey tab; the History tab and the hidden Journey link are gone.
-  await page.goto("/loans/PN-0001003?tab=history");
+  await page.goto("/loans/GD1652026901003?tab=history");
   await expect(page).toHaveURL(/tab=journey/);
   const tabs = page.getByRole("navigation", { name: "Loan file sections" });
   await expect(tabs.getByRole("link")).toHaveText(["To do", "Documents", "Journey"]);
-  await page.goto("/loans/PN-0001003/journey");
-  await expect(page).toHaveURL(/\/loans\/PN-0001003\?tab=journey/);
-  await page.goto("/loans/PN-0001003?tab=todo");
+  await page.goto("/loans/GD1652026901003/journey");
+  await expect(page).toHaveURL(/\/loans\/GD1652026901003\?tab=journey/);
+  await page.goto("/loans/GD1652026901003?tab=todo");
   await expect(page.getByText("See every step (all 10 phases)")).toHaveCount(0);
 
   // DP accepts and puts it on hold (pop-up with the discard-confirm).
@@ -105,7 +105,7 @@ test("Journey: hold, resume, problem, resolve, finish; list, scope, filters, bar
   await noSideways(page);
 
   // The strip and the TAT chip on the Journey say On hold.
-  await page.goto("/loans/PN-0001003?tab=journey");
+  await page.goto("/loans/GD1652026901003?tab=journey");
   const strip = page.locator('[data-strip="NOTARY"]');
   await expect(strip).toContainText("On hold");
   await expect(strip).toContainText(/With DP Test Document Processor · On hold: waiting for the client's papers since /);
@@ -139,14 +139,14 @@ test("Journey: hold, resume, problem, resolve, finish; list, scope, filters, bar
   await sheet.getByRole("button", { name: "Save attempt" }).click();
   await expect(page.getByText(/Attempt 1 ·/)).toBeVisible();
   await workStagesUi(page, { name: "Atty. Ramon Uy", docNo: "12", pageNo: "3", bookNo: "IV" });
-  await completeAndForwardUi(page, "Cebu");
+  await completeAndForwardUi(page, "Angono");
   await signInAs(page, "la");
-  await page.goto(`/loans/PN-0001003?tab=todo&work=${notary}`);
+  await page.goto(`/loans/GD1652026901003?tab=todo&work=${notary}`);
   await page.getByRole("button", { name: "Received complete" }).click();
   await expect.poll(async () => (await txnOf("NOTARY")).status).toBe("COMPLETED");
 
   // Journey, list view: the 10 phases in order, nested sub-rows, durations, PHT times.
-  await page.goto("/loans/PN-0001003?tab=journey");
+  await page.goto("/loans/GD1652026901003?tab=journey");
   await expect(page.locator("[data-phase]")).toHaveCount(10);
   expect(await page.locator("[data-phase]").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-phase"))))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   const order = await page.locator('[data-step$=":NOTARY"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-step")));
@@ -222,10 +222,10 @@ test("Cash amounts: Finance sees them, the LA and the DP see the status only, un
       lines: { create: { transactionId: mortgage, kind: "LTO_FEE", requestedCents: 150000, approvedCents: 150000, releasedCents: 150000 } },
     },
   });
-  await db.auditLog.create({ data: { actorLabel: "Test Finance", mode: "MANUAL", action: "advance_released", entityType: "CashAdvance", entityId: adv.id, loanId: job.loanId, pn: "PN-0001003", journeyStep: "3.5", summary: "CA-2026-9001 released: ₱1,500.00; jobs Funded" } });
+  await db.auditLog.create({ data: { actorLabel: "Test Finance", mode: "MANUAL", action: "advance_released", entityType: "CashAdvance", entityId: adv.id, loanId: job.loanId, pn: "GD1652026901003", journeyStep: "3.5", summary: "CA-2026-9001 released: ₱1,500.00; jobs Funded" } });
 
   const journey = async () => {
-    await page.goto("/loans/PN-0001003?tab=journey");
+    await page.goto("/loans/GD1652026901003?tab=journey");
     return (await page.locator("[data-journey]").innerText());
   };
   // Finance: amounts.
@@ -238,7 +238,7 @@ test("Cash amounts: Finance sees them, the LA and the DP see the status only, un
     const text = await journey();
     expect(text).toContain("CA-2026-9001: Funded");
     expect(text).not.toMatch(/₱|PHP \d/);
-    const html = await (await page.request.get("/loans/PN-0001003?tab=journey")).text();
+    const html = await (await page.request.get("/loans/GD1652026901003?tab=journey")).text();
     expect(html).not.toContain("1,500.00");
   }
   // Admin turns the switch on for the Loan Associate role: the LA sees amounts on the next request.

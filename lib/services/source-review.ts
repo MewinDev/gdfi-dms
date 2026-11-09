@@ -8,6 +8,8 @@ import { peso } from "@/lib/funds/rules";
 import { outstandingCash, reusablePapers, recordFromPayload } from "./source-sync";
 import { relatedLoans, replacementCandidates } from "./related-loans";
 import { paymentEvidence } from "@/lib/myloans/relation";
+import { branchLabel, resolveLoanBranch } from "./branches";
+import { openedAt } from "@/lib/pn/opened-at";
 
 /** The loan's payments as its latest MyLoans copy says (undefined: no payments field). */
 async function paymentOf(loanId: string) {
@@ -36,6 +38,50 @@ export interface ReviewData {
   canMove: boolean;
   history: number;
   simulated: boolean;
+  /** MyLoans moved the loan to another branch: old and new, where it was opened, and the impact. */
+  branchMove: BranchMove | null;
+}
+
+export interface BranchMove {
+  from: string;
+  to: string;
+  /** The new branch is a DMS branch (otherwise it must be accepted in the Branch review first). */
+  known: boolean;
+  openedAt: string | null;
+  /** People who could see it before and after (access), and who gains or loses it. */
+  seeBefore: number;
+  seeAfter: number;
+  gain: string[];
+  lose: string[];
+  /** The Loan Associates on its open work (who sent it, who receives it). */
+  las: string[];
+}
+
+/** Old and new branch, and who can see the loan before and after (access by branch; All users always). */
+async function branchMoveFor(loan: { id: string; pn: string; branchId: string }, changes: FieldChange[]): Promise<BranchMove | null> {
+  const ch = changes.filter((c) => c.field === "branchName" || c.field === "branchCode");
+  if (!ch.length) return null;
+  const snap = await prisma.loanSourceSnapshot.findFirst({ where: { loanId: loan.id }, orderBy: { retrievedAt: "desc" }, select: { tracked: true } });
+  const next = (snap?.tracked ?? {}) as { branchName?: string | null; branchCode?: string | null };
+  const was = await prisma.branch.findUniqueOrThrow({ where: { id: loan.branchId }, select: { id: true, name: true, code: true } });
+  const to = await resolveLoanBranch(prisma, { branchCode: next.branchCode ?? null, branchName: next.branchName ?? null });
+  const who = async (branchId: string) => (await prisma.user.findMany({
+    where: { active: true, OR: [{ allBranches: true }, { role: { key: "ADMIN" } }, { branches: { some: { branchId } } }], role: { permissions: { has: PERMISSIONS.LOANS_VIEW } } },
+    select: { id: true, name: true, allBranches: true },
+  }));
+  const before = await who(was.id);
+  const after = to ? await who(to.id) : before.filter((u) => u.allBranches);
+  const ids = (xs: { id: string }[]) => new Set(xs.map((x) => x.id));
+  const [b, a] = [ids(before), ids(after)];
+  const jobs = await prisma.dpAssignment.findMany({ where: { loanId: loan.id, status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] } }, select: { assignedBy: { select: { name: true } }, receivingLa: { select: { name: true } } } });
+  const opened = await openedAt(loan.pn, { name: was.name, code: was.code });
+  return {
+    from: branchLabel(was), to: to ? branchLabel(to) : `${next.branchName ?? "?"}${next.branchCode ? ` (${next.branchCode})` : ""}`, known: !!to,
+    openedAt: opened ? opened.text.replace(/, now at .*/, "") : null,
+    seeBefore: before.length, seeAfter: after.length,
+    gain: after.filter((u) => !b.has(u.id)).map((u) => u.name).sort(), lose: before.filter((u) => !a.has(u.id)).map((u) => u.name).sort(),
+    las: [...new Set(jobs.flatMap((j) => [j.assignedBy.name, j.receivingLa?.name].filter((x): x is string => !!x)))].sort(),
+  };
 }
 
 export async function reviewFor(user: CurrentUser, loanId: string): Promise<ReviewData | null> {
@@ -72,6 +118,7 @@ export async function reviewFor(user: CurrentUser, loanId: string): Promise<Revi
     canMove: !!newLoan,
     history: (item.history as unknown[]).length,
     simulated: item.simulated,
+    branchMove: item.category === "MATERIAL" ? await branchMoveFor(item.loan, changes) : null,
   };
 }
 

@@ -20,6 +20,7 @@ import { EXPENSE_KINDS } from "@/lib/funds/rules";
 import { checklistStatus, type CheckLine, type ChecklistStatus } from "@/lib/workflow/checklist";
 import { assertNotHeld } from "./locks";
 import { moveDocs } from "./custody";
+import { worksAtWhere } from "@/lib/branches/access";
 
 const actorOf = (u: CurrentUser): Actor => ({ id: u.id, label: u.name });
 
@@ -580,9 +581,10 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
   if (pastTat && !beyond) throw new UserError(`This is past the Day 2 TAT (${deadline}). Enter a Beyond-TAT reason.`, "beyondTatReason");
 
   const dpBranch = await prisma.branch.findUnique({ where: { id: input.dpBranchId } });
-  if (!dpBranch?.active) throw new UserError("Pick a DP branch.", "dpBranchId");
+  if (!dpBranch?.active || dpBranch.hidden) throw new UserError("Pick a DP branch.", "dpBranchId");
+  // The processor works at that branch: it is in their branch access (or they have All branches).
   const dp = await prisma.user.findFirst({
-    where: { id: input.dpUserId, active: true, role: PROCESSOR_ROLE, branches: { some: { branchId: dpBranch.id } } },
+    where: { id: input.dpUserId, active: true, role: PROCESSOR_ROLE, ...worksAtWhere(dpBranch.id) },
   });
   if (!dp) throw new UserError("Pick an active DP of the selected DP branch.", "dpUserId");
   // On leave (Settings, Processor capacity): shown disabled in the Send panel, and refused here too.

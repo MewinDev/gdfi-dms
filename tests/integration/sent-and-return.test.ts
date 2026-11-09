@@ -49,10 +49,10 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-/** Opens PN-0001003, ticks the required papers (optional ones left unticked) and sends to the test DP. */
+/** Opens GD1652026901003, ticks the required papers (optional ones left unticked) and sends to the test DP. */
 async function send(code = "NOTARY", needed: "YES" | "NO" = "NO", kinds: string[] = []) {
-  await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
-  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+  await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
+  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
   const txn = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code } }, include: { checks: true } });
   await saveChecklist(la, { transactionId: txn.id, checkedIds: txn.checks.filter((c) => c.required).map((c) => c.id), newOthers: [] });
   // Every type that needs LTO processing (Notary, Entry of PPSR, Mortgage) is sent with an office.
@@ -101,7 +101,7 @@ describe("A. Sent, not accepted yet: the LA can still change it", () => {
     ]));
     // One audit row per action, and Journey events in plain words.
     expect(await prisma.auditLog.count({ where: { action: "sent_job_updated", entityId: job.id } })).toBe(3);
-    const j = (await loadJourney(la, (await getLoanForUser(la, "PN-0001003"))!)).journey;
+    const j = (await loadJourney(la, (await getLoanForUser(la, "GD1652026901003"))!)).journey;
     const texts = j.phases.flatMap((p) => p.steps).filter((s) => s.txnCode === "NOTARY").flatMap((s) => s.events.map((e) => e.text));
     expect(texts).toContain(`Test Loan Associate added ${optional.rule!.label} before the processor accepted.`);
   });
@@ -146,8 +146,8 @@ describe("A. Sent, not accepted yet: the LA can still change it", () => {
     const { txn } = await send();
     await expect(pullBack(admin, txn.id, { reason: "Admin tries" })).rejects.toThrow("Only the Loan Associate who sends work can change it.");
     const role = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
-    const dvo = await prisma.branch.findUniqueOrThrow({ where: { code: "DVO" } });
-    await prisma.user.create({ data: { email: "zz.la.dvo@gdfi.ph", name: "Zz Davao LA", roleId: role.id, isTestUser: true, branches: { create: { branchId: dvo.id } } } });
+    const dvo = await prisma.branch.findUniqueOrThrow({ where: { code: "390" } });
+    await prisma.user.create({ data: { email: "zz.la.dvo@gdfi.ph", name: "Zz Alaminos LA", roleId: role.id, isTestUser: true, branches: { create: { branchId: dvo.id } } } });
     const other = await asUser("zz.la.dvo@gdfi.ph");
     await expect(pullBack(other, txn.id, { reason: "Not my branch" })).rejects.toThrow();
     await expect(addProcessorNote(other, txn.id, { note: "Not my branch" })).rejects.toThrow();
@@ -199,7 +199,7 @@ describe("B. Return to LA: papers needed", () => {
     // The LA ticks the papers: the request closes; Send again (the processor is told) and they accept as usual.
     await saveChecklist(la, { transactionId: txn.id, checkedIds: after.filter((c) => c.required).map((c) => c.id), newOthers: [] });
     expect((await prisma.loanException.findUniqueOrThrow({ where: { id: ex.id } })).status).toBe("RESOLVED");
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
     const sendInput = { transactionId: txn.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: (await prisma.ltoOffice.findFirstOrThrow({ where: { active: true }, orderBy: { code: "asc" } })).id, fundsNeeded: "NO" as const, fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null };
     await expect(assignToDp(la, sendInput)).rejects.toThrow("Confirm you received the papers the processor handed over first.");
     await confirmPapersBack(la, { transactionId: txn.id, notReceived: [] });
@@ -215,7 +215,7 @@ describe("B. Return to LA: papers needed", () => {
     expect(await prisma.documentMovement.count({ where: { documentItemId: doc.id, action: "HANDED_TO_LA" } })).toBe(2);
     const report = await reasonReport(admin);
     expect(report.filter((r) => r.type === "Returned").reduce((s, r) => s + r.count, 0)).toBe(2);
-    const j = (await loadJourney(la, (await getLoanForUser(la, "PN-0001003"))!)).journey;
+    const j = (await loadJourney(la, (await getLoanForUser(la, "GD1652026901003"))!)).journey;
     const texts = j.phases.flatMap((p) => p.steps).flatMap((s) => s.events.map((e) => e.text));
     expect(texts.filter((x) => x.startsWith("Test Document Processor returned Notary to Test Loan Associate"))).toHaveLength(2);
     expect(texts).toContain("Test Document Processor returned Notary to Test Loan Associate: Missing paper (Valid IDs of borrower (2), Barangay clearance).".replace("Valid IDs of borrower (2)", valid.rule!.label));

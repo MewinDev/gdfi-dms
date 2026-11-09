@@ -2,7 +2,7 @@
 
 What the Loan Associate does, from Find loan to Send and the changes allowed before the DP accepts.
 
-Last updated: 8 November 2026 (PHT)
+Last updated: 9 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -52,7 +52,7 @@ flowchart TD
   classDef hold fill:#c9d4e6,stroke:#0c2340,color:#14213a
 ```
 
-- Find loan does a live lookup in MyLoans by PN; suggestions start at 3 characters; only loans in the user's branches appear.
+- Find loan does a live lookup in MyLoans by PN; suggestions start at 3 characters; only loans in the user's branch access appear. The PN is checked first (Settings, System, PN format: GD + branch code + year + 9 + running number, for example GD1012026900001; spaces, dashes and dots are removed): a wrong PN shows "This does not look like a PN. Example: GD1012026900001" and the wrong part, and is never sent to MyLoans. The Loan File shows the PN as stored and "Opened at {branch} ({code})" under it ("..., now at ..." when MyLoans moved the loan).
 - Check documents shows the open transaction on the left and all transactions, in fixed order, on the right.
 - Nothing is pre-selected for funds: the LA must answer. The LTO office and the late reason appear only when they apply.
 - Before the DP accepts, the LA can update papers, change funds, processor or LTO office, add a note, or pull back. After accepting, only the DP can return it.

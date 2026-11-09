@@ -14,10 +14,10 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const get = (k: string) => sp.get(k) || undefined;
   const rows = await listLoans(user, {
-    tab: get("tab") ?? "all", stage: get("stage"), classification: get("classification"), branch: get("branch"),
+    tab: get("tab") ?? "all", stage: get("stage"), classification: get("classification"), branch: get("branch"), area: get("area"),
     loanType: get("loanType"), tat: get("tat"), needsAction: get("needsAction"), holdReason: get("holdReason"), q: get("q"),
   });
-  const header = ["PN", "Borrower", "Loan Type", "Product", "Branch", "Released at", "Total Released Amount", "Classification", "Stage", "TAT", "Next step", "Open exceptions"];
+  const header = ["PN", "Borrower", "Loan Type", "Product", "Branch", "Branch code", "Area", "Released at", "Total Released Amount", "Classification", "Stage", "TAT", "Next step", "Open exceptions"];
   const esc = (v: unknown) => {
     const s = String(v ?? "");
     // Prevent spreadsheet formula injection.
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   };
   const lines = [header.join(",")].concat(
     rows.map((r) =>
-      [r.pn, r.borrowerName, r.loanType, r.productName, r.branch, businessDate(r.releasedAt), r.amount.toFixed(2), r.classification, r.stage, r.tat ? TAT_LABEL[r.tat.badge] : "", r.nextStep.label, r.openExceptions]
+      [r.pn, r.borrowerName, r.loanType, r.productName, r.branchName, r.branchCode ?? "", r.area, businessDate(r.releasedAt), r.amount.toFixed(2), r.classification, r.stage, r.tat ? TAT_LABEL[r.tat.badge] : "", r.nextStep.label, r.openExceptions]
         .map(esc)
         .join(","),
     ),

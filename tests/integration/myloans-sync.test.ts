@@ -25,7 +25,7 @@ import type { MyLoansRecord } from "@/lib/myloans/types";
 import { asUser, cleanLoans } from "./helpers";
 
 let la: CurrentUser, dp: CurrentUser, admin: CurrentUser, fin: CurrentUser;
-const PN = "PN-0001003"; // Cebu, Renewal, ₱1,000,000, Auto Financing: Mortgage (4 transactions)
+const PN = "GD1652026901003"; // Angono, Renewal, ₱1,000,000, Auto Financing: Mortgage (4 transactions)
 const sys = { actor: SYSTEM_ACTOR, mode: "MANUAL" as const, trigger: "button" as const };
 
 beforeAll(async () => {
@@ -103,7 +103,7 @@ describe("Refresh rules", () => {
     const holiday = [...holidays].find((d) => new Date(`${d}T00:00:00+08:00`).getUTCDay() !== 0);
     if (holiday) expect(isBusinessHours(new Date(`${holiday}T10:00:00+08:00`), holidays)).toBe(false);
     await open();
-    await open("PN-0001001");
+    await open("GD1012026901001");
     expect(await runMyLoansSync({ trigger: "cron", now: new Date("2026-11-08T10:00:00+08:00") })).toMatchObject({ ran: false, reason: "Outside business hours." });
     await setSetting("myloans.maxPerRun", 1);
     await setSetting("myloans.pauseMs", 250);
@@ -128,15 +128,15 @@ describe("Refresh rules", () => {
     expect(l.nextCheckAt!.getTime() - l.lastCheckedAt!.getTime()).toBe(240 * 60_000);
     // With the changed-since feed (the mock has one; the cursor is set now): one call, only loans MyLoans changed.
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 0, calls: 1 });
-    await change("PN-0001001", { address: "5 Mabini St" });
+    await change("GD1012026901001", { address: "5 Mabini St" });
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 1, changes: 1, calls: 1 });
     await expect(runSyncNow(la)).rejects.toThrow(/does not allow/);
     await runSyncNow(admin);
     expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run" } })).toBeGreaterThan(0);
     // A loan closed as cancelled is not checked again (no tier).
-    const l1 = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001001" } });
+    const l1 = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026901001" } });
     await prisma.loan.update({ where: { id: l1.id }, data: { cancelledAt: new Date(), syncTier: null, nextCheckAt: null } });
-    await change("PN-0001001", { address: "6 Mabini St" });
+    await change("GD1012026901001", { address: "6 Mabini St" });
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ checked: 0 });
   });
 
@@ -262,7 +262,7 @@ describe("Replacement PN", () => {
       include: { lines: true },
     });
     const msg = await simulateSourceChange(admin, old.id, "replace");
-    const newPn = /now has (PN-\d+)/.exec(msg)![1];
+    const newPn = /now has (GD\d{13})/.exec(msg)![1];
     expect((await item(old.id)).category).toBe("STATUS");
     expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_change_detected", loanId: old.id } })).mode).toBe("SIMULATED");
     // Find loan: the new PN warns about the other open loan of the same borrower.
@@ -306,10 +306,10 @@ describe("Find loan and the simulator", () => {
     expect(r.ok && r.hits.length).toBeLessThanOrEqual(10);
     expect(r.ok && r.hits.every((h) => h.pn.startsWith("PN-000"))).toBe(true);
     const exact = new MockMyLoansAdapter({ capabilities: { search: false } });
-    expect(await findLoans(la, "PN-0001003", { adapter: exact })).toMatchObject({ exactOnly: true, hits: [{ pn: "PN-0001003" }] });
+    expect(await findLoans(la, "GD1652026901003", { adapter: exact })).toMatchObject({ exactOnly: true, hits: [{ pn: "GD1652026901003" }] });
     expect(await findLoans(la, "Ana Villanueva", { adapter: exact })).toMatchObject({ exactOnly: true, hits: [] });
     const many = Array.from({ length: 25_000 }, (_, i) => ({
-      pn: `PN-${String(3_000_000 + i)}`, cin: null, cif: null, sourceLoanId: null, borrowerName: `Big ${i}`, branchName: "Cebu", branchCode: "CEB", status: "RELEASED", loanType: "New", productName: "Auto", totalReleasedAmount: 1, releaseDate: "2026-11-02",
+      pn: `PN-${String(3_000_000 + i)}`, cin: null, cif: null, sourceLoanId: null, borrowerName: `Big ${i}`, branchName: "Angono", branchCode: "165", status: "RELEASED", loanType: "New", productName: "Auto", totalReleasedAmount: 1, releaseDate: "2026-11-02",
     }));
     const big = new MockMyLoansAdapter({ records: many });
     const search = vi.spyOn(big, "search");

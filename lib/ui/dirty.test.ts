@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { changedFields, dirtyState, type FormValues } from "./dirty";
 
-const opened: FormValues = [["kind", "branch"], ["code", "MKT"], ["name", "Makati"], ["branchIds", "a"], ["branchIds", "b"]];
+const opened: FormValues = [["kind", "branch"], ["code", "168"], ["name", "A. Mabini"], ["branchIds", "a"], ["branchIds", "b"]];
 
 describe("Unsaved-changes check", () => {
   it("is false for an untouched form", () => {
@@ -19,7 +19,7 @@ describe("Unsaved-changes check", () => {
   });
 
   it("counts checkbox groups by their set of values (order does not matter)", () => {
-    const reordered: FormValues = [["kind", "branch"], ["code", "MKT"], ["name", "Makati"], ["branchIds", "b"], ["branchIds", "a"]];
+    const reordered: FormValues = [["kind", "branch"], ["code", "168"], ["name", "A. Mabini"], ["branchIds", "b"], ["branchIds", "a"]];
     expect(changedFields(opened, reordered)).toEqual([]);
     const fewer = opened.filter(([k, v]) => !(k === "branchIds" && v === "b"));
     expect(changedFields(opened, fewer)).toEqual(["branchIds"]);

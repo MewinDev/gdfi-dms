@@ -1,3 +1,4 @@
+import { buildPn } from "@/lib/pn/format";
 import { describe, expect, it, vi } from "vitest";
 import { changeText, detectChanges, hashTracked, proposeEffect, trackedOf, type Tracked, type TxnNow } from "./changes";
 import { MockMyLoansAdapter } from "./mock-adapter";
@@ -7,7 +8,7 @@ import { checkContract } from "./contract";
 import type { MyLoansAdapter, MyLoansLookup, MyLoansRecord } from "./types";
 
 const rec = (over: Partial<MyLoansRecord> = {}): MyLoansRecord => ({
-  pn: "PN-0001001", cin: "CIN-1", cif: "CIF-1", sourceLoanId: "ML-1", borrowerName: "Maria Santos", branchName: "Quezon City", branchCode: "QC",
+  pn: "GD1012026901001", cin: "CIN-1", cif: "CIF-1", sourceLoanId: "ML-1", borrowerName: "Maria Santos", branchName: "Antipolo", branchCode: "101",
   status: "RELEASED", loanType: "New", productName: "Auto Refinancing", totalReleasedAmount: 450_000, releaseDate: "2026-11-02", address: "1 Rizal Ave", ...over,
 });
 const t = (over: Partial<MyLoansRecord> = {}): Tracked => trackedOf(rec(over));
@@ -32,7 +33,7 @@ describe("detectChanges", () => {
   });
   it("status wins over material; replacement wins over status", () => {
     expect(detectChanges(t(), t({ status: "CANCELLED", totalReleasedAmount: 1 })).category).toBe("STATUS");
-    expect(detectChanges(t(), t({ status: "REPLACED", previousPn: "PN-0000999" })).category).toBe("REPLACEMENT");
+    expect(detectChanges(t(), t({ status: "REPLACED", previousPn: "GD1012026900999" })).category).toBe("REPLACEMENT");
   });
 });
 
@@ -87,13 +88,13 @@ describe("proposeEffect", () => {
 
 describe("Adapters: contract, scale, resilience", () => {
   it("the mock keeps the contract (with and without search and changed-since)", async () => {
-    expect(await checkContract(new MockMyLoansAdapter(), "PN-0001001", "PN-9999999")).toEqual([]);
-    expect(await checkContract(new MockMyLoansAdapter({ capabilities: { search: false, changedSince: false } }), "PN-0001001", "PN-9999999")).toEqual([]);
+    expect(await checkContract(new MockMyLoansAdapter(), "GD1012026901001", "GD1012026999999")).toEqual([]);
+    expect(await checkContract(new MockMyLoansAdapter({ capabilities: { search: false, changedSince: false } }), "GD1012026901001", "GD1012026999999")).toEqual([]);
   });
   it("25,000 loans: lookups by the PN index; search stops at the limit", async () => {
-    const many = Array.from({ length: 25_000 }, (_, i) => rec({ pn: `PN-${String(2_000_000 + i).padStart(7, "0")}`, borrowerName: `Borrower ${i}` }));
+    const many = Array.from({ length: 25_000 }, (_, i) => rec({ pn: buildPn("101", 2026, i), borrowerName: `Borrower ${i}` }));
     const a = new MockMyLoansAdapter({ records: many });
-    const r = await a.getByPn("PN-2024999");
+    const r = await a.getByPn("GD1012026924999");
     expect(r.ok && r.record.borrowerName).toBe("Borrower 24999");
     const s = await a.search("Borrower", 10);
     expect(s.ok && s.hits.length).toBe(10);
@@ -104,18 +105,18 @@ describe("Adapters: contract, scale, resilience", () => {
     const fake = (async (url: string | URL | Request) => {
       const u = String(url);
       calls.push(u);
-      if (u.endsWith("/loans/PN-0001001")) return new Response(JSON.stringify({ pnNumber: "PN-0001001", borrowerName: "Maria", status: "RELEASED", loanType: "New", productName: "Auto", totalReleasedAmount: 1, releaseDate: "2026-11-02T00:00:00Z", branchName: "QC" }), { status: 200 });
-      if (u.endsWith("/loans/PN-0007777")) return new Response("{}", { status: 429, headers: { "retry-after": "3" } });
-      if (u.endsWith("/loans/PN-0008888")) throw new TypeError(`fetch failed https://secret.myloans.example key=SEKRET`);
+      if (u.endsWith("/loans/GD1012026901001")) return new Response(JSON.stringify({ pnNumber: "GD1012026901001", borrowerName: "Maria", status: "RELEASED", loanType: "New", productName: "Auto", totalReleasedAmount: 1, releaseDate: "2026-11-02T00:00:00Z", branchName: "101" }), { status: 200 });
+      if (u.endsWith("/loans/GD1012026907777")) return new Response("{}", { status: 429, headers: { "retry-after": "3" } });
+      if (u.endsWith("/loans/GD1012026908888")) throw new TypeError(`fetch failed https://secret.myloans.example key=SEKRET`);
       return new Response("{}", { status: 404 });
     }) as typeof fetch;
     const live = new HttpMyLoansAdapter("https://secret.myloans.example/api", "SEKRET", 8000, fake);
-    expect(await checkContract(live, "PN-0001001", "PN-9999999")).toEqual([]);
-    const limited = await live.getByPn("PN-0007777");
+    expect(await checkContract(live, "GD1012026901001", "GD1012026999999")).toEqual([]);
+    const limited = await live.getByPn("GD1012026907777");
     expect(limited).toMatchObject({ ok: false, reason: "UNAVAILABLE", retryAfterMs: 3000 });
-    const down = await live.getByPn("PN-0008888");
+    const down = await live.getByPn("GD1012026908888");
     expect(JSON.stringify([limited, down])).not.toMatch(/SEKRET|secret\.myloans/);
-    const none = await new HttpMyLoansAdapter("", "", 8000, fake).getByPn("PN-0001001");
+    const none = await new HttpMyLoansAdapter("", "", 8000, fake).getByPn("GD1012026901001");
     expect(none).toMatchObject({ ok: false, reason: "UNAVAILABLE", message: "MyLoans did not answer. Try again in a moment." });
   });
   it("retry with backoff, Retry-After, circuit breaker; Not found is an answer", async () => {
@@ -130,7 +131,7 @@ describe("Adapters: contract, scale, resilience", () => {
     let now = 1_000;
     const a = new ResilientAdapter(inner, { retries: 2, baseDelayMs: 100, breakAfter: 2, openMs: 60_000, sleep, now: () => now });
     answers.push({ ok: false, reason: "UNAVAILABLE", message: "busy", retryAfterMs: 2_000 }, { ok: true, record: rec(), raw: {}, adapter: "live", retrievedAt: new Date() });
-    expect((await a.getByPn("PN-0001001")).ok).toBe(true);
+    expect((await a.getByPn("GD1012026901001")).ok).toBe(true);
     expect(sleep).toHaveBeenLastCalledWith(2_000); // Retry-After honoured
     n = 0;
     answers.push({ ok: false, reason: "NOT_FOUND", message: "PN not found." });

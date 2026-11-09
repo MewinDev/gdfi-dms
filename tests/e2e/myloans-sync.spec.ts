@@ -7,7 +7,7 @@ import { db, resetLoans } from "./db";
  * Mock MyLoans; changes are made the way the simulator makes them. Screenshots go to SHOTS_DIR.
  */
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin" } as const;
-const PN = "PN-0001003";
+const PN = "GD1652026901003";
 
 async function signInAs(page: Page, who: keyof typeof BUTTONS) {
   await page.context().clearCookies();
@@ -93,18 +93,18 @@ test("Find loan: live suggestions from 3 characters, at most 10, no match", asyn
   const box = page.locator("#find-loan");
   await box.fill("PN");
   await expect(page.locator("[data-find-results]")).toHaveCount(0);
-  await box.fill("PN-000100");
+  await box.fill("GD16520269010");
   const list = page.getByRole("listbox", { name: "MyLoans matches" });
   await expect(list.getByRole("option").first()).toBeVisible();
   expect(await list.getByRole("option").count()).toBeLessThanOrEqual(10);
-  await expect(list.getByRole("option", { name: /PN-0001003/ })).toContainText("Ana Villanueva");
+  await expect(list.getByRole("option", { name: /GD1652026901003/ })).toContainText("Ana Villanueva");
   await shot(page, "find-loan-search");
   await noSideways(page);
   await box.fill("zzzz-nobody");
   await expect(page.locator("[data-find-empty]")).toHaveText("No match in MyLoans.");
-  await box.fill("PN-0001003");
-  await list.getByRole("option", { name: /PN-0001003/ }).click();
-  await expect(page).toHaveURL(/\/search\?q=PN-0001003/);
+  await box.fill("GD1652026901003");
+  await list.getByRole("option", { name: /GD1652026901003/ }).click();
+  await expect(page).toHaveURL(/\/search\?q=GD1652026901003/);
 });
 
 test("Material change: LA sees it read-only (no amounts); Open items group; Admin reviews and applies", async ({ page }) => {
@@ -185,7 +185,7 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   const sim = page.locator("[data-simulate-source]");
   await sim.getByLabel("Simulate a MyLoans change").selectOption("replace");
   await sim.getByRole("button", { name: "Simulate" }).click();
-  await expect(sim.getByText(/Simulated: MyLoans now has PN-\d+ replacing PN-0001003/)).toBeVisible();
+  await expect(sim.getByText(/Simulated: MyLoans now has GD\d{13} replacing GD1652026901003/)).toBeVisible();
   const extra = (await db.setting.findUniqueOrThrow({ where: { key: "myloans.mockExtra" } })).value as { pn: string }[];
   const newPn = extra[0].pn;
 

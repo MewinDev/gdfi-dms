@@ -19,13 +19,13 @@ import { asUser, cleanLoans } from "./helpers";
 
 let la: CurrentUser, admin: CurrentUser;
 const rec = (i: number): MyLoansRecord => ({
-  pn: `PN-${5_000_000 + i}`, cin: `CIN-L${i}`, cif: null, sourceLoanId: `ML-L${i}`, borrowerName: `Load Borrower ${i}`, branchName: "Quezon City", branchCode: "QC",
+  pn: `PN-${5_000_000 + i}`, cin: `CIN-L${i}`, cif: null, sourceLoanId: `ML-L${i}`, borrowerName: `Load Borrower ${i}`, branchName: "Antipolo", branchCode: "101",
   status: "RELEASED", loanType: "New", productName: "Auto Refinancing", totalReleasedAmount: 450_000, releaseDate: "2026-11-02",
 });
 
 /** n active loan files (tier B, due) with their first MyLoans copy, written in chunks; the matching mock source. */
 async function seed(n: number, opts: { tier?: (i: number) => string | null; nextCheck?: (i: number) => Date | null } = {}) {
-  const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "QC" } });
+  const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
   const past = new Date(Date.now() - 60_000);
   for (let i = 0; i < n; i += 5_000) {
     await prisma.loan.createMany({
@@ -155,12 +155,12 @@ describe("Tiers, adaptive cap, hourly ceiling, one runner", () => {
 
   it("hourly ceiling: the background run pauses; opening a loan still asks MyLoans", async () => {
     await setSetting("myloans.hourlyCeiling", 10);
-    await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
+    await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     await seed(5);
     for (let i = 0; i < 10; i++) noteCall(5, { ok: true });
     const r = await runMyLoansSync({ trigger: "cron", force: true, adapter: source(5) });
     expect(r).toMatchObject({ ran: true, status: "paused", calls: 0, checked: 0 });
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
     const before = callsThisHour();
     expect(await refreshLoan(loan.id, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "open" })).toMatchObject({ ok: true });
     expect(callsThisHour()).toBe(before + 1);
@@ -179,12 +179,12 @@ describe("Tiers, adaptive cap, hourly ceiling, one runner", () => {
 
 describe("Snapshot retention", () => {
   it("unchanged copies are not stored; minor-only collapse to the latest; material and status kept", async () => {
-    await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+    await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
+    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
     const kinds = async () => (await prisma.loanSourceSnapshot.findMany({ where: { loanId: loan.id }, orderBy: { retrievedAt: "asc" } })).map((s) => s.kind);
     const change = async (over: Partial<MyLoansRecord>) => {
       const all = { ...(await getSetting("myloans.mockOverrides")) };
-      all["PN-0001003"] = { ...(all["PN-0001003"] ?? {}), ...over, changedAt: new Date().toISOString() };
+      all["GD1652026901003"] = { ...(all["GD1652026901003"] ?? {}), ...over, changedAt: new Date().toISOString() };
       await setSetting("myloans.mockOverrides", all);
       return refreshLoan(loan.id, { actor: SYSTEM_ACTOR, mode: "MANUAL", trigger: "button" });
     };

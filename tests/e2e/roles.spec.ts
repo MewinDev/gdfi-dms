@@ -81,7 +81,10 @@ test("Custom role from a copy: switches, plain words, save, assign, sign in, the
   await add.getByLabel("Name").fill("Zed Checker");
   await add.getByLabel("Email").fill("zz.checker@gdfi.ph");
   await add.getByLabel("Role").selectOption({ label: "Z Branch Checker (test users in test mode)" });
-  await add.getByLabel("Quezon City").check();
+  // Branch access: Selected, then tick Antipolo in the tree (the search opens the nodes that match).
+  await add.getByRole("radio", { name: "Selected" }).check();
+  await add.getByPlaceholder("Find a branch by name or code").fill("101");
+  await add.getByLabel("Antipolo (101)").check();
   await add.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
@@ -92,7 +95,7 @@ test("Custom role from a copy: switches, plain words, save, assign, sign in, the
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page).toHaveURL(/dashboard/);
   await expect(page.getByRole("navigation", { name: "Main" }).filter({ visible: true }).getByRole("link", { name: /Settings/ })).toHaveCount(0);
-  await page.goto("/search?q=PN-0001001");
+  await page.goto("/search?q=GD1012026901001");
   await expect(page.getByRole("main").getByText("Loan found")).toBeVisible(); // allowed: Find a loan
   await expect(page.getByRole("main").getByText("Your role does not allow opening loan files.")).toBeVisible(); // refused: open
   await expect(page.getByRole("main").getByRole("button", { name: "Open loan file" })).toBeDisabled();

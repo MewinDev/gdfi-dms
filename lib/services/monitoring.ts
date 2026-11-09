@@ -34,6 +34,8 @@ export interface MonitorQuery {
   view: MonitorView;
   range: DateRange;
   branchId: string | null;
+  /** Area filter (an Area id): jobs and processors of any branch in that area. */
+  areaId: string | null;
   typeCode: string | null;
   /** By day: one DP (or all). Drill-down: the DP opened. */
   dpId: string | null;
@@ -45,14 +47,14 @@ export interface MonitorQuery {
   collapsed: string[];
 }
 
-export type MonitorSearch = Partial<Record<"tab" | "view" | "range" | "from" | "to" | "branch" | "type" | "dp" | "office" | "open" | "hide", string>>;
+export type MonitorSearch = Partial<Record<"tab" | "view" | "range" | "from" | "to" | "area" | "branch" | "type" | "dp" | "office" | "open" | "hide", string>>;
 
 export function parseMonitorQuery(sp: MonitorSearch, user: CurrentUser, today: string = businessDate(new Date())): MonitorQuery {
   const canDp = can(user, PERMISSIONS.MONITOR_DP), canLto = can(user, PERMISSIONS.MONITOR_LTO);
   const tab: MonitorTab = sp.tab === "lto" && canLto ? "lto" : sp.tab === "dp" && canDp ? "dp" : canDp ? "dp" : "lto";
   return {
     tab, view: sp.view === "day" ? "day" : "totals", range: parseRange(sp, today),
-    branchId: sp.branch || null, typeCode: sp.type || null, dpId: sp.dp || null, officeId: sp.office || null, open: sp.open === "1",
+    branchId: sp.branch || null, areaId: sp.area || null, typeCode: sp.type || null, dpId: sp.dp || null, officeId: sp.office || null, open: sp.open === "1",
     collapsed: (sp.hide ?? "").split(",").filter(Boolean),
   };
 }
@@ -62,7 +64,7 @@ export function monitorHref(q: MonitorQuery, change: Partial<Record<keyof Monito
   const base: MonitorSearch = {
     tab: q.tab, view: q.view === "day" ? "day" : undefined, range: q.range.preset === "custom" ? undefined : q.range.preset,
     from: q.range.preset === "custom" ? q.range.from : undefined, to: q.range.preset === "custom" ? q.range.to : undefined,
-    branch: q.branchId ?? undefined, type: q.typeCode ?? undefined, dp: q.dpId ?? undefined, office: q.officeId ?? undefined, open: q.open ? "1" : undefined,
+    area: q.areaId ?? undefined, branch: q.branchId ?? undefined, type: q.typeCode ?? undefined, dp: q.dpId ?? undefined, office: q.officeId ?? undefined, open: q.open ? "1" : undefined,
     hide: q.collapsed.length ? q.collapsed.join(",") : undefined,
   };
   const merged = { ...base, ...change } as Record<string, string | null | undefined>;
@@ -79,11 +81,18 @@ const boundsOf = (r: DateRange): Bounds => ({ start: startOfBusinessDay(r.from),
 /** A PHT calendar day of a stored UTC timestamp. */
 const phtDay = (col: Prisma.Sql) => Prisma.sql`to_char((${col} + interval '8 hours')::date, 'YYYY-MM-DD')`;
 
-/** Loan scope, branch and transaction type filters on a job (aliases a, l, ty). */
-function jobFilter(user: CurrentUser, q: Pick<MonitorQuery, "branchId" | "typeCode">): Prisma.Sql {
-  const parts: Prisma.Sql[] = [Prisma.sql`a."status" <> 'PULLED_BACK'`];
+/** The person's branch scope and the Area and Branch filters on the loan (alias l). */
+function loanBranchParts(user: CurrentUser, q: Pick<MonitorQuery, "branchId" | "areaId">): Prisma.Sql[] {
+  const parts: Prisma.Sql[] = [];
   if (user.scopeBranchIds !== null) parts.push(user.scopeBranchIds.length ? Prisma.sql`l."branchId" IN (${Prisma.join(user.scopeBranchIds)})` : Prisma.sql`false`);
+  if (q.areaId) parts.push(Prisma.sql`l."branchId" IN (SELECT b."id" FROM "Branch" b WHERE b."areaId" = ${q.areaId})`);
   if (q.branchId) parts.push(Prisma.sql`l."branchId" = ${q.branchId}`);
+  return parts;
+}
+
+/** Loan scope, area, branch and transaction type filters on a job (aliases a, l, ty). */
+function jobFilter(user: CurrentUser, q: Pick<MonitorQuery, "branchId" | "areaId" | "typeCode">): Prisma.Sql {
+  const parts: Prisma.Sql[] = [Prisma.sql`a."status" <> 'PULLED_BACK'`, ...loanBranchParts(user, q)];
   if (q.typeCode) parts.push(Prisma.sql`ty."code" = ${q.typeCode}`);
   return Prisma.join(parts, " AND ");
 }
@@ -148,6 +157,9 @@ export async function openJobCounts(dpIds?: string[]): Promise<Map<string, numbe
 export interface DpPerson {
   id: string;
   name: string;
+  /** All branches (no rows): branchIds then lists every active branch shown in the DMS. */
+  allBranches: boolean;
+  /** The branches in the processor's access (every active, shown branch with All branches). */
   branchIds: string[];
   branchNames: string[];
   capacity: number;
@@ -158,17 +170,18 @@ export interface DpPerson {
 
 /** Active processors (processing:receive), with capacity and leave. */
 export async function processors(today: string = businessDate(new Date())): Promise<DpPerson[]> {
-  const [rows, def] = await Promise.all([
+  const [rows, def, everyBranch] = await Promise.all([
     prisma.user.findMany({
       where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } }, orderBy: { name: "asc" },
-      select: { id: true, name: true, dpCapacity: true, dpOnLeave: true, dpLeaveUntil: true, branches: { select: { branch: { select: { id: true, name: true } } } } },
+      select: { id: true, name: true, allBranches: true, dpCapacity: true, dpOnLeave: true, dpLeaveUntil: true, branches: { select: { branch: { select: { id: true, name: true } } } } },
     }),
     defaultCapacity(),
+    prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
   return rows.map((r) => {
-    const b = r.branches.map((x) => x.branch).sort((x, y) => x.name.localeCompare(y.name));
+    const b = r.allBranches ? everyBranch : r.branches.map((x) => x.branch).sort((x, y) => x.name.localeCompare(y.name));
     return {
-      id: r.id, name: r.name, branchIds: b.map((x) => x.id), branchNames: b.map((x) => x.name), capacity: r.dpCapacity ?? def, ownCapacity: r.dpCapacity,
+      id: r.id, name: r.name, allBranches: r.allBranches, branchIds: b.map((x) => x.id), branchNames: r.allBranches ? ["All branches"] : b.map((x) => x.name), capacity: r.dpCapacity ?? def, ownCapacity: r.dpCapacity,
       onLeave: onLeaveToday(r, today), leaveUntil: r.dpOnLeave ? r.dpLeaveUntil : null,
     };
   });
@@ -179,8 +192,43 @@ export async function defaultCapacity(): Promise<number> {
   return Number.isFinite(v) && v >= AVAILABILITY.minCapacity ? Math.round(v) : AVAILABILITY.defaultCapacity;
 }
 
-/** The group of a processor: their branch, or their branches together ("Cebu · Quezon City"). */
-export const dpGroup = (p: Pick<DpPerson, "branchNames">) => (p.branchNames.length ? p.branchNames.join(" · ") : "No branch");
+/** A branch with its code and Area, for the groups, chips and filters ("Antipolo (101)"). */
+export interface BranchPlace { id: string; name: string; code: string | null; areaId: string | null; areaName: string | null; hidden: boolean }
+export const branchLabel = (b: { name: string; code: string | null }) => (b.code ? `${b.name} (${b.code})` : b.name);
+
+export async function branchPlaces(): Promise<Map<string, BranchPlace>> {
+  const rows = await prisma.branch.findMany({ select: { id: true, name: true, code: true, areaId: true, hidden: true, area: { select: { name: true } } } });
+  return new Map(rows.map((b) => [b.id, { id: b.id, name: b.name, code: b.code, areaId: b.areaId, areaName: b.area?.name ?? null, hidden: b.hidden }]));
+}
+
+export const SEVERAL_AREAS = "Several areas";
+export const NO_BRANCH = "No branch";
+export const NO_AREA = "Area needed";
+
+/**
+ * Where a processor is grouped: their Area when all their branches share one, otherwise "Several areas"
+ * (never twice); inside it the branch, or their branches together ("Angono (165) · Antipolo (101)").
+ */
+export function dpPlace(p: Pick<DpPerson, "branchIds">, places: Map<string, BranchPlace>): { area: string; areaId: string | null; branch: string; chips: string[] } {
+  const mine = p.branchIds.map((id) => places.get(id)).filter((b): b is BranchPlace => !!b).sort((x, y) => x.name.localeCompare(y.name));
+  if (!mine.length) return { area: NO_BRANCH, areaId: null, branch: NO_BRANCH, chips: [] };
+  const areas = [...new Set(mine.map((b) => b.areaId ?? ""))];
+  const chips = mine.map(branchLabel);
+  const area = areas.length > 1 ? SEVERAL_AREAS : mine[0].areaName ?? NO_AREA;
+  return { area, areaId: areas.length === 1 ? mine[0].areaId : null, branch: chips.length > 3 ? `${chips.length} branches` : chips.join(" · "), chips };
+}
+
+/** The group of a processor (the Area level), for By day and the drill-down. */
+export const dpGroup = (p: Pick<DpPerson, "branchIds">, places: Map<string, BranchPlace>) => dpPlace(p, places).area;
+
+/** Does a processor match the Area and Branch filters (any of their branches)? */
+function dpMatches(p: Pick<DpPerson, "branchIds">, q: Pick<MonitorQuery, "branchId" | "areaId">, places: Map<string, BranchPlace>): boolean {
+  if (q.branchId && !p.branchIds.includes(q.branchId)) return false;
+  if (q.areaId && !p.branchIds.some((id) => places.get(id)?.areaId === q.areaId)) return false;
+  return true;
+}
+const lastLabels = new Set([SEVERAL_AREAS, NO_AREA, NO_BRANCH]);
+const byLabel = (a: string, z: string) => (lastLabels.has(a) !== lastLabels.has(z) ? (lastLabels.has(a) ? 1 : -1) : a.localeCompare(z));
 
 // ---------------------------------------------------------------------------
 // DP monitor
@@ -190,7 +238,12 @@ export interface Avg { days: number | null; n: number }
 export interface DpRow {
   id: string;
   name: string;
+  /** The Area group ("LUZON 1 (NGMA + RIZAL)", "Several areas"). */
   group: string;
+  /** The branch group inside the Area ("Antipolo (101)", or the branches together). */
+  branchGroup: string;
+  /** Every branch of the processor, as chips. */
+  branches: string[];
   assigned: number;
   inProcess: number;
   onHold: number;
@@ -205,7 +258,10 @@ export interface DpRow {
   avail: Availability;
   leaveUntil: string | null;
 }
-export interface DpGroup { key: string; label: string; rows: DpRow[]; sub: Omit<DpRow, "id" | "name" | "group" | "avail" | "leaveUntil"> & { availPct: number | null } }
+export type DpSub = Omit<DpRow, "id" | "name" | "group" | "branchGroup" | "branches" | "avail" | "leaveUntil"> & { availPct: number | null };
+export interface DpBranchGroup { key: string; label: string; rows: DpRow[]; sub: DpSub }
+/** An Area with its branch groups; each processor is in exactly one Area and one branch group. */
+export interface DpGroup { key: string; label: string; rows: DpRow[]; branches: DpBranchGroup[]; sub: DpSub }
 export interface DpMonitor {
   tiles: { activeDps: number; assigned: number; inProcess: number; onHold: number; overdue: number; avgTotal: Avg; avgAvailability: number | null };
   groups: DpGroup[];
@@ -235,13 +291,14 @@ const sumKeys = ["assigned", "inProcess", "onHold", "overdue", "declined", "retu
 export async function dpMonitor(user: CurrentUser, q: MonitorQuery, now: Date = new Date()): Promise<DpMonitor> {
   const today = businessDate(now);
   const b = boundsOf(q.range);
-  const [people, open, finished, back, holidays] = await Promise.all([processors(today), openJobs(user, q, now), finishedJobs(user, q, b), sentBackCounts(user, q, b), getHolidaySet()]);
+  const [people, open, finished, back, holidays, places] = await Promise.all([processors(today), openJobs(user, q, now), finishedJobs(user, q, b), sentBackCounts(user, q, b), getHolidaySet(), branchPlaces()]);
   const minDay = finished.reduce((m, f) => { const d = phtDate(f.endorsedAt); return d < m ? d : m; }, q.range.from);
   const bd = businessDayCounter(holidays, ymdAdd(minDay, -1), ymdAdd(q.range.to, 1));
   const seen = new Set([...open.map((o) => o.owner), ...finished.map((f) => f.proc), ...back.map((x) => x.who)]);
-  // In the person's branches (and the branch filter): processors of those branches, plus anyone with work there.
+  // In the person's branches (and the Area and Branch filters: any of their branches): processors of
+  // those branches, plus anyone with work there.
   const inBranches = (p: DpPerson) =>
-    (user.scopeBranchIds === null || p.branchIds.some((x) => user.scopeBranchIds!.includes(x))) && (!q.branchId || p.branchIds.includes(q.branchId));
+    (user.scopeBranchIds === null || p.branchIds.some((x) => user.scopeBranchIds!.includes(x))) && dpMatches(p, q, places);
   const list = people.filter((p) => inBranches(p) || seen.has(p.id));
   const times = new Map<string, { accept: number[]; processing: number[]; total: number[] }>();
   for (const f of finished) {
@@ -257,24 +314,29 @@ export async function dpMonitor(user: CurrentUser, q: MonitorQuery, now: Date = 
     const inProcess = mine.filter((o) => o.state === "IN_PROCESS").length;
     const onHold = mine.filter((o) => o.state === "ON_HOLD").length;
     const openN = assigned + inProcess + onHold;
+    const place = dpPlace(p, places);
     return {
-      id: p.id, name: p.name, group: dpGroup(p), assigned, inProcess, onHold, overdue: mine.filter((o) => o.overdue).length,
+      id: p.id, name: p.name, group: place.area, branchGroup: place.branch, branches: place.chips, assigned, inProcess, onHold, overdue: mine.filter((o) => o.overdue).length,
       declined: Number(back.find((x) => x.who === p.id && x.kind === "declined")?.n ?? 0), returned: Number(back.find((x) => x.who === p.id && x.kind === "returned")?.n ?? 0),
       accept: { days: avg(t.accept), n: t.accept.length }, processing: { days: avg(t.processing), n: t.processing.length }, total: { days: avg(t.total), n: t.total.length },
       finished: t.total.length, open: openN, avail: availability(p.capacity, openN, p.onLeave), leaveUntil: p.onLeave ? p.leaveUntil : null,
     };
   });
-  const byGroup = new Map<string, DpRow[]>();
-  for (const r of rows) byGroup.set(r.group, [...(byGroup.get(r.group) ?? []), r]);
-  const groups: DpGroup[] = [...byGroup.entries()].sort(([a], [z]) => (a === "No branch" ? 1 : z === "No branch" ? -1 : a.localeCompare(z))).map(([label, rs]) => {
-    const all = rs.flatMap((r) => [r.id]);
-    const pick = (k: "accept" | "processing" | "total") => all.flatMap((id) => times.get(id)?.[k] ?? []);
+  const subOf = (rs: DpRow[]): DpSub => {
+    const pick = (k: "accept" | "processing" | "total") => rs.flatMap((r) => times.get(r.id)?.[k] ?? []);
     const working = rs.filter((r) => r.avail.status !== "ON_LEAVE");
     const sub = Object.fromEntries(sumKeys.map((k) => [k, rs.reduce((s, r) => s + r[k], 0)])) as Record<(typeof sumKeys)[number], number>;
-    return {
-      key: groupKey(label), label, rows: rs,
-      sub: { ...sub, accept: { days: avg(pick("accept")), n: pick("accept").length }, processing: { days: avg(pick("processing")), n: pick("processing").length }, total: { days: avg(pick("total")), n: pick("total").length }, availPct: working.length ? Math.round(working.reduce((s, r) => s + r.avail.pct, 0) / working.length) : null },
-    };
+    return { ...sub, accept: { days: avg(pick("accept")), n: pick("accept").length }, processing: { days: avg(pick("processing")), n: pick("processing").length }, total: { days: avg(pick("total")), n: pick("total").length }, availPct: working.length ? Math.round(working.reduce((s, r) => s + r.avail.pct, 0) / working.length) : null };
+  };
+  const byGroup = new Map<string, DpRow[]>();
+  for (const r of rows) byGroup.set(r.group, [...(byGroup.get(r.group) ?? []), r]);
+  // Area, then Branch: each processor is in one Area group and one branch group, so nobody counts twice.
+  const groups: DpGroup[] = [...byGroup.entries()].sort(([a], [z]) => byLabel(a, z)).map(([label, rs]) => {
+    const byBranch = new Map<string, DpRow[]>();
+    for (const r of rs) byBranch.set(r.branchGroup, [...(byBranch.get(r.branchGroup) ?? []), r]);
+    const key = groupKey(label);
+    const branches = [...byBranch.entries()].sort(([a], [z]) => byLabel(a, z)).map(([bl, brs]) => ({ key: `${key}--${groupKey(bl)}`, label: bl, rows: brs, sub: subOf(brs) }));
+    return { key, label, rows: branches.flatMap((x) => x.rows), branches, sub: subOf(rs) };
   });
   const allTotals = [...times.values()].flatMap((t) => t.total);
   const working = rows.filter((r) => r.avail.status !== "ON_LEAVE");
@@ -295,11 +357,11 @@ export const groupKey = (label: string) => label.toLowerCase().replace(/[^a-z0-9
 // ---------------------------------------------------------------------------
 
 export interface DrillJob { id: string; pn: string; href: string | null; typeName: string; status: string; age: string; due: string; overdue: boolean; when?: string; note?: string }
-export interface DpDrill { id: string; name: string; group: string; open: DrillJob[]; declined: DrillJob[]; returned: DrillJob[]; avail: Availability; leaveUntil: string | null }
+export interface DpDrill { id: string; name: string; group: string; branches: string[]; open: DrillJob[]; declined: DrillJob[]; returned: DrillJob[]; avail: Availability; leaveUntil: string | null }
 
 export async function dpDrill(user: CurrentUser, q: MonitorQuery, dpId: string, now: Date = new Date()): Promise<DpDrill | null> {
   const today = businessDate(now);
-  const p = (await processors(today)).find((x) => x.id === dpId);
+  const [p, places] = await Promise.all([processors(today).then((ps) => ps.find((x) => x.id === dpId)), branchPlaces()]);
   if (!p) return null;
   const b = boundsOf(q.range);
   const [open, back, holidays] = await Promise.all([
@@ -321,7 +383,7 @@ export async function dpDrill(user: CurrentUser, q: MonitorQuery, dpId: string, 
   const ageText = (d: Date) => { const n = bd(d, now); return `${n} business day${n === 1 ? "" : "s"}`; };
   const openN = mine.length;
   return {
-    id: p.id, name: p.name, group: dpGroup(p), avail: availability(p.capacity, openN, p.onLeave), leaveUntil: p.onLeave ? p.leaveUntil : null,
+    id: p.id, name: p.name, group: dpGroup(p, places), branches: dpPlace(p, places).chips, avail: availability(p.capacity, openN, p.onLeave), leaveUntil: p.onLeave ? p.leaveUntil : null,
     open: mine.map((o) => ({
       id: o.id, pn: o.pn, href: linkable(user, o.branchId) ? `/loans/${o.pn}` : null, typeName: o.typeName, status: OPEN_STATE_LABEL[o.state],
       age: ageText(o.endorsedAt), due: (() => { const d = due(o); return d ? fmtDate(d) : "No target"; })(), overdue: o.overdue,
@@ -362,7 +424,7 @@ function assembleByDay(range: DateRange, columns: { key: string; label: string }
     g.set(label, per);
   }
   const total = zero();
-  const groups: DayGroup[] = [...g.entries()].sort(([a], [z]) => a.localeCompare(z)).map(([label, per]) => {
+  const groups: DayGroup[] = [...g.entries()].sort(([a], [z]) => byLabel(a, z)).map(([label, per]) => {
     const sub = zero();
     const rows = bs.map((bk) => {
       const counts = per.get(bk.key) ?? zero();
@@ -395,10 +457,10 @@ export async function dpByDay(user: CurrentUser, q: MonitorQuery): Promise<ByDay
       SELECT 'returned', ${phtDay(Prisma.sql`a."returnedAt"`)}, ${PROC} FROM "DpAssignment" a ${JOIN}
         WHERE a."status" = 'WITHDRAWN' AND a."returnedAt" >= ${b.start} AND a."returnedAt" < ${b.end} AND ${f}
     ) x WHERE true ${one} GROUP BY kind, day, who`;
-  const people = new Map((await processors()).map((p) => [p.id, p]));
+  const [people, places] = await Promise.all([processors().then((ps) => new Map(ps.map((p) => [p.id, p]))), branchPlaces()]);
   return assembleByDay(q.range, DP_DAY_COLUMNS, events.map((e) => ({ ...e, n: Number(e.n) })), (who) => {
     const p = people.get(who);
-    return p ? (q.dpId ? p.name : dpGroup(p)) : null;
+    return p ? (q.dpId ? p.name : dpGroup(p, places)) : null;
   });
 }
 
@@ -500,8 +562,7 @@ export async function ltoMonitor(user: CurrentUser, q: MonitorQuery, now: Date =
  */
 async function travelSpent(user: CurrentUser, q: MonitorQuery): Promise<Map<string, number>> {
   const parts: Prisma.Sql[] = [Prisma.sql`ln."kind" = 'TRANSPORT'`, Prisma.sql`ln."ltoOfficeId" IS NOT NULL`, Prisma.sql`at."date" >= ${q.range.from}`, Prisma.sql`at."date" <= ${q.range.to}`];
-  if (user.scopeBranchIds !== null) parts.push(user.scopeBranchIds.length ? Prisma.sql`l."branchId" IN (${Prisma.join(user.scopeBranchIds)})` : Prisma.sql`false`);
-  if (q.branchId) parts.push(Prisma.sql`l."branchId" = ${q.branchId}`);
+  parts.push(...loanBranchParts(user, q));
   if (q.typeCode) parts.push(Prisma.sql`ty."code" = ${q.typeCode}`);
   const rows = await prisma.$queryRaw<{ office: string; cents: bigint }[]>`
     SELECT ln."ltoOfficeId" AS office, SUM(s."cents") AS cents
@@ -559,14 +620,20 @@ export async function ltoByDay(user: CurrentUser, q: MonitorQuery): Promise<ByDa
 // Filter options
 // ---------------------------------------------------------------------------
 
+/** Filter choices: Areas, then Branches as "Name (code)" (the person's scope; hidden branches left out). */
 export async function filterOptions(user: CurrentUser) {
-  const [branches, types, offices, people] = await Promise.all([
-    prisma.branch.findMany({ where: user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  const [rows, types, offices, people] = await Promise.all([
+    prisma.branch.findMany({
+      where: { hidden: false, ...(user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }) }, orderBy: { name: "asc" },
+      select: { id: true, name: true, code: true, area: { select: { id: true, name: true } } },
+    }),
     prisma.transactionType.findMany({ where: { requiresDp: true }, orderBy: { sortOrder: "asc" }, select: { code: true, name: true } }),
     prisma.ltoOffice.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, active: true } }),
     processors(),
   ]);
-  return { branches, types, offices, dps: people.map((p) => ({ id: p.id, name: p.name })) };
+  const branches = rows.map((b) => ({ id: b.id, name: branchLabel(b), areaId: b.area?.id ?? null }));
+  const areas = [...new Map(rows.filter((b) => b.area).map((b) => [b.area!.id, { id: b.area!.id, name: b.area!.name }])).values()].sort((a, z) => a.name.localeCompare(z.name));
+  return { areas, branches, types, offices, dps: people.map((p) => ({ id: p.id, name: p.name })) };
 }
 
 /** Runs some work and says how long it took (milliseconds). */

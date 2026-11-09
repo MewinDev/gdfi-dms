@@ -13,7 +13,9 @@ import { UsersToolbar } from "@/components/admin/users-toolbar";
 import { shortRoleName } from "@/lib/ui/roles";
 import { can } from "@/lib/auth/current-user";
 import { permissionLabel, plainWords } from "@/lib/auth/permissions";
-import { effectivePermissions } from "@/lib/auth/access";
+import { effectivePermissions, isLockedAdminRole } from "@/lib/auth/access";
+import { accessTreeData } from "@/lib/services/access";
+import { accessSummary } from "@/lib/branches/access";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -33,12 +35,13 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     ...(status === "all" ? {} : { active: status === "active" }),
     ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } : {}),
     ...(sp.role ? { roleId: sp.role } : {}),
-    ...(sp.branch ? { branches: { some: { branchId: sp.branch } } } : {}),
+    // Who works at this branch: their access includes it, or they have All branches.
+    ...(sp.branch ? { AND: [{ OR: [{ branches: { some: { branchId: sp.branch } } }, { allBranches: true }, { role: { key: "ADMIN" } }] }] } : {}),
   };
   const [users, roles, branches, total] = await Promise.all([
-    prisma.user.findMany({ where, include: { role: true, branches: { include: { branch: true }, orderBy: { branch: { name: "asc" } } } }, orderBy: [{ role: { sortOrder: "asc" } }, { name: "asc" }] }),
+    prisma.user.findMany({ where, include: { role: true, accessGrants: true, homeBranch: true, branches: { include: { branch: true }, orderBy: { branch: { name: "asc" } } } }, orderBy: [{ role: { sortOrder: "asc" } }, { name: "asc" }] }),
     prisma.role.findMany({ orderBy: { sortOrder: "asc" } }),
-    prisma.branch.findMany({ orderBy: { name: "asc" } }),
+    prisma.branch.findMany({ where: { hidden: false }, orderBy: { name: "asc" } }),
     prisma.user.count(),
   ]);
 
@@ -90,7 +93,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                       <span className="block text-sm text-ink-2">{u.email}</span>
                     </td>
                     <td className="min-w-44"><RoleCell role={u.role} /></td>
-                    <td className="min-w-40"><BranchChips names={u.branches.map((b) => b.branch.name)} /></td>
+                    <td className="min-w-40"><AccessCell u={u} /></td>
                     <td><StatusCell active={u.active} test={u.isTestUser} /></td>
                     <td className="text-right">
                       {canEdit && <Link id={`edit-${u.id}`} href={withOpen("user", u.id)} scroll={false} aria-haspopup="dialog" aria-label={`Edit ${u.name}`} className="btn-ghost btn-sm">Edit</Link>}
@@ -113,7 +116,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                   {canEdit && <Link id={`edit-m-${u.id}`} href={withOpen("user", u.id)} scroll={false} aria-haspopup="dialog" aria-label={`Edit ${u.name}`} className="btn-ghost btn-sm shrink-0">Edit</Link>}
                 </div>
                 <RoleCell role={u.role} />
-                <BranchChips names={u.branches.map((b) => b.branch.name)} />
+                <AccessCell u={u} />
                 <StatusCell active={u.active} test={u.isTestUser} />
               </li>
             ))}
@@ -121,7 +124,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         </>
       )}
 
-      {sp.open && (sp.open === "roles" || canEdit) && <UsersModal sp={sp} meId={me.id} listHref={listHref} roles={roles} branches={branches} canManageRoles={canManageRoles} />}
+      {sp.open && (sp.open === "roles" || canEdit) && <UsersModal sp={sp} meId={me.id} listHref={listHref} roles={roles} canManageRoles={canManageRoles} />}
     </div>
   );
 }
@@ -131,6 +134,18 @@ function RoleCell({ role }: { role: { name: string; canSignIn: boolean } }) {
     <span className="flex flex-col items-start gap-1">
       <span className="chip c-navy h-6 whitespace-nowrap text-xs" title={role.name}>{shortRoleName(role.name)}</span>
       {!role.canSignIn && <span className="chip c-mute h-6 whitespace-nowrap text-xs">Not signed in yet</span>}
+    </span>
+  );
+}
+
+/** "All branches", or the branches as chips, with the access summary when areas or divisions are granted. */
+function AccessCell({ u }: { u: { allBranches: boolean; role: { key: string; builtIn: boolean }; accessGrants: { kind: "DIVISION" | "AREA" | "BRANCH"; divisionId: string | null; areaId: string | null; branchId: string | null; exclude: boolean }[]; branches: { branch: { name: string } }[]; homeBranch: { name: string } | null } }) {
+  if (u.allBranches || isLockedAdminRole(u.role)) return <span className="chip c-navy h-6 whitespace-nowrap text-xs">All branches</span>;
+  const groups = u.accessGrants.some((g) => g.kind !== "BRANCH");
+  return (
+    <span className="flex flex-col items-start gap-1">
+      {groups ? <span className="text-sm">{accessSummary(u.accessGrants, u.branches.length, false)}</span> : <BranchChips names={u.branches.map((b) => b.branch.name)} />}
+      {u.homeBranch && <span className="text-xs text-ink-2">Home: {u.homeBranch.name}</span>}
     </span>
   );
 }
@@ -157,14 +172,13 @@ function StatusCell({ active, test }: { active: boolean; test: boolean }) {
 }
 
 async function UsersModal({
-  sp, meId, listHref, roles, branches, canManageRoles,
+  sp, meId, listHref, roles, canManageRoles,
 }: {
   sp: SP;
   meId: string;
   listHref: string;
   canManageRoles: boolean;
   roles: { id: string; key: string; name: string; description: string; canSignIn: boolean; builtIn: boolean; active: boolean; branchAccess: "ASSIGNED" | "ALL"; permissions: string[] }[];
-  branches: { id: string; name: string; active: boolean }[];
 }) {
   if (sp.open === "roles") {
     return (
@@ -197,17 +211,23 @@ async function UsersModal({
   if (sp.open !== "user" || !sp.edit) return null;
 
   const isNew = sp.edit === "new";
-  const u = isNew ? null : await prisma.user.findUnique({ where: { id: sp.edit }, include: { branches: true, role: true } });
+  const u = isNew ? null : await prisma.user.findUnique({ where: { id: sp.edit }, include: { accessGrants: true, role: true } });
   if (!isNew && !u) return null;
   // Active roles only; an inactive role already on this user is shown with an "Inactive" tag.
   const roleOpts = roles
     .filter((r) => r.active || r.id === u?.roleId)
-    .map((r) => ({ id: r.id, name: r.name, canSignIn: r.canSignIn, builtIn: r.builtIn, active: r.active, permissions: [...effectivePermissions(r)].map(permissionLabel) }));
+    .map((r) => ({ id: r.id, name: r.name, canSignIn: r.canSignIn, builtIn: r.builtIn, active: r.active, permissions: [...effectivePermissions(r)].map(permissionLabel), admin: isLockedAdminRole(r), allByDefault: r.branchAccess === "ALL" }));
+  const tree = await accessTreeData();
+  // A new user starts with the default of the first role offered (All for roles whose default is All).
+  const firstRole = roles.find((r) => r.active && r.canSignIn);
+  const initial = u
+    ? { all: u.allBranches || isLockedAdminRole(u.role), grants: u.accessGrants.map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude })), homeBranchId: u.homeBranchId }
+    : { all: firstRole?.branchAccess === "ALL", grants: [], homeBranchId: null };
   return (
     <SettingsModal
       id="settings-modal"
       title={isNew ? "Add user" : `Edit ${u!.name}`}
-      help={isNew ? "New users start as test users. Built-in roles that may sign in: Admin and Loan Associate. Custom roles: test users in test mode." : "Change the name, role, branches or status."}
+      help={isNew ? "New users start as test users. Built-in roles that may sign in: Admin and Loan Associate. Custom roles: test users in test mode." : "Change the name, role, branch access or status."}
       closeHref={listHref}
       returnFocusId={isNew ? "users-add" : `edit-${u!.id}`}
       footer={{ kind: "save", formId: "user-form", cancelHref: listHref }}
@@ -216,9 +236,9 @@ async function UsersModal({
         key={sp.edit}
         formId="user-form"
         listHref={listHref}
-        user={u ? { id: u.id, name: u.name, email: u.email, roleId: u.roleId, active: u.active, branchIds: u.branches.map((b) => b.branchId) } : null}
+        user={u ? { id: u.id, name: u.name, email: u.email, roleId: u.roleId, active: u.active } : null}
         roles={roleOpts}
-        branches={branches}
+        access={{ ...tree, initial }}
         effect={u ? await inactiveEffect("user", u.id) : ""}
       />
       {u && u.id === meId && <p className="mt-4 text-sm text-ink-2">This is you. You cannot make yourself inactive.</p>}

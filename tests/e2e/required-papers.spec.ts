@@ -28,12 +28,12 @@ async function noSideways(page: Page) {
   expect(over, `page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
 }
 
-/** Opens PN-0001001 and goes to Check documents for Notary. */
+/** Opens GD1012026901001 and goes to Check documents for Notary. */
 async function openNotary(page: Page) {
   await signIn(page, "la");
-  await page.goto("/search?q=PN-0001001");
+  await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001001/);
+  await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
   await page.getByRole("link", { name: "Start checking" }).click();
   const notary = page.getByRole("region", { name: "Notary", exact: true });
   await expect(notary.getByRole("heading", { name: "Send to a Document Processor" })).toBeVisible();
@@ -44,7 +44,7 @@ const REQUIRED = ["Promissory Note", "Disclosure Statement", "Chattel Mortgage (
 
 test("Not ready → ready: ready check, the reason beside Send in order, funds, processors, keyboard; no job card until sent", async ({ page }) => {
   // A fourth processor in the loan's branch, so "Show all" has something to show.
-  const loanBranch = await db.branch.findUniqueOrThrow({ where: { code: "QC" } });
+  const loanBranch = await db.branch.findUniqueOrThrow({ where: { code: "101" } });
   const dpRole = await db.role.findUniqueOrThrow({ where: { key: "DP" } });
   await db.user.create({ data: { email: EXTRA_DP, name: "Zed Extra", roleId: dpRole.id, branches: { create: { branchId: loanBranch.id } } } });
 
@@ -110,12 +110,12 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
 
   // Another branch with no processor: "Pick a processor".
   await notary.getByRole("button", { name: "Choose from another branch" }).click();
-  const mkt = await db.branch.findUniqueOrThrow({ where: { code: "MKT" } });
+  const mkt = await db.branch.findUniqueOrThrow({ where: { code: "168" } });
   const mktDps = await db.user.count({ where: { active: true, role: { key: "DP" }, branches: { some: { branchId: mkt.id } } } });
-  await notary.getByLabel("Branch", { exact: true }).selectOption({ label: "Makati" });
+  await notary.getByLabel("Branch", { exact: true }).selectOption({ label: "A. Mabini" });
   await expect(notary.getByText("This goes to a processor outside the loan’s branch.")).toBeVisible();
   if (mktDps === 0) {
-    await expect(notary.getByText("No processor is available in Makati.")).toBeVisible();
+    await expect(notary.getByText("No processor is available in A. Mabini.")).toBeVisible();
     await expect(why).toHaveText("Pick a processor");
   }
   await notary.getByRole("button", { name: /^Back to / }).click();
@@ -132,7 +132,7 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   // Everything met: Send is enabled and names the person; the summary says where it goes.
   await expect(send).toBeEnabled();
   await expect(why).toHaveText("");
-  await expect(notary.getByText(/Notary goes to .+ \(Quezon City\), processed at .+\. Funds: Needs funds \(Notary fee\)\./)).toBeVisible();
+  await expect(notary.getByText(/Notary goes to .+ \(Antipolo\), processed at .+\. Funds: Needs funds \(Notary fee\)\./)).toBeVisible();
   await shot(page, "send-ready");
   await noSideways(page);
 
@@ -162,7 +162,7 @@ test("Late: the late reason appears only when past the send date and is needed t
   const why = notary.locator('[id^="send-why-"]');
   await expect(notary.getByLabel("Why is this late?")).toHaveCount(0);
   // Move the release date back so the send date has passed.
-  await db.loan.update({ where: { pn: "PN-0001001" }, data: { releasedAt: new Date(Date.now() - 20 * 86_400_000) } });
+  await db.loan.update({ where: { pn: "GD1012026901001" }, data: { releasedAt: new Date(Date.now() - 20 * 86_400_000) } });
   await page.reload();
   for (const item of REQUIRED) await notary.getByLabel(item).check();
   await notary.getByText("No funds needed", { exact: true }).click();

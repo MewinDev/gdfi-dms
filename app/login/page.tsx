@@ -93,7 +93,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
                       <input type="hidden" name="next" value={next ?? ""} />
                       <button type="submit" className="login-btn-secondary flex h-auto min-h-14 w-full flex-col items-start gap-0.5 py-2 text-left">
                         <span className="font-semibold">Continue as {u.name}</span>
-                        <span className="text-xs font-normal text-ink-2">{u.role.name} · {u.branches.map((b) => b.branch.name).sort().join(", ") || "No branch"}</span>
+                        <span className="text-xs font-normal text-ink-2">{u.role.name} · {u.allBranches || u.role.key === "ADMIN" ? "All branches" : u.branches.length > 3 ? `${u.branches.length} branches` : u.branches.map((b) => b.branch.name).sort().join(", ") || "No branch"}</span>
                       </button>
                     </form>
                   </li>

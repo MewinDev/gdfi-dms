@@ -2,6 +2,7 @@ import { getSetting } from "@/lib/settings";
 import { HttpMyLoansAdapter } from "./http-adapter";
 import { MockMyLoansAdapter } from "./mock-adapter";
 import { ResilientAdapter } from "./resilience";
+import { sampleBranchRows } from "@/lib/branches/kit-file";
 import type { MyLoansAdapter } from "./types";
 
 export type { MyLoansAdapter, MyLoansLookup, MyLoansRecord, MyLoansHit, SourceCapabilities } from "./types";
@@ -21,20 +22,13 @@ export function getMyLoansAdapter(): MyLoansAdapter & { breakerState(): { failur
         isUnavailable: () => getSetting("myloans.simulateUnavailable"),
         overrides: () => getSetting("myloans.mockOverrides"),
         extra: () => getSetting("myloans.mockExtra"),
+        branches: () => sampleBranchRows(),
+        branchChanges: () => getSetting("myloans.mockBranches"),
       });
   // The mock answers at once: no waiting between retries.
   cached = { mode, adapter: new ResilientAdapter(inner, mode === "mock" ? { retries: 0, breakAfter: 1_000_000 } : {}) };
   return cached.adapter;
 }
 
-export function normalizePn(input: string): string {
-  return input.trim().toUpperCase().replace(/\s+/g, "");
-}
-
-/** Accepts "PN-0001001" and also bare digits ("0001001" -> "PN-0001001"). */
-export function looksLikePn(input: string): string | null {
-  const v = normalizePn(input);
-  if (/^PN-\d{4,}$/.test(v)) return v;
-  if (/^\d{7}$/.test(v)) return `PN-${v}`;
-  return null;
-}
+/** Trim, upper case, remove spaces, dashes and dots (the shared PN cleaning, lib/pn/format.ts). */
+export { cleanPn as normalizePn } from "@/lib/pn/format";

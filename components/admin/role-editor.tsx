@@ -119,9 +119,10 @@ export function RoleEditor({
             {err("description") && <p className="mt-1.5 text-sm text-bad-fg">{err("description")}</p>}
           </div>
           <fieldset className="sm:col-span-2" disabled={disabled}>
-            <legend className="label">Branch access</legend>
+            <legend className="label">Branch access for new users</legend>
+            <p className="help -mt-1">Where each person works is set per user (Users, Edit, Branch access). This is only what a new user of this role starts with. Admin is always All branches.</p>
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-6">
-              {([["ASSIGNED", "Only the branches the person is assigned to"], ["ALL", "All branches"]] as const).map(([v, l]) => (
+              {([["ASSIGNED", "Selected branches (picked per user)"], ["ALL", "All branches"]] as const).map(([v, l]) => (
                 <label key={v} className="inline-flex min-h-11 items-center gap-2.5 text-[15px]">
                   <input type="radio" name="branchAccess" value={v} checked={branchAccess === v} onChange={() => setBranchAccess(v)} className="h-5 w-5 accent-[var(--navy)]" />
                   {l}

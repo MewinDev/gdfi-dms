@@ -349,7 +349,8 @@ export function historySentence(r: HistoryRow): string {
  * The stored notification is unchanged; only how it reads on screen.
  */
 export function plainUpdate(title: string, borrower?: string | null): string {
-  const m = /^(PN-\d+): (.+)$/.exec(title);
+  // "GD1012026901001: ..." (and older PN-0001001 titles).
+  const m = /^([A-Z]{1,5}\d{8,}|PN-\d+): (.+)$/.exec(title);
   if (!m) return title;
   const who = borrower ? `${borrower}'s` : `${m[1]}`;
   const of = borrower ?? m[1];

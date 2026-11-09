@@ -43,7 +43,7 @@ function input(transactions: TxnRec[], p: Partial<JourneyInput> = {}): JourneyIn
   return {
     loan: {
       pn: "PN-1", stage: "In process", stageSince: at("2026-11-03 09:00"), classification: "FINANCING", mortgageResult: "NOT_MORTGAGE", overridden: false,
-      openedAt: at("2026-11-02 09:00"), openedBy: LA, branchName: "Quezon City", openSourceChange: false, transmittalDispatched: false, transmittalReceived: false,
+      openedAt: at("2026-11-02 09:00"), openedBy: LA, branchName: "Antipolo", openSourceChange: false, transmittalDispatched: false, transmittalReceived: false,
     },
     transactions, documents: [], advances: [], events: [], ...p,
   };
@@ -313,23 +313,23 @@ describe("The open segment closes on the same record", () => {
 describe("Custody trail", () => {
   const doc = (moves: [string, string, string | null, boolean][]): DocRec => ({
     id: "d1", documentId: "PN-1-PN-001", label: "Promissory Note", originality: "ORIGINAL", txnId: "t1", stage: "AT_BRANCH",
-    custodianLabel: "Ana Cruz (LA, Quezon City)", location: "Quezon City branch", since: at("2026-11-02 09:00"),
+    custodianLabel: "Ana Cruz (LA, Antipolo)", location: "Antipolo branch", since: at("2026-11-02 09:00"),
     movements: moves.map(([action, when, to, ack], i) => ({
       id: `m${i}`, action, at: at(when), from: null, to, location: null, by: to?.split(" (")[0] ?? "Ana Cruz", acknowledgedAt: ack ? at(when) : null, remarks: null, simulated: false,
     })),
   });
   it("time held by each holder; in transit stays with the sender until acknowledged", () => {
     const d = doc([
-      ["RECEIVED_AT_BRANCH", "2026-11-02 09:00", "Ana Cruz (LA, Quezon City)", true],
-      ["LABEL_PRINTED", "2026-11-02 09:30", "Ana Cruz (LA, Quezon City)", false],
+      ["RECEIVED_AT_BRANCH", "2026-11-02 09:00", "Ana Cruz (LA, Antipolo)", true],
+      ["LABEL_PRINTED", "2026-11-02 09:30", "Ana Cruz (LA, Antipolo)", false],
       ["DISPATCHED_TO_DP", "2026-11-02 11:00", "Joy Navarro (DP)", false],
       ["ACKNOWLEDGED_BY_DP", "2026-11-03 09:00", "Joy Navarro (DP)", true],
       ["FORWARDED_TO_BRANCH", "2026-11-04 10:00", "In transit to Ana Cruz", false],
-      ["ACCEPTED_AT_BRANCH", "2026-11-05 09:00", "Ana Cruz (LA, Quezon City)", true],
+      ["ACCEPTED_AT_BRANCH", "2026-11-05 09:00", "Ana Cruz (LA, Antipolo)", true],
     ]);
     const c = custodyOf(d, at("2026-11-05 12:00"));
     expect(c.periods.map((p) => [p.holder, p.ms / H])).toEqual([
-      ["Ana Cruz (LA, Quezon City)", 24], ["Joy Navarro (DP)", 48], ["Ana Cruz (LA, Quezon City)", 3],
+      ["Ana Cruz (LA, Antipolo)", 24], ["Joy Navarro (DP)", 48], ["Ana Cruz (LA, Antipolo)", 3],
     ]);
     expect(c.trail[0]).toMatchObject({ label: "Received by the LA", acknowledgedBy: "Ana Cruz" });
     expect(c.trail.map((x) => x.label)).toContain("Label printed");

@@ -100,7 +100,7 @@ test("Email card: off by default, turning on asks first, test email, recent emai
   await noSideways(page);
   await table.getByRole("button", { name: "Job sent to a processor" }).click();
   const msg = page.getByRole("dialog", { name: "Email" });
-  await expect(msg.locator("[data-email-message]")).toContainText("PN-0001003: Notary sent to you");
+  await expect(msg.locator("[data-email-message]")).toContainText("GD1652026901003: Notary sent to you");
   await shot(page, "recent-email-message");
   await msg.getByRole("button", { name: "Close" }).last().click();
   // Filters: Skipped only (before Resend, so only the seeded Skipped row can be there).
@@ -140,7 +140,7 @@ test("Edit message: placeholders checked, live preview, discard asks first, rese
   await d.getByRole("button", { name: "Save" }).click();
   await expect(d.getByText("Unknown placeholder {bogus}. Use one from the list.").first()).toBeVisible();
   await subject.fill("New job for you: {pn} {transaction}");
-  await expect(d.locator("[data-email-preview]")).toContainText("New job for you: PN-0001003 Notary");
+  await expect(d.locator("[data-email-preview]")).toContainText("New job for you: GD1652026901003 Notary");
   await expect(d.locator("[data-email-preview] iframe")).toBeVisible();
   await shot(page, "edit-message-popup");
   await noSideways(page);
@@ -173,7 +173,7 @@ test("Updates: the person's own switch for non-urgent emails; a sample email", a
   await expect(sw).toHaveAttribute("aria-checked", "true");
 
   // One sample email, rendered as people get it (test mode note, gold button, footer).
-  const headline = "PN-0001003: Notary sent to you";
+  const headline = "GD1652026901003: Notary sent to you";
   const { html } = renderEmail({
     headline, note: "Would have gone to: Joy Navarro (DP)",
     lines: fillLines(EMAIL_EVENTS.job_sent.body, { ...SAMPLE_VARS, who: "Ana Reyes", reason: "Process at: LTO Mandaue." }), link: "http://localhost:3001/jobs/sample",

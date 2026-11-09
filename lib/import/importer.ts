@@ -1,4 +1,5 @@
 import { fieldsFromText, fieldsToText, type EvidenceField } from "@/lib/stages/rules";
+import { rebuildAccess } from "@/lib/branches/access";
 import "server-only";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
@@ -8,6 +9,7 @@ import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { LIST_PERMISSION, PERMISSIONS } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { SETTINGS_SCHEMAS, USER_SCHEMA, checkSettingsRow, type SettingsKind } from "@/lib/services/admin";
+import { applyAccess, branchGrants, checkAccess, type AccessInput } from "@/lib/services/access";
 import { UserError } from "@/lib/services/errors";
 import { IMPORT_LISTS, MAX_BYTES, MAX_ROWS, type ImportColumn, type ImportListKey } from "./columns";
 import { looksLikeFormula, parseCsv, toCsv } from "./csv";
@@ -178,30 +180,57 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
 
   switch (list) {
     case "branches": {
-      const existing = await db.branch.findMany();
+      // Matched by the 3-digit code. A branch from MyLoans: only the usual LTO office changes here.
+      const [existing, divisions, areas, offices] = await Promise.all([db.branch.findMany(), db.division.findMany(), db.area.findMany(), db.ltoOffice.findMany()]);
       const counter = new ActiveCounter(existing.filter((b) => b.active).length);
-      const names = new Map(existing.map((b) => [b.name.toLowerCase(), b.code]));
+      const names = new Map(existing.map((b) => [b.name.toLowerCase(), b.code ?? b.id]));
+      const byName = <T extends { name: string }>(list: T[], v: string) => list.find((x) => x.name.toLowerCase() === v.trim().toLowerCase()) ?? null;
       for (const row of rows) {
-        const code = (row.cells.code ?? "").toUpperCase();
+        const code = (row.cells.code ?? "").trim();
         const cur = existing.find((b) => b.code === code) ?? null;
-        const data = validate(row, SETTINGS_SCHEMAS.branch, { code: row.cells.code, name: row.cells.name }, { code: "code", name: "name" });
+        const division = row.cells.division?.trim() ? byName(divisions, row.cells.division) : null;
+        const area = row.cells.area?.trim() ? byName(areas, row.cells.area) : null;
+        if (row.cells.division?.trim() && !division) row.bad("division", `no division is called "${row.cells.division.trim()}". Divisions come from Import from MyLoans.`);
+        if (row.cells.area?.trim() && !area) row.bad("area", `no area is called "${row.cells.area.trim()}". Areas come from Import from MyLoans.`);
+        const officeCode = (row.cells.usual_lto_office ?? "").trim().toUpperCase();
+        const office = officeCode ? offices.find((o) => o.code === officeCode) ?? null : null;
+        if (officeCode && !office) row.bad("usual_lto_office", `no LTO office has the code ${officeCode}.`);
+        else if (office && !office.active && office.id !== cur?.usualLtoOfficeId) row.bad("usual_lto_office", `${office.name} is inactive. Pick an active office.`);
+        const raw = {
+          code, name: row.cells.name, address: row.cells.address ?? (cur?.address ?? ""),
+          divisionId: row.cells.division === undefined ? cur?.divisionId ?? null : division?.id ?? null,
+          areaId: row.cells.area === undefined ? cur?.areaId ?? null : area?.id ?? null,
+          usualLtoOfficeId: row.cells.usual_lto_office === undefined ? cur?.usualLtoOfficeId ?? null : office?.id ?? null,
+        };
+        const data = validate(row, SETTINGS_SCHEMAS.branch, raw, { code: "code", name: "name", address: "address", divisionId: "division", areaId: "area", usualLtoOfficeId: "usual_lto_office" });
+        if (data && !data.code) row.bad("code", "type the 3-digit branch code.");
         const s = statusOf(row.cells.status);
         if (s === "bad") row.bad("status", "type Active or Inactive.");
+        const active = s === "bad" || s === null ? cur?.active ?? true : s;
+        if (data && cur?.source === "MYLOANS") {
+          const ro: [keyof typeof data, string][] = [["name", "name"], ["address", "address"], ["divisionId", "division"], ["areaId", "area"]];
+          for (const [k, col] of ro) if (String(data[k] ?? "") !== String(cur[k as keyof typeof cur] ?? "")) row.bad(col, "this branch comes from MyLoans: it changes only there (use Import from MyLoans). Only the usual LTO office can change here.");
+          if (active !== cur.active) row.bad("status", "this branch comes from MyLoans: it is switched off or on there.");
+        }
         if (data) {
           const other = names.get(data.name.toLowerCase());
-          if (other && other !== data.code) row.bad("name", "already used by another branch.");
-          names.set(data.name.toLowerCase(), data.code);
+          if (other && other !== (cur?.code ?? data.code)) row.bad("name", "already used by another branch.");
+          names.set(data.name.toLowerCase(), data.code ?? "");
         }
-        const active = s === "bad" || s === null ? cur?.active ?? true : s;
+        if (data && data.areaId && !data.divisionId) row.bad("division", "give the division of this area too.");
         if (!data || row.problems.length) { finish(row, code, null); continue; }
         const lim = counter.change(cur ? cur.active : null, active);
         if (lim) { row.bad("status", lim); finish(row, code, null); continue; }
-        const changes = cur ? diff({ name: "Name", active: "Status" }, cur, { ...data, active }) : [];
-        finish(row, data.code, {
+        const changes = cur
+          ? diff({ name: "Name", address: "Address", divisionId: "Division", areaId: "Area", usualLtoOfficeId: "Usual LTO office", active: "Status" }, cur, { ...data, active })
+          : [];
+        finish(row, code, {
           action: !cur ? "new" : changes.length ? "changed" : "unchanged", changes,
           apply: async (tx, actor) => {
-            if (!cur) await tx.branch.create({ data: { ...data, ...statusData(active, actor) } });
-            else await tx.branch.update({ where: { id: cur.id }, data: { name: data.name, ...(cur.active !== active ? statusData(active, actor) : {}) } });
+            if (!cur) await tx.branch.create({ data: { ...data, source: "DMS", ...statusData(active, actor) } });
+            else if (cur.source === "MYLOANS") await tx.branch.update({ where: { id: cur.id }, data: { usualLtoOfficeId: data.usualLtoOfficeId } });
+            else await tx.branch.update({ where: { id: cur.id }, data: { name: data.name, address: data.address, divisionId: data.divisionId, areaId: data.areaId, usualLtoOfficeId: data.usualLtoOfficeId, ...(cur.active !== active ? statusData(active, actor) : {}) } });
+            if (!cur || cur.divisionId !== data.divisionId || cur.areaId !== data.areaId) await rebuildAccess(tx, "groups");
           },
         });
       }
@@ -560,7 +589,8 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
       break;
     }
     case "users": {
-      const [users, roles, branches] = await Promise.all([db.user.findMany({ include: { role: true, branches: true } }), db.role.findMany(), db.branch.findMany()]);
+      const [users, roles, branches] = await Promise.all([db.user.findMany({ include: { role: true, accessGrants: true } }), db.role.findMany(), db.branch.findMany()]);
+      const codeOf = new Map(branches.map((b) => [b.id, b.code ?? b.name]));
       let admins = users.filter((u) => u.active && u.role.key === "ADMIN").length;
       for (const row of rows) {
         const email = lower(row.cells.email);
@@ -569,18 +599,41 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
         const typed = (row.cells.role ?? "").trim().toLowerCase();
         const role = roles.find((r) => r.name.toLowerCase() === typed) ?? roles.find((r) => r.key.toLowerCase() === typed);
         if (!role) row.bad("role", typed ? `no role is called "${row.cells.role}". Use a role name from Settings > Roles and access.` : "is required.");
+        // "ALL", or single branches (codes). Area and Division grants and exceptions are kept as they are.
         const codes = (row.cells.branches ?? "").split(";").map((c) => c.trim().toUpperCase()).filter(Boolean);
+        const allBranches = codes.length === 1 && codes[0] === "ALL";
+        const keepBranches = codes.length === 0;
         const branchIds: string[] = [];
-        for (const c of codes) {
+        if (!allBranches) for (const c of codes) {
           const b = branches.find((x) => x.code === c);
           if (!b) row.bad("branches", `no branch has the code ${c}.`);
+          else if (b.hidden) row.bad("branches", `${b.name} (${c}) is hidden from the DMS.`);
           else branchIds.push(b.id);
         }
+        const homeCode = (row.cells.home_branch ?? "").trim();
+        const home = homeCode ? branches.find((x) => x.code === homeCode) ?? null : null;
+        if (homeCode && !home) row.bad("home_branch", `no branch has the code ${homeCode}.`);
         const s = statusOf(row.cells.status);
         if (s === "bad") row.bad("status", "type Active or Inactive.");
         const active = s === "bad" || s === null ? cur?.active ?? true : s;
-        const data = validate(row, USER_SCHEMA, { name: row.cells.name, email: row.cells.email, roleId: role?.id ?? "(unknown)", active, branchIds }, { name: "name", email: "email", roleId: "role", branchIds: "branches", active: "status" });
-        if (role && role.branchAccess === "ASSIGNED" && effectivePermissions(role).has(PERMISSIONS.CHECKLIST_TICK) && branchIds.length === 0) row.bad("branches", `${role.name} works only in assigned branches: add at least one branch.`);
+        const data = validate(row, USER_SCHEMA, { name: row.cells.name, email: row.cells.email, roleId: role?.id ?? "(unknown)", active }, { name: "name", email: "email", roleId: "role", active: "status" });
+        const groups = (cur?.accessGrants ?? []).filter((g) => g.kind !== "BRANCH" || g.exclude).map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude }));
+        const curBranchIds = (cur?.accessGrants ?? []).filter((g) => g.kind === "BRANCH" && !g.exclude).map((g) => g.branchId!);
+        const access: AccessInput = allBranches
+          ? { all: true, grants: [], homeBranchId: home?.id ?? cur?.homeBranchId ?? null }
+          : keepBranches && cur
+            ? { all: cur.allBranches, grants: [...groups, ...branchGrants(curBranchIds)], homeBranchId: home?.id ?? cur.homeBranchId }
+            : keepBranches
+              ? { all: role?.branchAccess === "ALL", grants: [], homeBranchId: home?.id ?? null }
+              : { all: false, grants: [...groups, ...branchGrants(branchIds)], homeBranchId: home?.id ?? (cur?.homeBranchId && branchIds.includes(cur.homeBranchId) ? cur.homeBranchId : null) };
+        if (role && !row.problems.length) {
+          try {
+            await checkAccess(db, role, access, cur ? { grants: cur.accessGrants, homeBranchId: cur.homeBranchId } : null);
+          } catch (e) {
+            if (!(e instanceof UserError)) throw e;
+            row.bad(e.field === "homeBranchId" ? "home_branch" : "branches", e.message.replace(/^./, (c) => c.toLowerCase()));
+          }
+        }
         if (role && !role.active && cur?.roleId !== role.id) row.bad("role", `${role.name} is inactive. Use an active role.`);
         if (cur && cur.id === user.id) {
           if (!active) row.bad("status", "you cannot make yourself inactive.");
@@ -594,9 +647,13 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
           else admins--;
         } else if (!wasAdmin && isAdmin) admins++;
         if (!data || !role || row.problems.length) { finish(row, email, null); continue; }
-        const beforeBranches = cur ? [...cur.branches.map((b) => b.branchId)].sort().join(",") : "";
+        const codesText = (all: boolean, ids: string[]) => (all ? "ALL" : ids.map((x) => codeOf.get(x) ?? x).sort().join(";"));
+        const beforeBranches = cur ? codesText(cur.allBranches, curBranchIds) : "";
+        const afterBranches = codesText(access.all, access.grants.filter((g) => g.kind === "BRANCH" && !g.exclude).map((g) => g.branchId!));
         const changes = cur
-          ? diff({ name: "Name", roleId: "Role", branches: "Branches", active: "Status" }, { ...cur, branches: beforeBranches }, { name: data.name, roleId: role.id, branches: [...branchIds].sort().join(","), active })
+          ? diff({ name: "Name", roleId: "Role", branches: "Branches", home: "Home branch", active: "Status" },
+            { ...cur, branches: beforeBranches, home: cur.homeBranchId ? codeOf.get(cur.homeBranchId) ?? "" : "" },
+            { name: data.name, roleId: role.id, branches: afterBranches, home: access.homeBranchId ? codeOf.get(access.homeBranchId) ?? "" : cur.homeBranchId ? codeOf.get(cur.homeBranchId) ?? "" : "", active })
           : [];
         finish(row, data.email, {
           action: !cur ? "new" : changes.length ? "changed" : "unchanged", changes,
@@ -605,8 +662,7 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
             const saved = cur
               ? await tx.user.update({ where: { id: cur.id }, data: { name: data.name, roleId: role.id, ...(cur.active !== active ? statusData(active, actor) : {}) } })
               : await tx.user.create({ data: { name: data.name, email: data.email, roleId: role.id, isTestUser: true, ...statusData(active, actor) } });
-            await tx.userBranch.deleteMany({ where: { userId: saved.id } });
-            for (const branchId of branchIds) await tx.userBranch.create({ data: { userId: saved.id, branchId } });
+            await applyAccess(tx, { id: actor.id, label: user.name }, saved.id, role, access, { isNew: !cur });
           },
         });
       }
@@ -690,7 +746,10 @@ export function templateCsv(list: ImportListKey): string {
 export async function currentDataRows(list: ImportListKey): Promise<Record<string, string>[]> {
   switch (list) {
     case "branches":
-      return (await prisma.branch.findMany({ orderBy: { name: "asc" } })).map((b) => ({ code: b.code, name: b.name, status: st(b.active), notes: "" }));
+      return (await prisma.branch.findMany({ orderBy: { name: "asc" }, include: { division: true, area: true, usualLtoOffice: true } })).map((b) => ({
+        code: b.code ?? "", name: b.name, division: b.division?.name ?? "", area: b.area?.name ?? "", address: b.address, usual_lto_office: b.usualLtoOffice?.code ?? "",
+        status: st(b.active), notes: [b.source === "MYLOANS" ? "From MyLoans" : "Made in the DMS", b.code ? "" : "Code needed", b.hidden ? "Hidden from DMS" : ""].filter(Boolean).join("; "),
+      }));
     case "lto":
       return (await prisma.ltoOffice.findMany({ orderBy: { name: "asc" } })).map((b) => ({
         code: b.code, name: b.name, city: b.city, distance_km: b.distanceKm == null ? "" : String(b.distanceKm), travel_hours: b.travelHours == null ? "" : String(b.travelHours),
@@ -733,9 +792,16 @@ export async function currentDataRows(list: ImportListKey): Promise<Record<strin
         target_days: r.targetDays === null ? "" : String(r.targetDays), status: st(r.active), notes: "",
       }));
     case "users":
-      return (await prisma.user.findMany({ include: { role: true, branches: { include: { branch: true } } }, orderBy: { name: "asc" } })).map((u) => ({
-        name: u.name, email: u.email, role: u.role.name, branches: u.branches.map((b) => b.branch.code).sort().join(";"), status: st(u.active), notes: "",
-      }));
+      return (await prisma.user.findMany({ include: { role: true, homeBranch: true, accessGrants: { include: { branch: true, area: true, division: true } } }, orderBy: { name: "asc" } })).map((u) => {
+        const groups = u.accessGrants.filter((g) => g.kind !== "BRANCH").map((g) => (g.kind === "AREA" ? `area ${g.area?.name ?? ""}${g.division ? ` (${g.division.name})` : ""}` : `division ${g.division?.name ?? ""}`));
+        const except = u.accessGrants.filter((g) => g.kind === "BRANCH" && g.exclude).map((g) => g.branch?.code ?? g.branch?.name ?? "");
+        return {
+          name: u.name, email: u.email, role: u.role.name,
+          branches: u.allBranches || u.role.key === "ADMIN" ? "ALL" : u.accessGrants.filter((g) => g.kind === "BRANCH" && !g.exclude).map((g) => g.branch?.code ?? g.branch?.name ?? "").sort().join(";"),
+          home_branch: u.homeBranch?.code ?? "", status: st(u.active),
+          notes: groups.length ? `Also ${groups.join(", ")}${except.length ? ` except ${except.join(";")}` : ""} (set in Users, Edit)` : "",
+        };
+      });
   }
 }
 

@@ -27,26 +27,26 @@ test("sign-in list: each sample account with its role and branches", async ({ pa
   await page.goto("/login");
   const list = page.locator("[data-kit-accounts]");
   await expect(list.getByRole("button")).toHaveCount(9); // the inactive LA is not listed
-  await expect(list.getByRole("button", { name: /^Continue as LA 1\b/ })).toContainText("Loan Associate · Cebu, Quezon City");
-  await expect(list.getByRole("button", { name: /^Continue as Branch Supervisor\b/ })).toContainText("Branch Supervisor · Cebu, Quezon City");
-  await expect(list.getByRole("button", { name: /^Continue as Receiving LA Makati\b/ })).toContainText("Makati");
+  await expect(list.getByRole("button", { name: /^Continue as LA 1\b/ })).toContainText("Loan Associate · Angono, Antipolo");
+  await expect(list.getByRole("button", { name: /^Continue as Branch Supervisor\b/ })).toContainText("Branch Supervisor · Angono, Antipolo");
+  await expect(list.getByRole("button", { name: /^Continue as Receiving LA A. Mabini\b/ })).toContainText("A. Mabini");
   await expect(list.getByRole("button", { name: /Inactive LA/ })).toHaveCount(0);
   await shot(page, "sign-in-list");
 });
 
-test("LA 1 opens PN-0002013 (on hold by LA 1 and LA 2)", async ({ page }) => {
+test("LA 1 opens GD1012026902013 (on hold by LA 1 and LA 2)", async ({ page }) => {
   await signInAs(page, "LA 1");
-  await page.goto("/loans/PN-0002013");
-  await expect(page.getByRole("main")).toContainText("PN-0002013");
+  await page.goto("/loans/GD1012026902013");
+  await expect(page.getByRole("main")).toContainText("GD1012026902013");
   await expect(page.getByRole("main")).toContainText(/On hold/);
-  await shot(page, "la1-PN-0002013-on-hold");
+  await shot(page, "la1-GD1012026902013-on-hold");
 });
 
-test("DP 1 opens PN-0002023 (Check and verify blocking)", async ({ page }) => {
+test("DP 1 opens GD1012026902023 (Check and verify blocking)", async ({ page }) => {
   await signInAs(page, "DP 1");
-  await page.goto("/loans/PN-0002023");
-  await expect(page.getByRole("main")).toContainText("PN-0002023");
-  await shot(page, "dp1-PN-0002023");
+  await page.goto("/loans/GD1012026902023");
+  await expect(page.getByRole("main")).toContainText("GD1012026902023");
+  await shot(page, "dp1-GD1012026902023");
 });
 
 test("Admin: Settings > Test kit and the test sheet", async ({ page }) => {
@@ -65,6 +65,6 @@ test("Admin: Settings > Test kit and the test sheet", async ({ page }) => {
   await shot(page, "settings-test-kit-reset-question");
   await ask.getByRole("button", { name: "Cancel" }).click();
   await page.goto("/admin/test-kit/sheet");
-  await expect(page.locator("[data-test-sheet]")).toContainText("PN-0002001");
+  await expect(page.locator("[data-test-sheet]")).toContainText("GD1012026902001");
   await shot(page, "test-sheet");
 });

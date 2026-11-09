@@ -8,7 +8,7 @@ import { cleanSettingsTestRows, db, resetLoans } from "./db";
  */
 const DIR = "docs/screenshots/hold-and-return";
 mkdirSync(DIR, { recursive: true });
-const PN = "PN-0001003";
+const PN = "GD1652026901003";
 
 test.beforeEach(async () => {
   await resetLoans();
@@ -98,7 +98,7 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   test.setTimeout(240_000);
   // A second LA of the loan's branch to receive the hold.
   const role = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
-  const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Cebu" } });
+  const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Angono" } });
   await db.user.create({ data: { email: "zz.la2@gdfi.ph", name: "Second Loan Associate", roleId: role.id, isTestUser: true, branches: { create: [{ branchId: loanBranch.id }] } } });
 
   await signInAs(page, "la");
@@ -158,7 +158,7 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
 test("Inactive sender: the branch LAs see it in Open items and on Home, with the note", async ({ page }) => {
   test.setTimeout(240_000);
   const role = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
-  const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Cebu" } });
+  const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Angono" } });
   const gone = await db.user.create({ data: { email: "zz.lagone@gdfi.ph", name: "Leaving Loan Associate", roleId: role.id, isTestUser: true, active: false, branches: { create: [{ branchId: loanBranch.id }] } } });
   await signInAs(page, "la");
   await openPn3(page);
@@ -172,7 +172,7 @@ test("Inactive sender: the branch LAs see it in Open items and on Home, with the
   await page.getByRole("button", { name: "Decline", exact: true }).click();
   const d = page.getByRole("dialog", { name: "Decline the job" });
   await d.getByRole("radio", { name: "Wrong job for me" }).check();
-  await d.getByLabel(/^Remarks/).fill("This is a Cebu job, I am in Quezon City");
+  await d.getByLabel(/^Remarks/).fill("This is a Angono job, I am in Antipolo");
   await d.getByRole("button", { name: "Decline", exact: true }).click();
   await expect.poll(async () => (await db.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("DECLINED");
 

@@ -12,14 +12,14 @@ A live copy with the same diagrams is the artifact "DP Workflow Map". This folde
 
 | File | What it covers |
 |---|---|
-| [Glossary](01-glossary.md) | The key words, who uses them and their effect on the clock. |
+| [Glossary](01-glossary.md) | The key words (PN, branch code, Area, Division, Branch review, Opened at), who uses them and their effect on the clock. |
 | [Big picture](02-big-picture.md) | From the MyLoans lookup to the vault gate. |
 | [The Loan Associate](03-loan-associate.md) | Find loan, Check documents, Send, and changes before the DP accepts. |
 | [One DP job](04-dp-job.md) | Accept, stages, LTO, check and verify, forward, receive. |
 | [Funds](05-funds.md) | Flag, request, approve, release, carry over, liquidate. |
 | [When something goes wrong](06-exceptions.md) | Missing paper, hold, problem, return, Pasuyo, MyLoans changes. |
-| [Rules and roles](07-rules-and-roles.md) | Automatic rules, turnaround targets, roles and permissions. |
-| [Systems](08-systems.md) | MyLoans sync, email, environment. |
+| [Rules and roles](07-rules-and-roles.md) | Automatic rules, turnaround targets, roles and permissions, branch access (Division, Area, Branch). |
+| [Systems](08-systems.md) | MyLoans sync, the PN check, the branch list from MyLoans (and no direct database access), email, environment. |
 | [Status and open questions](09-status-and-open-questions.md) | What is built, planned or later, and the open questions. |
 | [Processing stages](10-processing-stages.md) | The default stages of each transaction type, their evidence and targets. |
 | [Monitoring](11-monitoring.md) | DP and LTO office monitors, capacity and availability, LTO advisories: definitions and examples. |

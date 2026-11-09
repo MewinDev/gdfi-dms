@@ -27,10 +27,10 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-/** Opens PN-0001001 (Refinancing, 4 transactions) and returns its Notary transaction with lines. */
+/** Opens GD1012026901001 (Refinancing, 4 transactions) and returns its Notary transaction with lines. */
 async function openNotary() {
-  await openLoanFile(la, { pn: "PN-0001001" });
-  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001001" } });
+  await openLoanFile(la, { pn: "GD1012026901001" });
+  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026901001" } });
   const txn = await prisma.loanTransaction.findFirstOrThrow({
     where: { loanId: loan.id, type: { code: "NOTARY" } },
     include: { checks: { include: { rule: true } } },
@@ -125,9 +125,9 @@ describe("The Required flag is copied onto each loan file", () => {
       const kept = await prisma.checklistCheck.findFirstOrThrow({ where: { transactionId: txn.id, ruleId: coMakerRule.id } });
       expect(kept.required).toBe(false);
       // A new loan file gets "required".
-      await openLoanFile(la, { pn: "PN-0001006" });
+      await openLoanFile(la, { pn: "GD1012026901006" });
       const fresh = await prisma.checklistCheck.findFirstOrThrow({
-        where: { ruleId: coMakerRule.id, transaction: { loan: { pn: "PN-0001006" } } },
+        where: { ruleId: coMakerRule.id, transaction: { loan: { pn: "GD1012026901006" } } },
       });
       expect(fresh.required).toBe(true);
       expect((await prisma.checklistRule.findUniqueOrThrow({ where: { id: coMakerRule.id } })).kind).toBe("REQUIRED");
