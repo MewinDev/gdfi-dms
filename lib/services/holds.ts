@@ -5,7 +5,7 @@ import { writeAudit } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { adminIds, ownsTransaction } from "./jobs";
+import { overseerIds, ownsTransaction } from "./jobs";
 import { currentStageIdFor } from "./job-stages";
 import { NotInScopeError, UserError } from "./errors";
 import { NO_OWNER, holdRemarksSchema, journeyHoldTransferred, mayAddDetails, mayResumeHold, onlyHolderMessage, remarksSchema, resumeRemarksSchema } from "@/lib/ui/holds";
@@ -32,7 +32,7 @@ async function notifyHold(tx: Tx, t: { loanId: string; loan: { pn: string; branc
   const la = await branchLaUserIds(tx, t.loan.branchId);
   await notify(tx, {
     email: { event: "hold_changed", to: la, vars: { pn: t.loan.pn, transaction: t.type.name, status: what === "started" ? "put on hold" : "resumed", reason: text } },
-    userIds: [...la, ...(await adminIds(tx))], loanId: t.loanId,
+    userIds: [...la, ...(await overseerIds(tx, t.loan.branchId))], loanId: t.loanId,
     title: `${t.loan.pn}: ${t.type.name} ${what === "started" ? "put on hold" : "resumed"}`,
     body: text, link: `/loans/${t.loan.pn}?tab=journey`,
   });
@@ -137,10 +137,10 @@ async function holdKind(h: { raisedById: string | null; transactionId: string })
   return { kind: job ? "DP" : "LA", roleId: null };
 }
 
-/** May this person transfer this hold? Admin: any hold. Others with holds:transfer: holds in their branches only. */
+/** May this person transfer this hold? With holds:transfer: holds in their branches (All branches: any hold). */
 export function mayTransferHold(u: CurrentUser, loanBranchId: string): boolean {
   if (!can(u, PERMISSIONS.HOLDS_TRANSFER)) return false;
-  return u.roleKey === "ADMIN" || inScope(u, loanBranchId);
+  return inScope(u, loanBranchId);
 }
 
 /**

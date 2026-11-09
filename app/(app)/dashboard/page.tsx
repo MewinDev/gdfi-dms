@@ -84,7 +84,7 @@ export default async function HomePage() {
           <PackagesToReceive user={user} />
           <SentBackToYou user={user} />
           {can(user, PERMISSIONS.SOURCE_REVIEW) && <SourceChangesCard />}
-          {can(user, PERMISSIONS.SOURCE_MANAGE) && <BranchReviewCard />}
+          {can(user, PERMISSIONS.BRANCHES_REVIEW) && <BranchReviewCard />}
           {can(user, PERMISSIONS.REPORTS_TAT) && <TatProblemsCard />}
           <section aria-labelledby="next-title" className="card overflow-hidden">
             <div className="flex items-baseline justify-between gap-3 px-4 pb-3 pt-4 sm:px-6 sm:pt-[22px]">

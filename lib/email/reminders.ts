@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { getHolidaySet } from "@/lib/settings";
 import { businessDate, businessDaysBetween, isBusinessDay } from "@/lib/time";
-import { adminIds, bandApprovers } from "@/lib/services/jobs";
+import { overseerIds, bandApprovers } from "@/lib/services/jobs";
 import { financeIds, notifyOverdue } from "@/lib/services/funds";
 import { jobRows } from "@/lib/services/job-queries";
 import { drainOutbox } from "./outbox";
@@ -75,7 +75,7 @@ export async function tatDigest(now: Date) {
     const list = rows.slice(0, 10).map((r) => `${r.pn} ${r.typeName}`).join(", ");
     await prisma.$transaction(async (tx) => {
       await notify(tx, {
-        userIds: [...(await branchLaUserIds(tx, branch.id)), ...(await adminIds(tx))], title: `${branch.name}: ${rows.length} overdue today`,
+        userIds: [...(await branchLaUserIds(tx, branch.id)), ...(await overseerIds(tx, branch.id))], title: `${branch.name}: ${rows.length} overdue today`,
         body: list, link: "/reports/tat?show=overdue",
         email: { event: "tat_digest", dedupeKey: key, vars: { count: String(rows.length), reason: `${branch.name}: ${list}${rows.length > 10 ? ", and more" : ""}.` } },
       });

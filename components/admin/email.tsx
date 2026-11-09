@@ -17,7 +17,7 @@ const resendAnnounced = announcing(resendEmailAction);
 const prefAnnounced = announcing(myEmailPreferenceAction);
 
 /** The master switch: Active / Not active. Turning on asks first. */
-export function EmailMasterSwitch({ active }: { active: boolean }) {
+export function EmailMasterSwitch({ active, readOnly = false }: { active: boolean; readOnly?: boolean }) {
   const [state, action, pending] = useActionState(switchAnnounced, null);
   const [ask, setAsk] = useState(false);
   const submit = (value: "on" | "off") => {
@@ -35,14 +35,14 @@ export function EmailMasterSwitch({ active }: { active: boolean }) {
         <p className="text-[13px] text-ink-2">{active ? "People get emails for the events below." : "Nothing is sent. Emails that would go out are listed below as Skipped."}</p>
         {state && !state.ok && <FormMessage state={state} />}
       </div>
-      <button
+      {!readOnly && <button
         type="button" role="switch" aria-checked={active} aria-label="Emails Active" disabled={pending}
         onClick={() => (active ? submit("off") : setAsk(true))}
         className={`relative inline-flex h-11 w-[92px] shrink-0 items-center rounded-full border-2 transition-colors ${active ? "border-navy bg-navy" : "border-line-input bg-fill-strong"}`}
       >
         <span className={`absolute top-1 h-8 w-8 rounded-full shadow transition-all ${active ? "left-[50px] bg-gold" : "left-1 bg-white"}`} />
         <span className={`w-full px-3 text-xs font-bold ${active ? "text-left text-white" : "text-right text-ink-2"}`}>{active ? "ON" : "OFF"}</span>
-      </button>
+      </button>}
       <ConfirmDialog
         open={ask} title="Turn on emails?" body="People will start getting emails for the events below."
         confirmLabel="Turn on emails" onCancel={() => setAsk(false)} onConfirm={() => { setAsk(false); submit("on"); }}
@@ -85,7 +85,7 @@ export function TestEmailButton({ defaultTo, testMode, testRecipient }: { defaul
 export interface EventRowData { key: string; label: string; to: string; urgent: boolean; on: boolean; edited: boolean; editHref: string }
 
 /** One event: who gets it, urgent or not, its switch and Edit message. */
-export function EmailEventRow({ e }: { e: EventRowData }) {
+export function EmailEventRow({ e, readOnly = false }: { e: EventRowData; readOnly?: boolean }) {
   const [state, action, pending] = useActionState(eventAnnounced, null);
   return (
     <li className="flex flex-col gap-2 border-b border-line-soft py-3 last:border-0 sm:flex-row sm:items-center sm:gap-4" data-email-event={e.key}>
@@ -98,6 +98,9 @@ export function EmailEventRow({ e }: { e: EventRowData }) {
         <p className="text-[13px] text-ink-2">To: {e.to}</p>
         {state && !state.ok && <FormMessage state={state} />}
       </div>
+      {readOnly ? (
+        <span className={`chip h-6 shrink-0 text-xs ${e.on ? "c-ok" : "c-mute"}`} data-email-event-state>{e.on ? "On" : "Off"}</span>
+      ) : (
       <div className="flex shrink-0 items-center gap-2">
         <a href={e.editHref} className="btn-ghost btn-sm">Edit message</a>
         <form action={action}>
@@ -109,6 +112,7 @@ export function EmailEventRow({ e }: { e: EventRowData }) {
           </button>
         </form>
       </div>
+      )}
     </li>
   );
 }

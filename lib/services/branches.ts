@@ -2,7 +2,7 @@ import "server-only";
 import { prisma, type Tx, type Prisma } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { PERMISSIONS, permissionLabel, type Permission } from "@/lib/auth/permissions";
 import { getSetting, setSetting } from "@/lib/settings";
 import { parseBranchFile, BRANCH_FILE_MAX_BYTES, type MyLoansBranchRow } from "@/lib/branches/file";
 import { branchRowHash, diffBranches, REVIEW_KIND_LABEL, type BranchDiff, type DiffItem, type DmsState, type GroupRef, type ReviewKind } from "@/lib/branches/diff";
@@ -29,9 +29,9 @@ const actorOf = (u: CurrentUser): Actor => ({ id: u.id, label: u.name });
 const asJson = (v: unknown) => JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
 type Db = Tx | typeof prisma;
 
-export function canManageBranchSource(u: CurrentUser) { return can(u, PERMISSIONS.SOURCE_MANAGE); }
-function assertManage(u: CurrentUser) {
-  if (!canManageBranchSource(u)) throw new UserError("Only Admin can import branches from MyLoans or decide the Branch review (Manage MyLoans source).");
+/** Server checks: Import branches from MyLoans; Decide branch changes; Hide (Change branches or Decide branch changes). */
+function assertCan(u: CurrentUser, ...ps: Permission[]) {
+  if (!ps.some((p) => can(u, p))) throw new UserError(`Ask an Admin to turn on "${permissionLabel(ps[0])}" for your role.`);
 }
 
 export async function loadDmsState(db: Db = prisma): Promise<DmsState> {
@@ -83,7 +83,7 @@ async function readFile(input: string | Uint8Array): Promise<{ rows: (MyLoansBra
 
 /** Import from MyLoans, step 1: the preview. Nothing is saved. */
 export async function previewBranchFile(user: CurrentUser, input: string | Uint8Array, fileName: string): Promise<ImportPreview> {
-  assertManage(user);
+  assertCan(user, PERMISSIONS.BRANCHES_IMPORT);
   const t0 = Date.now();
   const f = await readFile(input);
   const diff = diffBranches(f.rows, await loadDmsState(), { full: true });
@@ -103,7 +103,7 @@ export interface ApplyResult { applied: number; left: number; missing: number; u
 
 /** Import from MyLoans, step 2: Confirm. Applies the previewed changes in one transaction. */
 export async function confirmBranchFile(user: CurrentUser | null, input: string | Uint8Array, fileName: string, expected: string | null, choices: ConfirmChoices = {}, o: { trigger?: string } = {}): Promise<ApplyResult> {
-  if (user) assertManage(user);
+  if (user) assertCan(user, PERMISSIONS.BRANCHES_IMPORT);
   const t0 = Date.now();
   const f = await readFile(input);
   const diff = diffBranches(f.rows, await loadDmsState(), { full: true });
@@ -366,7 +366,7 @@ export async function branchWorkload(branchId: string): Promise<{ activeUsers: n
 
 /** Accept a review item: applies the change (and its new area or division), audited. */
 export async function acceptReview(user: CurrentUser, id: string, o: { hide?: boolean; activate?: boolean } = {}) {
-  assertManage(user);
+  assertCan(user, PERMISSIONS.BRANCHES_REVIEW);
   const actor = actorOf(user);
   await prisma.$transaction(async (tx) => {
     const r = await tx.branchReview.findUnique({ where: { id } });
@@ -406,7 +406,7 @@ export async function acceptReview(user: CurrentUser, id: string, o: { hide?: bo
 }
 
 export async function ignoreReview(user: CurrentUser, id: string, note: string) {
-  assertManage(user);
+  assertCan(user, PERMISSIONS.BRANCHES_REVIEW);
   await prisma.$transaction(async (tx) => {
     const r = await tx.branchReview.findUnique({ where: { id } });
     if (!r || r.state !== "OPEN") throw new UserError("This item was already decided. Refresh the list.");
@@ -421,7 +421,7 @@ export async function ignoreReview(user: CurrentUser, id: string, note: string) 
  * its id (so its loans, users and history stay); both items close.
  */
 export async function linkSameBranch(user: CurrentUser, newItemId: string, oldBranchId: string) {
-  assertManage(user);
+  assertCan(user, PERMISSIONS.BRANCHES_REVIEW);
   await prisma.$transaction(async (tx) => {
     const r = await tx.branchReview.findUnique({ where: { id: newItemId } });
     if (!r || r.state !== "OPEN" || r.kind !== "NEW_BRANCH") throw new UserError("Pick an open New branch item.");
@@ -445,7 +445,7 @@ export async function linkSameBranch(user: CurrentUser, newItemId: string, oldBr
 // ---------------------------------------------------------------------------------------------------
 
 export async function setBranchHidden(user: CurrentUser, id: string, hidden: boolean) {
-  assertManage(user);
+  assertCan(user, PERMISSIONS.BRANCHES_MANAGE, PERMISSIONS.BRANCHES_REVIEW);
   await prisma.$transaction(async (tx) => {
     const b = await tx.branch.findUnique({ where: { id } });
     if (!b) throw new UserError("Branch not found.");
@@ -474,7 +474,7 @@ export interface BranchRunResult { ok: boolean; mode: "FULL" | "INCREMENTAL"; qu
  * and a full read once a week (to find branches that disappeared). Paging supported. Changes no branch.
  */
 export async function runBranchSync(o: { trigger: "api" | "cron" | "lookup"; user?: CurrentUser; mode?: "auto" | "full"; adapter?: MyLoansAdapter; now?: Date }): Promise<BranchRunResult | null> {
-  if (o.user) assertManage(o.user);
+  if (o.user) assertCan(o.user, PERMISSIONS.BRANCHES_IMPORT);
   const adapter = o.adapter ?? getMyLoansAdapter();
   const now = o.now ?? new Date();
   return prisma.$transaction(async (lockTx) => {

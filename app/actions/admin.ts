@@ -7,7 +7,7 @@ import { runAction, str, strOrNull, type ActionState } from "@/lib/action";
 import { saveSettingsRow, saveUser, setMockOverride, setToggle, type SettingsKind, saveFundsSettings } from "@/lib/services/admin";
 import { UserError } from "@/lib/services/errors";
 import { AuthzError } from "@/lib/auth/current-user";
-import { duplicateRole, resetRoleToDefault, saveRole, setRoleActive } from "@/lib/services/roles";
+import { checkRoleChange, duplicateRole, resetRoleToDefault, saveRole, setRoleActive } from "@/lib/services/roles";
 import { STATUS_KINDS, setRowActive, type StatusKind } from "@/lib/services/settings-status";
 import { IMPORT_LISTS, type ImportListKey } from "@/lib/import/columns";
 import { checkImport, runImport, type ImportPlan } from "@/lib/import/importer";
@@ -32,7 +32,8 @@ export async function saveUserAction(_prev: ActionState, fd: FormData): Promise<
       roleId: str(fd, "roleId"),
       active: fd.get("active") === "on",
       // Branch access from the tree (JSON); older forms send branch ids.
-      ...(fd.has("access") ? { access: str(fd, "access") } : { branchIds: fd.getAll("branchIds").map(String) }),
+      // Nothing is sent without "Change branch access" (the form shows the access read only).
+      ...(fd.has("access") ? { access: str(fd, "access") } : fd.has("branchIds") ? { branchIds: fd.getAll("branchIds").map(String) } : {}),
     });
     revalidatePath("/admin/users");
     return "User saved.";
@@ -146,12 +147,30 @@ export async function saveRoleAction(_prev: RoleState, fd: FormData): Promise<Ro
       description: str(fd, "description"),
       branchAccess: str(fd, "branchAccess"),
       permissions: fd.getAll("permissions").map(String),
+      copiedFromId: strOrNull(fd, "copiedFromId") ?? undefined,
     });
     revalidatePath("/admin/settings");
     revalidatePath("/admin/users");
     return "Saved.";
   });
   return state ? { ...state, roleId } : state;
+}
+
+/**
+ * The role editor's check before Save or Make inactive (roles:manage): the impact on the role's people
+ * ("3 users gain: ...") and the lock-out reason, if any. Changes nothing.
+ */
+export async function roleCheckAction(input: { id: string | null; permissions: string[]; active?: boolean }): Promise<
+  { ok: true; text: string; added: string[]; removed: string[]; users: number; lockout: string | null } | { ok: false; error: string }
+> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ROLES_MANAGE);
+    const r = await checkRoleChange(user, input.id, Array.isArray(input.permissions) ? input.permissions.map(String) : [], input.active);
+    return { ok: true, ...r.impact, lockout: r.lockout };
+  } catch (e) {
+    if (e instanceof UserError || e instanceof AuthzError) return { ok: false, error: e.message };
+    throw e;
+  }
 }
 
 export async function roleCommandAction(_prev: RoleState, fd: FormData): Promise<RoleState> {

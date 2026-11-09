@@ -57,8 +57,7 @@ export async function openLoanFileAction(_prev: ActionState, fd: FormData): Prom
 
 export async function refreshLoanAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const user = await getCurrentUser();
-    if (!user) throw new UserError("Your session has ended. Sign in again.");
+    const user = await requirePermission(PERMISSIONS.LOANS_REFRESH);
     const loanId = str(fd, "loanId");
     const r = await refreshFromMyLoans(user, loanId);
     revalidateLoan(await pnOfLoan(loanId));

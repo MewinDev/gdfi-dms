@@ -13,7 +13,7 @@ import { UsersToolbar } from "@/components/admin/users-toolbar";
 import { shortRoleName } from "@/lib/ui/roles";
 import { can } from "@/lib/auth/current-user";
 import { permissionLabel, plainWords } from "@/lib/auth/permissions";
-import { effectivePermissions, isLockedAdminRole } from "@/lib/auth/access";
+import { effectivePermissions } from "@/lib/auth/access";
 import { accessTreeData } from "@/lib/services/access";
 import { accessSummary } from "@/lib/branches/access";
 
@@ -36,7 +36,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } : {}),
     ...(sp.role ? { roleId: sp.role } : {}),
     // Who works at this branch: their access includes it, or they have All branches.
-    ...(sp.branch ? { AND: [{ OR: [{ branches: { some: { branchId: sp.branch } } }, { allBranches: true }, { role: { key: "ADMIN" } }] }] } : {}),
+    ...(sp.branch ? { AND: [{ OR: [{ branches: { some: { branchId: sp.branch } } }, { allBranches: true }] }] } : {}),
   };
   const [users, roles, branches, total] = await Promise.all([
     prisma.user.findMany({ where, include: { role: true, accessGrants: true, homeBranch: true, branches: { include: { branch: true }, orderBy: { branch: { name: "asc" } } } }, orderBy: [{ role: { sortOrder: "asc" } }, { name: "asc" }] }),
@@ -124,7 +124,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         </>
       )}
 
-      {sp.open && (sp.open === "roles" || canEdit) && <UsersModal sp={sp} meId={me.id} listHref={listHref} roles={roles} canManageRoles={canManageRoles} />}
+      {sp.open && (sp.open === "roles" || canEdit) && <UsersModal sp={sp} meId={me.id} canAccess={can(me, PERMISSIONS.ACCESS_MANAGE)} listHref={listHref} roles={roles} canManageRoles={canManageRoles} />}
     </div>
   );
 }
@@ -140,7 +140,7 @@ function RoleCell({ role }: { role: { name: string; canSignIn: boolean } }) {
 
 /** "All branches", or the branches as chips, with the access summary when areas or divisions are granted. */
 function AccessCell({ u }: { u: { allBranches: boolean; role: { key: string; builtIn: boolean }; accessGrants: { kind: "DIVISION" | "AREA" | "BRANCH"; divisionId: string | null; areaId: string | null; branchId: string | null; exclude: boolean }[]; branches: { branch: { name: string } }[]; homeBranch: { name: string } | null } }) {
-  if (u.allBranches || isLockedAdminRole(u.role)) return <span className="chip c-navy h-6 whitespace-nowrap text-xs">All branches</span>;
+  if (u.allBranches) return <span className="chip c-navy h-6 whitespace-nowrap text-xs">All branches</span>;
   const groups = u.accessGrants.some((g) => g.kind !== "BRANCH");
   return (
     <span className="flex flex-col items-start gap-1">
@@ -172,10 +172,12 @@ function StatusCell({ active, test }: { active: boolean; test: boolean }) {
 }
 
 async function UsersModal({
-  sp, meId, listHref, roles, canManageRoles,
+  sp, meId, listHref, roles, canManageRoles, canAccess,
 }: {
   sp: SP;
   meId: string;
+  /** Change branch access (access:manage): otherwise the access is shown read only and not sent. */
+  canAccess: boolean;
   listHref: string;
   canManageRoles: boolean;
   roles: { id: string; key: string; name: string; description: string; canSignIn: boolean; builtIn: boolean; active: boolean; branchAccess: "ASSIGNED" | "ALL"; permissions: string[] }[];
@@ -216,13 +218,17 @@ async function UsersModal({
   // Active roles only; an inactive role already on this user is shown with an "Inactive" tag.
   const roleOpts = roles
     .filter((r) => r.active || r.id === u?.roleId)
-    .map((r) => ({ id: r.id, name: r.name, canSignIn: r.canSignIn, builtIn: r.builtIn, active: r.active, permissions: [...effectivePermissions(r)].map(permissionLabel), admin: isLockedAdminRole(r), allByDefault: r.branchAccess === "ALL" }));
+    .map((r) => ({ id: r.id, name: r.name, canSignIn: r.canSignIn, builtIn: r.builtIn, active: r.active, permissions: [...effectivePermissions(r)].map(permissionLabel), admin: false, allByDefault: r.branchAccess === "ALL" }));
   const tree = await accessTreeData();
   // A new user starts with the default of the first role offered (All for roles whose default is All).
   const firstRole = roles.find((r) => r.active && r.canSignIn);
   const initial = u
-    ? { all: u.allBranches || isLockedAdminRole(u.role), grants: u.accessGrants.map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude })), homeBranchId: u.homeBranchId }
+    ? { all: u.allBranches, grants: u.accessGrants.map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude })), homeBranchId: u.homeBranchId }
     : { all: firstRole?.branchAccess === "ALL", grants: [], homeBranchId: null };
+  const homeName = u?.homeBranchId ? (await prisma.branch.findUnique({ where: { id: u.homeBranchId }, select: { name: true, code: true } })) : null;
+  const readOnlyAccess = canAccess ? undefined : u
+    ? `${accessSummary(initial.grants, await prisma.userBranch.count({ where: { userId: u.id } }), initial.all)}${homeName ? ` · home branch ${homeName.name}${homeName.code ? ` (${homeName.code})` : ""}` : ""}`
+    : "The role's default: All branches when the role is set to All, otherwise none yet. Someone who may change branch access sets it.";
   return (
     <SettingsModal
       id="settings-modal"
@@ -238,7 +244,7 @@ async function UsersModal({
         listHref={listHref}
         user={u ? { id: u.id, name: u.name, email: u.email, roleId: u.roleId, active: u.active } : null}
         roles={roleOpts}
-        access={{ ...tree, initial }}
+        access={{ ...tree, initial, readOnlySummary: readOnlyAccess }}
         effect={u ? await inactiveEffect("user", u.id) : ""}
       />
       {u && u.id === meId && <p className="mt-4 text-sm text-ink-2">This is you. You cannot make yourself inactive.</p>}

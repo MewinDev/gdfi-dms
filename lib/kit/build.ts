@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { CURRENT_USER_INCLUDE, toCurrentUser } from "@/lib/auth/build-user";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { PERMISSIONS, ROLE_DEFAULTS } from "@/lib/auth/permissions";
 import { getHolidaySet, setSetting } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
 import type { MyLoansRecord } from "@/lib/myloans/types";
@@ -23,7 +23,7 @@ import { saveDpCapacity } from "@/lib/services/dp-capacity";
 import { fileAdvisory, resolveAdvisory } from "@/lib/services/lto-advisories";
 import { saveSettingsRow } from "@/lib/services/admin";
 import { setRowActive } from "@/lib/services/settings-status";
-import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, SUPERVISOR_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
+import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, SUPERVISOR_ROLE_NAME, NO_REFRESH_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
 import { kitRefusal } from "./guard";
 import { branchGrants, writeUserAccess, type AccessInput } from "@/lib/services/access";
 import type { GrantLike } from "@/lib/branches/access";
@@ -71,17 +71,24 @@ async function createAccounts(log: Log): Promise<Users> {
   const admin = await asUser(adminAcc.email);
   const sup = await saveRole(admin, null, {
     name: SUPERVISOR_ROLE_NAME, branchAccess: "ASSIGNED",
-    description: "Sample role (Manual Test Kit): sees the loans of the assigned branches and may transfer holds.",
-    permissions: [PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER],
+    description: "Sample role (Manual Test Kit): sees the loans of the assigned branches, refreshes them from MyLoans and may transfer holds.",
+    permissions: [PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER, PERMISSIONS.MYLOANS_VIEW, PERMISSIONS.LOANS_REFRESH],
   });
   const supId = typeof sup === "object" && sup && "id" in sup ? String((sup as { id: string }).id) : (await prisma.role.findFirstOrThrow({ where: { name: SUPERVISOR_ROLE_NAME } })).id;
+  // "LA (no refresh)": every Loan Associate tick except Refresh, so Admin can tick it and see the button appear.
+  const noRefreshId = await saveRole(admin, null, {
+    name: NO_REFRESH_ROLE_NAME, branchAccess: "ASSIGNED",
+    description: "Sample role (Manual Test Kit): a Loan Associate without \"Refresh a loan from MyLoans\". Tick it in Settings, Roles to try it.",
+    permissions: ROLE_DEFAULTS.LA.permissions.filter((k) => k !== PERMISSIONS.LOANS_REFRESH),
+  });
+  const kitRole = async (r: (typeof KIT_ACCOUNTS)[number]["role"]) => (r === "SUPERVISOR" ? supId : r === "LA_NO_REFRESH" ? noRefreshId : roleId(r));
   for (const a of KIT_ACCOUNTS) {
     if (a.key === "admin") continue;
-    await create(a, a.role === "SUPERVISOR" ? supId : await roleId(a.role));
+    await create(a, await kitRole(a.role));
   }
   const users = {} as Users;
   for (const a of KIT_ACCOUNTS) users[a.key] = await asUser(a.email);
-  log(`Created ${KIT_ACCOUNTS.length} sample accounts (and the ${SUPERVISOR_ROLE_NAME} role).`);
+  log(`Created ${KIT_ACCOUNTS.length} sample accounts (and the ${SUPERVISOR_ROLE_NAME} and ${NO_REFRESH_ROLE_NAME} roles).`);
   return users;
 }
 

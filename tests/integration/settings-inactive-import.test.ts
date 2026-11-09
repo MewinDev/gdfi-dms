@@ -190,12 +190,12 @@ describe("Inactive instead of delete", () => {
     expect((await getHolidaySet()).has("2099-01-02")).toBe(false);
   });
 
-  it("hard limits on the server: yourself, the last active Admin, the last active branch", async () => {
+  it("hard limits on the server: yourself, the last active person who can manage roles, the last active branch", async () => {
     await refused(setRowActive(admin, "user", admin.id, false), /cannot make yourself inactive/);
-    await refused(saveUser(admin, admin.id, { name: admin.name, email: admin.email, roleId: (await prisma.role.findUniqueOrThrow({ where: { key: "LA" } })).id, active: true, branchIds: [] }), /own Admin role/);
+    await refused(saveUser(admin, admin.id, { name: admin.name, email: admin.email, roleId: (await prisma.role.findUniqueOrThrow({ where: { key: "LA" } })).id, active: true }), /cannot take "Manage roles" away from yourself/);
     const admins = await prisma.user.count({ where: { active: true, role: { key: "ADMIN" } } });
     expect(admins).toBe(1);
-    expect(await inactiveRefusal("user", { id: admin.id, roleKey: "ADMIN" }, { id: "someone-else" })).toMatch(/last active Admin/);
+    expect(await inactiveRefusal("user", { id: admin.id }, { id: "someone-else" })).toMatch(/^This is the last active person who can (manage roles|change branch access)\./);
 
     // The last active branch (a branch made in the DMS; the others switched off as MyLoans would).
     await saveSettingsRow(admin, "branch", null, { code: "869", name: "Zeta Last" });

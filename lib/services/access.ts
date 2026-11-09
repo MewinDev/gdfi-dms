@@ -5,7 +5,7 @@ import { prisma, type Tx } from "@/lib/db";
 import { writeAudit, type Actor } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { effectivePermissions, isLockedAdminRole } from "@/lib/auth/access";
+import { effectivePermissions } from "@/lib/auth/access";
 import { accessSummary, branchPlaces, effectiveBranchIds, normalizeGrants, rebuildAccess, type GrantLike } from "@/lib/branches/access";
 import { UserError } from "./errors";
 
@@ -74,12 +74,10 @@ export function worksLoans(role: Pick<Role, "key" | "builtIn" | "permissions">):
 }
 
 /**
- * Checks an access for a user of this role and returns it normalized (Admin: always All; the home branch
- * picked when missing). `before` is the user's current grants: a branch already granted may stay even when
+ * Checks an access for a user of this role and returns it normalized (the home branch picked when missing). `before` is the user's current grants: a branch already granted may stay even when
  * it is now inactive; a NEW grant on an inactive or hidden branch is refused.
  */
 export async function checkAccess(db: Tx | typeof prisma, role: Role, input: AccessInput, before: { grants: GrantLike[]; homeBranchId: string | null } | null): Promise<{ input: AccessInput; effective: Set<string> | null }> {
-  if (isLockedAdminRole(role)) return { input: { all: true, grants: [], homeBranchId: input.homeBranchId ? await keepHome(db, input.homeBranchId) : null }, effective: null };
   const places = await branchPlaces(db);
   const branches = await db.branch.findMany({ select: { id: true, name: true, code: true, active: true, hidden: true } });
   const byId = new Map(branches.map((b) => [b.id, b]));
@@ -115,14 +113,10 @@ export async function checkAccess(db: Tx | typeof prisma, role: Role, input: Acc
   return { input: { all: input.all, grants: input.all ? [] : grants, homeBranchId: home ?? null }, effective };
 }
 
-async function keepHome(db: Tx | typeof prisma, id: string): Promise<string | null> {
-  return (await db.branch.findUnique({ where: { id }, select: { id: true } }))?.id ?? null;
-}
-
 /** "All branches" or "1 area + 2 branches, 26 branches in total" (for audit and screens). */
 export async function describeAccess(db: Tx | typeof prisma, userId: string): Promise<{ summary: string; all: boolean; grants: GrantLike[]; homeBranchId: string | null; branches: string[] }> {
   const u = await db.user.findUniqueOrThrow({ where: { id: userId }, include: { role: true, accessGrants: true, branches: { include: { branch: { select: { name: true, code: true } } } } } });
-  const all = u.allBranches || isLockedAdminRole(u.role);
+  const all = u.allBranches;
   const grants = u.accessGrants.map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude }));
   return { summary: accessSummary(grants, u.branches.length, all), all, grants, homeBranchId: u.homeBranchId, branches: u.branches.map((b) => `${b.branch.name}${b.branch.code ? ` (${b.branch.code})` : ""}`).sort() };
 }
@@ -147,9 +141,9 @@ export async function applyAccess(tx: Tx, actor: Actor, userId: string, role: Ro
   return { ...change, summary: after.summary };
 }
 
-/** Users, Edit, Branch access (users:edit). */
+/** Users, Edit, Branch access (access:manage). */
 export async function saveUserAccess(user: CurrentUser, targetUserId: string, raw: AccessInput | string) {
-  if (!can(user, PERMISSIONS.USERS_EDIT)) throw new UserError("Your role does not allow changing users' branch access.");
+  if (!can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change branch access\" for your role.");
   const input = parseAccess(raw);
   const target = await prisma.user.findUnique({ where: { id: targetUserId }, include: { role: true } });
   if (!target) throw new UserError("User not found.");
@@ -158,7 +152,7 @@ export async function saveUserAccess(user: CurrentUser, targetUserId: string, ra
 
 /** Copy access from another user: the same grants and exceptions (and home branch when it fits). */
 export async function copyAccess(user: CurrentUser, fromUserId: string, toUserId: string) {
-  if (!can(user, PERMISSIONS.USERS_EDIT)) throw new UserError("Your role does not allow changing users' branch access.");
+  if (!can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change branch access\" for your role.");
   const from = await describeAccess(prisma, fromUserId);
   const to = await prisma.user.findUniqueOrThrow({ where: { id: toUserId }, select: { homeBranchId: true } });
   const places = await branchPlaces(prisma);
@@ -187,7 +181,7 @@ export async function accessTreeData(db: Tx | typeof prisma = prisma) {
   const tree = [...divisions.values()].sort(byName).map((d) => ({ id: d.id, name: d.name, areas: [...d.areas.values()].sort(byName) }));
   const hiddenPlaces = branches.filter((b) => b.hidden).map((b) => ({ id: b.id, divisionId: b.divisionId, areaId: b.areaId }));
   const others = users.map((u) => ({
-    id: u.id, name: u.name, all: u.allBranches || isLockedAdminRole(u.role), homeBranchId: u.homeBranchId,
+    id: u.id, name: u.name, all: u.allBranches, homeBranchId: u.homeBranchId,
     grants: u.accessGrants.map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude })),
   }));
   return { tree, hiddenPlaces, others };

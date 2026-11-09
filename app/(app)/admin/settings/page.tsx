@@ -4,10 +4,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { can, requirePageAny, type CurrentUser } from "@/lib/auth/current-user";
-import { ALL_PERMISSIONS, LIST_PERMISSION, SETTINGS_PERMISSIONS } from "@/lib/auth/permissions";
-import { effectivePermissions, isLockedAdminRole } from "@/lib/auth/access";
+import { ALL_PERMISSIONS, AREA_PERMISSIONS, SETTINGS_PERMISSIONS } from "@/lib/auth/permissions";
+import { effectivePermissions } from "@/lib/auth/access";
 import { RolesList } from "@/components/admin/roles-list";
 import { RoleEditor } from "@/components/admin/role-editor";
+import { lastRoleChanges } from "@/lib/services/roles";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getSetting } from "@/lib/settings";
 import { EXPENSE_KINDS, EXPENSE_LABEL, decimalToCents, peso } from "@/lib/funds/rules";
@@ -79,13 +80,13 @@ const importHref = (key: string) => `${BASE}?open=${key}&step=import`;
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string }> }) {
   // Settings opens for anyone who may change at least one area; each card shows only if allowed.
-  const user = await requirePageAny([...SETTINGS_PERMISSIONS, PERMISSIONS.ROLES_MANAGE, PERMISSIONS.TESTDATA_RESET, PERMISSIONS.EMAIL_MANAGE, PERMISSIONS.SOURCE_MANAGE, PERMISSIONS.DP_CAPACITY_MANAGE]);
+  const user = await requirePageAny(SETTINGS_PERMISSIONS);
   const sp = await searchParams;
   const testMode = isTestMode();
   // The Test kit: only on a local test setup, checked on the server (lib/kit/access.ts). Elsewhere its
   // card is not listed and its address is "not found", even for Admin.
   const kit = kitScreensAvailable();
-  const areas = AREAS.filter((a) => (a.key !== "test-data" || testMode) && (a.key !== "test-kit" || kit) && can(user, LIST_PERMISSION[a.key]));
+  const areas = AREAS.filter((a) => (a.key !== "test-data" || testMode) && (a.key !== "test-kit" || kit) && (AREA_PERMISSIONS[a.key] ?? []).some((p) => can(user, p)));
   // Old links (?tab=...) still open the right area.
   const openKey = sp.open ?? sp.tab;
   if (openKey === "test-kit" && !kit) notFound();
@@ -212,13 +213,13 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
 
   if (area.key === "myloans-sync") {
     return (
-      <SettingsModal {...common} footer={{ kind: "save", formId: "myloans-sync-form", cancelHref: BASE }}>
-        <MyLoansSyncForm d={await syncCardData()} formId="myloans-sync-form" />
+      <SettingsModal {...common} footer={can(user, PERMISSIONS.SOURCE_MANAGE) ? { kind: "save", formId: "myloans-sync-form", cancelHref: BASE } : { kind: "done" }}>
+        <MyLoansSyncForm d={await syncCardData()} formId="myloans-sync-form" canManage={can(user, PERMISSIONS.SOURCE_MANAGE)} canRun={can(user, PERMISSIONS.MYLOANS_SYNC)} />
       </SettingsModal>
     );
   }
   if (area.key === "email") {
-    if (edit && isEmailEvent(edit)) {
+    if (edit && isEmailEvent(edit) && can(user, PERMISSIONS.EMAIL_MANAGE)) {
       const custom = (await getSetting("email.templates"))[edit];
       const def = EMAIL_EVENTS[edit];
       return (
@@ -235,7 +236,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
     return <SettingsModal {...common} footer={{ kind: "done" }}><CapacityArea /></SettingsModal>;
   }
   if (area.key === "system") {
-    return <SettingsModal {...common} footer={{ kind: "done" }}><SystemArea /></SettingsModal>;
+    return <SettingsModal {...common} footer={{ kind: "done" }}><SystemArea user={user} /></SettingsModal>;
   }
   if (area.key === "test-data") {
     return <SettingsModal {...common} footer={{ kind: "done" }}>{testMode ? <TestDataArea /> : null}</SettingsModal>;
@@ -638,13 +639,14 @@ async function RolesArea({ edit, common }: { edit?: string; common: { id: string
   const editBase = `${BASE}?open=roles&edit=`;
   const roles = await prisma.role.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { _count: { select: { users: true } } } });
   if (!edit) {
+    const last = await lastRoleChanges(roles.map((r) => r.id));
     return (
       <SettingsModal {...common} footer={{ kind: "done" }}>
         <RolesList
           addHref={`${editBase}new`} editHrefBase={editBase}
           rows={roles.map((r) => ({
             id: r.id, name: r.name, builtIn: r.builtIn, active: r.active, people: r._count.users,
-            on: effectivePermissions(r).size, total: ALL_PERMISSIONS.length, editHref: `${editBase}${r.id}`,
+            on: effectivePermissions(r).size, total: ALL_PERMISSIONS.length, editHref: `${editBase}${r.id}`, lastChange: last.get(r.id) ?? null,
           }))}
         />
       </SettingsModal>
@@ -653,12 +655,12 @@ async function RolesArea({ edit, common }: { edit?: string; common: { id: string
   const isNew = edit === "new";
   const role = isNew ? null : roles.find((r) => r.id === edit);
   if (!isNew && !role) return null;
-  const people = role ? await prisma.user.findMany({ where: { roleId: role.id }, orderBy: { name: "asc" }, select: { id: true, name: true, email: true } }) : [];
+  const people = role ? await prisma.user.findMany({ where: { roleId: role.id }, orderBy: { name: "asc" }, select: { id: true, name: true, email: true, active: true } }) : [];
   return (
     <SettingsModal
       {...common}
       title={isNew ? "Roles and access: Add role" : `Roles and access: ${role!.name}`}
-      help={isNew ? "Name the role, pick its branch access and turn on what it may do." : role!.builtIn ? "Built-in role: the name is fixed; the switches can change." : "Custom role."}
+      help={isNew ? "Name the role, pick its branch access and tick what it may see and do." : role!.builtIn ? "Built-in role: the name is fixed; the ticks can change." : "Custom role."}
       backHref={listHref}
       footer={{ kind: "save", formId: "settings-form", cancelHref: listHref }}
     >
@@ -666,10 +668,11 @@ async function RolesArea({ edit, common }: { edit?: string; common: { id: string
         key={edit}
         formId="settings-form" listHref={listHref} editHrefBase={editBase}
         role={role
-          ? { id: role.id, name: role.name, description: role.description, branchAccess: role.branchAccess, permissions: [...effectivePermissions(role)], builtIn: role.builtIn, locked: isLockedAdminRole(role), active: role.active }
-          : { id: null, name: "", description: "", branchAccess: "ASSIGNED", permissions: [PERMISSIONS.LOANS_VIEW], builtIn: false, locked: false, active: true }}
+          ? { id: role.id, name: role.name, description: role.description, branchAccess: role.branchAccess, permissions: [...effectivePermissions(role)], builtIn: role.builtIn, active: role.active }
+          : { id: null, name: "", description: "", branchAccess: "ASSIGNED", permissions: [PERMISSIONS.LOANS_VIEW], builtIn: false, active: true }}
         copyFrom={roles.filter((r) => r.id !== role?.id).map((r) => ({ id: r.id, name: r.name, permissions: [...effectivePermissions(r)], branchAccess: r.branchAccess }))}
         people={people}
+        usedBy={role && role.active ? people.filter((p) => p.active).length : 0}
         peopleHref={role ? `/admin/users?role=${role.id}&status=all` : "/admin/users"}
       />
     </SettingsModal>
@@ -679,7 +682,9 @@ const listHref_ = (key: string) => `${BASE}?open=${key}`;
 
 const ENV_LABEL = { local: "Local", staging: "Staging", production: "Production" } as const;
 
-async function SystemArea() {
+/** Settings, System: the switches need settings:system; the PN format needs settings:pn_format (else read only). */
+async function SystemArea({ user }: { user: CurrentUser }) {
+  const switches = can(user, PERMISSIONS.SETTINGS_SYSTEM);
   const [unavailable, sim, overrides, pnFormat] = await Promise.all([
     getSetting("myloans.simulateUnavailable"),
     getSetting("simulator.enabled"),
@@ -702,9 +707,9 @@ async function SystemArea() {
       <p className="flex min-h-11 items-center gap-2 rounded-xl bg-fill px-3 py-2 text-sm" data-timezone-line>
         <ClockIcon size={18} /> Times are shown in Philippine time (PHT)
       </p>
-      <PnFormatForm value={pnFormat} />
+      <PnFormatForm value={pnFormat} readOnly={!can(user, PERMISSIONS.SETTINGS_PN_FORMAT)} />
       <p className="text-sm">MyLoans adapter: <span className="chip c-mute">{mode === "live" ? "Live (HTTP)" : "Mock"}</span> <span className="text-xs text-ink-2">Set with MYLOANS_MODE on the server.</span></p>
-      {env !== "production" && (
+      {env !== "production" && switches && (
         <>
           <ToggleForm settingKey="myloans.simulateUnavailable" label="Simulate MyLoans unavailable" on={unavailable}
             description="The mock adapter answers every call as unavailable. New PNs cannot be opened; existing Loan Files show the stored copy as Not current." />
@@ -722,13 +727,15 @@ async function EmailArea({ user, testMode, filter }: { user: CurrentUser; testMo
   const [active, events, templates, rows] = await Promise.all([getSetting("email.active"), getSetting("email.events"), getSetting("email.templates"), listOutbox(filter)]);
   const sender = senderLine();
   const canCsv = can(user, PERMISSIONS.SETTINGS_IMPORT);
+  // Seeing (email:view) is not changing (email:manage): without it, no switches, edits, test email or Resend.
+  const manage = can(user, PERMISSIONS.EMAIL_MANAGE);
   const qs = new URLSearchParams(Object.entries(filter).filter(([, v]) => !!v) as [string, string][]).toString();
   return (
     <div className="flex flex-col gap-5" data-email-area>
-      <EmailMasterSwitch active={active} />
+      <EmailMasterSwitch active={active} readOnly={!manage} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm" data-sender-line>{sender === "Not set up" ? <><span className="chip c-bad h-6 text-xs">Not set up</span> <span className="text-ink-2">The Microsoft settings are missing on the server.</span></> : sender}</p>
-        <TestEmailButton defaultTo={user.email} testMode={testMode} testRecipient={!!process.env.EMAIL_TEST_RECIPIENT?.trim()} />
+        {manage && <TestEmailButton defaultTo={user.email} testMode={testMode} testRecipient={!!process.env.EMAIL_TEST_RECIPIENT?.trim()} />}
       </div>
       {testMode && <p className="rounded-xl bg-act-bg px-3 py-2 text-[13px] font-semibold text-act-fg" data-test-mode-note>Test mode: every email goes to the test address, not to the real person.</p>}
 
@@ -737,7 +744,7 @@ async function EmailArea({ user, testMode, filter }: { user: CurrentUser; testMo
         <p className="text-[13px] text-ink-2">Each one is an update people already get in GDFI DMS. Only people with an email address and an active account get mail. Urgent ones always go; the rest respect each person&apos;s choice.</p>
         <ul className="mt-1">
           {EMAIL_EVENT_KEYS.map((k) => (
-            <EmailEventRow key={k} e={{ key: k, label: EMAIL_EVENTS[k].label, to: EMAIL_EVENTS[k].to, urgent: EMAIL_EVENTS[k].urgent, on: events[k] !== false, edited: !!templates[k], editHref: `${BASE}?open=email&edit=${k}` }} />
+            <EmailEventRow key={k} e={{ key: k, label: EMAIL_EVENTS[k].label, to: EMAIL_EVENTS[k].to, urgent: EMAIL_EVENTS[k].urgent, on: events[k] !== false, edited: !!templates[k], editHref: `${BASE}?open=email&edit=${k}` }} readOnly={!manage} />
           ))}
         </ul>
       </section>
@@ -757,7 +764,7 @@ async function EmailArea({ user, testMode, filter }: { user: CurrentUser; testMo
           <div><label htmlFor="em-to" className="label">To</label><input id="em-to" name="to" type="date" defaultValue={filter.to ?? ""} className="input h-10 w-40" /></div>
           <button type="submit" className="btn-secondary h-10">Show</button>
         </form>
-        <RecentEmails canResend rows={rows.map((r) => ({
+        <RecentEmails canResend={manage} rows={rows.map((r) => ({
           id: r.id, when: fmtDateTime(r.createdAt), event: r.event === "test" ? "Test email" : EMAIL_EVENTS[r.event as EmailEventKey]?.label ?? r.event,
           to: r.toName, address: r.toAddress && r.toAddress !== r.intendedAddress ? `${r.toAddress} (test address)` : r.toAddress ?? r.intendedAddress,
           status: r.status, reason: r.status === "SENT" ? (r.batchedIntoId ? "Sent together with others" : null) : r.lastError, subject: r.subject, html: r.html, text: r.text,

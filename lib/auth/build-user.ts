@@ -1,5 +1,5 @@
 import type { Branch, Role, User, UserBranch } from "@prisma/client";
-import { effectivePermissions, isLockedAdminRole } from "./access";
+import { effectivePermissions } from "./access";
 
 /**
  * The signed-in person as the app uses it. Roles say WHAT a person can do; branch access says WHERE
@@ -9,6 +9,7 @@ export interface CurrentUser {
   id: string;
   email: string;
   name: string;
+  roleId: string;
   roleKey: string;
   roleName: string;
   permissions: Set<string>;
@@ -30,13 +31,14 @@ export const CURRENT_USER_INCLUDE = { role: true, branches: { include: { branch:
 
 /** Same rule for the app (every request), the Manual Test Kit and the tests. */
 export function toCurrentUser(u: UserWithAccess): CurrentUser {
-  const all = u.allBranches || isLockedAdminRole(u.role);
+  const all = u.allBranches;
   const rows = [...u.branches].sort((a, b) => a.branch.name.localeCompare(b.branch.name));
   const branchIds = all ? [] : rows.map((b) => b.branchId);
   return {
     id: u.id,
     email: u.email,
     name: u.name,
+    roleId: u.roleId,
     roleKey: u.role.key,
     roleName: u.role.name,
     permissions: effectivePermissions(u.role) as Set<string>,

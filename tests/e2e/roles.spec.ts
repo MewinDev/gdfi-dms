@@ -4,6 +4,8 @@ import { cleanTestRoles, db, resetLoans } from "./db";
 import { signIn } from "./helpers";
 
 const dialog = (page: Page) => page.locator("dialog#settings-modal");
+/** A tick in the role editor, by its technical name. */
+const tickOf = (page: Page, key: string) => dialog(page).locator(`[data-perm="${key}"]`).getByRole("checkbox");
 
 test.beforeEach(async () => {
   await resetLoans();
@@ -13,7 +15,7 @@ test.afterAll(async () => {
   await cleanTestRoles();
 });
 
-test("Custom role from a copy: switches, plain words, save, assign, sign in, then make inactive", async ({ page }) => {
+test("Custom role from a copy: ticks, plain words, save, assign, sign in, then make inactive", async ({ page }) => {
   await signIn(page, "admin");
   await page.goto("/admin/settings");
   const card = page.getByRole("region", { name: "People and access" });
@@ -29,31 +31,32 @@ test("Custom role from a copy: switches, plain words, save, assign, sign in, the
   await expect(page.getByRole("dialog", { name: "Roles and access: Copy of Loan Associate" })).toBeVisible();
 
   const words = dialog(page).getByRole("region", { name: "In plain words" }).or(dialog(page).locator("section", { has: page.getByRole("heading", { name: "In plain words" }) })).first();
-  await expect(words).toContainText("Can send to a processor and accept returned papers.");
+  await expect(words).toContainText("Can send to a processor, flag funds and accept returned papers.");
 
   // Unsaved changes ask first.
-  await dialog(page).getByRole("switch", { name: "Send to a processor" }).uncheck();
+  await tickOf(page, "processing:send").uncheck();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("alertdialog").getByRole("heading", { name: "Discard your changes?" })).toBeVisible();
   await page.getByRole("alertdialog").getByRole("button", { name: "Keep editing" }).click();
 
   await dialog(page).getByLabel("Name", { exact: true }).fill("Z Branch Checker");
-  await expect(words).toContainText("Can accept returned papers.");
+  await expect(words).toContainText("Can flag funds and accept returned papers.");
   await expect(words).not.toContainText("send to a processor");
 
-  // Dependencies are explained before they apply.
-  await dialog(page).getByRole("switch", { name: "Find a loan" }).click(); // waits for the explanation
-  await expect(dialog(page).getByText("Turning off Find a loan also turns off Open a loan file, because it needs it.")).toBeVisible();
-  await dialog(page).getByRole("button", { name: "OK, change them" }).click();
-  await expect(dialog(page).getByRole("switch", { name: "Open a loan file" })).not.toBeChecked();
-  await dialog(page).getByRole("switch", { name: "Open a loan file" }).click();
-  await expect(dialog(page).getByText("Turning on Open a loan file also turns on Find a loan, because it needs it.")).toBeVisible();
-  await dialog(page).getByRole("button", { name: "Cancel" }).first().click();
-  await expect(dialog(page).getByRole("switch", { name: "Open a loan file" })).not.toBeChecked();
-  await expect(dialog(page).getByText("1 of 5 on")).toBeVisible(); // Loans: only See loan files is on now
-  await dialog(page).getByRole("switch", { name: "Find a loan" }).check();
+  // Dependencies apply at once and are said in one short line.
+  await tickOf(page, "loans:search").uncheck();
+  await expect(dialog(page).locator("[data-also-note]")).toHaveText("Also unticked: Open a loan file (it needs Find a loan).");
+  await expect(tickOf(page, "loans:open")).not.toBeChecked();
+  await expect(dialog(page).getByText("1 of 5 ticked")).toBeVisible(); // Loans: only See loan files is ticked now
+  await tickOf(page, "loans:open").check();
+  await expect(dialog(page).locator("[data-also-note]")).toHaveText("Also ticked: Find a loan (needed by Open a loan file).");
+  await tickOf(page, "loans:open").uncheck();
+  await expect(tickOf(page, "loans:search")).toBeChecked();
 
+  // Removing ticks asks first (the confirm window lists them).
   await dialog(page).getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("alertdialog").getByText(/loses: .*Open a loan file.*Send to a processor/)).toBeVisible();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Save and remove" }).click();
   await expect(dialog(page).getByText("Saved", { exact: true }).first()).toBeVisible();
   const role = await db.role.findFirstOrThrow({ where: { name: "Z Branch Checker" } });
   expect(role.permissions).toContain("loans:search");
@@ -73,7 +76,7 @@ test("Custom role from a copy: switches, plain words, save, assign, sign in, the
   const csv = readFileSync(await dl.path()!, "utf8");
   expect(csv.startsWith("﻿area,permission,key,")).toBe(true);
   expect(csv).toContain("Z Branch Checker");
-  expect(csv).toMatch(/Check documents,Tick papers,checklist:tick,Yes,No/); // Loan Associate Yes, Admin No
+  expect(csv).toMatch(/Transactions and papers,Tick papers,checklist:tick,Yes,No/); // Loan Associate Yes, Admin No
 
   // Assign it to a new test user.
   await page.goto("/admin/users?open=user&edit=new");
@@ -129,13 +132,14 @@ test("Custom role from a copy: switches, plain words, save, assign, sign in, the
   await expect(dialog(page).getByRole("listitem").filter({ hasText: "Z Branch Checker" })).toHaveCount(0); // default filter: Active
 });
 
-test("Admin is locked: switches on and disabled, with a note", async ({ page }) => {
+test("Admin is an ordinary role: its ticks can change; Manage roles is protected by the lock-out rules", async ({ page }) => {
   await signIn(page, "admin");
   await page.goto("/admin/settings?open=roles");
   await dialog(page).getByRole("link", { name: "Edit Admin" }).click();
-  await expect(dialog(page).getByText(/Admin is locked\./)).toBeVisible();
-  await expect(dialog(page).getByRole("switch", { name: "Manage roles and access" })).toBeChecked();
-  await expect(dialog(page).getByRole("switch", { name: "Manage roles and access" })).toBeDisabled();
-  await expect(dialog(page).getByRole("button", { name: "Make inactive" })).toHaveCount(0);
+  await expect(dialog(page).getByText(/Admin is locked/)).toHaveCount(0);
+  await expect(tickOf(page, "roles:manage")).toBeChecked();
+  await expect(tickOf(page, "roles:manage")).toBeEnabled();
+  await tickOf(page, "roles:manage").uncheck();
+  await expect(dialog(page).locator("[data-lockout]")).toContainText('You cannot take "Manage roles" away from your own role.');
   await expect(page.getByRole("link", { name: "Manage users" }).or(dialog(page).getByRole("link", { name: "See them in Users" })).first()).toBeVisible();
 });

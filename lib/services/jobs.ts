@@ -254,8 +254,12 @@ export async function bandApprovers(db: Tx | typeof prisma, amountCents: number)
   return rows.length ? rows.map((r) => r.id) : fundsApprovers(db);
 }
 
-export async function adminIds(db: Tx | typeof prisma): Promise<string[]> {
-  const rows = await db.user.findMany({ where: { active: true, role: { key: "ADMIN", active: true } }, select: { id: true } });
+/**
+ * The people who oversee a branch's problems ("Resolve any problem" and the branch in their access): told
+ * about problems, holds and overdue work there (the Admin role by default).
+ */
+export async function overseerIds(db: Tx | typeof prisma, branchId: string): Promise<string[]> {
+  const rows = await db.user.findMany({ where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.PROBLEMS_RESOLVE_ANY } }, ...worksAtWhere(branchId) }, select: { id: true } });
   return rows.map((r) => r.id);
 }
 export async function notifyProblem(tx: Tx, a: { loanId: string; transactionId: string; loan: { pn: string; branchId: string }; transaction: { type: { name: string } } }, reason: string, what: "opened" | "resolved") {
@@ -267,7 +271,7 @@ export async function notifyProblem(tx: Tx, a: { loanId: string; transactionId: 
       event: "problem_changed", transactionId: a.transactionId, to: [...la, ...(job ? [job.dpUserId, ...(job.secondaryDpUserId ? [job.secondaryDpUserId] : [])] : [])],
       vars: { pn: a.loan.pn, transaction: a.transaction.type.name, status: what, reason: what === "opened" ? `Reason: ${reason}.` : "The job is moving again." },
     },
-    userIds: [...(await branchLaUserIds(tx, a.loan.branchId)), ...(await adminIds(tx))], loanId: a.loanId,
+    userIds: [...(await branchLaUserIds(tx, a.loan.branchId)), ...(await overseerIds(tx, a.loan.branchId))], loanId: a.loanId,
     title: `${a.loan.pn}: problem ${what} on ${a.transaction.type.name}`, body: what === "opened" ? `Reason: ${reason}. The TAT keeps counting.` : "The job is moving again.",
     link: `/loans/${a.loan.pn}`,
   });

@@ -9,7 +9,7 @@ import { fmtDateTime } from "@/lib/time";
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  if (!can(user, PERMISSIONS.EMAIL_MANAGE) || !can(user, PERMISSIONS.SETTINGS_IMPORT)) return NextResponse.json({ error: "You do not have permission to export." }, { status: 403 });
+  if (!can(user, PERMISSIONS.EMAIL_VIEW) || !can(user, PERMISSIONS.SETTINGS_IMPORT)) return NextResponse.json({ error: "You do not have permission to export." }, { status: 403 });
   const sp = req.nextUrl.searchParams;
   const rows = await listOutbox({ status: sp.get("status") ?? undefined, from: sp.get("from") ?? undefined, to: sp.get("to") ?? undefined }, 5000);
   const esc = (v: unknown) => {

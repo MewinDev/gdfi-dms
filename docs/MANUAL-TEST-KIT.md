@@ -46,6 +46,7 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | LA Luzon 1 (not Amang Rodriguez) | Loan Associate | The whole Area LUZON 1 (NGMA + RIZAL) except Amang Rodriguez (174); home Angono |
 | Roving LA | Loan Associate | All branches |
 | LA Alicia | Loan Associate | Alicia (709), Alicia-Inactive (718) |
+| LA No Refresh | LA (no refresh): a sample role with every Loan Associate tick except "Refresh a loan from MyLoans" | Antipolo (101), Angono (165) |
 
 The branches are real MyLoans branches. The made-up sample branches were replaced: Quezon City (QC) is now Antipolo (101), Cebu (CEB) is Angono (165), Davao (DVO) is Alaminos (390) and Makati (MKT) is A. Mabini (168). The LTO offices did not change (Antipolo's usual office is still LTO Quezon City District Office).
 
@@ -122,6 +123,7 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 | GD1012026909100 | The replacement PN (not opened) | LA 1 | Find a loan: GD1012026909100. | The preview says it replaces GD1012026902044 (same borrower). |
 | (none) | Funds types | Admin | Settings > Funds types: CA · Cash advance and FT · Fund transfer, "Proposed, to be confirmed with Finance". Rename one, then look at an old record. | Saving confirms it (Proposed goes). Old records keep the name they had. |
 | (none) | Test kit | Admin | Settings > Test kit: Take backup, then Reset to start (type RESET), then Restore the backup. | Each step says what it did; the reset first saves an automatic backup. |
+| GD1012026902001 | Roles are just ticks: Refresh | LA No Refresh, then Admin, then LA No Refresh | LA No Refresh: open the loan file. Admin: Settings > Roles, LA (no refresh), tick "Refresh a loan from MyLoans" under MyLoans and sync, Save (the preview says "1 user gains: Refresh a loan from MyLoans"). Sign in again as LA No Refresh and open the same loan file. | First: "MyLoans · Last checked" shows, with no Refresh from MyLoans button. After the tick: the Refresh from MyLoans button is there. Settings > Roles shows the change on the role card. Reset to start removes the tick again. |
 
 ## Branches and the PN format
 

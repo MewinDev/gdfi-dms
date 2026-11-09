@@ -13,10 +13,10 @@ const read = (f: string) => readFileSync(path.join(DIR, f), "utf8");
 const slug = (h: string) => h.trim().toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-");
 
 describe("docs/workflow", () => {
-  it("has the index and the eleven documents", () => {
+  it("has the index and the twelve documents", () => {
     expect(files).toEqual([
       "01-glossary.md", "02-big-picture.md", "03-loan-associate.md", "04-dp-job.md", "05-funds.md",
-      "06-exceptions.md", "07-rules-and-roles.md", "08-systems.md", "09-status-and-open-questions.md", "10-processing-stages.md", "11-monitoring.md", "README.md",
+      "06-exceptions.md", "07-rules-and-roles.md", "08-systems.md", "09-status-and-open-questions.md", "10-processing-stages.md", "11-monitoring.md", "12-permissions.md", "README.md",
     ]);
   });
 

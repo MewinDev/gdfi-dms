@@ -10,7 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const unread = await unreadNotificationCount(user.id);
   // Every item follows the person's permissions (no role names).
   const worksLoans = can(user, PERMISSIONS.CHECKLIST_TICK); // Loan Associate workspace: "My loans", Find loan
-  const settings = SETTINGS_PERMISSIONS.some((p) => can(user, p)) || can(user, PERMISSIONS.ROLES_MANAGE) || can(user, PERMISSIONS.TESTDATA_RESET) || can(user, PERMISSIONS.DP_CAPACITY_MANAGE);
+  const settings = SETTINGS_PERMISSIONS.some((p) => can(user, p));
   const monitoring = can(user, PERMISSIONS.MONITOR_DP) || can(user, PERMISSIONS.MONITOR_LTO);
   const admin = [can(user, PERMISSIONS.USERS_VIEW), settings, can(user, PERMISSIONS.AUDIT_VIEW)];
   const items: ShellNavItem[] = [

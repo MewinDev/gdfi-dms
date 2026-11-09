@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  ADMIN_PERMISSIONS, ALL_PERMISSIONS, PERMISSIONS as P, PERMISSION_GROUPS, ROLE_DEFAULTS, WORKFLOW_PERMISSIONS,
-  dependentsOf, normalizePermissions, plainWords, withRequirements,
+  ADMIN_PERMISSIONS, ALL_PERMISSIONS, PERMISSIONS as P, PERMISSION_DEFS, PERMISSION_GROUPS, RENAMED_PERMISSIONS, ROLE_DEFAULTS, WORKFLOW_PERMISSIONS,
+  changesOf, dependentsOf, normalizePermissions, plainWords, viewOf, withRequirements,
 } from "./permissions";
 import { effectivePermissions, maySignIn } from "./access";
 
@@ -29,13 +29,13 @@ const OLD_TO_NEW: Record<string, string[]> = {
   "workflow:la": [P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT],
   "workflow:dp": [P.DP_RECEIVE],
   "admin:users": [P.USERS_VIEW, P.USERS_EDIT],
-  "admin:settings": [P.SETTINGS_BRANCHES, P.SETTINGS_LOAN_TYPES, P.SETTINGS_TRANSACTION_TYPES, P.SETTINGS_DOCUMENT_TYPES, P.SETTINGS_CHECKLIST, P.SETTINGS_TAT, P.SETTINGS_HOLIDAYS, P.SETTINGS_CASH_ADVANCE, P.SETTINGS_LTO, P.SETTINGS_SYSTEM, P.SETTINGS_IMPORT, P.TESTDATA_RESET],
+  "admin:settings": [P.BRANCHES_MANAGE, P.SETTINGS_LOAN_TYPES, P.SETTINGS_TRANSACTION_TYPES, P.SETTINGS_DOCUMENT_TYPES, P.SETTINGS_CHECKLIST, P.SETTINGS_TAT, P.SETTINGS_HOLIDAYS, P.SETTINGS_CASH_ADVANCE, P.SETTINGS_LTO, P.SETTINGS_SYSTEM, P.SETTINGS_IMPORT, P.TESTDATA_RESET],
 };
 
 describe("can() for each seeded role matches the previous behaviour", () => {
   it.each(Object.keys(OLD))("%s", (key) => {
     const def = ROLE_DEFAULTS[key];
-    const now = effectivePermissions({ key, builtIn: true, permissions: def.permissions });
+    const now = effectivePermissions({ permissions: def.permissions });
     for (const [oldKey, newKeys] of Object.entries(OLD_TO_NEW)) {
       for (const k of newKeys) expect([key, oldKey, k, now.has(k as never)]).toEqual([key, oldKey, k, OLD[key].includes(oldKey)]);
     }
@@ -44,20 +44,28 @@ describe("can() for each seeded role matches the previous behaviour", () => {
     expect(def.branchAccess === "ALL").toBe(OLD[key].includes("loans:view_all") || key === "FIN");
   });
 
-  it("Admin is locked: every permission except the loan-file steps, whatever is stored", () => {
-    const admin = effectivePermissions({ key: "ADMIN", builtIn: true, permissions: [] });
+  it("Admin is an ordinary role: it grants exactly its stored ticks (default: everything except the loan-file steps)", () => {
+    expect(effectivePermissions({ permissions: [] }).size).toBe(0);
+    expect(effectivePermissions({ permissions: [P.LOANS_VIEW] }).size).toBe(1);
+    const admin = effectivePermissions({ permissions: ROLE_DEFAULTS.ADMIN.permissions });
     expect([...admin].sort()).toEqual([...ADMIN_PERMISSIONS].sort());
     for (const k of WORKFLOW_PERMISSIONS) expect(admin.has(k)).toBe(false);
     expect(admin.has(P.ROLES_MANAGE)).toBe(true);
-    // A custom role called ADMIN is not locked.
-    expect(effectivePermissions({ key: "ADMIN", builtIn: false, permissions: [P.LOANS_VIEW] }).size).toBe(1);
+    expect(admin.has(P.ACCESS_MANAGE)).toBe(true);
+  });
+
+  it("old key names still grant their new key (stored before the migration)", () => {
+    expect([...effectivePermissions({ permissions: ["source:review", "source:manage", "settings:branches"] })].sort())
+      .toEqual([P.SOURCE_REVIEW, P.SOURCE_MANAGE, P.BRANCHES_MANAGE].sort());
+    expect(Object.keys(RENAMED_PERMISSIONS).sort()).toEqual(["settings:branches", "source:manage", "source:review"]);
+    expect(normalizePermissions(["settings:branches"])).toEqual([P.BRANCHES_VIEW, P.BRANCHES_MANAGE].filter((k) => ALL_PERMISSIONS.includes(k)).sort((a, b) => ALL_PERMISSIONS.indexOf(a) - ALL_PERMISSIONS.indexOf(b)));
   });
 
   it("every key is in exactly one group, and unknown keys grant nothing", () => {
     const keys = PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i.key));
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys.sort()).toEqual([...ALL_PERMISSIONS].sort());
-    expect(effectivePermissions({ key: "X", builtIn: false, permissions: ["workflow:la", "admin:settings"] }).size).toBe(0);
+    expect(effectivePermissions({ permissions: ["workflow:la", "admin:settings"] }).size).toBe(0);
   });
 });
 
@@ -156,5 +164,52 @@ describe("Return to LA permission", () => {
     expect(ADMIN_PERMISSIONS).not.toContain(P.JOBS_RETURN_TO_LA);
     expect(ROLE_DEFAULTS.LA.permissions).not.toContain(P.JOBS_RETURN_TO_LA);
     expect(ADMIN_PERMISSIONS).toContain(P.SETTINGS_RETURN_REASONS);
+  });
+});
+
+describe("The catalogue (Settings > Roles)", () => {
+  it("has the plain groups, in order, and every tick has a label, a help line, where and what it was", () => {
+    expect(PERMISSION_GROUPS.map((g) => g.label)).toEqual([
+      "Loans", "Transactions and papers", "Send to DP and returns", "DP work", "Funds", "Monitoring", "Reports",
+      "MyLoans and sync", "Branches and access", "Settings and Admin", "Email",
+    ]);
+    for (const d of PERMISSION_DEFS) {
+      expect([d.key, !!d.label && !d.label.includes(":")]).toEqual([d.key, true]);
+      expect([d.key, d.help.length > 10, !!d.where, !!d.was]).toEqual([d.key, true, true, true]);
+    }
+  });
+
+  it("View / Change pairs: the Change needs its View, both in the same group", () => {
+    const pairs = PERMISSION_DEFS.filter((d) => d.view).map((d) => [d.view, d.key]);
+    expect(pairs).toEqual(expect.arrayContaining([
+      [P.MYLOANS_VIEW, P.LOANS_REFRESH], [P.BRANCHES_VIEW, P.BRANCHES_MANAGE], [P.USERS_VIEW, P.USERS_EDIT],
+      [P.EMAIL_VIEW, P.EMAIL_MANAGE], [P.REPORTS_TAT, P.REPORTS_TAT_EXPORT], [P.MONITOR_LTO, P.LTO_REPORTS_MANAGE],
+    ]));
+    for (const [view, change] of pairs) {
+      expect(withRequirements([change!])).toContain(view);
+      expect(dependentsOf(view!)).toContain(change);
+      expect(viewOf(change!)).toBe(view);
+      expect(changesOf(view!)).toContain(change);
+      const g = (k: string) => PERMISSION_GROUPS.find((x) => x.items.some((i) => i.key === k))!.key;
+      expect(g(view!)).toBe(g(change!));
+    }
+  });
+
+  it("Refresh a loan from MyLoans: everyone who saw the button keeps it; Finance, Approvers and the Monitor do not", () => {
+    for (const k of ["LA", "ADMIN", "DP", "VAULT", "DIG", "QA"]) expect([k, ROLE_DEFAULTS[k].permissions.includes(P.LOANS_REFRESH)]).toEqual([k, true]);
+    for (const k of ["FIN", "APPR", "MONITOR"]) expect([k, ROLE_DEFAULTS[k].permissions.includes(P.LOANS_REFRESH)]).toEqual([k, false]);
+    // The "Last checked" line stays for everyone who sees loan files.
+    for (const [k, d] of Object.entries(ROLE_DEFAULTS)) expect([k, d.permissions.includes(P.MYLOANS_VIEW)]).toEqual([k, d.permissions.includes(P.LOANS_VIEW)]);
+  });
+
+  it("admin-only things stay on Admin only by default", () => {
+    const adminOnly = [P.ROLES_MANAGE, P.ACCESS_MANAGE, P.USERS_EDIT, P.BRANCHES_MANAGE, P.BRANCHES_IMPORT, P.BRANCHES_REVIEW, P.SOURCE_MANAGE, P.MYLOANS_SYNC, P.SOURCE_REVIEW, P.SETTINGS_PN_FORMAT, P.EMAIL_MANAGE, P.EMAIL_VIEW, P.REPORTS_TAT_EXPORT];
+    for (const k of adminOnly) {
+      expect([k, ADMIN_PERMISSIONS.includes(k)]).toEqual([k, true]);
+      for (const [r, d] of Object.entries(ROLE_DEFAULTS)) if (r !== "ADMIN") expect([r, k, d.permissions.includes(k)]).toEqual([r, k, false]);
+    }
+    // Only the Operations Monitor is told about LTO advisories.
+    expect(ADMIN_PERMISSIONS).not.toContain(P.LTO_REPORTS_NOTIFY);
+    expect(ROLE_DEFAULTS.MONITOR.permissions).toContain(P.LTO_REPORTS_NOTIFY);
   });
 });

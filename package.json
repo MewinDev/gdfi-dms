@@ -22,6 +22,7 @@
     "db:reset": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/guard-destructive.ts \"npm run db:reset (drops every table)\" && prisma migrate reset --force",
     "db:studio": "prisma studio",
     "db:create-test": "tsx scripts/db-create-test.ts",
+    "docs:permissions": "tsx scripts/docs-permissions.ts",
     "kit:start": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts start",
     "kit:reset": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts reset",
     "kit:backup": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts backup",

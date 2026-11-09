@@ -10,6 +10,7 @@ import { LIST_PERMISSION, PERMISSIONS } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { SETTINGS_SCHEMAS, USER_SCHEMA, checkSettingsRow, type SettingsKind } from "@/lib/services/admin";
 import { applyAccess, branchGrants, checkAccess, type AccessInput } from "@/lib/services/access";
+import { applyChange, loadSnapshot, lockoutRefusal } from "@/lib/services/lockout";
 import { UserError } from "@/lib/services/errors";
 import { IMPORT_LISTS, MAX_BYTES, MAX_ROWS, type ImportColumn, type ImportListKey } from "./columns";
 import { looksLikeFormula, parseCsv, toCsv } from "./csv";
@@ -591,7 +592,9 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
     case "users": {
       const [users, roles, branches] = await Promise.all([db.user.findMany({ include: { role: true, accessGrants: true } }), db.role.findMany(), db.branch.findMany()]);
       const codeOf = new Map(branches.map((b) => [b.id, b.code ?? b.name]));
-      let admins = users.filter((u) => u.active && u.role.key === "ADMIN").length;
+      // Lock-out (lib/services/lockout.ts), row after row: someone active keeps "Manage roles" and "Change branch access".
+      let snap = await loadSnapshot(db);
+      const mayAccess = can(user, PERMISSIONS.ACCESS_MANAGE);
       for (const row of rows) {
         const email = lower(row.cells.email);
         const cur = users.find((u) => u.email === email) ?? null;
@@ -637,19 +640,22 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
         if (role && !role.active && cur?.roleId !== role.id) row.bad("role", `${role.name} is inactive. Use an active role.`);
         if (cur && cur.id === user.id) {
           if (!active) row.bad("status", "you cannot make yourself inactive.");
-          if (role && role.key !== "ADMIN") row.bad("role", "you cannot remove your own Admin role.");
-          else if (role && !effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE)) row.bad("role", "you cannot remove your own ability to manage roles and access.");
+          if (role && can(user, PERMISSIONS.ROLES_MANAGE) && !effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE)) row.bad("role", "you cannot take \"Manage roles\" away from yourself.");
         }
-        const wasAdmin = !!cur && cur.active && cur.role.key === "ADMIN";
-        const isAdmin = active && role?.key === "ADMIN";
-        if (wasAdmin && !isAdmin) {
-          if (admins <= 1) row.bad(active ? "role" : "status", "this is the last active Admin. Make another Admin active first.");
-          else admins--;
-        } else if (!wasAdmin && isAdmin) admins++;
+        if (cur && role) {
+          const change = { kind: "user" as const, userId: cur.id, roleId: role.id, active };
+          const why = lockoutRefusal(snap, change);
+          if (why) row.bad(active ? "role" : "status", why.replace(/^./, (c) => c.toLowerCase()));
+          else snap = applyChange(snap, change);
+        }
         if (!data || !role || row.problems.length) { finish(row, email, null); continue; }
         const codesText = (all: boolean, ids: string[]) => (all ? "ALL" : ids.map((x) => codeOf.get(x) ?? x).sort().join(";"));
         const beforeBranches = cur ? codesText(cur.allBranches, curBranchIds) : "";
         const afterBranches = codesText(access.all, access.grants.filter((g) => g.kind === "BRANCH" && !g.exclude).map((g) => g.branchId!));
+        if (!mayAccess && (cur ? afterBranches !== beforeBranches || (access.homeBranchId ?? null) !== (cur.homeBranchId ?? null) && !!homeCode : !keepBranches || !!homeCode)) {
+          row.bad("branches", "your role cannot change branch access. Ask an Admin to turn on \"Change branch access\" for your role.");
+          finish(row, email, null); continue;
+        }
         const changes = cur
           ? diff({ name: "Name", roleId: "Role", branches: "Branches", home: "Home branch", active: "Status" },
             { ...cur, branches: beforeBranches, home: cur.homeBranchId ? codeOf.get(cur.homeBranchId) ?? "" : "" },
@@ -797,7 +803,7 @@ export async function currentDataRows(list: ImportListKey): Promise<Record<strin
         const except = u.accessGrants.filter((g) => g.kind === "BRANCH" && g.exclude).map((g) => g.branch?.code ?? g.branch?.name ?? "");
         return {
           name: u.name, email: u.email, role: u.role.name,
-          branches: u.allBranches || u.role.key === "ADMIN" ? "ALL" : u.accessGrants.filter((g) => g.kind === "BRANCH" && !g.exclude).map((g) => g.branch?.code ?? g.branch?.name ?? "").sort().join(";"),
+          branches: u.allBranches ? "ALL" : u.accessGrants.filter((g) => g.kind === "BRANCH" && !g.exclude).map((g) => g.branch?.code ?? g.branch?.name ?? "").sort().join(";"),
           home_branch: u.homeBranch?.code ?? "", status: st(u.active),
           notes: groups.length ? `Also ${groups.join(", ")}${except.length ? ` except ${except.join(";")}` : ""} (set in Users, Edit)` : "",
         };

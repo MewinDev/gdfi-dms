@@ -247,7 +247,7 @@ test("Cash amounts: Finance sees them, the LA and the DP see the status only, un
   try {
     await page.goto(`/admin/settings?open=roles&edit=${la.id}`);
     const dialog = page.locator("dialog#settings-modal");
-    await dialog.getByRole("switch", { name: "See cash amounts in the Journey" }).check();
+    await dialog.locator('[data-perm="journey:view_amounts"]').getByRole("checkbox").check();
     await dialog.getByRole("button", { name: "Save" }).click();
     await expect(dialog.getByText("Saved", { exact: true }).first()).toBeVisible();
     await signInAs(page, "la");

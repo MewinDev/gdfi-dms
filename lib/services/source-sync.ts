@@ -77,10 +77,10 @@ async function txnsNow(db: Tx | typeof prisma, loanId: string): Promise<TxnNow[]
   return rows.map((t) => ({ id: t.id, code: t.type.code, name: t.type.name, status: t.status, stateLine: `${t.type.name}: ${stateLine(t)}` }));
 }
 
-/** People who review MyLoans changes (Admin, and any role given source:review). */
+/** People who review MyLoans changes (every role with "Review MyLoans changes"). */
 export async function reviewerIds(db: Tx | typeof prisma): Promise<string[]> {
   const rows = await db.user.findMany({
-    where: { active: true, role: { active: true, OR: [{ key: "ADMIN" }, { permissions: { has: PERMISSIONS.SOURCE_REVIEW } }] } }, select: { id: true },
+    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.SOURCE_REVIEW } } }, select: { id: true },
   });
   return rows.map((r) => r.id);
 }
@@ -877,7 +877,7 @@ async function runLocked(o: SyncOptions, s: Awaited<ReturnType<typeof syncSettin
 }
 
 export async function runSyncNow(u: CurrentUser) {
-  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Your role does not allow running the MyLoans sync.");
+  if (!can(u, PERMISSIONS.MYLOANS_SYNC)) throw new UserError("Ask an Admin to turn on \"Run the MyLoans sync now\" for your role.");
   return runMyLoansSync({ trigger: "run_now", force: true, actor: actorOf(u) });
 }
 
@@ -896,7 +896,7 @@ export const syncSettingsSchema = z.object({
 });
 
 export async function saveSyncSettings(u: CurrentUser, raw: unknown) {
-  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Your role does not allow changing the MyLoans sync.");
+  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change MyLoans sync settings\" for your role.");
   const p = syncSettingsSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   const d = p.data;

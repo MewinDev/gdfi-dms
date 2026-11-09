@@ -8,14 +8,14 @@ import { buildPn } from "@/lib/pn/format";
 export const KIT_EMAIL_DOMAIN = "@example.test";
 
 export type KitAccountKey = "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
-  | "areaSupervisor" | "laAreaExcept" | "laRoving" | "laAlicia";
+  | "areaSupervisor" | "laAreaExcept" | "laRoving" | "laAlicia" | "laNoRefresh";
 
 export interface KitAccount {
   key: KitAccountKey;
   email: string;
   name: string;
-  /** Built-in role key, or SUPERVISOR for the kit's own "Branch Supervisor" role. */
-  role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR";
+  /** Built-in role key, or SUPERVISOR / LA_NO_REFRESH for the kit's own sample roles. */
+  role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR" | "LA_NO_REFRESH";
   /** "ALL": All branches. Otherwise single-branch grants (the first is the home branch). */
   branches: KitBranch[] | "ALL";
   /** Extra grants: whole areas (Division, Area), and exceptions (branches unticked inside them). */
@@ -47,10 +47,14 @@ export const KIT_ACCOUNTS: KitAccount[] = [
   { key: "laAreaExcept", email: `kit.la.luzon1${KIT_EMAIL_DOMAIN}`, name: "LA Luzon 1 (not Amang Rodriguez)", role: "LA", branches: [], access: { areas: [KIT_L1], except: ["174"], home: "165" } },
   { key: "laRoving", email: `kit.la.roving${KIT_EMAIL_DOMAIN}`, name: "Roving LA", role: "LA", branches: "ALL" },
   { key: "laAlicia", email: `kit.la.alicia${KIT_EMAIL_DOMAIN}`, name: "LA Alicia", role: "LA", branches: ["709", "718"] },
+  // Roles are just ticks: an LA whose role has every LA tick except "Refresh a loan from MyLoans".
+  { key: "laNoRefresh", email: `kit.la.norefresh${KIT_EMAIL_DOMAIN}`, name: "LA No Refresh", role: "LA_NO_REFRESH", branches: ["101", "165"] },
 ];
 
 /** The kit's own role for the hold transfer: no built-in Branch Supervisor role exists. */
 export const SUPERVISOR_ROLE_NAME = "Branch Supervisor";
+/** The kit's sample role for the Refresh tick: the Loan Associate's ticks without "Refresh a loan from MyLoans". */
+export const NO_REFRESH_ROLE_NAME = "LA (no refresh)";
 
 export type KitGroup = "Rules" | "Loan Associate" | "Exceptions" | "DP" | "Funds" | "TAT" | "MyLoans" | "Find loan" | "Monitoring" | "Branches";
 

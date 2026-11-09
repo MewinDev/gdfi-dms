@@ -138,8 +138,8 @@ export async function accessImpact(db: Db, patch: BranchPlace[]): Promise<{ user
 }
 
 /**
- * Prisma filter: people who work at a branch (its id is in their access, or they have All branches;
- * the Admin role is always All). For "the LAs of the branch", receivers, processors of a branch.
+ * Prisma filter: people who work at a branch (its id is in their access, or they have All branches).
+ * For "the LAs of the branch", receivers, processors of a branch.
  */
 export const worksAtWhere = (branchId: string) =>
-  ({ OR: [{ branches: { some: { branchId } } }, { allBranches: true }, { role: { key: "ADMIN" } }] }) satisfies Prisma.UserWhereInput;
+  ({ OR: [{ branches: { some: { branchId } } }, { allBranches: true }] }) satisfies Prisma.UserWhereInput;

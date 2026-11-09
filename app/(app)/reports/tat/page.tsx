@@ -29,7 +29,7 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
         back={{ label: "Home", href: "/dashboard" }}
         title="TAT and problems"
         subtitle="The turnaround clock never pauses. Problem time is the sum of each problem's business days."
-        right={can(user, PERMISSIONS.LOANS_EXPORT) ? <Link href={`/api/reports/tat?${qs}`} className="btn-ghost btn-sm" prefetch={false}><DownloadIcon size={18} /> CSV</Link> : null}
+        right={can(user, PERMISSIONS.REPORTS_TAT_EXPORT) ? <Link href={`/api/reports/tat?${qs}`} className="btn-ghost btn-sm" prefetch={false}><DownloadIcon size={18} /> CSV</Link> : null}
       />
       <form action="/reports/tat" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_auto_auto] lg:items-end">
         <div>
@@ -84,7 +84,7 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
       <section aria-labelledby="by-reason" className="card overflow-hidden">
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pb-2 pt-4 sm:px-6">
           <h2 id="by-reason" className="text-lg font-bold text-navy">Problems and holds by reason</h2>
-          {can(user, PERMISSIONS.LOANS_EXPORT) && <Link href={`/api/reports/tat?${qs}${qs ? "&" : ""}kind=reasons`} className="btn-ghost btn-sm" prefetch={false}><DownloadIcon size={18} /> CSV</Link>}
+          {can(user, PERMISSIONS.REPORTS_TAT_EXPORT) && <Link href={`/api/reports/tat?${qs}${qs ? "&" : ""}kind=reasons`} className="btn-ghost btn-sm" prefetch={false}><DownloadIcon size={18} /> CSV</Link>}
         </div>
         <p className="px-4 pb-2 text-[13px] text-ink-2 sm:px-6">Average days are business days (weekends and holidays skipped); open ones count to today. Dates are Philippine time.</p>
         <ReasonTable rows={reasons} caption="Problems and holds by reason" />
