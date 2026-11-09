@@ -32,6 +32,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     : [];
   // The Manual Test Kit's sample accounts (@example.test): one button each, with the role and branches.
   const kitAccounts = testUsers.filter((u) => u.email.endsWith(KIT_EMAIL_DOMAIN));
+  // Grouped by role (in the roles' own order), each account with its branches under the name.
+  const kitGroups = [...new Map(kitAccounts.map((u) => [u.role.id, u.role])).values()]
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+    .map((role) => ({ role, users: kitAccounts.filter((u) => u.role.id === role.id) }));
+  const branchText = (u: (typeof kitAccounts)[number]) => (u.allBranches ? "All branches" : u.branches.length > 3 ? `${u.branches.length} branches` : u.branches.map((b) => b.branch.name).sort().join(", ") || "No branch");
   const FIXED = [["test.admin@gdfi.ph", "Continue as Admin", "login-btn-secondary"], ["test.la@gdfi.ph", "Continue as Loan Associate", "login-btn-primary"]] as const;
   const fixed = FIXED.filter(([email]) => testUsers.some((u) => u.email === email));
   const otherTestUsers = testUsers.filter((u) => !kitAccounts.includes(u) && !FIXED.some(([email]) => email === u.email));
@@ -85,20 +90,27 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               </p>
             )}
             {kitAccounts.length > 0 && (
-              <ul aria-label="Sample accounts" className="mt-3 grid gap-2 sm:grid-cols-2" data-kit-accounts>
-                {kitAccounts.map((u) => (
-                  <li key={u.id}>
-                    <form action={testSignIn}>
-                      <input type="hidden" name="email" value={u.email} />
-                      <input type="hidden" name="next" value={next ?? ""} />
-                      <button type="submit" className="login-btn-secondary flex h-auto min-h-14 w-full flex-col items-start gap-0.5 py-2 text-left">
-                        <span className="font-semibold">Continue as {u.name}</span>
-                        <span className="text-xs font-normal text-ink-2">{u.role.name} · {u.allBranches ? "All branches" : u.branches.length > 3 ? `${u.branches.length} branches` : u.branches.map((b) => b.branch.name).sort().join(", ") || "No branch"}</span>
-                      </button>
-                    </form>
-                  </li>
+              <div className="mt-3 flex flex-col gap-3" data-kit-accounts aria-label="Sample accounts">
+                {kitGroups.map(({ role, users }) => (
+                  <section key={role.id} aria-label={role.name} data-kit-role={role.name}>
+                    <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-ink-2">{role.name}</h3>
+                    <ul className="grid gap-2 sm:grid-cols-2">
+                      {users.map((u) => (
+                        <li key={u.id}>
+                          <form action={testSignIn}>
+                            <input type="hidden" name="email" value={u.email} />
+                            <input type="hidden" name="next" value={next ?? ""} />
+                            <button type="submit" className="login-btn-secondary flex h-auto min-h-14 w-full flex-col items-start gap-0.5 py-2 text-left">
+                              <span className="font-semibold">Continue as {u.name}</span>
+                              <span className="text-xs font-normal text-ink-2">{branchText(u)}</span>
+                            </button>
+                          </form>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 ))}
-              </ul>
+              </div>
             )}
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {fixed.map(([email, label, cls]) => (

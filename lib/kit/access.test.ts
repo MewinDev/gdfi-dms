@@ -43,7 +43,7 @@ describe.each([
   it("the pages are not found (Test kit and the test sheet), before any sign-in check", async () => {
     await expectNotFound(() => kitPageOrNotFound());
     await expectNotFound(() => TestKitPage());
-    await expectNotFound(() => TestSheetPage());
+    await expectNotFound(() => TestSheetPage({ searchParams: Promise.resolve({}) }));
   });
 
   it("the server actions refuse, even with the right typed word", async () => {

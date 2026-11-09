@@ -8,10 +8,24 @@ import { PageHeader } from "@/components/ui/basics";
 
 export const metadata: Metadata = { title: "Test sheet" };
 
-/** Inline `code` and **bold** only: the test sheet uses nothing else. */
+/** The kit's sheets, shown on this page: the tester sheet, the answers and the scenarios. */
+const DOCS = { sheet: "MANUAL-TEST-KIT.md", answers: "MANUAL-TEST-KIT-ANSWERS.md", scenarios: "MANUAL-TEST-KIT-SCENARIOS.md" } as const;
+type DocKey = keyof typeof DOCS;
+const hrefOf = (target: string) => {
+  const key = (Object.keys(DOCS) as DocKey[]).find((k) => DOCS[k] === target);
+  return key ? `/admin/test-kit/sheet${key === "sheet" ? "" : `?doc=${key}`}` : null;
+};
+
+/** Inline `code`, **bold** and links to the other kit sheets: the sheets use nothing else. */
 function Inline({ text }: { text: string }) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean);
-  return <>{parts.map((p, i) => (p.startsWith("`") ? <code key={i}>{p.slice(1, -1)}</code> : p.startsWith("**") ? <strong key={i}>{p.slice(2, -2)}</strong> : p))}</>;
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g).filter(Boolean);
+  return <>{parts.map((p, i) => {
+    if (p.startsWith("`")) return <code key={i}>{p.slice(1, -1)}</code>;
+    if (p.startsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
+    const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(p);
+    if (link) { const href = hrefOf(link[2]); return href ? <a key={i} href={href} className="link">{link[1]}</a> : link[1]; }
+    return p;
+  })}</>;
 }
 
 const cells = (line: string) => line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
@@ -58,10 +72,11 @@ function Sheet({ md }: { md: string }) {
 }
 
 /** The Manual Test Kit's test sheet. Not found unless the kit is available here (local test setup, gdfi_dms). */
-export default async function TestSheetPage() {
+export default async function TestSheetPage({ searchParams }: { searchParams: Promise<{ doc?: string }> }) {
   kitPageOrNotFound();
   await requirePageAny([PERMISSIONS.LOANS_VIEW, PERMISSIONS.TESTDATA_RESET]);
-  const md = readFileSync(path.join(process.cwd(), "docs", "MANUAL-TEST-KIT.md"), "utf8");
+  const doc = ((await searchParams).doc ?? "sheet") as DocKey;
+  const md = readFileSync(path.join(process.cwd(), "docs", DOCS[doc in DOCS ? doc : "sheet"]), "utf8");
   return (
     <div className="flex w-full flex-col gap-4" data-test-sheet>
       <PageHeader title="Test sheet" help="The Manual Test Kit: who signs in, what to do, what should happen." />

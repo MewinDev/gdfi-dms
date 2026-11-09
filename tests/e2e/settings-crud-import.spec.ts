@@ -208,7 +208,7 @@ test("Import / Export: Back link; download, check and import round trip for Bran
   const file = info.outputPath("branches.csv");
   writeFileSync(file, `${curText.trimEnd()}\r\n858,Zeta Imported,,,,,Active,\r\n857,Angono,,,,,Active,\r\n`, "utf8");
   await dialog(page).locator('input[type="file"]').setInputFiles(file);
-  await expect(dialog(page).getByText("Chosen: branches.csv")).toBeVisible();
+  await expect(dialog(page).locator("[data-chosen-file]")).toHaveText("branches.csv");
   await dialog(page).getByRole("button", { name: "Check file" }).click();
   await expect(dialog(page).getByText("1 new, 0 changed, 12 unchanged, 1 with problems")).toBeVisible();
   await expect(dialog(page).getByText("Row 15, Branch name: already used by another branch.")).toBeVisible();

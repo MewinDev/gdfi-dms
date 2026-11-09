@@ -16,9 +16,9 @@ test("cards are grouped under four headings, in order; Jump to scrolls to a grou
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Company setup", "People and access", "Documents and steps", "Time and money", "System and testing"]);
   const groups: [string, string[]][] = [
     ["Company setup", ["Branches", "LTO offices", "Loan types"]],
-    ["People and access", ["Roles and access", "Manage users", "Processor capacity"]],
+    ["People and access", ["Roles and access", "Processor capacity"]], // users: the Users page in the sidebar
     ["Documents and steps", ["Transaction types", "Document types", "Checklist items", "Processing stages", "Problem reasons", "Hold reasons", "Return reasons"]],
-    ["Time and money", ["Turnaround times", "Holidays", "Cash-advance rules", "Funds types", "Approval bands"]],
+    ["Time and money", ["Turnaround times", "Holidays", "Cash-advance rules", "Expense kinds", "Funds types", "Approval bands"]],
     ["System and testing", ["System and test mode", "MyLoans sync", "Email notifications", "Test data"]],
   ];
   for (const [g, cards] of groups) {

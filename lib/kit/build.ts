@@ -45,7 +45,7 @@ async function asUser(email: string): Promise<CurrentUser> {
 }
 
 /** A kit account's branch access: All, single branches, whole areas (by division and area name) and exceptions. */
-async function kitAccess(a: (typeof KIT_ACCOUNTS)[number], branchId: (code: string) => Promise<string>): Promise<AccessInput> {
+export async function kitAccess(a: { branches: string[] | "ALL"; access?: { areas?: { division: string; area: string }[]; except?: string[]; home?: string } }, branchId: (code: string) => Promise<string>): Promise<AccessInput> {
   if (a.branches === "ALL") return { all: true, grants: [], homeBranchId: null };
   const grants: GrantLike[] = branchGrants(await Promise.all(a.branches.map(branchId)));
   for (const g of a.access?.areas ?? []) {
@@ -113,7 +113,7 @@ async function sourceRecords(today: string, holidays: ReadonlySet<string>) {
  * subset. The sample branches of the subset are always added (Alicia-Inactive is not in the export). Rows
  * that look like test or unused branches are left out, so a manual Import shows them as suggestions.
  */
-async function importKitBranches(log: Log) {
+export async function importKitBranches(log: Log) {
   const file = readKitBranchFile();
   const codes = new Set((file?.rows ?? []).map((r) => r.code));
   const rows = [...(file?.rows ?? []).filter((r) => !looksLikeTestBranch(r)), ...BUILTIN_BRANCHES.filter((r) => !codes.has(r.code))];

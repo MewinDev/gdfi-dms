@@ -139,9 +139,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                       </span>
                     </span>
                   </Link>
-                  {a.key === "roles" && can(user, PERMISSIONS.USERS_VIEW) && (
-                    <Link href="/admin/users" className="link mt-2 inline-flex min-h-11 items-center px-1 text-sm">Manage users</Link>
-                  )}
                 </li>
               ))}
             </ul>
@@ -249,7 +246,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
   }
   if (area.key === "test-kit") {
     if (!kitScreensAvailable()) notFound();
-    return <SettingsModal {...common} footer={{ kind: "done" }}><TestKitPanel {...kitPanelData()} /></SettingsModal>;
+    return <SettingsModal {...common} footer={{ kind: "done" }}><TestKitPanel {...(await kitPanelData())} /></SettingsModal>;
   }
 
   if (area.key === "expense-kinds" && step !== "import") return <ExpenseKindsArea common={common} edit={edit} user={user} />;

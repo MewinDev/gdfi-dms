@@ -69,7 +69,7 @@ Not guarded by this rule, and why:
 
 ## The Manual Test Kit
 
-`npm run kit:start`, `kit:reset`, `kit:backup -- <name>`, `kit:list`, `kit:restore -- <name>` and `kit:rebuild`, and **Settings > Test kit** (Admin). What they do, the sample accounts and loans, and the test sheet: [`docs/MANUAL-TEST-KIT.md`](MANUAL-TEST-KIT.md).
+`npm run kit:start`, `kit:reset`, `kit:backup -- <name>`, `kit:list`, `kit:restore -- <name>` and `kit:rebuild`, and **Settings > Test kit** (Admin). What they do, the accounts and the PNs to try: [`docs/MANUAL-TEST-KIT.md`](MANUAL-TEST-KIT.md). The default is the clean kit; `--with-scenarios` loads the old scenario data ([`docs/MANUAL-TEST-KIT-SCENARIOS.md`](MANUAL-TEST-KIT-SCENARIOS.md)).
 
 They run only when all of these hold (`lib/kit/guard.ts`, unit-tested), checked on the server on every call:
 
@@ -161,7 +161,7 @@ Test mode also reads as off in production.
    - `npm run db:migrate`
    - `npm run db:seed`
    - `npm run db:create-test` (the automated tests' database)
-   - `npm run kit:start` (optional: the sample accounts and loans, see `docs/MANUAL-TEST-KIT.md`)
+   - `npm run kit:start` (optional: the clean test kit, see `docs/MANUAL-TEST-KIT.md`)
    - `npm run dev`
 
 PowerShell, a random secret: `[Convert]::ToBase64String((1..36 | ForEach-Object { Get-Random -Maximum 256 }))`

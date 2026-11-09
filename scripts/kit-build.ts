@@ -1,5 +1,6 @@
 /**
- * Part of npm run kit:start / kit:rebuild (scripts/kit.ts runs it): the sample accounts and sample loans,
+ * Part of npm run kit:start / kit:rebuild (scripts/kit.ts runs it): the clean kit (default) or, with
+ * --with-scenarios, the old sample accounts and sample loans,
  * on a database that was just emptied, migrated and seeded. Not meant to be run by itself.
  */
 import { loadEnvFiles } from "@/lib/env/load-files";
@@ -9,10 +10,11 @@ loadEnvFiles([".env.local", ".env"]);
 blankGraph();
 
 async function main() {
-  const { buildSamples } = await import("@/lib/kit/build");
   const { prisma } = await import("@/lib/db");
+  const log = (line: string) => console.log(`- ${line}`);
   try {
-    await buildSamples((line) => console.log(`- ${line}`));
+    if (process.argv.includes("--with-scenarios")) await (await import("@/lib/kit/build")).buildSamples(log);
+    else await (await import("@/lib/kit/build-clean")).buildClean(log);
   } finally {
     await prisma.$disconnect();
   }

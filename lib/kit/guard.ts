@@ -69,11 +69,11 @@ export function migrationsDiffer(saved: readonly string[], current: readonly str
   return saved.length !== current.length || saved.some((m, i) => m !== current[i]);
 }
 
-/** A backup name: letters, digits, dash and underscore, 1 to 60 characters; "baseline" and "pre-reset-" are the kit's own. */
+/** A backup name: letters, digits, dash and underscore, 1 to 60 characters; "baseline...", "pre-reset-..." and "before-clean-kit" are the kit's own. */
 export function backupNameRefusal(name: string | null | undefined): string | null {
   const n = (name ?? "").trim();
   if (!n) return "Give the backup a name.";
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,59}$/.test(n)) return "Use letters, digits, - and _ only (up to 60), starting with a letter or digit.";
-  if (n.toLowerCase() === "baseline" || n.toLowerCase().startsWith("pre-reset-")) return `"${n}" is used by the kit itself. Pick another name.`;
+  if (n.toLowerCase().startsWith("baseline") || n.toLowerCase().startsWith("pre-reset-") || n.toLowerCase() === "before-clean-kit") return `"${n}" is used by the kit itself. Pick another name.`;
   return null;
 }

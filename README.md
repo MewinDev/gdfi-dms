@@ -23,7 +23,7 @@ npm run db:up                    # PostgreSQL 16 in Docker (service gdfi-dms-db)
 npm run db:migrate               # applies prisma/migrations
 npm run db:seed                  # reference data + test users
 npm run db:create-test           # the automated tests' own database (gdfi_dms_test)
-npm run kit:start                # optional: sample accounts and loans for testing by hand (docs/MANUAL-TEST-KIT.md)
+npm run kit:start                # optional: the clean test kit (accounts and 40 PNs to open by hand; docs/MANUAL-TEST-KIT.md)
 npm run dev                      # http://localhost:3000 (Next picks the next free port if 3000 is busy)
 ```
 
@@ -40,7 +40,7 @@ If port 5432 is already used on your PC (for example a native PostgreSQL service
 | `npm run db:reset` | Drop and recreate the local database, then seed. **Destroys local data.** Refused unless the database name contains `test` or `ALLOW_DESTRUCTIVE=1` is set (see `docs/ENVIRONMENT.md`). |
 | `npm run db:studio` | Prisma Studio |
 | `npm run db:create-test` | Create (or bring up to date) `gdfi_dms_test`, the automated tests' database. Safe to run again. |
-| `npm run kit:start`, `kit:reset`, `kit:backup -- <name>`, `kit:list`, `kit:restore -- <name>`, `kit:rebuild` | The Manual Test Kit on `gdfi_dms`: see [`docs/MANUAL-TEST-KIT.md`](docs/MANUAL-TEST-KIT.md) |
+| `npm run kit:start`, `kit:reset`, `kit:backup -- <name>`, `kit:list`, `kit:restore -- <name>`, `kit:rebuild` | The Manual Test Kit on `gdfi_dms` (add `-- --with-scenarios` to start, reset or rebuild for the old scenario data): see [`docs/MANUAL-TEST-KIT.md`](docs/MANUAL-TEST-KIT.md) |
 | `npm run test:kit-screens` | Screenshots of the kit (sign-in list, two sample loans, Settings > Test kit) against your own server; run `npm run kit:reset` after |
 | `npm test` | Unit tests (rules, Data Check, stage, business days) |
 | `npm run test:e2e` | Playwright happy path (see below) |
@@ -48,7 +48,7 @@ If port 5432 is already used on your PC (for example a native PostgreSQL service
 
 ### Testing by hand: the Manual Test Kit
 
-`npm run kit:start` puts your own database (`gdfi_dms`) in a starting state with sample accounts (one per role, `@example.test`) and one sample loan per case; `npm run kit:reset` puts it back. The test sheet, with each PN, who signs in, what to do and what should happen, is [`docs/MANUAL-TEST-KIT.md`](docs/MANUAL-TEST-KIT.md) (also in the app: Settings > Test kit > Open the test sheet). It replaces the older notes below for testing by hand.
+`npm run kit:start` puts your own database (`gdfi_dms`) in a clean state: the settings and branches, sign-in accounts for each role and situation (`@example.test`) and 40 PNs that exist only in the sample MyLoans, with nothing opened; `npm run kit:reset` puts it back. The tester sheet (accounts and PNs only) is [`docs/MANUAL-TEST-KIT.md`](docs/MANUAL-TEST-KIT.md), the answers [`docs/MANUAL-TEST-KIT-ANSWERS.md`](docs/MANUAL-TEST-KIT-ANSWERS.md); the old scenario data loads with `--with-scenarios` ([`docs/MANUAL-TEST-KIT-SCENARIOS.md`](docs/MANUAL-TEST-KIT-SCENARIOS.md)) (also in the app: Settings > Test kit > Open the test sheet). It replaces the older notes below for testing by hand.
 
 ### Test accounts of the seed (Test sign-in panel on `/login`)
 

@@ -31,12 +31,15 @@ export async function kitResetAction(_prev: ActionState, fd: FormData): Promise<
     await kitUser();
     const why = confirmRefusal(str(fd, "confirm"));
     if (why) throw new UserError(why, "confirm");
-    const { restoreSave, BASELINE_NAME } = await import("@/lib/kit/core");
-    const lines: string[] = [];
-    restoreSave(BASELINE_NAME, (l) => lines.push(l));
+    const { restoreSave, baselineName, baselineStatus, variantLabel } = await import("@/lib/kit/core");
+    const variant = str(fd, "variant") === "scenarios" ? "scenarios" : "clean";
+    const base = baselineStatus(variant);
+    if (!base) throw new UserError(`There is no baseline for the ${variantLabel(variant)} yet. Run npm run kit:start${variant === "scenarios" ? " -- --with-scenarios" : ""} in a terminal.`);
+    if (!base.upToDate) throw new UserError(`The baseline is out of date. Run npm run kit:rebuild${variant === "scenarios" ? " -- --with-scenarios" : ""}.`);
+    restoreSave(baselineName(variant), () => {});
     await reconnect();
     revalidatePath("/", "layout");
-    return `Back to the starting state. ${lines.at(-1) ?? ""}`.trim();
+    return `Loaded: ${variantLabel(variant)}.`;
   });
 }
 
@@ -46,7 +49,7 @@ export async function kitRestoreAction(_prev: ActionState, fd: FormData): Promis
     const why = confirmRefusal(str(fd, "confirm"));
     if (why) throw new UserError(why, "confirm");
     const name = str(fd, "name");
-    if (!name || name === "baseline") throw new UserError("Pick a backup.");
+    if (!name || name.startsWith("baseline")) throw new UserError("Pick a backup.");
     const { restoreSave } = await import("@/lib/kit/core");
     restoreSave(name, () => {});
     await reconnect();
