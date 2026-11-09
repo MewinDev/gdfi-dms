@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AVAILABILITY, availability, avg, buckets, businessDayCounter, daysText, leaveText, onLeaveToday, parseRange, rangeLabel, weekStart } from "./rules";
+import { AVAILABILITY, PRESETS, availability, avg, buckets, businessDayCounter, countTone, daysText, leaveText, onLeaveToday, parseRange, presetOf, presetRange, rangeLabel, rangeNote, rangeParams, rangeSummary, showSubtotal, usageBar, weekStart } from "./rules";
 import { businessDaysBetween } from "@/lib/time";
 import { ADVISORY_STALE_HOURS, advisoryWarning, isStale, mayResolveAdvisory, parseStartedAt, STALE_PROMPT } from "./advisories";
 
@@ -114,5 +114,69 @@ describe("LTO advisories (words and rules)", () => {
     expect(parseStartedAt("2026-11-09T13:00", now)).toMatchObject({ ok: false, error: "The start time cannot be in the future." });
     expect(parseStartedAt("2026-11-01T08:00", now)).toMatchObject({ ok: false });
     expect(parseStartedAt("yesterday", now)).toMatchObject({ ok: false, error: "Enter the start date and time." });
+  });
+});
+
+describe("the date range picker (design pass)", () => {
+  it("presets are Philippine dates; This week is Monday to today", () => {
+    expect(PRESETS.map(([k]) => k)).toEqual(["today", "yesterday", "week", "7d", "30d", "month", "lastmonth", "custom"]);
+    expect(presetRange("week", TODAY)).toEqual([TODAY, TODAY]); // 9 Nov 2026 is a Monday
+    expect(presetRange("week", "2026-11-15")).toEqual(["2026-11-09", "2026-11-15"]); // Sunday
+    expect(presetRange("30d", TODAY)).toEqual(["2026-10-11", TODAY]);
+    expect(parseRange({ range: "week" }, "2026-11-12")).toMatchObject({ preset: "week", from: "2026-11-09", to: "2026-11-12", label: "9 Nov to 12 Nov 2026" });
+  });
+
+  it("round trip: what Apply puts in the URL reads back as the same range (the existing range / from / to format)", () => {
+    for (const [k] of PRESETS) {
+      if (k === "custom") continue;
+      const [from, to] = presetRange(k, TODAY);
+      expect(parseRange(rangeParams({ preset: k, from, to }), TODAY)).toMatchObject({ preset: k, from, to, error: null });
+    }
+    expect(rangeParams({ preset: "30d", from: "2026-10-11", to: TODAY })).toEqual({}); // the default needs nothing
+    const custom = rangeParams({ preset: "custom", from: "2026-10-01", to: "2026-10-15" });
+    expect(custom).toEqual({ range: "custom", from: "2026-10-01", to: "2026-10-15" });
+    expect(parseRange(custom, TODAY)).toMatchObject({ preset: "custom", from: "2026-10-01", to: "2026-10-15", days: 15 });
+  });
+
+  it("Custom: two picked dates match a preset only when they are exactly it", () => {
+    expect(presetOf("2026-10-11", TODAY, TODAY)).toBe("30d");
+    expect(presetOf("2026-10-12", TODAY, TODAY)).toBe("custom");
+  });
+
+  it("limits: no future days, To not before From; over 92 days By day shows weeks (one line says so)", () => {
+    expect(parseRange({ range: "custom", from: TODAY, to: "2026-11-10" }, TODAY).error).toBe("Dates cannot be in the future.");
+    expect(parseRange({ range: "custom", from: TODAY, to: "2026-11-01" }, TODAY).error).toBe("\"To\" cannot be before \"From\".");
+    expect(rangeNote(92)).toBeNull();
+    expect(rangeNote(93)).toBe("Over 92 days, By day shows one row per week.");
+  });
+
+  it("says the days and the business days", () => {
+    expect(rangeSummary("2026-10-11", TODAY, new Set())).toBe("30 days, 21 business days");
+    expect(rangeSummary("2026-10-11", TODAY, new Set(["2026-11-02"]))).toBe("30 days, 20 business days");
+    expect(rangeSummary(TODAY, TODAY, new Set())).toBe("1 day, 1 business day");
+  });
+});
+
+describe("the page's tints and subtotals (design pass: no number changes)", () => {
+  it("zero is neutral; above zero Overdue is red and On hold amber", () => {
+    expect(countTone(0, "overdue")).toBe("zero");
+    expect(countTone(0, "onHold")).toBe("zero");
+    expect(countTone(0)).toBe("zero");
+    expect(countTone(2, "overdue")).toBe("bad");
+    expect(countTone(1, "onHold")).toBe("hold");
+    expect(countTone(5)).toBe("plain");
+  });
+
+  it("a subtotal shows only when the group has more than one processor", () => {
+    expect(showSubtotal(0)).toBe(false);
+    expect(showSubtotal(1)).toBe(false);
+    expect(showSubtotal(2)).toBe(true);
+  });
+
+  it("the usage bar is jobs in use out of capacity, tinted by the same thresholds", () => {
+    expect(usageBar(availability(5, 2))).toEqual({ pct: 40, tone: "ok" }); // 60% free: Available
+    expect(usageBar(availability(10, 7))).toEqual({ pct: 70, tone: "act" }); // Busy
+    expect(usageBar(availability(2, 3))).toEqual({ pct: 100, tone: "bad" }); // Full (over capacity stays at 100)
+    expect(usageBar(availability(10, 3, true))).toEqual({ pct: 0, tone: "mute" }); // On leave
   });
 });

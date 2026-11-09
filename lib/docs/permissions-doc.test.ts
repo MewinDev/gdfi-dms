@@ -7,7 +7,9 @@ describe("docs/workflow/12-permissions.md is generated from the code", () => {
   const doc = readFileSync(DOC_FILE, "utf8");
 
   it("is up to date (run npm run docs:permissions after changing lib/auth/permissions.ts)", () => {
-    expect(withGenerated(doc) === doc, "docs/workflow/12-permissions.md is out of date: run npm run docs:permissions").toBe(true);
+    // Line endings do not count (Git on Windows checks the file out with CRLF).
+    const lf = (t: string) => t.replace(/\r\n/g, "\n");
+    expect(lf(withGenerated(doc)) === lf(doc), "docs/workflow/12-permissions.md is out of date: run npm run docs:permissions").toBe(true);
   });
 
   it("lists every permission in the catalogue and in the audit table", () => {

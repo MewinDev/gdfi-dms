@@ -365,6 +365,53 @@ body {
     @apply bg-transparent;
   }
 
+  /* ---- Monitoring (design pass): calm tables, bands, numbers ------------ */
+  .mon2 {
+    @apply w-full border-collapse text-[13px];
+  }
+  .mon2 thead th {
+    @apply sticky top-0 z-10 whitespace-normal border-b border-line bg-white px-2 py-2 text-right text-[12px] font-semibold leading-tight text-ink-2;
+  }
+  .mon2 thead th:first-child,
+  .mon2 thead th.al {
+    @apply text-left;
+  }
+  .mon2 :is(tbody, tfoot) :is(th, td) {
+    @apply border-b border-line-soft px-2 py-2 align-middle;
+  }
+  .mon2 tbody tr[data-row]:hover > * {
+    background: #f8f9fb; /* a very light tint, opaque so the sticky first cell matches */
+  }
+  /* The first column stays put when the table scrolls sideways. */
+  .mon2 :is(thead th:first-child, tbody th[scope="row"], tfoot th[scope="row"]) {
+    @apply sticky left-0 bg-white;
+  }
+  .mon2 thead th:first-child {
+    @apply z-20 min-w-[180px];
+  }
+  .mon-band > th {
+    @apply bg-[#eef2f8] px-2.5 py-1 text-left;
+  }
+  .mon-sub :is(th, td) {
+    @apply border-t border-line text-ink-2;
+  }
+  .num {
+    @apply text-right tabular-nums;
+  }
+  .n-zero {
+    color: rgb(12 35 64 / 0.62); /* light grey that still meets AA (4.6:1 on white) */
+  }
+  .n-bad {
+    @apply text-bad-fg;
+  }
+  .n-hold {
+    @apply text-hold-fg;
+  }
+  /* Segmented tabs with a navy pill for the chosen one (Monitoring's two pairs). */
+  .seg-navy .seg-item[aria-current="page"] {
+    @apply bg-navy text-white shadow-none;
+  }
+
   /* ---- Type ------------------------------------------------------------ */
   .page-title {
     @apply text-[28px] font-bold leading-tight tracking-[-0.01em] text-navy sm:text-[30px];
@@ -465,4 +512,13 @@ body {
   outline: 3px solid var(--gold);
   outline-offset: 2px;
   transition: outline-color 0.2s;
+}
+
+/* Small fade for pop-overs; nothing moves for people who prefer reduced motion. */
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

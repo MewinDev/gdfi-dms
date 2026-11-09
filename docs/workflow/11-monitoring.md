@@ -6,6 +6,27 @@ Last updated: 9 November 2026 (PHT)
 
 The page is **Monitoring** in the sidebar, for people with `monitor:dp` (tab **DPs**) or `monitor:lto` (tab **LTO offices**). A monitor sees counts, times and PN lists only: a PN opens the loan file only for someone who may see loan files in that branch, and amounts show only with `journey:view_amounts`. The person's branch access applies; the Operations Monitor role sees all branches.
 
+## How to read this page
+
+The page is calm on purpose: the numbers are the same as before, only the layout changed (9 November 2026, design pass).
+
+- **The top.** The title says the dates in words ("Monitoring: 11 Oct to 9 Nov 2026"); the grey line under it says Philippine time, business days and that times include time on hold. Two pairs of tabs (DPs or LTO offices; Totals or By day) use the same navy pill.
+- **The date range.** One button with the range in words opens the presets (Today, Yesterday, This week, Last 7 days, Last 30 days, This month, Last month, Custom) and a two-month calendar (one month on a phone). Two clicked days make a Custom range; the picker says how many days and business days. Future days cannot be picked. Over 92 days, By day shows one row per week, and the picker says so. Apply keeps the range in the address (`range`, or `range=custom&from=…&to=…`), so the title, Download CSV and By day follow it and a shared link shows the same days. Esc or Cancel closes it.
+- **Filters.** Area, Branch and Transaction sit in one row with the gold Apply; **Reset** appears only when something is not at its default. On a phone they fold into a **Filters** button (with a count) that opens a bottom sheet; the date button stays next to it, and Download CSV moves under them.
+- **Tiles.** Big navy number, small label, one grey line; "As of now" marks today's counts. **Overdue** turns soft red and **On hold** soft amber only above 0. On a phone Overdue and Average availability come first.
+- **The tables.** Each Area is a light navy band with its processor count and a chevron to fold it; branches are plain grey lines under it. Zero is a light grey 0; Overdue above 0 is red, On hold above 0 amber. An average shows "-" alone when no job finished. Availability is a small usage bar (jobs in use out of capacity; green Available, amber Busy, red Full, grey On leave) with "60%" and "2 of 5 in use". A branch subtotal shows only when the branch has more than one processor; the Area subtotal always shows. Click a name to open the processor's (or office's) jobs.
+- **Widths.** 1024 px and wider: every column. 640 to 1023 px: Processor, Assigned, In process, On hold, Overdue, Availability and Status; **Details** under the name opens Declined, Returned and the three averages. Phones: one card per processor (or office, or day) with the four main numbers, the usage bar and **More**. The page never scrolls sideways.
+- **States.** While numbers load, grey placeholders keep the layout still. A period with nothing finished, declined or returned (or no LTO transactions, or nothing by day) says "No jobs in this period. Try a wider date range." with a Last 30 days button. If the page fails to load, it says so with Retry.
+- **By day.** Weekends and holidays are muted rows marked "Not a business day"; their counts still show (things can happen on a Saturday), but they are not business days for the turnaround times.
+
+Screenshots (1440, 820 and 390 px) are in `docs/screenshots/monitoring-design/`: `dp-totals`, `dp-by-day`, `lto-totals`, `date-range-open`, `date-range-custom`, `empty-state`, plus `details-open-820`, `card-more-open-390` and `filters-sheet-390`.
+
+![DPs, Totals at 1440 px](../screenshots/monitoring-design/dp-totals-1440.png)
+
+![The date range picker with a custom range](../screenshots/monitoring-design/date-range-custom-1440.png)
+
+![DPs on a phone: cards with More open](../screenshots/monitoring-design/card-more-open-390.png)
+
 ## Rules that apply to every number
 
 - **The TAT clock never pauses.** Every time on the page includes time on hold; the page says "Includes time on hold".

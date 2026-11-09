@@ -149,7 +149,21 @@ test("Branch review: a rename and a code change from MyLoans, Accept shows the i
     const review = page.locator("[data-branch-review]");
     await expect(review).toContainText("Amang Rodriguez - Pasig");
     await expect(review).toContainText("710");
+    // The Branch review page keeps the codes: the Code changed item still shows the old and the new code.
+    await expect(review).toContainText("709");
     await shot(page, "branch-review");
+    // Home: the Branch review card shows the branch name only (no brackets, no code); the pill stays.
+    await page.goto("/dashboard");
+    const card = page.locator("[data-branch-review-card]");
+    const names = card.locator("[data-review-name]");
+    await expect(names.filter({ hasText: "Amang Rodriguez - Pasig" })).toHaveCount(1);
+    await expect(names.filter({ hasText: /^Alicia$/ })).toHaveCount(1);
+    for (const t of await names.allInnerTexts()) expect(t).not.toMatch(/[()0-9]/);
+    await expect(card).toContainText("Code changed");
+    await expect(card).toContainText("Renamed");
+    await card.scrollIntoViewIfNeeded();
+    await shot(page, "dashboard-branch-review");
+    await page.goto("/admin/settings?open=branches&step=review");
     await review.getByRole("button", { name: /^Accept Renamed/ }).click();
     const dlg = page.getByRole("alertdialog");
     await expect(dlg.locator("[data-review-impact]")).toBeVisible();
