@@ -40,6 +40,8 @@ export const SETTING_DEFAULTS = {
   "funds.liquidationDueDays": 10 as number,
   /** Funds: block "At the LTO" while a funds-flagged transaction is not Funded. */
   "funds.blockLtoUntilFunded": true as boolean,
+  /** Monitoring: the default capacity of a processor, in open jobs (Settings, Processor capacity). */
+  "dp.defaultCapacity": 10 as number,
   /** Email notifications: the master switch. Not active until the system goes live. */
   "email.active": false as boolean,
   /** Email notifications: per-event switches (missing = on). */

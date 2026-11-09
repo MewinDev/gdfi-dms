@@ -10,13 +10,16 @@ import { DownloadIcon } from "@/components/ui/icons";
 
 export const metadata: Metadata = { title: "TAT and problems" };
 
-export default async function TatReportPage({ searchParams }: { searchParams: Promise<{ branch?: string; type?: string; stage?: string; show?: string; outside?: string; from?: string; to?: string }> }) {
+export default async function TatReportPage({ searchParams }: { searchParams: Promise<{ branch?: string; type?: string; stage?: string; show?: string; outside?: string; from?: string; to?: string; ftype?: string }> }) {
   const user = await requirePagePermission(PERMISSIONS.REPORTS_TAT);
   const sp = await searchParams;
   const [{ rows, all }, reasons] = await Promise.all([tatReport(user, sp), reasonReport(user, sp)]);
   const branches = [...new Set(all.map((r) => r.branch))].sort();
   const types = [...new Map(all.map((r) => [r.typeCode, r.typeName])).entries()];
   const stageNames = [...new Set(all.map((r) => r.stage).filter((x): x is string => !!x))].sort();
+  // Funds types on these jobs, with counts (the filter and its numbers).
+  const fundsTypes = [...new Map(all.filter((r) => r.fundsType).map((r) => [r.fundsType!.code, r.fundsType!.name])).entries()];
+  const fundsCount = (code: string) => all.filter((r) => r.fundsType?.code === code).length;
   const qs = new URLSearchParams(Object.entries(sp).filter(([, v]) => !!v) as [string, string][]).toString();
   return (
     <div className="dense flex w-full flex-col gap-4">
@@ -27,7 +30,7 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
         subtitle="The turnaround clock never pauses. Problem time is the sum of each problem's business days."
         right={can(user, PERMISSIONS.LOANS_EXPORT) ? <Link href={`/api/reports/tat?${qs}`} className="btn-ghost btn-sm" prefetch={false}><DownloadIcon size={18} /> CSV</Link> : null}
       />
-      <form action="/reports/tat" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_auto_auto] lg:items-end">
+      <form action="/reports/tat" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_auto_auto] lg:items-end">
         <div>
           <label htmlFor="ts" className="label">Show</label>
           <select id="ts" name="show" defaultValue={sp.show ?? "attention"} className="input">
@@ -46,6 +49,14 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
           <select id="tt" name="type" defaultValue={sp.type ?? ""} className="input">
             <option value="">All</option>
             {types.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="tft" className="label">Funds type</label>
+          <select id="tft" name="ftype" defaultValue={sp.ftype ?? ""} className="input">
+            <option value="">All</option>
+            {fundsTypes.map(([c, n]) => <option key={c} value={c}>{c} · {n} ({fundsCount(c)})</option>)}
+            <option value="none">No funds record</option>
           </select>
         </div>
         <div>

@@ -12,18 +12,18 @@ import { UserError } from "./errors";
  * be made active again. Existing loan files, transactions and history keep it and its name.
  */
 export type StatusKind =
-  | "branch" | "transactionType" | "documentType" | "checklistRule" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "user" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage";
+  | "branch" | "transactionType" | "documentType" | "checklistRule" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "user" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage" | "fundsType";
 
-export const STATUS_KINDS: StatusKind[] = ["branch", "transactionType", "documentType", "checklistRule", "loanType", "ltoOffice", "caRule", "holiday", "user", "approvalBand", "problemReason", "holdReason", "returnReason", "processingStage"];
+export const STATUS_KINDS: StatusKind[] = ["branch", "transactionType", "documentType", "checklistRule", "loanType", "ltoOffice", "caRule", "holiday", "user", "approvalBand", "problemReason", "holdReason", "returnReason", "processingStage", "fundsType"];
 
 const NOUN: Record<StatusKind, string> = {
   branch: "Branch", transactionType: "Transaction type", documentType: "Document type", checklistRule: "Checklist item",
-  loanType: "Loan type", ltoOffice: "LTO office", caRule: "Cash-advance rule", holiday: "Holiday", user: "User", approvalBand: "Approval band", problemReason: "Problem reason", holdReason: "Hold reason", returnReason: "Return reason", processingStage: "Processing stage",
+  loanType: "Loan type", ltoOffice: "LTO office", caRule: "Cash-advance rule", holiday: "Holiday", user: "User", approvalBand: "Approval band", problemReason: "Problem reason", holdReason: "Hold reason", returnReason: "Return reason", processingStage: "Processing stage", fundsType: "Funds type",
 };
 
 /** Lists the app needs at least one active row of. */
 const NEEDS_ONE: Partial<Record<StatusKind, string>> = {
-  branch: "branch", approvalBand: "approval band", problemReason: "problem reason", holdReason: "hold reason", returnReason: "return reason", loanType: "loan type", documentType: "document type", ltoOffice: "LTO office", transactionType: "transaction type",
+  branch: "branch", approvalBand: "approval band", problemReason: "problem reason", holdReason: "hold reason", returnReason: "return reason", fundsType: "funds type", loanType: "loan type", documentType: "document type", ltoOffice: "LTO office", transactionType: "transaction type",
 };
 
 /** Loan file stages that count as "open" (not closed, archived or disposed). */
@@ -43,6 +43,7 @@ async function loadRow(kind: StatusKind, id: string): Promise<(Row & { builtIn?:
     case "problemReason": { const r = await prisma.problemReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
     case "holdReason": { const r = await prisma.holdReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
     case "returnReason": { const r = await prisma.returnReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
+    case "fundsType": { const r = await prisma.fundsType.findUnique({ where: { id } }); return r && { id, active: r.active, label: `${r.name} (${r.code})` }; }
     case "processingStage": { const r = await prisma.processingStage.findUnique({ where: { id }, include: { type: true } }); return r && { id, active: r.active, label: `${r.type.name} · ${r.name}` }; }
     case "caRule": { const r = await prisma.cashAdvanceRule.findUnique({ where: { id }, include: { transactionType: true } }); return r && { id, active: r.active, label: `${r.transactionType.name} · ${r.purpose}` }; }
     case "holiday": { const r = await prisma.holidayCalendar.findUnique({ where: { id } }); return r && { id, active: r.active, label: `${r.name} (${r.date})` }; }
@@ -61,6 +62,7 @@ async function activeCount(kind: StatusKind): Promise<number> {
     case "problemReason": return prisma.problemReason.count({ where: { active: true } });
     case "holdReason": return prisma.holdReason.count({ where: { active: true } });
     case "returnReason": return prisma.returnReason.count({ where: { active: true } });
+    case "fundsType": return prisma.fundsType.count({ where: { active: true } });
     default: return Number.POSITIVE_INFINITY;
   }
 }
@@ -134,6 +136,10 @@ export async function inactiveEffect(kind: StatusKind, id: string): Promise<stri
       const n = await prisma.hold.count({ where: { reasonId: id } });
       return `Used by ${n} hold${n === 1 ? "" : "s"}. They keep it. It will not be offered for new holds. Make inactive?`;
     }
+    case "fundsType": {
+      const n = await prisma.cashAdvance.count({ where: { fundsTypeId: id } });
+      return `Used by ${n} funds record${n === 1 ? "" : "s"}. They keep it (and its name). It will not be offered for new requests. Make inactive?`;
+    }
     case "returnReason": {
       const n = await prisma.dpAssignment.count({ where: { returnReasonId: id } });
       return `Used by ${n} return${n === 1 ? "" : "s"}. They keep it. It will not be offered for new returns. Make inactive?`;
@@ -177,6 +183,7 @@ export async function setRowActive(user: CurrentUser, kind: StatusKind, id: stri
       case "problemReason": await tx.problemReason.update({ where: { id }, data }); break;
       case "holdReason": await tx.holdReason.update({ where: { id }, data }); break;
       case "returnReason": await tx.returnReason.update({ where: { id }, data }); break;
+      case "fundsType": await tx.fundsType.update({ where: { id }, data }); break;
       case "processingStage": await tx.processingStage.update({ where: { id }, data }); break;
       case "holiday": await tx.holidayCalendar.update({ where: { id }, data }); break;
       case "user": await tx.user.update({ where: { id }, data }); break;

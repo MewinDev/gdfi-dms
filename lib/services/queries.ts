@@ -25,7 +25,7 @@ const loanDetailInclude = {
         orderBy: { createdAt: "desc" },
         include: { dpUser: { select: { name: true } }, secondaryDpUser: { select: { name: true } }, dpBranch: true, ltoOffice: true, assignedBy: { select: { name: true, active: true } }, receivingLa: { select: { name: true } }, receivingBranch: { select: { name: true } }, returnReason: { select: { name: true } }, stages: { orderBy: { sortOrder: "asc" } } },
       },
-      advanceLines: { include: { advance: { select: { id: true, number: true, status: true } } } },
+      advanceLines: { include: { advance: { select: { id: true, number: true, status: true, fundsTypeCode: true, fundsTypeName: true } } } },
       attempts: { orderBy: { createdAt: "desc" }, include: { reason: true, dpUser: { select: { name: true } }, spends: true } },
       problems: { orderBy: { raisedAt: "desc" }, include: { reason: true } },
       holds: { orderBy: { raisedAt: "desc" }, include: { reason: true, transfers: { orderBy: { at: "asc" } } } },

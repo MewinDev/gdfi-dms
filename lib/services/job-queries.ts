@@ -5,7 +5,7 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
 import type { FundsStatus } from "@/lib/funds/rules";
-import { doneTat, openHold, openProblem, txnFunds, txnTat } from "@/lib/jobs/view";
+import { doneTat, openHold, openProblem, txnFunds, txnTat, txnFundsType } from "@/lib/jobs/view";
 import { holdDays, problemDays, type TatChipData } from "@/lib/workflow/tat";
 import { holdReasonName } from "@/lib/ui/holds";
 
@@ -33,6 +33,8 @@ export interface JobRow {
   endorsedAt: Date;
   tat: TatChipData | null;
   funds: FundsStatus;
+  /** The live funds record's type (Cash advance, Fund transfer), when the job has one. */
+  fundsType: { code: string; name: string } | null;
   problem: { id: string; reason: string; days: number; outsideControl: boolean } | null;
   problemDaysTotal: number;
   hold: { id: string; reason: string; days: number } | null;
@@ -61,7 +63,7 @@ const include = {
   transaction: {
     include: {
       type: { select: { code: true, name: true } },
-      advanceLines: { include: { advance: { select: { status: true } } } },
+      advanceLines: { include: { advance: { select: { status: true, fundsTypeCode: true, fundsTypeName: true } } } },
       problems: { include: { reason: { select: { name: true } } }, orderBy: { raisedAt: "desc" } },
       exceptions: { where: { type: "INCOMPLETE_PACKAGE", status: "OPEN" }, select: { reason: true, details: true }, take: 1 },
       holds: { include: { reason: { select: { name: true } } }, orderBy: { raisedAt: "desc" } },
@@ -95,7 +97,7 @@ export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = 
       : tab === "returned" ? null : txnTat(t, tats, holidays, now);
     return {
       id: a.id, pn: a.loan.pn, borrower: a.loan.borrowerName, branch: a.loan.branch.name, typeCode: t.type.code, typeName: t.type.name,
-      dpName: a.dpUser.name, tab, endorsedAt: a.endorsedAt, tat, funds: txnFunds(t),
+      dpName: a.dpUser.name, tab, endorsedAt: a.endorsedAt, tat, funds: txnFunds(t), fundsType: txnFundsType(t),
       problem: p ? { id: p.id, reason: p.reason.name, days: Math.max(1, problemDays([p], holidays, now)), outsideControl: p.outsideControl } : null,
       problemDaysTotal: problemDays(t.problems, holidays, now),
       hold: h ? { id: h.id, reason: holdReasonName(h), days: Math.max(1, holdDays([h], holidays, now)) } : null,

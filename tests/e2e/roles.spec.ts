@@ -17,7 +17,7 @@ test("Custom role from a copy: switches, plain words, save, assign, sign in, the
   await signIn(page, "admin");
   await page.goto("/admin/settings");
   const card = page.getByRole("region", { name: "People and access" });
-  await expect(card.getByRole("link", { name: /^Roles and access/ })).toContainText(/8 roles · 0 custom/);
+  await expect(card.getByRole("link", { name: /^Roles and access/ })).toContainText(/9 roles · 0 custom/);
   await card.getByRole("link", { name: /^Roles and access/ }).click();
   await expect(page).toHaveURL(/open=roles/);
 

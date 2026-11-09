@@ -47,6 +47,12 @@ export const PERMISSIONS = {
   JOURNEY_VIEW_AMOUNTS: "journey:view_amounts", // see cash amounts in the Journey (otherwise funds status only)
   // Reports
   REPORTS_TAT: "reports:tat",
+  // Monitoring (counts, times and PN lists only; opening a loan or seeing amounts needs the usual permissions)
+  MONITOR_DP: "monitor:dp", // see the DP monitor
+  MONITOR_LTO: "monitor:lto", // see the LTO monitor
+  LTO_REPORTS_CREATE: "ltoreports:create", // file an LTO advisory (from the DP job at an LTO stage)
+  LTO_REPORTS_MANAGE: "ltoreports:manage", // resolve or edit any LTO advisory; file one from the Monitoring page
+  DP_CAPACITY_MANAGE: "dpcapacity:manage", // set a processor's capacity and on-leave status, and the default capacity
   // Settings
   SETTINGS_BRANCHES: "settings:branches",
   SETTINGS_LOAN_TYPES: "settings:loan_types",
@@ -62,6 +68,7 @@ export const PERMISSIONS = {
   HOLDS_MANAGE: "holds:manage", // Settings > Hold reasons (Admin only by default; was settings:hold_reasons)
   SETTINGS_RETURN_REASONS: "settings:return_reasons",
   STAGES_MANAGE: "stages:manage", // Settings > Processing stages (Admin only by default)
+  FUNDS_TYPES_MANAGE: "fundtypes:manage", // Settings > Funds types (Admin only by default)
   SETTINGS_IMPORT: "settings:import", // Import / Export (with the permission for that list)
   EMAIL_MANAGE: "email:manage", // email notifications: on/off, events, messages, test send, recent emails
   // MyLoans sync
@@ -166,6 +173,15 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ],
   },
   {
+    key: "monitoring", label: "Monitoring", items: [
+      { key: P.MONITOR_DP, label: "See the DP monitor", help: "Monitoring, DPs tab: each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only; opening a loan or seeing amounts needs the usual permissions.", can: "see the DP monitor" },
+      { key: P.MONITOR_LTO, label: "See the LTO monitor", help: "Monitoring, LTO offices tab: jobs at each LTO office, time at the LTO and advisories. Amounts show only to people who may see cash amounts.", can: "see the LTO monitor" },
+      { key: P.LTO_REPORTS_CREATE, label: "File an LTO advisory", help: "Report a problem at an LTO office (system down, office closed, long queue) from a job at an LTO stage. It warns others; it never blocks anything.", can: "file LTO advisories" },
+      { key: P.LTO_REPORTS_MANAGE, label: "Manage LTO advisories", help: "Resolve or edit any LTO advisory, and file one from the Monitoring page.", requires: [P.MONITOR_LTO], can: "manage LTO advisories" },
+      { key: P.DP_CAPACITY_MANAGE, label: "Set processor capacity and leave", help: "Settings, Processor capacity: the default number of open jobs, a processor's own capacity, and On leave with an optional until date.", can: "set processor capacity and leave" },
+    ],
+  },
+  {
     key: "settings", label: "Settings", items: [
       { key: P.SETTINGS_BRANCHES, label: "Change branches", help: "Add, rename or make branches inactive.", can: "change branches" },
       { key: P.SETTINGS_LOAN_TYPES, label: "Change loan types", help: "Display names of the MyLoans loan types.", can: "change loan types" },
@@ -179,6 +195,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.SETTINGS_PROBLEM_REASONS, label: "Change problem reasons", help: "The reasons a job can be stuck.", can: "change problem reasons" },
       { key: P.HOLDS_MANAGE, label: "Manage hold reasons", help: "Settings, Hold reasons: add, rename, reorder or switch off the reasons a transaction can be on hold. A switched-off reason stays on old holds.", can: "manage hold reasons" },
       { key: P.SETTINGS_RETURN_REASONS, label: "Change return reasons", help: "Why a processor returns a job to the Loan Associate for papers.", can: "change return reasons" },
+      { key: P.FUNDS_TYPES_MANAGE, label: "Manage funds types", help: "Settings, Funds types: rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off. A switched-off type stays on old records.", can: "manage funds types" },
       { key: P.STAGES_MANAGE, label: "Change processing stages", help: "The stages of each transaction type, their evidence and targets.", can: "change processing stages" },
       { key: P.SETTINGS_SYSTEM, label: "Change system switches", help: "MyLoans test switches, the simulator switch, mock source changes.", can: "change system switches" },
       { key: P.EMAIL_MANAGE, label: "Manage email notifications", help: "Turn emails on or off, choose events, edit messages, send a test email and see recent emails.", can: "manage email notifications" },
@@ -296,13 +313,17 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
     description: "Users, roles, Settings, audit log, CSV export, all loans (read-only), Supervisor override, test tools.",
     permissions: ADMIN_PERMISSIONS,
   },
-  DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: false, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE] },
+  DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: false, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, P.LTO_REPORTS_CREATE] },
   FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; may transfer holds.", permissions: [P.LOANS_VIEW, P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.FUNDS_VIEW_ALL, P.FUNDS_EXCEPTION, P.JOURNEY_VIEW_AMOUNTS, P.HOLDS_TRANSFER] },
   VAULT: { name: "Vault Custodian", canSignIn: false, sortOrder: 5, branchAccess: "ASSIGNED", description: "Phases 6 and 8.", permissions: [P.LOANS_VIEW] },
   DIG: { name: "Digital Records", canSignIn: false, sortOrder: 6, branchAccess: "ASSIGNED", description: "Phase 7 DigiCur.", permissions: [P.LOANS_VIEW] },
   QA: { name: "QA", canSignIn: false, sortOrder: 7, branchAccess: "ASSIGNED", description: "Phase 9 QA review.", permissions: [P.LOANS_VIEW] },
   APPR: { name: "Approvers, Records, Compliance", canSignIn: false, sortOrder: 8, branchAccess: "ASSIGNED", description: "Phase 8 and 10 approvals.", permissions: [P.LOANS_VIEW, P.JOURNEY_VIEW_AMOUNTS] },
+  /** Read-only, all branches: the Monitoring page and LTO advisories. No loan files, no amounts. */
+  MONITOR: { name: "Operations Monitor", canSignIn: true, sortOrder: 9, branchAccess: "ALL", description: "Watches processors and LTO offices (Monitoring page) and resolves LTO advisories. Read-only.", permissions: [P.MONITOR_DP, P.MONITOR_LTO, P.LTO_REPORTS_MANAGE] },
 };
+/** The Operations Monitor role key (notified when an LTO advisory is filed or resolved). */
+export const MONITOR_ROLE_KEY = "MONITOR";
 
 /** Role chips used everywhere (role key -> label and CSS token). */
 export const ROLE_CHIPS: Record<string, { label: string; token: string }> = {
@@ -313,6 +334,7 @@ export const ROLE_CHIPS: Record<string, { label: string; token: string }> = {
   QA: { label: "QA", token: "qa" },
   FIN: { label: "FIN", token: "fin" },
   APPR: { label: "APPR", token: "appr" },
+  MONITOR: { label: "Monitor", token: "sys" },
   SYS: { label: "SYS", token: "sys" },
   ADMIN: { label: "Admin", token: "sys" },
   SUP: { label: "Supervisor", token: "appr" },
@@ -332,6 +354,7 @@ export const LIST_PERMISSION: Record<string, Permission> = {
   "approval-bands": P.SETTINGS_CASH_ADVANCE,
   "problem-reasons": P.SETTINGS_PROBLEM_REASONS,
   "hold-reasons": P.HOLDS_MANAGE,
+  "funds-types": P.FUNDS_TYPES_MANAGE,
   "return-reasons": P.SETTINGS_RETURN_REASONS,
   "processing-stages": P.STAGES_MANAGE,
   system: P.SETTINGS_SYSTEM,
@@ -339,6 +362,7 @@ export const LIST_PERMISSION: Record<string, Permission> = {
   "myloans-sync": P.SOURCE_MANAGE,
   "test-data": P.TESTDATA_RESET,
   "test-kit": P.TESTDATA_RESET,
+  "dp-capacity": P.DP_CAPACITY_MANAGE,
   roles: P.ROLES_MANAGE,
   users: P.USERS_EDIT,
 };
@@ -357,6 +381,7 @@ export const KIND_PERMISSION: Record<string, Permission> = {
   approvalBand: P.SETTINGS_CASH_ADVANCE,
   problemReason: P.SETTINGS_PROBLEM_REASONS,
   holdReason: P.HOLDS_MANAGE,
+  fundsType: P.FUNDS_TYPES_MANAGE,
   returnReason: P.SETTINGS_RETURN_REASONS,
   processingStage: P.STAGES_MANAGE,
   user: P.USERS_EDIT,

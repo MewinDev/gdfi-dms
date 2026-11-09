@@ -11,10 +11,13 @@ import { assignToDp, confirmPapersBack, markLabelsPrinted, recordEdst, requestMi
 import { acceptJob, completeJob, declineJob, finishStage, forwardJob, loadAssignment, raiseProblem, receivePackage, somethingMissing, startStage, verifyPaper } from "@/lib/services/jobs";
 import { stageRows, verifiablePapers } from "@/lib/services/job-stages";
 import { returnToLa } from "@/lib/services/return-to-la";
-import { addReceipt, closeAdvance, decideAdvance, notifyOverdue, releaseAdvance, requestAdvance } from "@/lib/services/funds";
+import { addReceipt, changeFundsType, closeAdvance, decideAdvance, notifyOverdue, releaseAdvance, requestAdvance } from "@/lib/services/funds";
 import { raiseHold } from "@/lib/services/holds";
 import { simulateSourceChange } from "@/lib/services/source-sync";
 import { saveRole } from "@/lib/services/roles";
+import { saveDpCapacity } from "@/lib/services/dp-capacity";
+import { fileAdvisory, resolveAdvisory } from "@/lib/services/lto-advisories";
+import { saveSettingsRow } from "@/lib/services/admin";
 import { setRowActive } from "@/lib/services/settings-status";
 import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_LOANS, SUPERVISOR_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
 import { kitRefusal } from "./guard";
@@ -158,13 +161,21 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     ret: async (code: string) => (await prisma.returnReason.findUniqueOrThrow({ where: { code } })).id,
   };
   const papers = async (transactionId: string) => (await prisma.documentItem.findMany({ where: { transactionId }, select: { id: true } })).map((d) => d.id);
-  const fund = async (pn: string, dp: CurrentUser, upTo: "requested" | "approved" | "released") => {
+  const fundsType = async (code: "CA" | "FT") => prisma.fundsType.findUniqueOrThrow({ where: { code } });
+  /** Request (Cash advance, or Fund transfer when `ft`), approve, release (a transfer with its reference, date and account ending). */
+  const fund = async (pn: string, dp: CurrentUser, upTo: "requested" | "approved" | "released", ft = false) => {
     const t = await txn(pn, "MORTGAGE");
-    const r = await requestAdvance(dp, { lines: [{ transactionId: t.id, kind: "LTO_FEE", cents: 350_000 }] });
+    const r = await requestAdvance(dp, { lines: [{ transactionId: t.id, kind: "LTO_FEE", cents: 350_000 }], fundsTypeId: (await fundsType(ft ? "FT" : "CA")).id });
     if (upTo !== "requested") await decideAdvance(u.finance, r.id, { approve: true });
-    if (upTo === "released") await releaseAdvance(u.finance, r.id, { ref: `CV-${pn.slice(-4)}` });
+    if (upTo === "released") {
+      await releaseAdvance(u.finance, r.id, ft
+        ? { ref: `FT-88${pn.slice(-4)}`, transferDate: today, accountProvider: "BPI", accountName: dp.name, accountLast4: dp.name === "DP 1" ? "4821" : "7350" }
+        : { ref: `CV-${pn.slice(-4)}` });
+    }
     return { advanceId: r.id, lineId: (await prisma.cashAdvanceLine.findFirstOrThrow({ where: { advanceId: r.id } })).id };
   };
+  /** The one date set directly: the liquidation was due 2 business days ago. */
+  const pastDue = (advanceId: string) => prisma.cashAdvance.update({ where: { id: advanceId }, data: { liquidationDueAt: new Date(`${shiftBusinessDays(today, -2, holidays)}T17:00:00+08:00`) } });
 
   // ---- open every loan that is opened in the DMS ----
   for (const l of KIT_LOANS.filter((x) => x.opened)) await open(l);
@@ -279,12 +290,42 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     "PN-0002043": async () => simulateSourceChange(u.admin, (await loan("PN-0002043")).id, "cancel"),
     "PN-0002044": async () => simulateSourceChange(u.admin, (await loan("PN-0002044")).id, "replace"),
     // Last: an overdue advance blocks the processor's next request (as it should), so it comes after the others.
+    // Fund transfers, in the same states (DP 1 and DP 2).
+    "PN-0002051": async () => { await accepted("PN-0002051", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("PN-0002051", u.dp1, "requested", true); },
+    "PN-0002052": async () => {
+      // Asked as a Cash advance; Finance changed it to a Fund transfer (with remarks) before approving.
+      await accepted("PN-0002052", "MORTGAGE", u.dp1, ["LTO_FEE"]);
+      const { advanceId } = await fund("PN-0002052", u.dp1, "requested");
+      await changeFundsType(u.finance, advanceId, { fundsTypeId: (await fundsType("FT")).id, remarks: "DP 1 is at the LTO all week: send it to the account instead of cash." });
+      await decideAdvance(u.finance, advanceId, { approve: true });
+    },
+    "PN-0002053": async () => { await accepted("PN-0002053", "MORTGAGE", u.dp1, ["LTO_FEE"]); await fund("PN-0002053", u.dp1, "released", true); },
+    "PN-0002054": async () => {
+      await accepted("PN-0002054", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      const { lineId } = await fund("PN-0002054", u.dp2, "released", true);
+      await addReceipt(u.dp2, { lineId, date: today, cents: 350_000, number: "OR-2054" }, null);
+    },
+    "PN-0002055": async () => {
+      await accepted("PN-0002055", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      const { advanceId, lineId } = await fund("PN-0002055", u.dp2, "released", true);
+      await addReceipt(u.dp2, { lineId, date: today, cents: 350_000, number: "OR-2055" }, null);
+      await closeAdvance(u.finance, advanceId);
+    },
+    "PN-0002056": async () => {
+      const { t, job } = await accepted("PN-0002056", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      await fund("PN-0002056", u.dp2, "released", true);
+      await returnToLa(u.dp2, job.id, { reasonId: await reason.ret("OTHER-TXN"), note: "Needs the PPSR entry done first.", handedOver: await papers(t.id) });
+    },
+    // Last: an overdue record blocks the processor's next request (as it should). Both overdue samples
+    // (Cash advance and Fund transfer, DP 2) are released first, then due dates move into the past and
+    // the daily overdue check runs.
     "PN-0002034": async () => {
       await accepted("PN-0002034", "MORTGAGE", u.dp2, ["LTO_FEE"]);
-      const { advanceId } = await fund("PN-0002034", u.dp2, "released");
-      // The one date set directly: the liquidation was due 2 business days ago; then the daily overdue check runs.
-      const due = shiftBusinessDays(today, -2, holidays);
-      await prisma.cashAdvance.update({ where: { id: advanceId }, data: { liquidationDueAt: new Date(`${due}T17:00:00+08:00`) } });
+      await accepted("PN-0002057", "MORTGAGE", u.dp2, ["LTO_FEE"]);
+      const ca = await fund("PN-0002034", u.dp2, "released");
+      const ft = await fund("PN-0002057", u.dp2, "released", true);
+      await pastDue(ca.advanceId);
+      await pastDue(ft.advanceId);
       await notifyOverdue();
     },
   };
@@ -297,4 +338,96 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     }
   }
   log(`Prepared ${Object.keys(cases).length} sample cases through the app's own steps.`);
+  await buildMonitoring(u, { today, holidays, send, accepted, work, loan, log });
+}
+
+/** n business days before today at a time of day (PHT); today: a few minutes ago. */
+function daysAgo(today: string, holidays: ReadonlySet<string>, n: number, hhmm: string): Date {
+  if (n === 0) return new Date(Date.now() - 10 * 60_000);
+  return new Date(`${shiftBusinessDays(today, -n, holidays)}T${hhmm}:00+08:00`);
+}
+
+/**
+ * Monitoring samples. Every job goes through the app's own steps (send, accept, stages, complete,
+ * forward, receive; capacity and leave through Settings, Processor capacity; advisories through the
+ * real filing and resolving). Then, as with the overdue advance, the times are moved into the past
+ * directly so the averages differ (a job made in one minute would show 0 days everywhere).
+ */
+async function buildMonitoring(
+  u: Users,
+  h: {
+    today: string; holidays: ReadonlySet<string>; log: Log;
+    send: (pn: string, code: string, dp: CurrentUser, o?: { by?: CurrentUser; funds?: string[]; tick?: boolean }) => Promise<{ t: { id: string }; job: { id: string } }>;
+    accepted: (pn: string, code: string, dp: CurrentUser, funds?: string[]) => Promise<{ t: { id: string }; job: { id: string } }>;
+    work: (dp: CurrentUser, jobId: string, stop: number | "VERIFY" | "ALL") => Promise<void>;
+    loan: (pn: string) => Promise<{ branchId: string }>;
+  },
+) {
+  const { today, holidays } = h;
+  const at = (n: number, hhmm = "10:00") => daysAgo(today, holidays, n, hhmm);
+  /** Moves a job's times: sent, accepted, and each stage (kind: days ago when it finished). */
+  const backdate = async (jobId: string, plan: { sent: number; accepted?: number; stages?: Partial<Record<"OWN" | "LTO_DROP" | "LTO_PICKUP" | "VERIFY", number>> }) => {
+    const a = await prisma.dpAssignment.findUniqueOrThrow({ where: { id: jobId }, include: { transaction: true } });
+    const sent = at(plan.sent, "09:00");
+    const acc = plan.accepted !== undefined ? at(plan.accepted, "09:30") : null;
+    await prisma.dpAssignment.update({ where: { id: jobId }, data: { endorsedAt: sent, createdAt: sent, ...(acc ? { decidedAt: acc, labelsConfirmedAt: acc } : {}) } });
+    if (a.transaction.status === "ASSIGNED") await prisma.loanTransaction.update({ where: { id: a.transactionId }, data: { statusSince: sent } });
+    if (a.transaction.status === "IN_PROCESS" && acc) await prisma.loanTransaction.update({ where: { id: a.transactionId }, data: { statusSince: acc } });
+    for (const [kind, n] of Object.entries(plan.stages ?? {})) {
+      const done = at(n!, kind === "VERIFY" ? "16:00" : kind === "LTO_PICKUP" ? "14:00" : kind === "LTO_DROP" ? "11:00" : "10:00");
+      await prisma.jobStage.updateMany({ where: { assignmentId: jobId, kind: kind as "OWN" }, data: { startedAt: new Date(done.getTime() - 30 * 60_000), finishedAt: done } });
+    }
+  };
+  /** Sent by the branch's LA and accepted by the processor. */
+  const acceptedBy = async (pn: string, dp: CurrentUser, la: CurrentUser) => {
+    const { job } = await h.send(pn, "NOTARY", dp, { by: la });
+    await acceptJob(dp, job.id, true);
+    return { job };
+  };
+  const finish = async (pn: string, dp: CurrentUser, la: CurrentUser) => {
+    const { job } = await acceptedBy(pn, dp, la);
+    await h.work(dp, job.id, "ALL");
+    await completeJob(dp, job.id, {});
+    await forwardJob(dp, job.id, { branchId: (await h.loan(pn)).branchId, receivingLaId: la.id });
+    await receivePackage(la, job.id, { result: "complete", note: "" });
+    return job.id;
+  };
+
+  // Offices: the distance and suggested transport, through Settings, LTO offices.
+  for (const [code, km, hours, transport] of [["LTO-QC", 8, 1, 400], ["LTO-MKT", 12, 1.5, 600]] as const) {
+    const o = await prisma.ltoOffice.findUniqueOrThrow({ where: { code } });
+    await saveSettingsRow(u.admin, "ltoOffice", o.id, { code: o.code, name: o.name, city: o.city, distanceKm: String(km), travelHours: String(hours), suggestedTransport: String(transport) });
+  }
+
+  const steps: Record<string, () => Promise<unknown>> = {
+    "PN-0002060": async () => backdate(await finish("PN-0002060", u.dp2, u.la1), { sent: 6, accepted: 5, stages: { OWN: 5, LTO_DROP: 4, LTO_PICKUP: 2, VERIFY: 1 } }),
+    "PN-0002061": async () => backdate(await finish("PN-0002061", u.dp2, u.la1), { sent: 2, accepted: 2, stages: { OWN: 2, LTO_DROP: 2, LTO_PICKUP: 1, VERIFY: 1 } }),
+    "PN-0002062": async () => backdate(await finish("PN-0002062", u.dp4, u.laMakati), { sent: 4, accepted: 3, stages: { OWN: 3, LTO_DROP: 3, LTO_PICKUP: 1, VERIFY: 0 } }),
+    "PN-0002063": async () => { const { job } = await h.send("PN-0002063", "NOTARY", u.dp4, { by: u.laMakati }); await backdate(job.id, { sent: 3 }); },
+    "PN-0002064": async () => {
+      const { job } = await acceptedBy("PN-0002064", u.dp4, u.laMakati);
+      await h.work(u.dp4, job.id, 2); // Notarization, then LTO drop off: now at LTO Makati
+      await backdate(job.id, { sent: 3, accepted: 2, stages: { OWN: 2, LTO_DROP: 1 } });
+    },
+    "PN-0002065": async () => { const { job } = await h.send("PN-0002065", "NOTARY", u.dp3, { by: u.laDavao }); await backdate(job.id, { sent: 1 }); },
+  };
+  for (const [pn, fn] of Object.entries(steps)) {
+    try { await fn(); } catch (e) { throw new Error(`Sample loan ${pn}: ${e instanceof Error ? e.message : String(e)}`); }
+  }
+
+  // Capacity and leave (Settings, Processor capacity): DP 4 takes 5 open jobs; DP 3 is on leave for a week.
+  await saveDpCapacity(u.admin, u.dp4.id, { capacity: "5", onLeave: false, leaveUntil: "" });
+  await saveDpCapacity(u.admin, u.dp3.id, { capacity: "", onLeave: true, leaveUntil: shiftBusinessDays(today, 5, holidays) });
+
+  // Three advisories: active (2 hours ago), resolved, and one older than 24 hours.
+  const job = async (pn: string) => prisma.dpAssignment.findFirstOrThrow({ where: { loan: { pn }, transaction: { type: { code: { in: ["NOTARY", "MORTGAGE"] } } } }, orderBy: { createdAt: "desc" } });
+  const qc = await fileAdvisory(u.dp1, { assignmentId: (await job("PN-0002022")).id, type: "SYSTEM_DOWN", remarks: "The LTMS terminals are offline; the guard says maybe after lunch." });
+  await prisma.ltoAdvisory.update({ where: { id: qc.id }, data: { startedAt: new Date(Date.now() - 2 * 3_600_000), createdAt: new Date(Date.now() - 2 * 3_600_000) } });
+  const mkt = await fileAdvisory(u.dp4, { assignmentId: (await job("PN-0002064")).id, type: "OFFICE_CLOSED", remarks: "Closed for the morning: staff seminar." });
+  await prisma.ltoAdvisory.update({ where: { id: mkt.id }, data: { startedAt: at(1, "08:00"), createdAt: at(1, "08:05") } });
+  await resolveAdvisory(u.monitor, mkt.id, { remarks: "Open again from 1 PM, confirmed by phone." });
+  const ceb = await prisma.ltoOffice.findUniqueOrThrow({ where: { code: "LTO-CEB" } });
+  const old = await fileAdvisory(u.monitor, { ltoOfficeId: ceb.id, type: "LONG_QUEUE", remarks: "Queue past the gate every morning this week; go before 7 AM." });
+  await prisma.ltoAdvisory.update({ where: { id: old.id }, data: { startedAt: at(2, "07:30"), createdAt: at(2, "07:35") } });
+  h.log("Prepared the Monitoring samples: finished jobs, an overdue job, a job at the LTO, capacity and leave, three LTO advisories.");
 }

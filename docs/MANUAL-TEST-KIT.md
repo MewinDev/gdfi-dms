@@ -1,6 +1,6 @@
 # Manual Test Kit
 
-Last updated: 8 November 2026
+Last updated: 9 November 2026
 
 Test GDFI DMS by hand from a clean start, then put everything back. The kit fills your own database (`gdfi_dms`) with sample accounts and one sample loan per case. The automated tests use another database (`gdfi_dms_test`), so they never touch your data.
 
@@ -39,6 +39,9 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | DP 2 | Document Processor | Quezon City, Cebu |
 | Receiving LA Makati | Loan Associate | Makati |
 | Inactive LA | Loan Associate, inactive (not in the list) | Quezon City, Cebu |
+| DP 3 | Document Processor, on leave for a week | Davao |
+| DP 4 | Document Processor, own capacity 5 | Makati |
+| Operations Monitor | Operations Monitor (read-only: Monitoring and LTO advisories) | All |
 
 ## Loan Associate
 
@@ -79,7 +82,7 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | PN-0002023 | Check and verify blocking | DP 1 | Check and verify: one paper is ticked, a Missing paper problem is open. Try Finish, then Complete job. | Both refused while the problem is open and papers are not ticked. Resolve the problem, tick the papers, Finish, then Complete job. |
 | PN-0002024 | Pasuyo (cash decision first) | DP 1 | Mortgage: DP 1 holds 3,500 released cash. Pass the job to DP 2. | It asks first: return the cash, or hand the balance to DP 2. |
 | PN-0002029 | Incomplete, back to the DP | DP 1 | Jobs: "Package incomplete" (the notarized deed of sale). Correct it and Forward to LA 1 again. | The incomplete note closes; LA 1 can receive it again. |
-| PN-0002030 | Funds: needed, no request yet | DP 1 | Mortgage needs funds (LTO fee). Try Start LTO drop off; then request a cash advance. | Blocked: "This job needs funds. Request a cash advance first." The request goes to Finance (Requested). |
+| PN-0002030 | Funds: needed, no request yet | DP 1 | Mortgage needs funds (LTO fee). Try Start LTO drop off; then request funds: pick the type (Cash advance is the default; try Fund transfer too). | Blocked: "This job needs funds. Request a cash advance first." The request goes to Finance (Requested), with the type pill. |
 | PN-0002033 | Funds: released | DP 2 | My funds: liquidate CA for PN-0002033 with a receipt, or return the cash. | Partly or fully liquidated; Finance closes it. |
 
 ## Finance
@@ -91,6 +94,13 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | PN-0002034 | Funds: overdue notice | Finance, then DP 2 | Notifications: "liquidation overdue". DP 2: try a new cash request. | DP 2 and Finance have the overdue notice. DP 2's new requests are refused until it is liquidated or Finance grants an exception. |
 | PN-0002035 | Funds: liquidated | Finance | Funds: close the advance. | Closed. |
 | PN-0002036 | Funds: closed | Finance | Open the advance. | Closed, with the receipt and the history. |
+| PN-0002051 | Fund transfer: requested | Finance | Funds > To approve: the FT · Fund transfer pill. Filter by type (FT), Download CSV, then approve it. | The list and the counts follow the type filter; the CSV has the Type column and only Fund transfers. |
+| PN-0002052 | Fund transfer: approved (changed from Cash advance) | Finance | Funds > To release: open History on the card. Then Send transfer: reference number, transfer date, bank or e-wallet, account name, last 4 digits. | History shows "changed the type from Cash advance to Fund transfer" with the remarks. More than 4 digits is refused; only the last 4 are stored. |
+| PN-0002053 | Fund transfer: sent | DP 1 | My funds: the FT pill and "sent ... to BPI, DP 1, account ending 4821". Liquidate with a receipt. | Same liquidation as a cash advance. |
+| PN-0002054 | Fund transfer: liquidated | Finance | Funds > Outstanding: close it. | Closed. |
+| PN-0002055 | Fund transfer: closed | Finance | Funds > History. | Closed, with the FT pill. |
+| PN-0002056 | Fund transfer: cash to settle after a return | DP 2, then Finance | My funds and Funds > Outstanding. | "Cash to settle" with the FT pill, as for a cash advance. |
+| PN-0002057 | Fund transfer: overdue notice | DP 2, Finance | Notifications: "(Fund transfer): liquidation overdue". | Same overdue notice and block as PN-0002034. |
 | PN-0002037 | Funds: cash to settle after a return | DP 2, then LA 1 | DP 2: My funds shows Cash to settle. LA 1: confirm the Mortgage papers came back. | The return went ahead; the cash stays DP 2's to liquidate. LA 1 can send again only after confirming the papers. |
 
 ## Admin
@@ -102,7 +112,28 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | PN-0002043 | MyLoans change: status | Admin | MyLoans review: MyLoans says cancelled. Close as cancelled. | The loan file closes as cancelled, with the reason. |
 | PN-0002044 | MyLoans: replaced by a new PN | Admin, then LA 1 | Review shows PN-0009100 replacing it. LA 1: Find PN-0009100 and open it. | PN-0009100 opens linked to PN-0002044 as its replacement; the review lists it as the candidate. |
 | PN-0009100 | The replacement PN (not opened) | LA 1 | Find a loan: PN-0009100. | The preview says it replaces PN-0002044 (same borrower). |
+| (none) | Funds types | Admin | Settings > Funds types: CA · Cash advance and FT · Fund transfer, "Proposed, to be confirmed with Finance". Rename one, then look at an old record. | Saving confirms it (Proposed goes). Old records keep the name they had. |
 | (none) | Test kit | Admin | Settings > Test kit: Take backup, then Reset to start (type RESET), then Restore the backup. | Each step says what it did; the reset first saves an automatic backup. |
+
+## Monitoring
+
+Dates on the Monitoring page are Philippine dates; the default is Last 30 days. Open counts are as of now. Every time includes time on hold.
+
+| PN | Case | Who signs in | What to do | What should happen |
+|---|---|---|---|---|
+| (none) | DP monitor, grouped by branch | Operations Monitor | Sign in: Monitoring opens (no Home, no loan files). DPs tab: look at the groups "Cebu · Quezon City", "Davao", "Makati". Collapse one group. Click "How is this counted?". | DP 1 is Full (more open jobs than 10). DP 2 is Busy, "20% · 8 of 10 in use". DP 3 is "On leave until ..." (0%, not in the average availability). DP 4 is Available, "60% · 2 of 5 in use". Each group has a subtotal. |
+| PN-0002060 | Finished by DP 2 in 5 business days | Operations Monitor | DP 2's row: the averages. | Avg time to accept 0.5 days, processing 2.5 days, total 3 days, each "2 jobs" (with PN-0002061). |
+| PN-0002061 | Finished by DP 2 in 1 business day | Operations Monitor | Click DP 2's row: the drill-down. | Open jobs with age and due date; the PN is plain text (this role cannot open loans). Declined: none; Returned: PN-0002037 and PN-0002056. |
+| PN-0002062 | Finished by DP 4 in 4 business days (Makati) | Admin | Monitoring, DPs: DP 4's averages, then click a PN in the drill-down. | Accept 1 day, processing 3 days, total 4 days, "1 job". Admin can open the loan from the PN. |
+| PN-0002063 | DP 4 overdue | Operations Monitor | DP 4's row: Overdue. Drill-down. | Overdue 1: sent 3 business days ago, not accepted (Accept is due the same day). |
+| PN-0002064 | DP 4 at LTO Makati now | Operations Monitor | LTO offices tab: LTO Makati District Office, then click it. | At the LTO now 1; the drill-down shows the drop off 1 business day ago, pickup "Not yet". |
+| PN-0002065 | Sent to DP 3 before the leave | LA Davao | Open another Davao transaction's Send step (or look at PN-0002065's job). Admin: Settings > Processor capacity. | DP 3 shows "On leave until ..." and cannot be picked. In Monitoring the job counts for DP 3 as Assigned and Overdue (not accepted since yesterday). Admin can switch the leave off or change the day. |
+| PN-0002022 | Active advisory: LTO Quezon City system down (2 hours ago) | LA 1, then DP 1 | LA 1: PN-0002011, Mortgage, Send: pick LTO Quezon City District Office. DP 1: open the PN-0002022 job. | LA 1 sees "LTO Quezon City District Office: System down, reported by DP 1, 2 h ago" under the office; Send still works. DP 1 sees the same in "Process at" and can resolve it (they filed it). |
+| (none) | Advisory older than 24 hours (LTO Cebu, long queue) | Operations Monitor | LTO offices tab: LTO advisories. | "Still active? Please confirm" with "No longer active: resolve". Resolving needs remarks (5 to 500). |
+| (none) | Resolved advisory (LTO Makati, office closed) | Operations Monitor | LTO advisories: "Resolved in ...". | Filed by DP 4, resolved by Operations Monitor with remarks and the time. |
+| (none) | Report an LTO problem | DP 4 | Open the PN-0002064 job (at LTO pickup): Report an LTO problem: Long queue, remarks, Report. | The advisory shows on the job and in Monitoring; Operations Monitor gets a notification. DP 1 and DP 2 get nothing. |
+| (none) | Dates, By day, CSV | Operations Monitor | Dates: Custom, From and To the same day; then By day; then Download CSV. Try a To before From. | The heading shows the dates ("9 Nov to 9 Nov 2026"); By day lists each day per group; the CSV follows the view and filters. A To before From is refused with a message. |
+| (none) | Roles: the Monitoring group | Admin | Settings > Roles and access: open Operations Monitor and Finance. | A "Monitoring" group with five switches. Operations Monitor has the two monitors and "Manage LTO advisories"; Finance has none. |
 
 ## Exceptions
 

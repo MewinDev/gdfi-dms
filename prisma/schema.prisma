@@ -194,6 +194,12 @@ model User {
   isTestUser      Boolean      @default(false)
   /// Email me for non-urgent updates (urgent ones always go while emails are on).
   emailNonUrgent  Boolean      @default(true)
+  /// Processors: their own capacity in open jobs (null = the default in Settings, Processor capacity).
+  dpCapacity      Int?
+  /// Processors: On leave (0% available, shown disabled in the Send panel), optionally until a date.
+  dpOnLeave       Boolean      @default(false)
+  /// The last day of the leave, YYYY-MM-DD in Philippine time (null = until switched off).
+  dpLeaveUntil    String?
   branches        UserBranch[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
@@ -213,6 +219,7 @@ model User {
   holdsRaised        Hold[]               @relation("HoldRaisedBy")
   holdsResumed       Hold[]               @relation("HoldResumedBy")
   holdsOwned         Hold[]               @relation("HoldOwner")
+  ltoAdvisoriesFiled LtoAdvisory[]        @relation("AdvisoryFiledBy")
   exceptionsResolved LoanException[]      @relation("ExceptionResolvedBy")
 }
 
@@ -346,6 +353,7 @@ model LtoOffice {
   suggestedTransportCents Int?
 
   assignments      DpAssignment[]
+  advisories       LtoAdvisory[]
   usualForBranches Branch[]          @relation("BranchUsualLto")
   advanceLines     CashAdvanceLine[]
   createdAt        DateTime          @default(now())
@@ -729,6 +737,9 @@ model DpAssignment {
 
   @@index([dpUserId, status])
   @@index([loanId])
+  @@index([status, endorsedAt])
+  @@index([decidedAt])
+  @@index([returnedAt])
 }
 
 model LoanException {
@@ -1086,6 +1097,18 @@ model CashAdvance {
   releasedById      String?
   releasedAt        DateTime?
   releaseRef        String            @default("")
+  /// Funds type (Settings > Funds types): the id, and a copy of its code and name at request time
+  /// (or when Finance changed it), so a rename never changes old records.
+  fundsTypeId       String            @default("fundstype_ca")
+  fundsType         FundsType         @relation(fields: [fundsTypeId], references: [id])
+  fundsTypeCode     String            @default("CA")
+  fundsTypeName     String            @default("Cash advance")
+  /// Release details for a type that needs them (a fund transfer): the transfer date and the receiving
+  /// account. Only the last 4 digits of the account number are ever stored.
+  transferDate      String            @default("")
+  accountProvider   String            @default("")
+  accountName       String            @default("")
+  accountLast4      String            @default("")
   /// Restarts at each carry-over decision.
   liquidationDueAt  DateTime?
   /// Overdue notice sent (cleared when the due date restarts).
@@ -1130,20 +1153,54 @@ model CashAdvanceLine {
 }
 
 model CashAdvanceTopUp {
-  id            String          @id @default(cuid())
-  lineId        String
-  line          CashAdvanceLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
-  extraCents    Int
-  reason        String
-  status        TopUpStatus     @default(REQUESTED)
-  approvedCents Int?
-  approverId    String?
-  decidedAt     DateTime?
-  decisionNote  String          @default("")
-  releasedCents Int             @default(0)
-  releasedAt    DateTime?
-  requestedById String
-  createdAt     DateTime        @default(now())
+  id              String          @id @default(cuid())
+  lineId          String
+  line            CashAdvanceLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  extraCents      Int
+  reason          String
+  status          TopUpStatus     @default(REQUESTED)
+  approvedCents   Int?
+  approverId      String?
+  decidedAt       DateTime?
+  decisionNote    String          @default("")
+  releasedCents   Int             @default(0)
+  releasedAt      DateTime?
+  requestedById   String
+  /// Follows the parent record's funds type; Finance may change it at release (with remarks).
+  fundsTypeId     String          @default("fundstype_ca")
+  fundsType       FundsType       @relation(fields: [fundsTypeId], references: [id])
+  fundsTypeCode   String          @default("CA")
+  fundsTypeName   String          @default("Cash advance")
+  releaseRef      String          @default("")
+  transferDate    String          @default("")
+  accountProvider String          @default("")
+  accountName     String          @default("")
+  accountLast4    String          @default("")
+  createdAt       DateTime        @default(now())
+}
+
+/// Funds types (Settings > Funds types): Cash advance (CA), Fund transfer (FT). Same funds flow for
+/// every type; the switches only change what Finance enters at release and whether receipts are needed.
+model FundsType {
+  id              String             @id @default(cuid())
+  code            String             @unique
+  name            String
+  sortOrder       Int                @default(0)
+  active          Boolean            @default(true)
+  /// Seeded default not yet confirmed ("Proposed, to be confirmed with Finance"). Cleared when Admin saves the row.
+  proposed        Boolean            @default(false)
+  /// Release needs a transfer reference number and the transfer date.
+  needsReference  Boolean            @default(false)
+  /// Release needs the receiving account: bank or e-wallet, account name, last 4 digits.
+  needsAccount    Boolean            @default(false)
+  /// Must be liquidated with receipts (on for both by default).
+  mustLiquidate   Boolean            @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  advances        CashAdvance[]
+  topUps          CashAdvanceTopUp[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 }
 
 /// A day of work on a transaction (append-only).
@@ -1494,4 +1551,44 @@ model JobStage {
 
   @@unique([assignmentId, code])
   @@index([assignmentId, sortOrder])
+  @@index([kind, finishedAt])
+}
+
+// ---------------------------------------------------------------------------
+// LTO advisories ("maintenance report"): a warning about an LTO office. Never blocks anything.
+// ---------------------------------------------------------------------------
+
+enum LtoAdvisoryType {
+  SYSTEM_DOWN
+  OFFICE_CLOSED
+  LONG_QUEUE
+  OTHER
+}
+
+/// An LTO office problem filed by a processor (or by Operations). Active until resolved (with remarks).
+model LtoAdvisory {
+  id              String          @id @default(cuid())
+  ltoOfficeId     String
+  ltoOffice       LtoOffice       @relation(fields: [ltoOfficeId], references: [id])
+  type            LtoAdvisoryType
+  remarks         String
+  /// When the problem started (default: when it was filed), PHT on screen.
+  startedAt       DateTime
+  filedById       String?
+  filedBy         User?           @relation("AdvisoryFiledBy", fields: [filedById], references: [id])
+  filedByLabel    String
+  /// The job it was filed from (a DP job at an LTO stage), when it was.
+  assignmentId    String?
+  resolvedAt      DateTime?
+  resolvedById    String?
+  resolvedByLabel String?
+  resolveRemarks  String          @default("")
+  /// Last edit by a manager (type or remarks), if any.
+  editedAt        DateTime?
+  editedByLabel   String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([ltoOfficeId, resolvedAt])
+  @@index([resolvedAt])
 }

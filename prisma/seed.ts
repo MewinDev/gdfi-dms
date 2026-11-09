@@ -6,6 +6,7 @@
 import { PrismaClient, ChecklistKind, ExpenseKind, Originality } from "@prisma/client";
 import { ROLE_DEFAULTS } from "../lib/auth/permissions";
 import { DEFAULT_OWN_STAGES, DEFAULT_SYSTEM_STAGES } from "../lib/stages/rules";
+import { SEEDED_FUNDS_TYPES } from "../lib/funds/types";
 
 const prisma = new PrismaClient();
 const withTestUsers = process.env.SEED_TEST_USERS !== "false";
@@ -195,6 +196,8 @@ async function main() {
   for (const [i, [code, name]] of PROBLEM_REASONS.entries()) await prisma.problemReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
   // Hold reasons
   for (const [i, [code, name]] of HOLD_REASONS.entries()) await prisma.holdReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1, proposed: true }, update: {} });
+  // Funds types: Cash advance (CA) and Fund transfer (FT), "Proposed, to be confirmed with Finance" until Admin saves them.
+  for (const t of SEEDED_FUNDS_TYPES) await prisma.fundsType.upsert({ where: { code: t.code }, create: { ...t, proposed: true }, update: {} });
   // Return reasons
   for (const [i, [code, name]] of RETURN_REASONS.entries()) await prisma.returnReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
   // Approval bands: one default band, any amount, Finance.
@@ -228,6 +231,8 @@ async function seedTestUsers() {
     // Test mode only: sign in as a processor or as Finance to walk the funds flow.
     { email: "test.dp@gdfi.ph", name: "Test Document Processor", role: "DP", branches: ["QC", "CEB"], isTestUser: true },
     { email: "test.finance@gdfi.ph", name: "Test Finance", role: "FIN", branches: ["QC", "CEB", "DVO", "MKT"], isTestUser: true },
+    // Operations Monitor (read-only, all branches): the Monitoring page and LTO advisories.
+    { email: "test.monitor@gdfi.ph", name: "Test Operations Monitor", role: "MONITOR", branches: ["QC", "CEB", "DVO", "MKT"], isTestUser: true },
     // Document Processors: no sign-in yet, needed so the LA can assign transactions.
     { email: "dp.rico@gdfi.ph", name: "Rico Dela Cruz", role: "DP", branches: ["QC"], isTestUser: false },
     { email: "dp.joy@gdfi.ph", name: "Joy Navarro", role: "DP", branches: ["QC"], isTestUser: false },

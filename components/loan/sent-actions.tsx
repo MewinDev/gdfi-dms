@@ -1,5 +1,6 @@
 "use client";
 
+import { AdvisoryWarnings } from "@/components/monitoring/advisory-forms";
 import { useActionState, useId, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form-status";
 import { GuardedSheet, SheetCancel } from "@/components/ui/guarded-sheet";
@@ -128,8 +129,10 @@ export function PullBackForm({ transactionId, dpName }: { transactionId: string;
  * Change the LTO office. The LA before the processor accepts (no note); the processor after accepting
  * when the real office differs (a short note is required). Offices show their estimate.
  */
-export function ChangeLtoOfficeForm({ mode, id, offices, currentId }: {
+export function ChangeLtoOfficeForm({ mode, id, offices, currentId, warnings }: {
   mode: "la" | "dp";
+  /** Active LTO advisories by office id (a warning under the choice; never blocking). */
+  warnings?: Record<string, string[]>;
   /** The transaction (LA) or the job (processor). */
   id: string;
   offices: { id: string; name: string; estimate: string | null }[];
@@ -154,8 +157,9 @@ export function ChangeLtoOfficeForm({ mode, id, offices, currentId }: {
             <label htmlFor={`${uid}-o`} className="label">LTO office</label>
             <select id={`${uid}-o`} name="ltoOfficeId" value={office} onChange={(e) => setOffice(e.target.value)} className="input">
               <option value="" disabled>Pick the LTO office</option>
-              {offices.map((o) => <option key={o.id} value={o.id}>{o.name}{o.estimate ? ` (${o.estimate})` : ""}</option>)}
+              {offices.map((o) => <option key={o.id} value={o.id}>{o.name}{o.estimate ? ` (${o.estimate})` : ""}{warnings?.[o.id]?.length ? " (advisory)" : ""}</option>)}
             </select>
+            <AdvisoryWarnings lines={office ? warnings?.[office] : undefined} />
           </div>
           {mode === "dp" && (
             <div>

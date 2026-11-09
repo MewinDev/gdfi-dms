@@ -36,7 +36,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const fixed = FIXED.filter(([email]) => testUsers.some((u) => u.email === email));
   const otherTestUsers = testUsers.filter((u) => !kitAccounts.includes(u) && !FIXED.some(([email]) => email === u.email));
   // Test Document Processor and Test Finance get their own buttons, only when TEST_MODE is on.
-  const QUICK = [["test.dp@gdfi.ph", "Continue as Test Document Processor"], ["test.finance@gdfi.ph", "Continue as Test Finance"]] as const;
+  const QUICK = [["test.dp@gdfi.ph", "Continue as Test Document Processor"], ["test.finance@gdfi.ph", "Continue as Test Finance"], ["test.monitor@gdfi.ph", "Continue as Test Operations Monitor"]] as const;
   const quick = isTestMode() ? QUICK.filter(([email]) => otherTestUsers.some((u) => u.email === email)) : [];
   const dropdownUsers = otherTestUsers.filter((u) => !quick.some(([email]) => email === u.email));
 

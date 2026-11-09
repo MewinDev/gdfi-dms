@@ -118,7 +118,7 @@ test("Full path with PN-0001003: flag, accept, LTO block, request, approve, rele
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
   await page.goto("/funds?tab=release");
   await page.getByLabel(/Reference/).fill("VOUCHER-0001");
-  await page.getByRole("button", { name: "Release", exact: true }).click();
+  await page.getByRole("button", { name: "Release cash", exact: true }).click();
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("RELEASED");
   await page.goto("/funds?tab=outstanding");
   await expect(page.getByText(/balance ₱1,500\.00/)).toBeVisible();

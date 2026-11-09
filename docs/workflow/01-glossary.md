@@ -2,7 +2,7 @@
 
 The key words for the workflow. Use exactly these in screens, emails and reports.
 
-Last updated: 8 November 2026 (PHT)
+Last updated: 9 November 2026 (PHT)
 
 | Word | Meaning | Who | Effect on the clock |
 |---|---|---|---|
@@ -12,6 +12,9 @@ Last updated: 8 November 2026 (PHT)
 | **Locked** | A transaction on hold: readable, but nobody can change it (papers, missing paper, funds, notes, send, pull back, update, change processor, the DP's accept, stages, check and verify, complete, forward, decline, return) until the hold owner resumes it. The refusal says "Locked: on hold by {name} since {date and time}. Only {owner} can resume." Per transaction: the other transactions of the loan keep working. Finance: request, approve, release, top-up and carry-over are refused ("Locked: on hold by {name} since {date and time}."); receipts, cash returns, liquidation, close and exceptions stay allowed. | System | The clock keeps counting |
 | **Transfer hold** | A supervisor or Admin (`holds:transfer`) gives a hold to another active person with the same work role (an LA of the same branch for an LA hold; a DP for a DP hold), with remarks (5 to 500 characters). Admin: any hold; others: holds in their own branches. The new owner becomes the only person who can resume it; the reason, remarks, start and "put on hold by" stay; it stays locked. They never resume it themselves. Recorded as "Hold transferred from {A} to {B} by {C} · remarks · date and time". | Supervisor or Admin | None |
 | **Papers handed over** | On a Return to LA the DP ticks every paper received at Accept as handed over to the LA. The LA confirms them ("Confirm you received the papers"): all received, or one "Not received", which raises a Problem naming it. Send again stays blocked until the papers are confirmed (or none were received). | DP, then LA | None |
+| **Cash advance** | Cash Finance hands to the processor for a job (funds type CA). Finance enters a voucher or reference at release. Liquidated with receipts, as before. | DP asks, Finance approves and releases | None |
+| **Fund transfer** | Money Finance sends to the processor's account instead of cash (funds type FT). Same steps as a cash advance; at release Finance enters the transfer reference number, the transfer date and the receiving account (bank or e-wallet, account name, last 4 digits only). The button says "Send transfer" instead of "Release cash". | DP asks, Finance approves and sends | None |
+| **Funds type** | Which kind of funds a request is: Cash advance or Fund transfer (Settings, Funds types; `fundtypes:manage`). Shown as a small pill with its code and name ("CA · Cash advance", "FT · Fund transfer"). The DP picks it on the request (default Cash advance); Finance can change it before release, with remarks. A record keeps the type's id and a copy of its name, so a rename never changes old records. | DP, Finance | None |
 | **Cash to settle** | Cash released for a job that went back to the LA (declined or returned). The job is no longer the DP's, but the advance stays in the DP's My funds and in Finance's Outstanding list, marked "Cash to settle", until it is liquidated and closed. New cash for a re-send is requested again like any new job. | DP, Finance | None |
 | **Round** | One send to a Document Processor. When the DP declines or returns it, the LA who sent it fixes it and sends it again: round 2, and so on. The processor is chosen again (nothing pre-selected). A "Round 2" chip shows on the transaction for the LA and Admin; the Journey lists every round. | LA, DP | The clock never restarts |
 | **Problem** | A fault (system down, wrong paper, closed office). Red, own timer. Admin may tag "Outside our control". | LA or DP | The clock keeps counting |
@@ -23,6 +26,10 @@ Last updated: 8 November 2026 (PHT)
 | **Forward to branch** | The DP sends the finished package: chooses the branch, then the named LA, and confirms the paper count. Never automatic. | DP | Clock continues |
 | **Package incomplete** | The receiving LA recorded the package Incomplete (or a blocking Other). It goes back to the DP to correct and forward again. | Receiving LA, then DP | Clock continues from acceptance; never paused |
 | **Returned to DP** | The custody record of one paper ticked in Check and verify as received back and complete. | DP | None |
+| **Capacity** | How many open jobs a processor takes (open = assigned + in process + on hold). Default 10 (Settings, Processor capacity); a processor can have their own number. | Admin (`dpcapacity:manage`) | None |
+| **Availability** | Free places over capacity, rounded, with the numbers: "60% · 4 of 10 in use". Available from 40%, Busy from 1% to 39%, Full at 0%, On leave (counts as 0%; shown disabled in the Send panel). Shown on the Monitoring page and beside each processor in the Send panel. | System | None |
+| **Overdue** | An open job whose current step is past its due date (the same late rule as the TAT chips). Counted on the Monitoring page as of now. | System | The clock keeps counting |
+| **LTO advisory** | A warning about an LTO office (System down, Office closed, Long queue, Other) with remarks, filed by a DP from a job at an LTO stage or by Operations. Active until resolved with remarks; shown on the office choice, the DP job and the Monitoring page. Never blocks anything and is not in the Journey. | DP, Operations Monitor | None |
 | **MyLoans change** | MyLoans data differs from the saved copy. Minor changes update silently; the rest need Admin review. | System, Admin | None |
 
 Never use the word "Pending" for these states.

@@ -55,19 +55,19 @@ export const EMAIL_EVENTS = {
     body: "{who} passed {transaction} for {pn} to another processor on {when}.\n{reason}",
   },
   advance_requested: {
-    label: "Cash advance waiting for approval", to: "Approvers for the amount (approval bands)", urgent: true,
-    subject: "{number}: cash advance to approve",
-    body: "{who} asked for {amount} on {when}.\n{reason}\nPlease approve or deny it.",
+    label: "Cash advance or fund transfer waiting for approval", to: "Approvers for the amount (approval bands)", urgent: true,
+    subject: "{number}: {kind} to approve",
+    body: "{who} asked for a {kind} of {amount} on {when}.\n{reason}\nPlease approve or deny it.",
   },
   advance_decided: {
-    label: "Cash advance approved or denied", to: "The processor, and Finance when it needs release", urgent: false,
-    subject: "{number}: {status}",
-    body: "{number} was {status} by {who} on {when}.\n{reason}",
+    label: "Cash advance or fund transfer approved or denied", to: "The processor, and Finance when it needs release", urgent: false,
+    subject: "{number}: {kind} {status}",
+    body: "{number} ({kind}) was {status} by {who} on {when}.\n{reason}",
   },
   advance_released: {
-    label: "Cash advance released", to: "The processor", urgent: true,
-    subject: "{number}: funds released",
-    body: "{amount} was released on {when}.\nLiquidate with receipts or return the cash.",
+    label: "Cash advance released or fund transfer sent", to: "The processor", urgent: true,
+    subject: "{number}: {kind} {status}",
+    body: "{kind}: {amount} was {status} on {when}.\nLiquidate with receipts or return the cash.",
   },
   cash_returned: {
     label: "Cash returned or liquidation submitted", to: "Finance", urgent: false,
@@ -94,6 +94,11 @@ export const EMAIL_EVENTS = {
     subject: "{pn}: MyLoans changed this loan",
     body: "{reason}\nAdmin is reviewing it. Until then the work it reaches waits.\nWhen: {when}.",
   },
+  lto_advisory: {
+    label: "LTO advisory filed or resolved", to: "The Operations Monitors", urgent: true,
+    subject: "LTO advisory {status}: {office}",
+    body: "{office}: {kind}, {status} by {who} on {when}.\n{reason}",
+  },
   tat_digest: {
     label: "Overdue work (daily digest)", to: "Branch Loan Associates and Admin", urgent: false,
     subject: "Overdue work today: {count}",
@@ -102,6 +107,13 @@ export const EMAIL_EVENTS = {
 } as const;
 
 export type EmailEventKey = keyof typeof EMAIL_EVENTS;
+
+/** Values used when a sender gives none: the funds emails read right for older callers too. */
+export const EVENT_DEFAULT_VARS: Partial<Record<EmailEventKey, Partial<Record<string, string>>>> = {
+  advance_released: { status: "released", kind: "Cash advance" },
+  advance_requested: { kind: "Cash advance" },
+  advance_decided: { kind: "Cash advance" },
+};
 export const EMAIL_EVENT_KEYS = Object.keys(EMAIL_EVENTS) as EmailEventKey[];
 export const isEmailEvent = (k: string): k is EmailEventKey => k in EMAIL_EVENTS;
 
@@ -115,8 +127,10 @@ export const PLACEHOLDERS = {
   status: "What happened, for example put on hold",
   amount: "The amount, or \"an amount\" for people who may not see amounts",
   number: "The cash advance number, for example CA-2026-0001",
+  kind: "The funds type, for example Cash advance or Fund transfer",
   count: "How many",
   recipient: "The person's name",
+  office: "The LTO office, for example LTO Quezon City District Office",
 } as const;
 export type Placeholder = keyof typeof PLACEHOLDERS;
 export type EmailVars = Partial<Record<Placeholder, string>>;
@@ -138,7 +152,7 @@ export function fillLines(template: string, vars: EmailVars): string[] {
 /** Sample values for the preview in Settings. */
 export const SAMPLE_VARS: EmailVars = {
   pn: "PN-0001003", transaction: "Notary", who: "Ana Reyes (LA)", when: "Nov 7, 2026, 2:15 PM PHT", reason: "Reason: The ID copy is in the brown envelope.",
-  status: "put on hold", amount: "₱1,500.00", number: "CA-2026-0001", count: "3", recipient: "Joy Navarro",
+  status: "put on hold", amount: "₱1,500.00", number: "CA-2026-0001", kind: "Cash advance", count: "3", recipient: "Joy Navarro", office: "LTO Quezon City District Office",
 };
 
 export const EMAIL_FOOTER = "You get this because of your role in GDFI DMS. This is an automatic message from a mailbox nobody reads.";

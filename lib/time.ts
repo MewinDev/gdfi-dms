@@ -25,14 +25,15 @@ export function noonOfBusinessDay(ymd: string): Date {
 }
 
 /** YYYY-MM-DD for an instant, in the business time zone. */
+const ymdFormatters = new Map<string, Intl.DateTimeFormat>();
 export function businessDate(d: Date, tz: string = APP_TIMEZONE): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-  return parts; // en-CA formats as YYYY-MM-DD
+  // One formatter per time zone (building one is slow; reports call this thousands of times).
+  let f = ymdFormatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" });
+    ymdFormatters.set(tz, f);
+  }
+  return f.format(d); // en-CA formats as YYYY-MM-DD
 }
 
 function parseYmd(ymd: string): Date {

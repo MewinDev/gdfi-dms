@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/basics";
 import { PauseIcon } from "@/components/ui/icons";
 import { holdRowLine } from "@/lib/ui/holds";
 import { FundsChip, TatChip } from "./chips";
+import { FundsTypePill } from "@/components/funds/funds-type-pill";
 
 /** One job: borrower, PN and transaction; TAT chip; funds; the problem in words. The whole row is a link. */
 export function JobRow({ r, showDp = false }: { r: Row; showDp?: boolean }) {
@@ -30,10 +31,12 @@ export function JobRow({ r, showDp = false }: { r: Row; showDp?: boolean }) {
         <span className="mt-1 flex flex-wrap gap-1.5 md:hidden">
           <TatChip data={r.tat} />
           {r.funds !== "NOT_NEEDED" && <FundsChip status={r.funds} />}
+          {r.fundsType && <FundsTypePill code={r.fundsType.code} name={r.fundsType.name} />}
         </span>
       </span>
       <span className="hidden shrink-0 flex-wrap items-center justify-end gap-1.5 md:flex md:max-w-[50%]">
         {r.funds !== "NOT_NEEDED" && <FundsChip status={r.funds} />}
+          {r.fundsType && <FundsTypePill code={r.fundsType.code} name={r.fundsType.name} />}
         <TatChip data={r.tat} />
       </span>
     </Link>

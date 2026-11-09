@@ -5,14 +5,14 @@
 
 export const KIT_EMAIL_DOMAIN = "@example.test";
 
-export type KitAccountKey = "admin" | "finance" | "supervisor" | "la1" | "la2" | "laDavao" | "dp1" | "dp2" | "laMakati" | "laInactive";
+export type KitAccountKey = "admin" | "finance" | "supervisor" | "la1" | "la2" | "laDavao" | "dp1" | "dp2" | "laMakati" | "laInactive" | "dp3" | "dp4" | "monitor";
 
 export interface KitAccount {
   key: KitAccountKey;
   email: string;
   name: string;
   /** Built-in role key, or SUPERVISOR for the kit's own "Branch Supervisor" role. */
-  role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR";
+  role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR";
   branches: ("QC" | "CEB" | "DVO" | "MKT")[];
   inactive?: boolean;
 }
@@ -30,12 +30,16 @@ export const KIT_ACCOUNTS: KitAccount[] = [
   { key: "dp2", email: `kit.dp2${KIT_EMAIL_DOMAIN}`, name: "DP 2", role: "DP", branches: ["QC", "CEB"] },
   { key: "laMakati", email: `kit.la.makati${KIT_EMAIL_DOMAIN}`, name: "Receiving LA Makati", role: "LA", branches: ["MKT"] },
   { key: "laInactive", email: `kit.la.inactive${KIT_EMAIL_DOMAIN}`, name: "Inactive LA", role: "LA", branches: ["QC", "CEB"], inactive: true },
+  // Monitoring: a Davao processor on leave, a Makati processor with her own capacity, and Operations.
+  { key: "dp3", email: `kit.dp3${KIT_EMAIL_DOMAIN}`, name: "DP 3", role: "DP", branches: ["DVO"] },
+  { key: "dp4", email: `kit.dp4${KIT_EMAIL_DOMAIN}`, name: "DP 4", role: "DP", branches: ["MKT"] },
+  { key: "monitor", email: `kit.monitor${KIT_EMAIL_DOMAIN}`, name: "Operations Monitor", role: "MONITOR", branches: ALL },
 ];
 
 /** The kit's own role for the hold transfer: no built-in Branch Supervisor role exists. */
 export const SUPERVISOR_ROLE_NAME = "Branch Supervisor";
 
-export type KitGroup = "Rules" | "Loan Associate" | "Exceptions" | "DP" | "Funds" | "TAT" | "MyLoans" | "Find loan";
+export type KitGroup = "Rules" | "Loan Associate" | "Exceptions" | "DP" | "Funds" | "TAT" | "MyLoans" | "Find loan" | "Monitoring";
 
 export interface KitLoan {
   pn: string;
@@ -109,6 +113,14 @@ export const KIT_LOANS: KitLoan[] = [
   L(2035, "Funds: liquidated", "Funds", { borrower: "Irma Valdez" }),
   L(2036, "Funds: closed", "Funds", { borrower: "Jaime Padilla" }),
   L(2037, "Funds: cash to settle after a return", "Funds", { borrower: "Kristine Uy" }),
+  // Fund transfers (same flow; Finance enters the transfer reference, date and account ending).
+  L(2051, "Fund transfer: requested", "Funds", { borrower: "Leonora Basa" }),
+  L(2052, "Fund transfer: approved (changed from Cash advance)", "Funds", { borrower: "Mario Dizon" }),
+  L(2053, "Fund transfer: sent", "Funds", { borrower: "Nora Aunor Reyes" }),
+  L(2054, "Fund transfer: liquidated", "Funds", { borrower: "Oscar Lopez" }),
+  L(2055, "Fund transfer: closed", "Funds", { borrower: "Perla Ramos" }),
+  L(2056, "Fund transfer: cash to settle after a return", "Funds", { borrower: "Quintin Sy" }),
+  L(2057, "Fund transfer: overdue notice", "Funds", { borrower: "Rosa Villanueva" }),
 
   // TAT (Assign to DP: Day 2 from release).
   L(2038, "TAT on time", "TAT", { borrower: "Lorenzo Cabrera", daysAgo: 0 }),
@@ -123,6 +135,14 @@ export const KIT_LOANS: KitLoan[] = [
   L(2045, "Same borrower: first unit", "MyLoans", { borrower: "Teresita Gonzales", cin: "CIN-KIT-2045" }),
   L(2046, "Same borrower: additional unit (not opened)", "MyLoans", { borrower: "Teresita Gonzales", cin: "CIN-KIT-2045", opened: false }),
   L(2047, "Davao branch (another branch)", "Loan Associate", { branch: "DVO", borrower: "Ulysses Bravo", openedBy: "laDavao" }),
+
+  // Monitoring (finished jobs with different times, an overdue job, a job at the LTO, a processor on leave).
+  L(2060, "Monitoring: finished by DP 2 in 5 business days", "Monitoring", { borrower: "Alma Concepcion" }),
+  L(2061, "Monitoring: finished by DP 2 in 1 business day", "Monitoring", { borrower: "Bernardo Yap" }),
+  L(2062, "Monitoring: finished by DP 4 in 4 business days (Makati)", "Monitoring", { branch: "MKT", borrower: "Clarissa Ong", openedBy: "laMakati" }),
+  L(2063, "Monitoring: DP 4 overdue, not accepted for 3 business days", "Monitoring", { branch: "MKT", borrower: "Dominador Reyes", openedBy: "laMakati" }),
+  L(2064, "Monitoring: DP 4 at LTO Makati now", "Monitoring", { branch: "MKT", borrower: "Estela Marquez", openedBy: "laMakati" }),
+  L(2065, "Monitoring: sent to DP 3 before the leave (Davao)", "Monitoring", { branch: "DVO", borrower: "Florante Diaz", openedBy: "laDavao" }),
 
   // Find loan.
   L(2050, "Not opened yet: open it from Find loan", "Find loan", { borrower: "Vilma Estrada", opened: false }),

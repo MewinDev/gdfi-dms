@@ -7,7 +7,7 @@ import { holdDays, problemDays } from "@/lib/workflow/tat";
 import { jobRows, type JobRow } from "./job-queries";
 import { holdReasonName } from "@/lib/ui/holds";
 
-export interface TatFilters { stage?: string; branch?: string; type?: string; show?: string; outside?: string; from?: string; to?: string }
+export interface TatFilters { stage?: string; branch?: string; type?: string; show?: string; outside?: string; from?: string; to?: string; ftype?: string }
 
 /** Open jobs (and done jobs that ran late) for the TAT and problems report, in the person's loan scope. */
 export async function tatReport(user: CurrentUser, f: TatFilters = {}): Promise<{ rows: JobRow[]; all: JobRow[] }> {
@@ -16,6 +16,8 @@ export async function tatReport(user: CurrentUser, f: TatFilters = {}): Promise<
   const rows = all
     .filter((r) => !f.branch || r.branch === f.branch)
     .filter((r) => !f.type || r.typeCode === f.type)
+    // Funds type: a code (CA, FT), or "none" for jobs without a funds record.
+    .filter((r) => !f.ftype || (f.ftype === "none" ? !r.fundsType : r.fundsType?.code === f.ftype))
     .filter((r) => !f.stage || (f.stage === "-" ? r.tab === "process" && !r.stage : r.stage === f.stage))
     .filter((r) => f.outside !== "1" || r.problem?.outsideControl)
     .filter((r) => {

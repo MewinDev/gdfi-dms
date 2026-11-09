@@ -9,6 +9,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { CheckIcon, CoinsIcon, MapPinIcon, PrinterIcon, TagIcon, UsersIcon, ChecklistIcon, WarningIcon } from "@/components/ui/icons";
 import { initials, plainMessage } from "@/lib/ui/plain";
 import type { MissingPaper } from "@/lib/workflow/checklist";
+import { AVAILABILITY_LABEL, AVAILABILITY_TONE, type AvailabilityStatus } from "@/lib/monitoring/rules";
+import { AdvisoryWarnings } from "@/components/monitoring/advisory-forms";
 
 type Result = { ok: boolean; message?: string; error?: string; field?: string; missing?: string[] } | null;
 
@@ -18,7 +20,10 @@ const kindName = (k: string) => FUND_KINDS.find((x) => x[0] === k)?.[1] ?? k;
 export interface SendOptions {
   loanId: string;
   branches: { id: string; name: string }[];
-  dps: { id: string; name: string; branchIds: string[]; open: number }[];
+  /** Processors with their open jobs (assigned + in process + on hold), capacity and availability. */
+  dps: SendDp[];
+  /** Active LTO advisories by office id: warning lines under the office choice (never blocking). */
+  ltoWarnings?: Record<string, string[]>;
   recommended: Record<string, string | null>;
   ltoOffices: { id: string; name: string }[];
   /** The type needs LTO processing (Settings, Transaction types): the LTO office is asked and required. */
@@ -46,6 +51,25 @@ export interface SendOptions {
   sourceBlock?: string | null;
   /** Returned with papers handed over: "Confirm you received the papers ... first" until the LA confirms them. */
   papersBlock?: string | null;
+}
+
+export interface SendDp {
+  id: string;
+  name: string;
+  branchIds: string[];
+  open: number;
+  capacity?: number;
+  availPct?: number;
+  availStatus?: AvailabilityStatus;
+  /** "On leave until Nov 14, 2026" (shown disabled), or null. */
+  leave?: string | null;
+}
+
+/** The availability chip beside a processor: Available, Busy, Full or On leave (soft colours). */
+export function AvailabilityChip({ d }: { d: SendDp }) {
+  if (!d.availStatus) return null;
+  const tone = AVAILABILITY_TONE[d.availStatus];
+  return <span className={`chip c-${tone} shrink-0`} data-availability={d.availStatus}>{d.availStatus === "ON_LEAVE" ? "On leave" : `${AVAILABILITY_LABEL[d.availStatus]} · ${d.availPct}%`}</span>;
 }
 
 export interface SendPanelProps {
@@ -103,10 +127,10 @@ export function SendPanel(p: SendPanelProps) {
   const branchName = o.branches.find((b) => b.id === branchId)?.name ?? "";
   // Recommended first, then fewest open jobs.
   const dpsHere = useMemo(
-    () => o.dps.filter((d) => d.branchIds.includes(branchId)).sort((a, b) => Number(b.id === rec) - Number(a.id === rec) || a.open - b.open || a.name.localeCompare(b.name)),
+    () => o.dps.filter((d) => d.branchIds.includes(branchId)).sort((a, b) => Number(!!a.leave) - Number(!!b.leave) || Number(b.id === rec) - Number(a.id === rec) || a.open - b.open || a.name.localeCompare(b.name)),
     [o.dps, branchId, rec],
   );
-  const dpId = chosen && dpsHere.some((d) => d.id === chosen) ? chosen : o.resend ? "" : rec ?? "";
+  const dpId = chosen && dpsHere.some((d) => d.id === chosen && !d.leave) ? chosen : o.resend ? "" : rec && !dpsHere.find((d) => d.id === rec)?.leave ? rec : "";
   const dp = o.dps.find((d) => d.id === dpId) ?? null;
   const shown = showAll ? dpsHere : [...dpsHere.slice(0, 3), ...dpsHere.slice(3).filter((d) => d.id === dpId)];
   // From the type's "Needs LTO processing" setting (no type is special-cased).
@@ -114,7 +138,7 @@ export function SendPanel(p: SendPanelProps) {
   const ltoName = o.ltoOffices.find((l) => l.id === lto)?.name ?? null;
 
   const fundsOk = funds === "NO" || (funds === "YES" && kinds.length > 0);
-  const secondHere = o.dps.filter((d) => d.branchIds.includes(secondBranch) && d.id !== dpId);
+  const secondHere = o.dps.filter((d) => d.branchIds.includes(secondBranch) && d.id !== dpId && !d.leave);
   const secondDp = second ? secondHere.find((d) => d.id === secondPick) ?? null : null;
   const secondBranchName = o.branches.find((b) => b.id === secondBranch)?.name ?? "";
   const secondOk = !second || (!!secondDp && secondReason.trim().length >= 3);
@@ -253,19 +277,26 @@ export function SendPanel(p: SendPanelProps) {
             <div role="radiogroup" aria-label={`Processors in ${branchName}`} className="flex flex-col gap-1.5">
               {shown.map((d) => {
                 const on = d.id === dpId;
+                const off = !!d.leave;
                 return (
-                  <label key={d.id} className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border-2 px-3 py-1.5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${on ? "border-navy bg-fill-soft" : "border-line hover:border-navy/40"}`}>
-                    <input type="radio" name="dpUserId" value={d.id} checked={on} onChange={() => setChosen(d.id)} className="sr-only" />
+                  <label key={d.id} data-dp-choice={d.name} aria-disabled={off || undefined} className={`flex min-h-14 items-center gap-3 rounded-xl border-2 px-3 py-1.5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${off ? "cursor-not-allowed border-line bg-fill opacity-70" : on ? "cursor-pointer border-navy bg-fill-soft" : "cursor-pointer border-line hover:border-navy/40"}`}>
+                    <input type="radio" name="dpUserId" value={d.id} checked={on} disabled={off} onChange={() => setChosen(d.id)} className="sr-only" />
                     <span aria-hidden="true" className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${on ? "bg-navy text-white" : "bg-fill-strong text-navy"}`}>{initials(d.name)}</span>
                     <span className="min-w-0 flex-1 leading-snug">
                       <span className="block truncate text-[15px] font-semibold">{d.name}</span>
-                      <span className="block text-[13px] text-ink-2">{branchName} · {d.open} open job{d.open === 1 ? "" : "s"}</span>
+                      <span className="block text-[13px] text-ink-2" data-dp-load>{off ? d.leave : d.capacity ? `${branchName} · ${d.open} of ${d.capacity}` : `${branchName} · ${d.open} open job${d.open === 1 ? "" : "s"}`}</span>
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        <AvailabilityChip d={d} />
+                        {d.id === rec && !off && <span className="chip c-ok shrink-0">Recommended</span>}
+                      </span>
                     </span>
-                    {d.id === rec && <span className="chip c-ok shrink-0">Recommended</span>}
                     <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${on ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.3)]"}`}>{on && <CheckIcon size={12} strokeWidth={3} />}</span>
                   </label>
                 );
               })}
+              {dp?.availStatus === "FULL" && (
+                <p className="rounded-lg border border-act-line bg-act-bg px-3 py-2 text-[13px] text-act-fg" data-full-warning>{dp.name} is full ({dp.open} of {dp.capacity} open jobs). You can still send it; it may take longer.</p>
+              )}
               {dpsHere.length > 3 && (
                 <button type="button" className="inline-flex min-h-11 items-center self-start text-[13px] font-semibold text-navy underline underline-offset-2" onClick={() => setShowAll((x) => !x)} aria-expanded={showAll}>
                   {showAll ? "Show fewer" : `Show all (${dpsHere.length})`}
@@ -297,7 +328,7 @@ export function SendPanel(p: SendPanelProps) {
                 <label htmlFor={`sdp-${uid}`} className="label">Second processor</label>
                 <select id={`sdp-${uid}`} name="secondaryDpUserId" value={secondDp?.id ?? ""} onChange={(e) => setSecondPick(e.target.value)} className="input" aria-invalid={err?.field === "secondaryDpUserId"}>
                   <option value="">{secondHere.length ? "Pick a different processor" : `No other processor in ${secondBranchName}`}</option>
-                  {secondHere.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.open} open job{d.open === 1 ? "" : "s"}</option>)}
+                  {secondHere.map((d) => <option key={d.id} value={d.id}>{d.name} · {d.capacity ? `${d.open} of ${d.capacity}` : `${d.open} open job${d.open === 1 ? "" : "s"}`}</option>)}
                 </select>
               </div>
               <div>
@@ -311,8 +342,9 @@ export function SendPanel(p: SendPanelProps) {
               <label htmlFor={`lto-${uid}`} className="label">LTO office</label>
               <select id={`lto-${uid}`} name="ltoOfficeId" required value={lto} onChange={(e) => setLto(e.target.value)} className="input" aria-invalid={err?.field === "ltoOfficeId"}>
                 <option value="">Pick the LTO office</option>
-                {o.ltoOffices.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {o.ltoOffices.map((l) => <option key={l.id} value={l.id}>{l.name}{o.ltoWarnings?.[l.id]?.length ? " (advisory)" : ""}</option>)}
               </select>
+              <AdvisoryWarnings lines={lto ? o.ltoWarnings?.[lto] : undefined} />
               <p className="help">Where the processor takes it. The approver uses it to judge transport and time.</p>
             </div>
           )}

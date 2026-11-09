@@ -231,7 +231,7 @@ export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: At
         // Each carry-over decision restarts the liquidation due date.
         await tx.cashAdvance.update({ where: { id: l.advanceId }, data: { overdueNotifiedAt: null, liquidationDueAt: liquidationDue(now, dueDays, holidays) } });
       } else {
-        await notify(tx, { email: { event: "advance_requested", to: await bandApprovers(tx, balance), amountCents: balance, vars: { number: l.advance.number, who: a.dpUser.name, reason: `Carry-over: keep the balance for ${a.transaction.type.name} beyond the carry-over limit.` } }, userIds: await fundsApprovers(tx), loanId: a.loanId, title: `${l.advance.number}: carry-over needs approval`, body: `${a.dpUser.name} wants to keep ${(balance / 100).toFixed(2)} for ${a.transaction.type.name} beyond the carry-over limit.`, link: "/funds?tab=approve" });
+        await notify(tx, { email: { event: "advance_requested", to: await bandApprovers(tx, balance), amountCents: balance, vars: { number: l.advance.number, kind: l.advance.fundsTypeName, who: a.dpUser.name, reason: `Carry-over: keep the balance for ${a.transaction.type.name} beyond the carry-over limit.` } }, userIds: await fundsApprovers(tx), loanId: a.loanId, title: `${l.advance.number}: carry-over needs approval`, body: `${a.dpUser.name} wants to keep ${(balance / 100).toFixed(2)} for ${a.transaction.type.name} beyond the carry-over limit.`, link: "/funds?tab=approve" });
       }
     }
   }

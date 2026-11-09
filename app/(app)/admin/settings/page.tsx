@@ -26,7 +26,10 @@ import { kitPanelData } from "@/lib/kit/panel-data";
 import { EmailEventRow, EmailMasterSwitch, EmailTemplateForm, RecentEmails, TestEmailButton } from "@/components/admin/email";
 import { EMAIL_EVENTS, EMAIL_EVENT_KEYS, isEmailEvent, type EmailEventKey } from "@/lib/email/templates";
 import { listOutbox, senderLine, type OutboxFilter } from "@/lib/email/outbox";
-import { fmtDateTime, fmtShort } from "@/lib/time";
+import { businessDate, fmtDate, fmtDateTime, fmtShort } from "@/lib/time";
+import { defaultCapacity, openJobCounts, processors } from "@/lib/services/monitoring";
+import { availability, leaveText } from "@/lib/monitoring/rules";
+import { DefaultCapacityForm, DpCapacityRow } from "@/components/monitoring/capacity-forms";
 import { syncStatus } from "@/lib/services/source-sync";
 import { MyLoansSyncForm, type SyncCardData } from "@/components/admin/myloans-sync";
 import { SettingsModal } from "@/components/admin/settings-modal";
@@ -48,9 +51,11 @@ const AREAS = [
   { key: "processing-stages", title: "Processing stages", desc: "The stages a processor works through, with evidence.", help: "Stages run in order. LTO drop off and LTO pickup are added while a type needs LTO processing; Check and verify is always last. Changes apply to jobs not yet started.", Icon: ListIcon },
   { key: "tat", title: "Turnaround times", desc: "Target business days for each step.", help: "Business days skip weekends and holidays. 0 means the same day.", Icon: ClockIcon },
   { key: "loan-types", title: "Loan types", desc: "Display names for the MyLoans loan types.", help: "The Data Check accepts only New and Renewal. The mortgage thresholds are fixed by Rule 4.", Icon: TagIcon },
+  { key: "dp-capacity", title: "Processor capacity", desc: "How many open jobs a processor takes, and who is on leave.", help: "Used by the Monitoring page and the Send panel. Open jobs = assigned + in process + on hold. A processor on leave is shown disabled in the Send panel and counts as 0% available. A past \"until\" day ends the leave by itself.", Icon: UsersIcon },
   { key: "roles", title: "Roles and access", desc: "What each role may do, and which branches it sees.", help: "Who can do what. A change applies on each person's next click or page.", Icon: UsersIcon },
   { key: "lto", title: "LTO offices", desc: "LTO offices a processor can be sent to.", help: "Add an office or rename it. Nothing is deleted: make it inactive instead.", Icon: MapPinIcon },
   { key: "cash-advance", title: "Cash-advance rules", desc: "Suggested and maximum amounts, carry-over and liquidation.", help: "Used when the processor asks Finance for funds. More than the maximum needs a typed reason.", Icon: CoinsIcon },
+  { key: "funds-types", title: "Funds types", desc: "Cash advance, Fund transfer: what Finance enters at release.", help: "Every type follows the same funds flow. The switches only change what Finance enters at release and whether receipts are needed. A switched-off type stays on old records; a rename never changes old records.", Icon: CoinsIcon },
   { key: "approval-bands", title: "Approval bands", desc: "Who approves a cash advance, by amount.", help: "The band with the highest \"from\" amount at or below the advance decides who approves it.", Icon: UsersIcon },
   { key: "problem-reasons", title: "Problem reasons", desc: "Why a job can be stuck.", help: "Offered when a job has a problem or an attempt was not processed. Nothing is deleted: make it inactive instead.", Icon: AlertIcon },
   { key: "hold-reasons", title: "Hold reasons", desc: "Why a job can wait (not a fault).", help: "Offered when someone puts work on hold (remarks are required for every reason). Add, rename, reorder (Order) or switch off; a switched-off reason stays on old holds, which keep the name they had. The list was seeded as \"Proposed, to be confirmed with the team\"; saving a reason confirms it. The turnaround time keeps counting.", Icon: PauseIcon },
@@ -71,7 +76,7 @@ const importHref = (key: string) => `${BASE}?open=${key}&step=import`;
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string }> }) {
   // Settings opens for anyone who may change at least one area; each card shows only if allowed.
-  const user = await requirePageAny([...SETTINGS_PERMISSIONS, PERMISSIONS.ROLES_MANAGE, PERMISSIONS.TESTDATA_RESET, PERMISSIONS.EMAIL_MANAGE, PERMISSIONS.SOURCE_MANAGE]);
+  const user = await requirePageAny([...SETTINGS_PERMISSIONS, PERMISSIONS.ROLES_MANAGE, PERMISSIONS.TESTDATA_RESET, PERMISSIONS.EMAIL_MANAGE, PERMISSIONS.SOURCE_MANAGE, PERMISSIONS.DP_CAPACITY_MANAGE]);
   const sp = await searchParams;
   const testMode = isTestMode();
   // The Test kit: only on a local test setup, checked on the server (lib/kit/access.ts). Elsewhere its
@@ -166,6 +171,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     "approval-bands": n(bands, "band", "bands"),
     "problem-reasons": n(reasons, "reason", "reasons"),
     "hold-reasons": n(holdReasons, "reason", "reasons"),
+    "funds-types": n(await pair(prisma.fundsType), "type", "types"),
     "return-reasons": n(returnReasons, "reason", "reasons"),
     "processing-stages": n(stages, "stage", "stages"),
     "myloans-sync": await syncStatusLine(),
@@ -173,6 +179,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     system: { main: `${ENV_LABEL[appEnv()]} · ${appEnv() === "production" ? "" : `Simulator ${sim ? "On" : "Off"} · `}MyLoans ${unavailable ? "unavailable (test)" : (process.env.MYLOANS_MODE ?? "mock").toLowerCase() === "live" ? "live" : "mock"}`, extra: "" },
     "test-data": { main: testMode ? "Test mode only" : "Off", extra: "" },
     "test-kit": { main: "Local test setup only", extra: "" },
+    "dp-capacity": await capacityStatusLine(),
     roles: { main: `${roles[0]} role${roles[0] === 1 ? "" : "s"} · ${customRoles} custom`, extra: roles[1] > 0 ? `+${roles[1]} inactive` : "" },
   };
 }
@@ -218,6 +225,9 @@ async function AreaModal({ area, edit, step, testMode, user, filter }: { area: (
   }
 
   if (area.key === "roles") return <RolesArea edit={edit} common={common} />;
+  if (area.key === "dp-capacity") {
+    return <SettingsModal {...common} footer={{ kind: "done" }}><CapacityArea /></SettingsModal>;
+  }
   if (area.key === "system") {
     return <SettingsModal {...common} footer={{ kind: "done" }}><SystemArea /></SettingsModal>;
   }
@@ -273,6 +283,35 @@ async function AreaModal({ area, edit, step, testMode, user, filter }: { area: (
       )}
       <SettingsList rows={list.rows} addHref={list.addLabel ? editHref(area.key, "new") : undefined} addLabel={list.addLabel} filterLabel={list.filterLabel ?? "Find"} statusKind={list.statusKind} />
     </SettingsModal>
+  );
+}
+
+/** "Default 10 open jobs · 1 on leave". */
+async function capacityStatusLine(): Promise<{ main: string; extra: string }> {
+  const today = businessDate(new Date());
+  const people = await processors(today);
+  const away = people.filter((p) => p.onLeave).length;
+  return { main: `Default ${await defaultCapacity()} open jobs`, extra: away ? `${away} on leave` : "" };
+}
+
+/** Settings, Processor capacity: the default, then each processor (own capacity, On leave until). */
+async function CapacityArea() {
+  const today = businessDate(new Date());
+  const [def, people, open] = await Promise.all([defaultCapacity(), processors(today), openJobCounts()]);
+  return (
+    <div className="flex flex-col gap-4" data-capacity-area>
+      <DefaultCapacityForm value={def} />
+      <h3 className="text-[15px] font-bold text-navy">Processors ({people.length})</h3>
+      <ul className="flex flex-col gap-2">
+        {people.map((p) => {
+          const a = availability(p.capacity, open.get(p.id) ?? 0, p.onLeave);
+          return (
+            <DpCapacityRow key={p.id} today={today} defaultCapacity={def}
+              d={{ id: p.id, name: p.name, branches: p.branchNames.join(", ") || "No branch", ownCapacity: p.ownCapacity, capacity: p.capacity, onLeave: p.onLeave, leaveUntil: p.onLeave ? p.leaveUntil : null, open: a.open, availText: p.onLeave ? leaveText(p.leaveUntil, fmtDate) : a.text }} />
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -509,6 +548,27 @@ async function loadListArea(key: AreaKey): Promise<ListArea | null> {
         kind: "holdReason", statusKind: "holdReason", noun: "hold reason", addLabel: "Add reason", filterLabel: "Find a reason",
         // Seeded defaults: "Proposed, to be confirmed with the team" until Admin saves the row.
         rows: rows.map((r) => ({ id: r.id, title: r.name, sub: r.proposed ? `${r.code} · Proposed, to be confirmed with the team` : r.code, inactive: !r.active, href: editHref(key, r.id) })),
+        fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
+      };
+    }
+    case "funds-types": {
+      const rows = await prisma.fundsType.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+      const f = (r?: (typeof rows)[number]): FieldDef[] => [
+        { name: "code", label: "Short code", type: "text", value: r?.code, width: "sm", help: "Shown on the pill, for example CA or FT." },
+        { name: "name", label: "Name", type: "text", value: r?.name, width: "lg" },
+        { name: "sortOrder", label: "Order", type: "number", value: r?.sortOrder ?? rows.length + 1, width: "sm" },
+        { name: "needsReference", label: "Release needs a reference number", type: "checkbox", value: r?.needsReference ?? false, help: "Finance enters the transfer reference number and the transfer date at release." },
+        { name: "needsAccount", label: "Release needs receiving account details", type: "checkbox", value: r?.needsAccount ?? false, help: "Bank or e-wallet, account name and the last 4 digits only (never the full number)." },
+        { name: "mustLiquidate", label: "Must be liquidated with receipts", type: "checkbox", value: r?.mustLiquidate ?? true, help: "On: liquidation, the due date and the overdue notice as for every advance. Off: settled when released." },
+      ];
+      return {
+        kind: "fundsType", statusKind: "fundsType", noun: "funds type", addLabel: "Add type", filterLabel: "Find a type",
+        // Seeded defaults: "Proposed, to be confirmed with Finance" until Admin saves the row.
+        rows: rows.map((r) => ({
+          id: r.id, title: `${r.code} · ${r.name}`,
+          sub: [r.proposed ? "Proposed, to be confirmed with Finance" : "", r.needsReference ? "reference number" : "", r.needsAccount ? "account details" : "", r.mustLiquidate ? "receipts" : "no receipts needed"].filter(Boolean).join(" · "),
+          inactive: !r.active, href: editHref(key, r.id),
+        })),
         fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
       };
     }

@@ -33,7 +33,7 @@ describe("Settings groups", () => {
   it("every card belongs to exactly one group", () => {
     const all = SETTINGS_GROUPS.flatMap((x) => x.cards);
     expect(new Set(all).size).toBe(all.length);
-    expect(all).toHaveLength(20); // + Processing stages, beside Checklist items; + Test kit
+    expect(all).toHaveLength(22); // + Processing stages, beside Checklist items; + Test kit; + Funds types; + Processor capacity
     expect(SETTINGS_GROUPS.find((x) => x.key === "documents")!.cards).toContain("processing-stages");
     // Hold reasons sit beside Problem reasons.
     const docs = SETTINGS_GROUPS.find((x) => x.key === "documents")!.cards as readonly string[];

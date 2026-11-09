@@ -1,5 +1,6 @@
 "use client";
 
+import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useEffect } from "react";
@@ -56,6 +57,8 @@ export interface OpenRow {
   hold?: HoldBrief;
   /** Problem: details and its actions (as before). */
   problem?: { raisedText: string; note: string; outside: boolean; canResolve: boolean; canOutside: boolean };
+  /** The transaction's live funds record type (Cash advance, Fund transfer), when it has one. */
+  funds?: { code: string; name: string } | null;
   /** MyLoans change under review: the review pop-up. */
   review?: ReviewData;
 }
@@ -132,6 +135,7 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
                         <span className={`chip ${k.cls} h-6 px-2 text-xs`}><k.Icon size={13} strokeWidth={2.4} />{r.badge ?? k.word}</span>
                         <a href={r.href.replace(/&focus=[^&]*/, "")} onClick={(e) => { e.preventDefault(); e.stopPropagation(); select(r); }}
                           className="text-[14px] font-semibold text-ink underline-offset-2 hover:underline">{r.txnName}</a>
+                        {r.funds && <FundsTypePill code={r.funds.code} name={r.funds.name} />}
                       </span>
                       <span className="text-[13px] font-semibold leading-snug text-ink" data-open-reason>{r.reason}</span>
                       {r.kind === "hold" && r.remarks && <span className="line-clamp-1 break-words text-[13px] leading-snug text-ink" title={r.remarks} data-open-remarks>“{r.remarks}”</span>}

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { activeAdvisories, advisoryWarnings } from "@/lib/services/lto-advisories";
+import { ReportLtoProblemButton, ResolveAdvisoryButton } from "@/components/monitoring/advisory-forms";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -10,6 +12,7 @@ import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { businessDate, fmtShort } from "@/lib/time";
 import { EXPENSE_LABEL, peso, type ExpenseKindKey } from "@/lib/funds/rules";
 import { doneTat, openHold, openProblem, txnFunds, txnTat } from "@/lib/jobs/view";
+import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { problemDays } from "@/lib/workflow/tat";
 import { dayText, txnName } from "@/lib/ui/plain";
 import { PageTop } from "@/components/loan/page-top";
@@ -28,7 +31,7 @@ import { sentBackKind } from "@/lib/ui/rounds";
 import { ReturnToLaForm } from "@/components/jobs/return-to-la-form";
 import { ChangeLtoOfficeForm } from "@/components/loan/sent-actions";
 import { ltoEstimate } from "@/lib/ui/lto";
-import { MapPinIcon } from "@/components/ui/icons";
+import { MapPinIcon, WarningIcon } from "@/components/ui/icons";
 import { updatesBeforeAccept } from "@/lib/services/sent-changes";
 import { LiveAnnouncer, LiveToast } from "@/components/ui/live-toast";
 import { receiverWhere } from "@/lib/services/jobs";
@@ -122,6 +125,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const atLto = t.type.needsLto || !!a.ltoOffice;
   const canChangeLto = atLto && working && !a.processing;
   const ltoOffices = canChangeLto ? (await prisma.ltoOffice.findMany({ where: { active: true }, orderBy: { name: "asc" } })).map((o) => ({ id: o.id, name: o.name, estimate: ltoEstimate(o) })) : [];
+  // LTO advisories: a warning on the job that uses the office (never blocks anything), and the
+  // processor's "Report an LTO problem" while the job is at an LTO stage.
+  const ltoWarnings = atLto ? await advisoryWarnings(now) : {};
+  const officeAdvisories = a.ltoOfficeId ? await activeAdvisories(user, [a.ltoOfficeId], now) : [];
   // What the LA changed since sending (shown to the processor until they accept).
   const updates = a.status === "PENDING_ACCEPTANCE" ? await updatesBeforeAccept(a) : null;
   const docs = t.documents.filter((d) => d.documentId);
@@ -143,6 +150,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     ? verifiablePapers(t.documents).map((d) => ({ id: d.id, label: d.label, original: d.originality === "ORIGINAL", tickedText: ticks[d.id] ? `${fmtShort(new Date(ticks[d.id].at))} · ${ticks[d.id].by}` : null }))
     : [];
   const stageBlocked = cur?.kind === "LTO_DROP" && cur.status === "LATER" ? blocked : undefined;
+  const canReportLto = working && !!a.ltoOffice && (cur?.kind === "LTO_DROP" || cur?.kind === "LTO_PICKUP") && (can(user, PERMISSIONS.LTO_REPORTS_CREATE) || can(user, PERMISSIONS.LTO_REPORTS_MANAGE));
   // Forward to branch: every active branch with a Loan Associate who may receive papers. Nothing pre-selected.
   const forwardBranches: ForwardBranch[] = working && a.processing
     ? await (async () => {
@@ -187,12 +195,28 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       </section>
 
       {atLto && (
-        <section aria-labelledby="lto-h" className="flex flex-col gap-1 rounded-xl border border-line-soft bg-select-bg p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-4" data-process-at>
+        <section aria-labelledby="lto-h" className="flex flex-col gap-1 rounded-xl border border-line-soft bg-select-bg p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 sm:p-4" data-process-at>
           <div className="min-w-0 flex-1">
             <h2 id="lto-h" className="flex items-center gap-2 text-[17px] font-bold text-navy"><MapPinIcon size={18} /> Process at: {a.ltoOffice?.name ?? "no office chosen yet"}</h2>
             <p className="text-[13px] text-ink-2">{a.ltoOffice ? `${a.ltoOffice.city ? `${a.ltoOffice.city} · ` : ""}${ltoEstimate(a.ltoOffice) ?? "No estimate yet"}` : "Ask the Loan Associate which office."}</p>
           </div>
-          {canChangeLto && <div className="shrink-0"><ChangeLtoOfficeForm mode="dp" id={a.id} offices={ltoOffices} currentId={a.ltoOfficeId} /></div>}
+          {(canChangeLto || canReportLto) && (
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {canReportLto && <ReportLtoProblemButton assignmentId={a.id} officeName={a.ltoOffice!.name} />}
+              {canChangeLto && <ChangeLtoOfficeForm mode="dp" id={a.id} offices={ltoOffices} currentId={a.ltoOfficeId} warnings={ltoWarnings} />}
+            </div>
+          )}
+          {officeAdvisories.length > 0 && (
+            <div className="basis-full sm:mt-1" data-job-advisories>
+              {officeAdvisories.map((x) => (
+                <div key={x.id} className="mt-1.5 flex flex-wrap items-center gap-2 rounded-lg border border-act-line bg-act-bg px-3 py-2 text-[13px] text-act-fg" data-advisory-warning>
+                  <WarningIcon size={16} /> <span className="min-w-0 flex-1">{x.warning}. {x.remarks}</span>
+                  {x.prompt && <span className="font-semibold" data-stale-prompt>{x.prompt}</span>}
+                  {x.mayResolve && <ResolveAdvisoryButton id={x.id} summary={x.warning} label={x.prompt ? "No longer active: resolve" : "Resolve"} />}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -397,7 +421,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <h2 id="funds" className="text-lg font-bold text-navy">Funds</h2>
           <ul className="mt-2 flex flex-col gap-1 text-[15px]">
             {t.advanceLines.map((l) => (
-              <li key={l.id}>{l.advance.number} · {EXPENSE_LABEL[l.kind as ExpenseKindKey]} · asked {peso(l.requestedCents)}{l.releasedCents ? ` · released ${peso(l.releasedCents)}` : ""}{l.denied ? " · not approved" : ""}</li>
+              <li key={l.id} className="flex flex-wrap items-center gap-2"><FundsTypePill code={l.advance.fundsTypeCode} name={l.advance.fundsTypeName} /><span>{l.advance.number} · {EXPENSE_LABEL[l.kind as ExpenseKindKey]} · asked {peso(l.requestedCents)}{l.releasedCents ? ` · ${l.advance.transferDate || l.advance.accountLast4 ? "sent" : "released"} ${peso(l.releasedCents)}` : ""}{l.denied ? " · not approved" : ""}</span></li>
             ))}
           </ul>
         </section>

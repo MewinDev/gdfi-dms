@@ -22,6 +22,13 @@ export interface TxnLike {
 export const txnFunds = (t: Pick<TxnLike, "fundsNeeded" | "advanceLines">): FundsStatus =>
   fundsStatus(t.fundsNeeded, t.advanceLines.map((l) => ({ denied: l.denied, releasedCents: l.releasedCents, advanceStatus: l.advance.status })));
 
+/** The funds type of the transaction's live funds record (the latest one not denied or cancelled), or null. */
+export function txnFundsType(t: { advanceLines: { denied: boolean; advance: { status: string; fundsTypeCode?: string; fundsTypeName?: string } }[] }): { code: string; name: string } | null {
+  const live = t.advanceLines.filter((l) => !l.denied && !["DENIED", "CANCELLED"].includes(l.advance.status) && l.advance.fundsTypeCode);
+  const l = live.at(-1);
+  return l ? { code: l.advance.fundsTypeCode!, name: l.advance.fundsTypeName ?? l.advance.fundsTypeCode! } : null;
+}
+
 export const openProblem = <P extends { resolvedAt: Date | null }>(problems: P[]): P | null => problems.find((p) => !p.resolvedAt) ?? null;
 export const openHold = <H extends { resumedAt: Date | null }>(holds: H[] | undefined): H | null => holds?.find((h) => !h.resumedAt) ?? null;
 
