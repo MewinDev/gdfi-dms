@@ -70,6 +70,7 @@ export function leaveText(until: string | null, fmt: (ymd: string) => string): s
 export const PRESETS = [
   ["today", "Today"],
   ["yesterday", "Yesterday"],
+  ["week", "This week"],
   ["7d", "Last 7 days"],
   ["30d", "Last 30 days"],
   ["month", "This month"],
@@ -106,10 +107,12 @@ export function rangeLabel(from: string, to: string): string {
   return fy === ty ? `${dm(from)} to ${dm(to)} ${ty}` : `${dm(from)} ${fy} to ${dm(to)} ${ty}`;
 }
 
-function presetRange(p: Exclude<Preset, "custom">, today: string): [string, string] {
+/** The From and To of a preset (Philippine dates). "This week" is Monday to today. */
+export function presetRange(p: Exclude<Preset, "custom">, today: string): [string, string] {
   switch (p) {
     case "today": return [today, today];
     case "yesterday": return [ymdAdd(today, -1), ymdAdd(today, -1)];
+    case "week": return [weekStart(today), today];
     case "7d": return [ymdAdd(today, -6), today];
     case "30d": return [ymdAdd(today, -29), today];
     case "month": return [`${today.slice(0, 7)}-01`, today];
@@ -217,3 +220,44 @@ export const daysText = (n: number | null) => (n === null ? "-" : `${Number.isIn
 
 /** Kept for symmetry with the TAT helpers: the due date of a target from a start date. */
 export const dueDate = (startYmd: string, target: number, holidays: ReadonlySet<string>) => addBusinessDays(startYmd, target, holidays);
+
+// ---------------------------------------------------------------------------
+// The page's look (design only: which tint, which subtotal, the date picker's words)
+// ---------------------------------------------------------------------------
+
+/** "30 days, 22 business days" (both days included; weekends and holidays are not business days). */
+export function rangeSummary(from: string, to: string, holidays: ReadonlySet<string>): string {
+  const days = ymdDiff(from, to) + 1;
+  let biz = 0;
+  for (let d = from; d <= to; d = ymdAdd(d, 1)) if (isBusinessDay(d, holidays)) biz++;
+  return `${days} day${days === 1 ? "" : "s"}, ${biz} business day${biz === 1 ? "" : "s"}`;
+}
+
+/** The URL part of a range: a preset name, or Custom with From and To (the format parseRange reads). */
+export function rangeParams(r: { preset: Preset; from: string; to: string }): Record<string, string> {
+  return r.preset === "custom" ? { range: "custom", from: r.from, to: r.to } : r.preset === DEFAULT_PRESET ? {} : { range: r.preset };
+}
+
+/** Which preset a From and To match today (Custom when none). The picker shows it as chosen. */
+export function presetOf(from: string, to: string, today: string): Preset {
+  for (const [k] of PRESETS) if (k !== "custom" && presetRange(k, today).join() === `${from},${to}`) return k;
+  return "custom";
+}
+
+/** By day shows weeks over this many days: the one limit the date picker mentions. */
+export const rangeNote = (days: number) => (days > MAX_DAY_ROWS ? `Over ${MAX_DAY_ROWS} days, By day shows one row per week.` : null);
+
+/** A count's tint: zero is neutral grey; above zero, Overdue is red and On hold amber; the rest normal. */
+export type CountTone = "zero" | "plain" | "bad" | "hold";
+export function countTone(n: number, kind: "overdue" | "onHold" | "plain" = "plain"): CountTone {
+  if (!n) return "zero";
+  return kind === "overdue" ? "bad" : kind === "onHold" ? "hold" : "plain";
+}
+
+/** A subtotal line is shown only when its group has more than one processor (one row needs no subtotal). */
+export const showSubtotal = (rows: number) => rows > 1;
+
+/** The usage bar: jobs in use out of capacity (0 to 100), tinted by the availability status. */
+export function usageBar(a: Availability): { pct: number; tone: "ok" | "act" | "bad" | "mute" } {
+  return { pct: a.status === "ON_LEAVE" ? 0 : Math.min(100, Math.round((a.open / a.capacity) * 100)), tone: AVAILABILITY_TONE[a.status] };
+}

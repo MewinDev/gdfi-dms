@@ -20,6 +20,8 @@ async function signInAs(page: Page, who: keyof typeof BUTTONS) {
 }
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
 const wide = (page: Page) => width(page) >= 1024;
+/** The layout shown at this width: the full table (1024+), the compact table (640 to 1023) or the cards. */
+const layout = (page: Page, tab: "dp" | "lto") => page.locator(width(page) >= 1024 ? `[data-${tab}-table]` : width(page) >= 640 ? `[data-${tab}-compact]` : `[data-${tab}-cards]`);
 async function shot(page: Page, name: string, fullPage = true) {
   if (![1440, 390].includes(width(page))) return; // 1440 and 390 only
   await page.waitForTimeout(300);
@@ -125,7 +127,7 @@ test("DP monitor: grouped by area then branch, availability, drill-down without 
   const tile = (label: string) => page.locator(`[data-tile="${label}"]`);
   await expect(tile("Assigned")).toContainText("2");
   await expect(tile("Overdue")).toContainText("1");
-  const rows = wide(page) ? page.locator("[data-dp-table]") : page.locator("[data-dp-cards]");
+  const rows = layout(page, "dp");
   const row = (name: string) => rows.locator(`[data-dp-row="${name}"]`);
   await expect(row("Joy Navarro")).toContainText("Full");
   await expect(row("Joy Navarro")).toContainText("2 of 2 in use");
@@ -150,7 +152,7 @@ test("DP monitor: grouped by area then branch, availability, drill-down without 
   await rows.locator('[data-group-toggle="LUZON 1 (NGMA + RIZAL)"]').first().click();
 
   // Drill-down: open jobs; the PN is plain text (no loan permission).
-  await (wide(page) ? row("Test Document Processor").getByRole("link") : row("Test Document Processor")).click();
+  await row("Test Document Processor").getByRole("link", { name: /Test Document Processor/ }).click();
   const sheet = page.getByRole("dialog", { name: "Test Document Processor" });
   await expect(sheet.locator('[data-drill-row="GD1012026908002"]').first()).toContainText("Overdue");
   await expect(sheet.getByRole("link", { name: /GD10120269080/ })).toHaveCount(0);
@@ -159,24 +161,25 @@ test("DP monitor: grouped by area then branch, availability, drill-down without 
   await sheet.getByRole("button", { name: "Close" }).click();
   await expect(sheet).toBeHidden();
 
-  // Custom dates: the heading follows; To before From is refused.
-  await page.locator("#mf-range").selectOption("custom");
+  // Custom dates (the date range picker: today twice): the heading follows; To before From is refused.
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
-  await page.locator("#mf-from").fill(today);
-  await page.locator("#mf-to").fill(today);
-  await page.getByRole("button", { name: "Apply" }).click();
+  await page.locator("[data-date-range-button]").click();
+  const picker = page.getByRole("dialog", { name: "Date range" });
+  await picker.locator(`[data-day="${today}"]`).first().click();
+  await picker.locator(`[data-day="${today}"]`).first().click();
+  await picker.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(new RegExp(`from=${today}`));
   const d = new Date(`${today}T12:00:00+08:00`);
   const label = `${d.getUTCDate()} ${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} to ${d.getUTCDate()} ${d.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${d.getUTCFullYear()}`;
   await expect(page.getByRole("heading", { level: 1 })).toContainText(label);
   await page.goto(`/monitoring?tab=dp&range=custom&from=${today}&to=2026-01-01`);
-  await expect(page.getByRole("alert")).toContainText("\"To\" cannot be before \"From\".");
+  await expect(page.getByRole("alert").filter({ hasText: "cannot be before" })).toContainText("\"To\" cannot be before \"From\".");
 
   // The Area filter: processors with any branch in the area (Ben at Alaminos), not the others.
   const l3 = await db.area.findFirstOrThrow({ where: { name: "LUZON 3 NORTH" } });
   await page.goto(`/monitoring?tab=dp&area=${l3.id}`);
   await expect(page.locator("#mf-area")).toHaveValue(l3.id);
-  const areaRows = wide(page) ? page.locator("[data-dp-table]") : page.locator("[data-dp-cards]");
+  const areaRows = layout(page, "dp");
   await expect(areaRows.locator('[data-dp-row="Ben Ocampo"]')).toBeVisible();
   await expect(areaRows.locator('[data-dp-row="Joy Navarro"]')).toHaveCount(0);
 
@@ -195,17 +198,18 @@ test("LTO monitor: areas, advisories with the 24-hour prompt, drill-down, no amo
   await expect(page.locator('[data-tile="Jobs at an LTO now"]')).toContainText("1");
   await expect(page.locator('[data-tile="Offices with an active advisory"]')).toContainText("2");
   await expect(page.getByRole("columnheader", { name: "Estimated travel cash" })).toHaveCount(0);
-  await expect(page.getByText(/^Travel cash: /)).toHaveCount(0);
-  const rows = wide(page) ? page.locator("[data-lto-table]") : page.locator("[data-lto-cards]");
+  await expect(page.locator("dt", { hasText: "Estimated travel cash" })).toHaveCount(0);
+  const rows = layout(page, "lto");
   const qc = rows.locator('[data-lto-row="LTO Quezon City District Office"]');
   await expect(qc).toContainText("Advisory");
   if (wide(page)) await expect(qc).toContainText("8 km");
+  else await expect(qc.locator("dd").filter({ hasText: "8 km" })).toHaveCount(1); // behind Details / More
   await expect(page.locator("[data-stale-prompt]")).toHaveText("Still active? Please confirm");
   await expect(page.locator("[data-advisory-resolved]")).toHaveCount(1);
   await noSideways(page);
   await shot(page, "lto-monitor");
 
-  await (wide(page) ? qc.getByRole("link") : qc).click();
+  await qc.getByRole("link", { name: /LTO Quezon City District Office/ }).click();
   const sheet = page.getByRole("dialog", { name: "LTO Quezon City District Office" });
   await expect(sheet.getByRole("region", { name: "At the LTO now" })).toContainText("GD1012026908001");
   await expect(sheet.getByRole("region", { name: "Picked up in the period" })).toContainText("2 business days");
@@ -233,7 +237,7 @@ test("Refusals: no monitor permission means not found and a refused CSV; Admin s
   await signInAs(page, "admin");
   await page.goto("/monitoring?tab=lto");
   if (wide(page)) await expect(page.getByRole("columnheader", { name: "Estimated travel cash" })).toBeVisible();
-  else await expect(page.getByText(/^Travel cash: .+ estimated/).first()).toBeVisible();
+  else await expect(layout(page, "lto").locator("dt", { hasText: "Estimated travel cash" }).first()).toBeAttached();
   await page.goto("/monitoring?tab=dp&open=1&dp=" + (await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } })).id);
   await expect(page.getByRole("dialog").getByRole("link", { name: "GD1012026908001" })).toBeVisible();
 });
@@ -307,4 +311,161 @@ test("Roles: the Monitoring group; Operations Monitor has the two monitors and M
   await page.goto("/admin/settings?open=dp-capacity");
   await expect(page.locator("[data-default-capacity]")).toBeVisible();
   await expect(page.locator('[data-dp-capacity="Rico Dela Cruz"]')).toContainText("On leave until");
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Design pass: the date range, the three layouts, the states. Screenshots at 1440, 820 and 390:
+// docs/screenshots/monitoring-design/.
+// ---------------------------------------------------------------------------------------------------
+const DESIGN = "docs/screenshots/monitoring-design";
+mkdirSync(DESIGN, { recursive: true });
+async function dshot(page: Page, name: string, fullPage = false) {
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${DESIGN}/${name}-${width(page)}.png`, fullPage });
+}
+const phtToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
+const ymdBack = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) - n * DAY).toISOString().slice(0, 10);
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const words = (from: string, to: string) => {
+  const dm = (y: string) => `${Number(y.slice(8, 10))} ${MON[Number(y.slice(5, 7)) - 1]}`;
+  return from.slice(0, 4) === to.slice(0, 4) ? `${dm(from)} to ${dm(to)} ${to.slice(0, 4)}` : `${dm(from)} ${from.slice(0, 4)} to ${dm(to)} ${to.slice(0, 4)}`;
+};
+const focusedDay = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.day ?? null);
+
+test("Design: the date range: keyboard open and close, a preset, then a custom range; title, CSV and table follow", async ({ page }) => {
+  await signInAs(page, "monitor");
+  await page.goto("/monitoring?tab=dp");
+  const button = page.locator("[data-date-range-button]");
+  await expect(button).toContainText(words(ymdBack(phtToday(), 29), phtToday()));
+  // Keyboard: Enter opens with focus on a day; arrow keys move; Esc closes and focus goes back to the button.
+  await button.focus();
+  await page.keyboard.press("Enter");
+  const picker = page.getByRole("dialog", { name: "Date range" });
+  await expect(picker).toBeVisible();
+  await expect.poll(() => focusedDay(page)).toBe(phtToday());
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(() => focusedDay(page)).toBe(ymdBack(phtToday(), 1));
+  await page.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+  await expect(button).toBeFocused();
+
+  // A preset.
+  await button.click();
+  await expect(picker.locator('[data-preset="30d"]')).toHaveAttribute("aria-pressed", "true");
+  await dshot(page, "date-range-open");
+  await picker.locator('[data-preset="7d"]').click();
+  await expect(picker.locator("[data-range-summary]")).toContainText("7 days,");
+  await picker.getByRole("button", { name: "Apply" }).click();
+  await expect(page).toHaveURL(/range=7d/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Monitoring: ${words(ymdBack(phtToday(), 6), phtToday())}`);
+  expect(await page.locator("[data-csv]").first().getAttribute("href")).toContain("range=7d");
+  await expect(page.locator("[data-reset]")).toHaveCount(1); // Reset: only when a filter is not at its default
+
+  // Custom: two days picked (4 days back to today); the count of days and business days shows.
+  const from = ymdBack(phtToday(), 4);
+  await button.click();
+  if (!(await picker.locator(`[data-day="${from}"]`).isVisible())) await picker.getByRole("button", { name: "Previous month" }).click();
+  await picker.locator(`[data-day="${from}"]`).click();
+  await expect(picker.locator('[data-preset="custom"]')).toHaveAttribute("aria-pressed", "true");
+  if (!(await picker.locator(`[data-day="${phtToday()}"]`).isVisible())) await picker.getByRole("button", { name: "Next month" }).click();
+  await picker.locator(`[data-day="${phtToday()}"]`).click();
+  await expect(picker.locator("[data-range-summary]")).toContainText(/5 days, \d business days?/);
+  await dshot(page, "date-range-custom");
+  await picker.getByRole("button", { name: "Apply" }).click();
+  await expect(page).toHaveURL(new RegExp(`range=custom&from=${from}&to=${phtToday()}`));
+  const label = words(from, phtToday());
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Monitoring: ${label}`);
+  const csv = (await page.locator("[data-csv]").first().getAttribute("href"))!;
+  expect(csv).toContain(`from=${from}`);
+  expect(await (await page.request.get(csv)).text()).toContain(label);
+  await expect(layout(page, "dp").locator('[data-dp-row="Test Document Processor"]')).toBeVisible();
+  // A refresh keeps it (it is in the URL); By day follows the same range.
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Monitoring: ${label}`);
+  await page.getByRole("link", { name: "By day" }).click();
+  await expect(page).toHaveURL(new RegExp(`from=${from}`));
+  await expect(page.locator("[data-day-row]").filter({ visible: true }).first()).toBeVisible();
+});
+
+test("Design: no sideways scroll on both tabs and By day; tiles, tints and the screenshots", async ({ page }) => {
+  await signInAs(page, "monitor");
+  await page.goto("/monitoring?tab=dp");
+  await expect(page.locator('[data-tile="Overdue"]')).toHaveAttribute("data-tint", "bad");
+  await expect(page.locator('[data-tile="Active DPs"]')).toHaveAttribute("data-tint", "none");
+  // Zero is neutral grey: Joy has nothing overdue.
+  await expect(layout(page, "dp").locator('[data-dp-row="Joy Navarro"] [data-tone="zero"]').filter({ visible: true }).first()).toBeVisible();
+  await noSideways(page);
+  await dshot(page, "dp-totals", true);
+  await page.goto("/monitoring?tab=dp&view=day&range=7d");
+  await expect(page.locator('[data-by-day="day"]')).toBeVisible();
+  await noSideways(page);
+  await dshot(page, "dp-by-day", true);
+  await page.goto("/monitoring?tab=lto");
+  await expect(layout(page, "lto").locator('[data-lto-row="LTO Quezon City District Office"]')).toContainText("Advisory");
+  await noSideways(page);
+  await dshot(page, "lto-totals", true);
+  await page.goto("/monitoring?tab=lto&view=day");
+  await noSideways(page);
+});
+
+test("Design: 820 Details and 390 More open inline; the 390 card shows the same numbers as the 1440 table", async ({ page }) => {
+  await signInAs(page, "monitor");
+  const w = width(page);
+  // The main numbers of one processor in the 1440 table.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/monitoring?tab=dp");
+  const cells = page.locator('[data-dp-table] [data-dp-row="Test Document Processor"] td');
+  const fromTable: string[] = [];
+  for (let i = 0; i < 4; i++) fromTable.push((await cells.nth(i).innerText()).trim());
+  const declined = (await cells.nth(4).innerText()).trim();
+
+  await page.setViewportSize({ width: 820, height: 1180 });
+  const compact = page.locator('[data-dp-compact] [data-dp-row="Test Document Processor"]');
+  await expect(compact).toBeVisible();
+  for (let i = 0; i < 4; i++) await expect(compact.locator("td").nth(i)).toHaveText(fromTable[i]);
+  await compact.locator("[data-details] summary").click();
+  await expect(compact.locator("[data-details] dl")).toBeVisible();
+  await expect(compact.locator("[data-details] dl")).toContainText("Avg time to accept");
+  await expect(compact.locator("[data-details] dd").first()).toHaveText(declined);
+  await noSideways(page);
+  if (w === 820) await dshot(page, "details-open");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const card = page.locator('[data-dp-cards] [data-dp-row="Test Document Processor"]');
+  await expect(card).toBeVisible();
+  for (const [i, k] of ["Assigned", "In process", "On hold", "Overdue"].entries()) await expect(card.locator(`[data-count="${k}"] dd`)).toHaveText(fromTable[i]);
+  await expect(card).toContainText("2 of 10 in use");
+  await card.locator("[data-more] summary").click();
+  await expect(card.locator("[data-more] dl")).toContainText("Avg total");
+  await expect(card.locator("[data-more] dd").first()).toHaveText(declined);
+  await noSideways(page);
+  if (w === 390) { await card.scrollIntoViewIfNeeded(); await dshot(page, "card-more-open"); }
+
+  // 390: the filters collapse into one Filters button (with a count) and a bottom sheet; the date range stays next to it.
+  await expect(page.locator("#mf-area")).toBeHidden();
+  await expect(page.locator("[data-date-range-button]")).toBeVisible();
+  const l1 = await db.area.findFirstOrThrow({ where: { name: "LUZON 1 (NGMA + RIZAL)" } });
+  await page.goto(`/monitoring?tab=dp&area=${l1.id}`);
+  await expect(page.locator("[data-filter-count]")).toHaveText(/^1/);
+  await page.locator("[data-filters-button]").click();
+  const sheet = page.getByRole("dialog", { name: "Filters" });
+  await expect(sheet.getByLabel("Area")).toHaveValue(l1.id);
+  await expect(sheet.getByRole("button", { name: "Apply" })).toBeVisible();
+  if (w === 390) await dshot(page, "filters-sheet");
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await page.setViewportSize({ width: w, height: w === 1440 ? 900 : w === 820 ? 1180 : 844 });
+});
+
+test("Design: an empty period: a calm message and Last 30 days", async ({ page }) => {
+  await signInAs(page, "monitor");
+  await page.goto("/monitoring?tab=dp&range=custom&from=2026-01-05&to=2026-01-06");
+  const empty = page.locator("[data-empty]").first();
+  await expect(empty).toContainText("No jobs in this period. Try a wider date range.");
+  await noSideways(page);
+  await dshot(page, "empty-state");
+  await empty.getByRole("link", { name: "Last 30 days" }).click();
+  await expect(page).not.toHaveURL(/from=2026-01-05/);
+  await expect(page.locator("[data-date-range-button]")).toContainText(words(ymdBack(phtToday(), 29), phtToday()));
 });
