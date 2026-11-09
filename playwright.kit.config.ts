@@ -15,6 +15,7 @@ export default defineConfig({
   use: { baseURL: process.env.KIT_BASE_URL ?? "http://localhost:3000", trace: "retain-on-failure" },
   projects: [
     { name: "desktop-1440", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    { name: "tablet-820", use: { ...devices["Desktop Chrome"], viewport: { width: 820, height: 1180 } } },
     { name: "phone-390", use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } } },
   ],
 });

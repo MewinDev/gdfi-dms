@@ -1,250 +1,137 @@
 # Manual Test Kit
 
-Last updated: 9 November 2026 (PHT)
+Last updated: 10 November 2026 (PHT)
 
-Test GDFI DMS by hand from a clean start, then put everything back. The kit fills your own database (`gdfi_dms`) with sample accounts and one sample loan per case. The automated tests use another database (`gdfi_dms_test`), so they never touch your data.
+Test GDFI DMS by hand from zero. The kit puts your own database (`gdfi_dms`) in a clean state: the settings, the branches and the sign-in accounts below, and a list of PNs that exist only in the sample MyLoans. Nothing is opened yet: you search each PN and open it yourself. The automated tests use another database (`gdfi_dms_test`).
 
-## Commands
+## Start and reset
 
-Run these in PowerShell, in the project folder. Each one says what it will do and what it did.
+Run these in PowerShell, in the project folder. Each one says what it will do, asks you to type RESET before it replaces anything, and takes a backup first.
 
 | Command | What it does |
 |---|---|
-| `npm run kit:start` | Puts `gdfi_dms` in the starting state. The first time it builds it (about a minute) and saves it as the baseline; after that it restores the baseline (a few seconds). |
-| `npm run kit:reset` | Back to the starting state. Asks you to type RESET. Takes an automatic backup first (`pre-reset-...`, the last 5 are kept). |
-| `npm run kit:backup -- after-funds` | Saves the current state as `after-funds`. |
-| `npm run kit:list` | Lists the baseline and the backups, with date, size, loan files and migration version. |
-| `npm run kit:restore -- after-funds` | Puts a backup back (same RESET question and automatic backup). |
-| `npm run kit:rebuild` | Builds the baseline again. Needed after a new migration: until then `kit:reset` says "The baseline is out of date. Run `npm run kit:rebuild`." and does nothing. |
+| `npm run kit:start` | Loads the clean kit. The first time it builds it (about a minute); after that it restores it (a few seconds). Says "Loaded: CLEAN kit". |
+| `npm run kit:reset` | Back to the clean kit. |
+| `npm run kit:rebuild` | Builds the clean kit again (needed after a new migration). |
+| `npm run kit:backup -- my-name` | Saves what is there now as `my-name`. |
+| `npm run kit:restore -- my-name` | Puts a backup back. |
+| `npm run kit:list` | Which kit is loaded, the saved kits and the backups. |
 
-The same Reset, Backup and Restore are in **Settings > Test kit** (Admin). The files are in `storage/kit/` (backups in `storage/kit/backups/`); copy a `.dump` file and its `.json` to use them on another PC.
+Add `-- --with-scenarios` to `kit:start`, `kit:reset` or `kit:rebuild` to load the old scenario data instead (see [Manual Test Kit: scenarios](MANUAL-TEST-KIT-SCENARIOS.md)). The first time the clean kit replaces your data, the backup is called `before-clean-kit`.
 
-The kit only runs on a local test setup: `APP_ENV=local`, `TEST_MODE=true`, the sample MyLoans and the database `gdfi_dms` on this PC. It never sends email: the accounts use `@example.test` addresses, the email switch stays Not active, and the commands blank the Microsoft Graph values for their own run.
+The same Reset to clean kit, Reset with scenarios, Backup now and Restore are in **Settings > Test kit** (Admin). It runs only on this PC with `APP_ENV=local` and `TEST_MODE=true`, and it never sends email.
 
-**Dates.** Release dates count back from the day of `kit:start` (0, 2 or 4 business days), so the turnaround times show as written below. A reset or restore on a later day moves every date forward by the business days in between (weekends and holidays skipped), so they still show the same way.
+## Sign-in accounts
 
-## Sample accounts
+Sign in at `/login`, under **Test sign-in**. The accounts are grouped by role, with the branches under each name.
 
-Sign in at `/login`, under **Test sign-in**. Each button shows the role and branches.
-
-| Account | Role | Branch access (home branch first) |
+| Account | Role | Branch access |
 |---|---|---|
 | Admin | Admin | All branches |
 | Finance | Finance | All branches |
-| Branch Supervisor | Branch Supervisor (a sample role: view loans, transfer holds) | Antipolo (101), Angono (165) |
-| LA 1 | Loan Associate | Antipolo (101), Angono (165) |
-| LA 2 | Loan Associate | Antipolo (101), Angono (165) |
-| LA Alaminos (was "LA Davao") | Loan Associate | Alaminos (390) |
-| DP 1 | Document Processor | Antipolo (101), Angono (165) |
-| DP 2 | Document Processor | Antipolo (101), Angono (165) |
-| Receiving LA A. Mabini (was "Receiving LA Makati") | Loan Associate | A. Mabini (168) |
-| Inactive LA | Loan Associate, inactive (not in the list) | Antipolo (101), Angono (165) |
-| DP 3 | Document Processor, on leave for a week | Alaminos (390) |
-| DP 4 | Document Processor, own capacity 5 | A. Mabini (168) |
-| Operations Monitor | Operations Monitor (read-only: Monitoring and LTO advisories) | All branches |
-| Area Supervisor Luzon 1 | Branch Supervisor | The whole Area LUZON 1 (NGMA + RIZAL) in Branch Division, plus Alaminos (390); home Antipolo |
-| LA Luzon 1 (not Amang Rodriguez) | Loan Associate | The whole Area LUZON 1 (NGMA + RIZAL) except Amang Rodriguez (174); home Angono |
+| Approver Small | Approver (lowest band) | All branches |
+| Approver Large | Approver (higher band) | All branches |
+| Operations Monitor | Operations Monitor | All branches |
+| Branch Supervisor | Branch Supervisor | Antipolo and Angono |
+| Area Supervisor Luzon 1 | Supervisor (Branch Supervisor role) | Whole Luzon 1 area plus Alaminos |
+| LA Antipolo | Loan Associate | Antipolo (101) |
+| LA Angono | Loan Associate | Angono (165) |
+| LA A. Mabini | Loan Associate | A. Mabini (168) |
+| LA Alaminos | Loan Associate | Alaminos (390) |
+| LA Luzon 1 | Loan Associate | All of Luzon 1 except Amang Rodriguez |
 | Roving LA | Loan Associate | All branches |
-| LA Alicia | Loan Associate | Alicia (709), Alicia-Inactive (718) |
-| LA No Refresh | LA (no refresh): a sample role with every Loan Associate tick except "Refresh a loan from MyLoans" | Antipolo (101), Angono (165) |
+| LA No Refresh | LA (no refresh) | Antipolo (101) |
+| Receiving LA Antipolo | Receiving LA (Loan Associate role) | Antipolo (101) |
+| Receiving LA A. Mabini | Receiving LA (Loan Associate role) | A. Mabini (168) |
+| DP 1 | Document Processor | Antipolo and Angono |
+| DP 2 | Document Processor | Antipolo and Angono |
+| DP 3 | Document Processor | A. Mabini (168) |
+| DP 4 | Document Processor | Alaminos (390) |
+| Vault | Vault | All branches |
+| Digital Records | Digital Records | All branches |
+| QA | QA | All branches |
+| LA Inactive | Loan Associate (inactive) | Antipolo (101) |
 
-The branches are real MyLoans branches. The made-up sample branches were replaced: Quezon City (QC) is now Antipolo (101), Cebu (CEB) is Angono (165), Davao (DVO) is Alaminos (390) and Makati (MKT) is A. Mabini (168). The LTO offices did not change (Antipolo's usual office is still LTO Quezon City District Office).
+## PNs to try
 
-**The real branch list.** Put the MyLoans branch file at `storage/kit/myloans-branches.csv` (Git ignores it; never commit it). `kit:start` and `kit:rebuild` then import the real 6 divisions, 25 areas and 298 branches through Import from MyLoans, leaving out the four rows that look like test or unused branches (213 Makati A, 999 Test Branch, 721 Bacoor(DONT USE), 753 Plaridel-DONT USE) so a manual import shows them as suggestions. Without the file the kit uses the built-in subset of 12 branches.
+### Antipolo (101)
 
-## Loan Associate
+- GD1012026903001
+- GD1012026903002
+- GD1012026903003
+- GD1012026903004
+- GD1012026903005
+- GD1012026903006
+- GD1012026903007
+- GD1012026903008
+- GD1012026903009
+- GD1012026903010
+- GD7772026903011
 
-| PN | Case | Who signs in | What to do | What should happen |
-|---|---|---|---|---|
-| GD1012026902001 | Refinancing, no mortgage | LA 1 | Open the loan file. | Refinancing; New above 500,000 is Not Mortgage: Notary and For EDST only. |
-| GD1012026902002 | Financing, Undertaking, Transferred | LA 1 | Open the loan file. | Financing, Undertaking and Transferred (picked by the LA); New 350,000 is Mortgage: Notary, For EDST, For Entry PPSR and Mortgage. |
-| GD1012026902003 | Blank product, default Refinancing | LA 1 | Open the loan file. | Blank Product Name defaults to Refinancing; Renewal 800,000 is Mortgage: 4 transactions. |
-| GD1012026902004 | Financing, Non-Undertaking | LA 1 | Open the loan file. | Financing, Non-Undertaking (picked by the LA), Transferred; Mortgage: 4 transactions. |
-| GD1012026902005 | Financing, Untransferred | LA 1 | Open the loan file. | Rule 3: Untransferred gives Notary and For EDST; Mortgage not evaluated. |
-| GD1012026902006 | New at 500,000 | LA 1 | Open the loan file. | Exactly 500,000 is Mortgage: 4 transactions. |
-| GD1012026902007 | New at 500,001 | LA 1 | Open the loan file. | Above 500,000 is Not Mortgage: Notary and For EDST. |
-| GD1652026902008 | Renewal at 1,000,000 (Angono) | LA 1 | Open the loan file. | Exactly 1,000,000 is Mortgage: 4 transactions. |
-| GD1652026902009 | Renewal at 1,000,001 (Angono) | LA 1 | Open the loan file. | Above 1,000,000 is Not Mortgage: Notary and For EDST. |
-| GD1012026902010 | "Auto Finance" is not the word Financing | LA 1 | Open the loan file. | Not the whole word Financing, so Refinancing; Not Mortgage. |
-| GD1012026902011 | Needs LTO: office and cash estimate | LA 1 | Mortgage: the papers are ticked. Send it to DP 1. | Send asks for the LTO office and whether it needs funds, with the cash estimate. Then it waits for DP 1 to accept. |
-| GD1012026902012 | Missing paper, with reminder | LA 1 | Notary: see the Missing paper reminder (asked from the borrower). Tick the paper. | The reminder names the paper and closes by itself when it is ticked. Then Notary can be sent. |
-| GD1012026902038 | TAT on time | LA 1 | Notary: send it to DP 1. | On time: no late reason is asked. |
-| GD1012026902039 | TAT due today | LA 1 | Notary: see the chip, then send it. | Due today (Day 2 from release): no late reason yet. |
-| GD1012026902040 | TAT late | LA 1 | Notary: send it to DP 1. | Late: Send asks for a Beyond-TAT reason and refuses without it. |
-| GD1012026902050 | Not opened yet | LA 1 | My loans > Find a loan: type GD1012026902050, Find, then Open loan file. | The preview shows the MyLoans details; opening creates the loan file. |
-| GD1012026902046 | Same borrower, additional unit | LA 1 | Find GD1012026902046 and open it. | Find loan says the same borrower already has GD1012026902045 open. It is an additional unit, not a replacement; both show under related loans. |
-| GD1012026902045 | Same borrower, first unit | LA 1 | Open GD1012026902045 after opening GD1012026902046. | Related loans lists GD1012026902046. |
-| GD3902026902047 | Another branch (Alaminos) | LA 1, then LA Alaminos | LA 1: go to /loans/GD3902026902047. LA Alaminos: open it from My loans. | LA 1 gets "not found" (outside the branches); LA Alaminos sees it. |
-| GD1012026902027 | Forwarded to a receiving LA in another branch | Receiving LA A. Mabini | Home: receive the Notary package; check each paper; Complete. | The package from DP 1 arrives at A. Mabini; received complete, Notary is done. |
-| GD1012026902028 | Complete | LA 1 | Open the loan file. | Notary and For EDST are done: the loan file is complete. |
+### Angono (165)
 
-## DP
+- GD1652026903012
+- GD1652026903013
+- GD1652026903014
+- GD1652026903015
+- GD1652026903016
+- GD1652026903017
+- GD1652026903018
+- GD1652026903019
 
-| PN | Case | Who signs in | What to do | What should happen |
-|---|---|---|---|---|
-| GD1012026902015 | Sent, waiting to accept | DP 1 | Jobs: open the Notary job; Accept (labels are on the papers). | In process; the stages show, Notarization first. |
-| GD1012026902016 | DP declines | DP 2 | Jobs: open the Notary job; Decline with a reason and remarks. | It goes back to the LAs of the branch, with the reason; the job leaves DP 2's list. |
-| GD1012026902018 | Round 2 (sent again after a return) | DP 1 | Jobs: open the Notary job; Accept. | Marked Round 2; the earlier return shows in the history. |
-| GD1012026902020 | Notary stages in progress | DP 1 | Notarization is done; Start and Finish LTO drop off, LTO pickup, then Check and verify. | Each stage asks for its evidence; the stepper moves on. |
-| GD1012026902021 | Entry of PPSR stages in progress | DP 1 | PPSR registration is done; work the next stages. | Same as above, for Entry of PPSR. |
-| GD1012026902022 | Mortgage stages in progress | DP 1 | LTO drop off is done; Start LTO pickup. | LTO pickup asks for the annotated OR/CR. |
-| GD1012026902023 | Check and verify blocking | DP 1 | Check and verify: one paper is ticked, a Missing paper problem is open. Try Finish, then Complete job. | Both refused while the problem is open and papers are not ticked. Resolve the problem, tick the papers, Finish, then Complete job. |
-| GD1012026902024 | Pasuyo (cash decision first) | DP 1 | Mortgage: DP 1 holds 3,500 released cash. Pass the job to DP 2. | It asks first: return the cash, or hand the balance to DP 2. |
-| GD1012026902029 | Incomplete, back to the DP | DP 1 | Jobs: "Package incomplete" (the notarized deed of sale). Correct it and Forward to LA 1 again. | The incomplete note closes; LA 1 can receive it again. |
-| GD1012026902030 | Funds: needed, no request yet | DP 1 | Mortgage needs funds (LTO fee). Try Start LTO drop off; then request funds: pick the type (Cash advance is the default; try Fund transfer too). | Blocked: "This job needs funds. Request a cash advance first." The request goes to Finance (Requested), with the type pill. |
-| GD1012026902033 | Funds: released | DP 2 | My funds: liquidate CA for GD1012026902033 with a receipt, or return the cash. | Partly or fully liquidated; Finance closes it. |
+### A. Mabini (168)
 
-## Finance
+- GD1682026903020
+- GD1682026903021
+- GD1682026903022
+- GD1682026903023
+- GD1682026903024
+- GD1682026903025
 
-| PN | Case | Who signs in | What to do | What should happen |
-|---|---|---|---|---|
-| GD1012026902031 | Funds: requested | Finance | Funds > Approve: approve the request. | Approved; waiting for release. |
-| GD1012026902032 | Funds: approved | Finance | Funds > To release: press Release on the row, type a voucher reference, Release cash. | Released; DP 1 sees the liquidation due date. |
-| GD1012026902034 | Funds: overdue notice | Finance, then DP 2 | Notifications: "liquidation overdue". DP 2: try a new cash request. | DP 2 and Finance have the overdue notice. DP 2's new requests are refused until it is liquidated or Finance grants an exception. |
-| GD1012026902035 | Funds: liquidated | Finance | Funds: close the advance. | Closed. |
-| GD1012026902036 | Funds: closed | Finance | Open the advance. | Closed, with the receipt and the history. |
-| GD1012026902051 | Fund transfer: requested | Finance | Funds > To approve: the FT · Fund transfer pill. Filter by type (FT), Download CSV, then approve it. | The list and the counts follow the type filter; the CSV has the Type column and only Fund transfers. |
-| GD1012026902052 | Fund transfer: approved (changed from Cash advance) | Finance | Funds > To release: open Details on the row, then History. Then Send: reference number, transfer date, bank or e-wallet, account name, last 4 digits, Send transfer. | History shows "changed the type from Cash advance to Fund transfer" with the remarks. More than 4 digits is refused; only the last 4 are stored. |
-| GD1012026902053 | Fund transfer: sent | DP 1 | My funds: the FT pill and "sent ... to BPI, DP 1, account ending 4821". Liquidate with a receipt. | Same liquidation as a cash advance. |
-| GD1012026902054 | Fund transfer: liquidated | Finance | Funds > Outstanding: close it. | Closed. |
-| GD1012026902055 | Fund transfer: closed | Finance | Funds > History. | Closed, with the FT pill. |
-| GD1012026902056 | Fund transfer: cash to settle after a return | DP 2, then Finance | My funds and Funds > Outstanding. | "Cash to settle" with the FT pill, as for a cash advance. |
-| GD1012026902057 | Fund transfer: overdue notice | DP 2, Finance | Notifications: "(Fund transfer): liquidation overdue". | Same overdue notice and block as GD1012026902034. |
-| GD1012026902037 | Funds: cash to settle after a return | DP 2, then LA 1 | DP 2: My funds shows Cash to settle. LA 1: confirm the Mortgage papers came back. | The return went ahead; the cash stays DP 2's to liquidate. LA 1 can send again only after confirming the papers. |
-| (none) | Expense kinds: Other must say what it is | DP 1 | My funds > Request: Add an expense, pick Other. Leave "What is this expense?" empty, then type "Courier". | Send to Finance stays off with "Say what this expense is" until 3 to 60 characters are typed. The request shows "Other: Courier". |
-| (none) | Expense kinds: often typed as Other | DP 1, then Finance | The kit has two "Other: Courier" expenses (DP 1, waiting for approval). DP 1 sends a third one (above). Finance: Settings > Expense kinds. | "Often typed as Other" lists Courier (typed 3 times). Add as a kind: pick the amount (for example Suggested 150), optionally tick "relabel"; Courier is now in every Expense kind dropdown, before Other. |
-| (none) | Expense kinds: + Add new kind | Finance | Funds > To approve: on an Other: Courier row open More, press Change Other: Courier, then "+ Add new kind", name it Parking, Add. | Parking is saved Active and selected at once; the history says who added it. DP 1 (no "Add and manage expense kinds" tick) has no "+ Add new kind" link. |
-| (none) | Expense kinds: fixed amount | Admin, then DP 1 | Settings > Expense kinds: Notary fee, Fixed amount 500, Save. DP 1: a Notary request line. | The amount is pre-filled and read only ("Fixed for this kind"). A rule's Suggested amount for the transaction still comes first. Old requests keep their amounts. |
+### Alaminos (390)
 
-## Admin
+- GD3902026903026
+- GD3902026903027
+- GD3902026903028
+- GD3902026903029
+- GD3902026903030
+- GD3902026903031
 
-| PN | Case | Who signs in | What to do | What should happen |
-|---|---|---|---|---|
-| GD1012026902041 | MyLoans change: minor | Admin | Open the loan file and its history. | MyLoans now spells the name with "Jr." and has a new address. The copy was updated by itself; no review needed. |
-| GD1012026902042 | MyLoans change: material | Admin | MyLoans review: the amount is now 520,000. Apply or Keep current. | Material: the transactions would change (no longer Mortgage). Nothing changes until Admin decides. |
-| GD1012026902043 | MyLoans change: status | Admin | MyLoans review: MyLoans says cancelled. Close as cancelled. | The loan file closes as cancelled, with the reason. |
-| GD1012026902044 | MyLoans: replaced by a new PN | Admin, then LA 1 | Review shows GD1012026909100 replacing it. LA 1: Find GD1012026909100 and open it. | GD1012026909100 opens linked to GD1012026902044 as its replacement; the review lists it as the candidate. |
-| GD1012026909100 | The replacement PN (not opened) | LA 1 | Find a loan: GD1012026909100. | The preview says it replaces GD1012026902044 (same borrower). |
-| (none) | Funds types | Admin | Settings > Funds types: CA · Cash advance and FT · Fund transfer, "Proposed, to be confirmed with Finance". Rename one, then look at an old record. | Saving confirms it (Proposed goes). Old records keep the name they had. |
-| (none) | Test kit | Admin | Settings > Test kit: Take backup, then Reset to start (type RESET), then Restore the backup. | Each step says what it did; the reset first saves an automatic backup. |
-| GD1012026902001 | Roles are just ticks: Refresh | LA No Refresh, then Admin, then LA No Refresh | LA No Refresh: open the loan file. Admin: Settings > Roles, LA (no refresh), tick "Refresh a loan from MyLoans" under MyLoans and sync, Save (the preview says "1 user gains: Refresh a loan from MyLoans"). Sign in again as LA No Refresh and open the same loan file. | First: "MyLoans · Last checked" shows, with no Refresh from MyLoans button. After the tick: the Refresh from MyLoans button is there. Settings > Roles shows the change on the role card. Reset to start removes the tick again. |
+### Amang Rodriguez (174)
 
-## Branches and the PN format
+- GD1742026903032
+- GD1742026903033
 
-| PN | Case | Who signs in | What to do | What should happen |
-|---|---|---|---|---|
-| GD1012026902050 | A PN typed in a pasted variant | LA 1 | My loans > Find a loan: type `gd 101-2026-9-02050` (spaces, dashes, lower case), Find loan. | Found: the preview shows GD1012026902050. |
-| (none) | A wrong PN | LA 1 | Find a loan: GD1012027902050, then GD10120269020, then XX1012026902050. | "This does not look like a PN. Example: GD1012026900001" with the wrong part: "The year is in the future (2027).", "The running number must be 5 digits (this one has 3).", "The PN must start with GD, not XX." Nothing is asked of MyLoans. |
-| (none) | PN format setting | Admin | Settings > System and test mode > PN format: type in Try a PN, change the system digit to 8, then back to 9. | The pattern GD ### #### 9 ##### and the example; Try a PN says which part is wrong; with 8, GD1012026902050 is refused by Find loan. Switch the check off: any PN is looked up. |
-| GD7772026902070 | Unknown branch code 777 in the PN (the loan is at Antipolo in MyLoans) | LA 1, then Admin | LA 1: Find GD7772026902070 and open it. Admin: Settings > Branches > Branch review. | The lookup is not blocked; the loan opens at Antipolo (101) and shows "Opened at branch code 777 (not a branch here yet), now at Antipolo (101)". The Branch review has "Unknown branch code seen in a PN: Code 777" with the PN. |
-| GD1012026902071 | MyLoans moved it to another branch: waiting for review | Admin | Open the loan file: MyLoans review. | Material change: Branch Antipolo (101) → Angono (165), "Opened at Antipolo (101)", who can see it before and after, and who has open work. Nothing changes until Apply. |
-| GD1012026902072 | Branch change applied | LA 1 | Open the loan file. | Under the PN: "Opened at Antipolo (101), now at Angono (165)". The Journey has the applied MyLoans change. |
-| GD7182026902073 | Open loan at a branch MyLoans closed | Admin, then LA Alicia | Admin: Settings > Branches: Alicia-Inactive. LA Alicia: open the loan file, then Find a loan for a new Alicia-Inactive PN. | Alicia-Inactive is Inactive with "1 active user and 1 open loan file". LA Alicia still sees and works the open loan; no new loan file can be opened there; the branch is greyed in pickers. |
-| (none) | A rename and a code change waiting in the Branch review | Admin | Settings > Branches > Branch review: Amang Rodriguez → Amang Rodriguez - Pasig (Renamed), Alicia 709 → 710 (Code changed). Accept one, ignore the other. | Accept shows who gains or loses access first, then applies it; the branch keeps its id, users and loans. Ignore leaves it as it is. Both stay in the decided list. |
-| (none) | Import from MyLoans (the real file) | Admin | Settings > Branches > Import from MyLoans: pick `storage/kit/myloans-branches.csv`. | The preview: counts per Division and Area; the four test-looking rows first ("Looks like a test or unused branch", Inactive, Hide from DMS suggested, not ticked); the rest Unchanged; Alicia-Inactive "Not in this file". Confirm adds the four as inactive. |
-| (none) | Branch access tree | Admin | Users > Edit "LA Luzon 1 (not Amang Rodriguez)", Branch access. Then "Area Supervisor Luzon 1" and "Roving LA". | Selected: LUZON 1 (NGMA + RIZAL) ticked with "Everything in this area except 1 branch"; the summary and the home branch Angono. The supervisor has the whole area plus Alaminos; Roving LA has All branches. |
+### Cainta (102)
 
-### Old PN to new PN
+- GD1022026903034
 
-The sample PNs now use the real format (GD + branch code + 2026 + 9 + a 5-digit running number). The running number keeps the old sample number, so PN-0002013 is GD1012026902013.
+### Binangonan (123)
 
-| Old PN | New PN |
-|---|---|
-| PN-0002001 | GD1012026902001 |
-| PN-0002002 | GD1012026902002 |
-| PN-0002003 | GD1012026902003 |
-| PN-0002004 | GD1012026902004 |
-| PN-0002005 | GD1012026902005 |
-| PN-0002006 | GD1012026902006 |
-| PN-0002007 | GD1012026902007 |
-| PN-0002008 | GD1652026902008 |
-| PN-0002009 | GD1652026902009 |
-| PN-0002010 | GD1012026902010 |
-| PN-0002011 | GD1012026902011 |
-| PN-0002012 | GD1012026902012 |
-| PN-0002013 | GD1012026902013 |
-| PN-0002014 | GD1012026902014 |
-| PN-0002015 | GD1012026902015 |
-| PN-0002016 | GD1012026902016 |
-| PN-0002017 | GD1012026902017 |
-| PN-0002018 | GD1012026902018 |
-| PN-0002019 | GD1012026902019 |
-| PN-0002020 | GD1012026902020 |
-| PN-0002021 | GD1012026902021 |
-| PN-0002022 | GD1012026902022 |
-| PN-0002023 | GD1012026902023 |
-| PN-0002024 | GD1012026902024 |
-| PN-0002025 | GD1012026902025 |
-| PN-0002026 | GD1012026902026 |
-| PN-0002027 | GD1012026902027 |
-| PN-0002028 | GD1012026902028 |
-| PN-0002029 | GD1012026902029 |
-| PN-0002030 | GD1012026902030 |
-| PN-0002031 | GD1012026902031 |
-| PN-0002032 | GD1012026902032 |
-| PN-0002033 | GD1012026902033 |
-| PN-0002034 | GD1012026902034 |
-| PN-0002035 | GD1012026902035 |
-| PN-0002036 | GD1012026902036 |
-| PN-0002037 | GD1012026902037 |
-| PN-0002038 | GD1012026902038 |
-| PN-0002039 | GD1012026902039 |
-| PN-0002040 | GD1012026902040 |
-| PN-0002041 | GD1012026902041 |
-| PN-0002042 | GD1012026902042 |
-| PN-0002043 | GD1012026902043 |
-| PN-0002044 | GD1012026902044 |
-| PN-0002045 | GD1012026902045 |
-| PN-0002046 | GD1012026902046 |
-| PN-0002047 | GD3902026902047 |
-| PN-0002050 | GD1012026902050 |
-| PN-0002051 | GD1012026902051 |
-| PN-0002052 | GD1012026902052 |
-| PN-0002053 | GD1012026902053 |
-| PN-0002054 | GD1012026902054 |
-| PN-0002055 | GD1012026902055 |
-| PN-0002056 | GD1012026902056 |
-| PN-0002057 | GD1012026902057 |
-| PN-0002060 | GD1012026902060 |
-| PN-0002061 | GD1012026902061 |
-| PN-0002062 | GD1682026902062 |
-| PN-0002063 | GD1682026902063 |
-| PN-0002064 | GD1682026902064 |
-| PN-0002065 | GD3902026902065 |
-| PN-0009100 | GD1012026909100 |
+- GD1232026903035
 
-## Monitoring
+### Marikina (104)
 
-Dates on the Monitoring page are Philippine dates; the default is Last 30 days. Open counts are as of now. Every time includes time on hold.
+- GD1042026903036
 
-| PN | Case | Who signs in | What to do | What should happen |
-|---|---|---|---|---|
-| (none) | DP monitor, grouped by branch | Operations Monitor | Sign in: Monitoring opens (no Home, no loan files). DPs tab: look at the groups "Angono · Antipolo", "Alaminos", "A. Mabini". Collapse one group. Click "How is this counted?". | DP 1 is Full (more open jobs than 10). DP 2 is Busy, "20% · 8 of 10 in use". DP 3 is "On leave until ..." (0%, not in the average availability). DP 4 is Available, "60% · 2 of 5 in use" (with a usage bar). Each Area has a subtotal; a branch has its own subtotal only when it has more than one processor. |
-| GD1012026902060 | Finished by DP 2 in 5 business days | Operations Monitor | DP 2's row: the averages. | Avg time to accept 0.5 days, processing 2.5 days, total 3 days, each "2 jobs" (with GD1012026902061). |
-| GD1012026902061 | Finished by DP 2 in 1 business day | Operations Monitor | Click DP 2's row: the drill-down. | Open jobs with age and due date; the PN is plain text (this role cannot open loans). Declined: none; Returned: GD1012026902037 and GD1012026902056. |
-| GD1682026902062 | Finished by DP 4 in 4 business days (A. Mabini) | Admin | Monitoring, DPs: DP 4's averages, then click a PN in the drill-down. | Accept 1 day, processing 3 days, total 4 days, "1 job". Admin can open the loan from the PN. |
-| GD1682026902063 | DP 4 overdue | Operations Monitor | DP 4's row: Overdue. Drill-down. | Overdue 1: sent 3 business days ago, not accepted (Accept is due the same day). |
-| GD1682026902064 | DP 4 at LTO Makati now | Operations Monitor | LTO offices tab: LTO Makati District Office, then click it. | At the LTO now 1; the drill-down shows the drop off 1 business day ago, pickup "Not yet". |
-| GD3902026902065 | Sent to DP 3 before the leave | LA Alaminos | Open another Alaminos transaction's Send step (or look at GD3902026902065's job). Admin: Settings > Processor capacity. | DP 3 shows "On leave until ..." and cannot be picked. In Monitoring the job counts for DP 3 as Assigned and Overdue (not accepted since yesterday). Admin can switch the leave off or change the day. |
+### Marcos Highway (163)
 
-**Date range check (three steps):**
-1. Monitoring: press the date button ("11 Oct to 9 Nov 2026"), pick **Last 7 days**, Apply: the title, the button and Download CSV all say the same 7 days.
-2. Open it again, click two days in the calendar (it switches to **Custom** and says "N days, M business days"), Apply: the URL keeps the range, so a refresh or a shared link shows the same days; By day uses them too.
-3. Open it once more and press **Esc**: nothing changes and focus is back on the button. On a phone the picker is a bottom sheet with one month.
-| GD1012026902022 | Active advisory: LTO Quezon City system down (2 hours ago) | LA 1, then DP 1 | LA 1: GD1012026902011, Mortgage, Send: pick LTO Quezon City District Office. DP 1: open the GD1012026902022 job. | LA 1 sees "LTO Quezon City District Office: System down, reported by DP 1, 2 h ago" under the office; Send still works. DP 1 sees the same in "Process at" and can resolve it (they filed it). |
-| (none) | Advisory older than 24 hours (LTO Cebu, long queue) | Operations Monitor | LTO offices tab: LTO advisories. | "Still active? Please confirm" with "No longer active: resolve". Resolving needs remarks (5 to 500). |
-| (none) | Resolved advisory (LTO Makati, office closed) | Operations Monitor | LTO advisories: "Resolved in ...". | Filed by DP 4, resolved by Operations Monitor with remarks and the time. |
-| (none) | Report an LTO problem | DP 4 | Open the GD1682026902064 job (at LTO pickup): Report an LTO problem: Long queue, remarks, Report. | The advisory shows on the job and in Monitoring; Operations Monitor gets a notification. DP 1 and DP 2 get nothing. |
-| (none) | Dates, By day, CSV | Operations Monitor | Dates: Custom, From and To the same day; then By day; then Download CSV. Try a To before From. | The heading shows the dates ("9 Nov to 9 Nov 2026"); By day lists each day per group; the CSV follows the view and filters. A To before From is refused with a message. |
-| (none) | Roles: the Monitoring group | Admin | Settings > Roles and access: open Operations Monitor and Finance. | A "Monitoring" group with five switches. Operations Monitor has the two monitors and "Manage LTO advisories"; Finance has none. |
+- GD1632026903037
 
-## Exceptions
+### Mandaluyong (147)
 
-| PN | Case | Who signs in | What to do | What should happen |
-|---|---|---|---|---|
-| GD1012026902013 | On hold (LA 1 and LA 2) | LA 1, then LA 2 | Notary is on hold by LA 1 (client's papers); For Entry PPSR by LA 2 (branch head). LA 1: try to resume PPSR. LA 2: Resume PPSR with remarks. | The held work is locked. Only the person who put it on hold resumes it. The hold shows the reason, the remarks as typed, who and when. |
-| GD1012026902025 | Hold a supervisor can transfer | Branch Supervisor, then DP 2 | Notary is on hold by DP 1. Supervisor: Transfer hold to DP 2 with a note. DP 2: Resume. | The supervisor can transfer but not resume. After the transfer only DP 2 can resume. |
-| GD1012026902026 | Problem at the LTO | DP 1, Admin | DP 1: resolve the problem with a note. Admin: mark it outside our control (before resolving). | The problem shows red until resolved; the history keeps both steps. |
-| GD1012026902014 | Pull back before accept | LA 1 | Notary was sent to DP 1, not accepted. Pull it back with a reason. | Back to Ready to send; the papers stay at the branch; gone from DP 1's list; DP 1 is told. |
-| GD1012026902017 | Returned to the LA with findings and papers | LA 1 | Notary returned by DP 1 (missing paper: the ID copy). Confirm the papers came back, tick the ID, Send again. | Sending waits until the papers are confirmed back. Sent again, it is Round 2 for the processor. |
-| GD1012026902019 | Inactive sender | LA 1 or LA 2 | Home and Open items: the Notary declined by DP 1. | "Sender Inactive LA is inactive": the other LAs of the branch take it over and send it again. |
+- GD1472026903038
+
+### Libis (155)
+
+- GD1552026903039
+
+### Alicia-Inactive (718)
+
+- GD7182026903040
+
+Answers, only if you get stuck: [what each PN is](MANUAL-TEST-KIT-ANSWERS.md).
+
+## If the sign-in page keeps coming back
+
+Your browser still has the sign-in of an account from before a reset. Open a private window, or clear the cookies for `localhost:3000` (in Chrome: the lock icon left of the address, then Cookies and site data, then delete), and sign in again.

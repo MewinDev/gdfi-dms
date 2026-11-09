@@ -215,7 +215,7 @@ export function SettingsModal({
         if (d && d.isConnected && !d.open) d.showModal();
       }}
       onClick={(e) => { if (e.target === ref.current && !ask) requestLeave(closeHref); }}
-      className="m-0 h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden bg-white p-0 text-ink backdrop:bg-navy/45 open:flex sm:m-auto sm:h-auto sm:max-h-[85vh] sm:w-[min(900px,calc(100vw-32px))] sm:rounded-2xl sm:border sm:border-line"
+      className="m-0 h-[100dvh] max-h-none w-full max-w-none flex-col overflow-hidden bg-white p-0 text-ink backdrop:bg-navy/45 open:flex sm:m-auto sm:h-fit sm:max-h-[85vh] sm:w-[min(900px,calc(100vw-32px))] sm:rounded-2xl sm:border sm:border-line"
     >
       {/* Header */}
       <div className="flex shrink-0 items-start gap-3 border-b border-line px-5 py-4 sm:px-6">

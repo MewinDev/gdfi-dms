@@ -19,8 +19,18 @@ import { dateMap, rebaseSql, YMD_COLUMNS, type DateColumn } from "./rebase";
 
 const kitDir = () => path.normalize(kitConfig.dir);
 const backupDir = () => path.join(kitDir(), "backups");
+/** The scenarios baseline keeps the old file name ("baseline"), so an existing save still restores. */
 const BASELINE = "baseline";
+const CLEAN_BASELINE = "baseline-clean";
+/** The first backup taken before a clean kit replaces the data. */
+export const FIRST_CLEAN_BACKUP = "before-clean-kit";
 const KEEP_AUTO = 5;
+
+/** Which kit: the default CLEAN kit (accounts, branches, settings, a pool of PNs; no work data) or the old scenario data. */
+export type KitVariant = "clean" | "scenarios";
+export const baselineName = (v: KitVariant) => (v === "clean" ? CLEAN_BASELINE : BASELINE);
+export const variantLabel = (v: KitVariant) => (v === "clean" ? "CLEAN kit" : "kit WITH SCENARIOS");
+const isBaseline = (name: string) => name === BASELINE || name === CLEAN_BASELINE;
 
 export interface KitManifest {
   name: string;
@@ -31,6 +41,8 @@ export interface KitManifest {
   database: string;
   sizeBytes: number;
   loanFiles: number;
+  /** Which kit the save holds (saves made before the clean kit existed hold the scenarios). */
+  variant?: KitVariant;
 }
 
 export type Log = (line: string) => void;
@@ -46,7 +58,7 @@ function assertKit() {
   if (why) throw new Error(why);
 }
 
-const fileOf = (name: string) => (name === BASELINE ? path.join(kitDir(), `${BASELINE}.dump`) : path.join(backupDir(), `${name}.dump`));
+const fileOf = (name: string) => (isBaseline(name) ? path.join(kitDir(), `${name}.dump`) : path.join(backupDir(), `${name}.dump`));
 const jsonOf = (name: string) => fileOf(name).replace(/\.dump$/, ".json");
 
 export function readManifest(name: string): KitManifest | null {
@@ -57,11 +69,13 @@ export function readManifest(name: string): KitManifest | null {
   }
 }
 
-/** The baseline and every backup, newest first (the baseline on top). */
+/** The baselines (clean, then scenarios) and every backup, newest first. */
 export function listSaves(): KitManifest[] {
   const out: KitManifest[] = [];
-  const base = existsSync(fileOf(BASELINE)) ? readManifest(BASELINE) : null;
-  if (base) out.push(base);
+  for (const b of [CLEAN_BASELINE, BASELINE]) {
+    const base = existsSync(fileOf(b)) ? readManifest(b) : null;
+    if (base) out.push({ ...base, variant: base.variant ?? (b === CLEAN_BASELINE ? "clean" : "scenarios") });
+  }
   if (existsSync(backupDir())) {
     const rows = readdirSync(backupDir()).filter((f) => f.endsWith(".json")).map((f) => readManifest(f.replace(/\.json$/, ""))).filter((m): m is KitManifest => !!m && existsSync(fileOf(m.name)));
     out.push(...rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
@@ -70,9 +84,28 @@ export function listSaves(): KitManifest[] {
 }
 
 /** "out of date" when the migrations changed since the baseline was saved; null when there is none. */
-export function baselineStatus(): { manifest: KitManifest; upToDate: boolean } | null {
-  const m = existsSync(fileOf(BASELINE)) ? readManifest(BASELINE) : null;
+export function baselineStatus(variant: KitVariant = "clean"): { manifest: KitManifest; upToDate: boolean } | null {
+  const name = baselineName(variant);
+  const m = existsSync(fileOf(name)) ? readManifest(name) : null;
   return m ? { manifest: m, upToDate: !migrationsDiffer(m.migrations, currentMigrations()) } : null;
+}
+
+/** Which kit is in the database now and when it was loaded (Setting kit.loaded); null when unknown. */
+export function loadedKit(db = kitDatabase()): { variant: KitVariant; loadedAt: string } | null {
+  try {
+    const raw = psql(db, `SELECT value::text FROM "Setting" WHERE key = 'kit.loaded';`).trim();
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { variant?: string; loadedAt?: string };
+    return v.variant === "clean" || v.variant === "scenarios" ? { variant: v.variant, loadedAt: v.loadedAt ?? "" } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Records which kit is loaded and when (kept in the dump too, so a backup knows what it holds). */
+function markLoaded(variant: KitVariant, db = kitDatabase()) {
+  const value = JSON.stringify({ variant, loadedAt: new Date().toISOString() });
+  psql(db, `INSERT INTO "Setting" (key, value, "updatedAt") VALUES ('kit.loaded', ${lit(value)}::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now();`);
 }
 
 function countLoans(db: string): number {
@@ -97,16 +130,20 @@ export function saveDump(name: string, kind: KitManifest["kind"], log: Log = () 
   const now = new Date();
   const m: KitManifest = {
     name, kind, createdAt: now.toISOString(), savedOn: businessDate(now), migrations: currentMigrations(), database: db,
-    sizeBytes: statSync(out).size, loanFiles: countLoans(db),
+    sizeBytes: statSync(out).size, loanFiles: countLoans(db), variant: loadedKit(db)?.variant,
   };
   writeFileSync(jsonOf(name), JSON.stringify(m, null, 2));
-  log(`Saved ${name === BASELINE ? "the baseline" : `backup "${name}"`} (${(m.sizeBytes / 1024).toFixed(0)} KB, ${m.loanFiles} loan files) to ${out}.`);
+  log(`Saved ${isBaseline(name) ? `the baseline (${variantLabel(m.variant ?? "scenarios")})` : `backup "${name}"`} (${(m.sizeBytes / 1024).toFixed(0)} KB, ${m.loanFiles} loan files) to ${out}.`);
   return m;
 }
 
-/** Automatic backup before a reset or restore: pre-reset-<time>; only the last 5 are kept. */
-export function autoBackup(log: Log = () => {}): KitManifest | null {
+/**
+ * Automatic backup before a reset or restore: pre-reset-<time>; only the last 5 are kept. The first time
+ * a clean kit replaces the data, the backup is called before-clean-kit instead (and is never removed).
+ */
+export function autoBackup(log: Log = () => {}, opts: { forClean?: boolean } = {}): KitManifest | null {
   if (!tablesExist()) return null;
+  if (opts.forClean && !readManifest(FIRST_CLEAN_BACKUP)) return saveDump(FIRST_CLEAN_BACKUP, "backup", log);
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-");
   const m = saveDump(`pre-reset-${stamp}`, "auto", log);
   const autos = listSaves().filter((s) => s.kind === "auto");
@@ -155,11 +192,12 @@ export function emailOff(db = kitDatabase()) {
 export function restoreSave(name: string, log: Log = () => {}, opts: { autoBackup?: boolean } = {}): KitManifest {
   assertKit();
   const m = readManifest(name);
-  if (!m || !existsSync(fileOf(name))) throw new Error(name === BASELINE ? "There is no baseline yet. Run npm run kit:start." : `There is no backup called "${name}".`);
+  if (!m || !existsSync(fileOf(name))) throw new Error(isBaseline(name) ? `There is no baseline for the ${variantLabel(name === CLEAN_BASELINE ? "clean" : "scenarios")} yet. Run npm run kit:start${name === BASELINE ? " -- --with-scenarios" : ""}.` : `There is no backup called "${name}".`);
   if (migrationsDiffer(m.migrations, currentMigrations())) {
-    throw new Error(name === BASELINE ? OUT_OF_DATE : `The backup "${name}" was saved with other migrations (${m.migrations.at(-1)}). It cannot be restored on this version.`);
+    throw new Error(isBaseline(name) ? OUT_OF_DATE : `The backup "${name}" was saved with other migrations (${m.migrations.at(-1)}). It cannot be restored on this version.`);
   }
-  if (opts.autoBackup !== false) autoBackup(log);
+  const variant: KitVariant = m.variant ?? (name === CLEAN_BASELINE ? "clean" : "scenarios");
+  if (opts.autoBackup !== false) autoBackup(log, { forClean: variant === "clean" });
   const db = kitDatabase();
   const c = containerId();
   const tmp = `/tmp/kit-restore-${Date.now()}.dump`;
@@ -170,20 +208,24 @@ export function restoreSave(name: string, log: Log = () => {}, opts: { autoBacku
   } finally {
     docker(["exec", c, "rm", "-f", tmp]);
   }
-  log(`Restored ${name === BASELINE ? "the baseline" : `backup "${name}"`} (saved ${m.createdAt.slice(0, 16).replace("T", " ")} UTC).`);
+  log(`Restored ${isBaseline(name) ? "the baseline" : `backup "${name}"`} (saved ${m.createdAt.slice(0, 16).replace("T", " ")} UTC).`);
   afterRestore(m.savedOn, log);
+  markLoaded(variant, db);
+  log(`Loaded: ${variantLabel(variant)}`);
   return m;
 }
 
 /**
  * Builds the starting state from nothing: empty schema, every migration, the seed (reference data,
- * no test users), then the sample accounts and loans through the app's own services
- * (scripts/kit-build.ts), then saves the baseline. Takes the automatic backup first.
+ * no test users), then (scripts/kit-build.ts) the clean kit (accounts and the PN pool) or, with variant
+ * "scenarios", the old sample accounts and loans through the app's own services, then saves that kit's
+ * baseline. Takes the automatic backup first (before-clean-kit the first time for a clean kit).
  */
-export async function buildBaseline(log: Log = () => {}, opts: { samples?: () => Promise<void> } = {}): Promise<KitManifest> {
+export async function buildBaseline(log: Log = () => {}, opts: { variant?: KitVariant; samples?: () => Promise<void> } = {}): Promise<KitManifest> {
   assertKit();
+  const variant = opts.variant ?? "clean";
   const db = kitDatabase();
-  autoBackup(log);
+  autoBackup(log, { forClean: variant === "clean" });
   const env: NodeJS.ProcessEnv = { ...process.env, SEED_TEST_USERS: "false" };
   blankGraph(env);
   terminateConnections(db);
@@ -194,11 +236,15 @@ export async function buildBaseline(log: Log = () => {}, opts: { samples?: () =>
   runBin("tsx", ["--require=./scripts/server-only-stub.cjs", "prisma/seed.ts"], env, true);
   log("Seeded the settings and master data (roles, branches, transaction types, documents, hold reasons, stages, LTO offices).");
   if (opts.samples) await opts.samples(); // the kit's own integration test, in-process
-  else runBin("tsx", ["--require=./scripts/server-only-stub.cjs", "scripts/kit-build.ts"], env);
+  else runBin("tsx", ["--require=./scripts/server-only-stub.cjs", "scripts/kit-build.ts", ...(variant === "scenarios" ? ["--with-scenarios"] : [])], env);
   emailOff(db);
-  return saveDump(BASELINE, "baseline", log);
+  markLoaded(variant, db);
+  const m = saveDump(baselineName(variant), "baseline", log);
+  log(`Loaded: ${variantLabel(variant)}`);
+  return m;
 }
 
+/** The scenarios baseline (the old name); the clean one is baselineName("clean"). */
 export const BASELINE_NAME = BASELINE;
 /** Exposed for the integration test (a quoted SQL literal). */
 export const sqlLiteral = lit;

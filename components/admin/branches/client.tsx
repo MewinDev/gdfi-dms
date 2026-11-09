@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
+import { FilePicker } from "@/components/admin/file-picker";
 import {
   branchHiddenAction, branchImportAction, branchScheduleAction, branchSyncAction, reviewDecisionAction, reviewImpactAction, type BranchImportState,
 } from "@/app/actions/branches";
@@ -26,6 +27,8 @@ function Note({ state }: { state: { ok: boolean; message?: string; error?: strin
  */
 export function MyLoansImport() {
   const [file, setFile] = useState<File | null>(null);
+  const [rows, setRows] = useState(0);
+  const resultRef = useRef<HTMLDivElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [state, action, pending] = useActionState<BranchImportState, FormData>(branchImportAction, null);
   const [leave, setLeave] = useState<Set<string>>(new Set());
@@ -37,6 +40,10 @@ export function MyLoansImport() {
   const done = state?.ok && state.step === "done" ? state.result : null;
 
   useEffect(() => { if (done) window.dispatchEvent(new Event(SAVED_EVENT)); }, [done]);
+  // The check's result (or the error) appears under the file: bring it into view.
+  useEffect(() => {
+    if (state) resultRef.current?.scrollIntoView({ block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [state]);
 
   const choose = (f: File | undefined) => {
     setFileError(null);
@@ -44,6 +51,8 @@ export function MyLoansImport() {
     if (!f) { setFile(null); return; }
     if (f.size > BRANCH_FILE_MAX_BYTES) { setFile(null); setFileError("The file is larger than 5 MB."); return; }
     setFile(f);
+    // Rows: every non-blank line, less a header row when the file has one (the MyLoans dump has none).
+    void f.text().then((t) => { const ls = t.split(/\r?\n/).filter((l) => l.trim()); setRows(Math.max(0, ls.length - (/division/i.test(ls[0] ?? "") ? 1 : 0))); });
   };
   const toggle = (set: Set<string>, upd: (s: Set<string>) => void, code: string, on: boolean) => {
     const n = new Set(set);
@@ -61,7 +70,7 @@ export function MyLoansImport() {
       for (const c of activate) fd.append("activate", c);
       for (const c of hide) fd.append("hide", c);
     }
-    action(fd);
+    startTransition(() => action(fd)); // inside a transition, so pending shows
   };
   const items = preview?.diff.items ?? [];
   const shown = items.filter((i) => showUnchanged || i.status !== "unchanged");
@@ -80,16 +89,19 @@ export function MyLoansImport() {
 
       <section aria-labelledby="mli-2" className="flex flex-col gap-3">
         <h3 id="mli-2" className="text-base font-bold text-navy">2. Check, then confirm</h3>
-        <form ref={formRef} onSubmit={(e) => { e.preventDefault(); submit("check"); }} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="min-w-0 flex-1">
-            <label htmlFor="mli-file" className="label">MyLoans branch file (.csv, .tsv or .txt)</label>
-            <input id="mli-file" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values" className="input py-2" onChange={(e) => choose(e.target.files?.[0])} />
-          </div>
-          <button type="submit" className="btn-secondary" disabled={pending || !file}>{pending ? "Checking..." : "Check file"}</button>
+        <form ref={formRef} onSubmit={(e) => { e.preventDefault(); submit("check"); }}>
+          <label htmlFor="mli-file" className="label">MyLoans branch file (.csv, .tsv or .txt)</label>
+          <FilePicker
+            id="mli-file" accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values" hint="A .csv, .tsv or .txt file, up to 5 MB."
+            file={file ? { name: file.name, size: file.size, rows } : null}
+            onPick={choose} onClear={() => choose(undefined)} disabled={pending}
+            action={<button type="submit" className="btn-navy btn-sm" disabled={pending || !file}>{pending ? "Checking..." : "Check file"}</button>}
+          />
         </form>
         {fileError && <p role="alert" className="text-sm text-bad-fg">{fileError}</p>}
         {state && !state.ok && <p role="alert" className="rounded-xl bg-bad-bg px-4 py-2.5 text-sm text-bad-fg" data-import-error>{state.error}</p>}
       </section>
+      <div ref={resultRef} className="-mt-5 scroll-mt-4" aria-hidden="true" />
 
       {done && (
         <p role="status" className="rounded-xl bg-ok-bg px-4 py-3 text-[15px] font-semibold text-ok-fg" data-import-done>

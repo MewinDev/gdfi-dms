@@ -1,8 +1,9 @@
 /**
- * The Manual Test Kit, for real, on the TEST database (gdfi_dms_test) with a scratch folder: start
- * (build the baseline), every sample in the test sheet exists, change data, backup, reset, restore a
- * backup, the out-of-date refusal, dates moved on restore, the last 5 automatic backups. The test
- * database is saved first and put back at the end, so the other tests keep their data.
+ * The Manual Test Kit, for real, on the TEST database (gdfi_dms_test) with a scratch folder: the CLEAN
+ * kit (the default: accounts, branches, settings, 40 PNs in the sample MyLoans, no work data), then the
+ * kit WITH SCENARIOS (--with-scenarios: every sample in the scenarios sheet exists), change data, backup,
+ * reset, restore a backup, the out-of-date refusal, dates moved on restore, the last 5 automatic backups.
+ * The test database is saved first and put back at the end, so the other tests keep their data.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -12,8 +13,11 @@ import { getSetting } from "@/lib/settings";
 import { businessDate, businessDaysBetween } from "@/lib/time";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { setKitConfigForTests, kitConfig, KIT_DATABASES, OUT_OF_DATE } from "@/lib/kit/guard";
-import { autoBackup, baselineStatus, buildBaseline, listSaves, readManifest, restoreSave, saveDump } from "@/lib/kit/core";
+import { autoBackup, baselineStatus, buildBaseline, FIRST_CLEAN_BACKUP, listSaves, loadedKit, readManifest, restoreSave, saveDump } from "@/lib/kit/core";
 import { buildSamples } from "@/lib/kit/build";
+import { buildClean, CLEAN_EMPTY_TABLES } from "@/lib/kit/build-clean";
+import { APPROVER_ROLES, CLEAN_ACCOUNTS, CLEAN_POOL, poolHeading } from "@/lib/kit/clean";
+import { getMyLoansAdapter } from "@/lib/myloans";
 import { KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_L1, KIT_LOANS, KIT_OTHER_SAMPLES, KIT_REPLACEMENT_PN } from "@/lib/kit/catalog";
 import { shiftBusinessDays } from "@/lib/kit/rebase";
 import { examplePn, parsePn } from "@/lib/pn/format";
@@ -48,13 +52,106 @@ afterAll(async () => {
 }, 300_000);
 
 describe("Manual Test Kit on the test database", () => {
-  it("start: builds the starting state through the app's services and saves the baseline", async () => {
+  it("clean kit (the default): accounts, branches and settings, 40 fresh PNs, no work data", async () => {
     await fresh();
-    const m = await buildBaseline(quiet, { samples: () => buildSamples(quiet) });
-    expect(m).toMatchObject({ name: "baseline", kind: "baseline", database: "gdfi_dms_test", savedOn: businessDate(new Date()) });
+    const m = await buildBaseline(quiet, { variant: "clean", samples: () => buildClean(quiet) });
+    expect(m).toMatchObject({ name: "baseline-clean", kind: "baseline", variant: "clean", loanFiles: 0 });
+    expect(baselineStatus("clean")).toMatchObject({ upToDate: true });
+    expect(loadedKit()?.variant).toBe("clean");
+    // The first wipe for a clean kit took the before-clean-kit backup.
+    expect(readManifest(FIRST_CLEAN_BACKUP)).toMatchObject({ kind: "backup" });
+
+    // Work data: none. The audit log has the one "kit started" line.
+    for (const t of CLEAN_EMPTY_TABLES) {
+      const [{ n }] = await prisma.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM "${t}"`);
+      expect(n, t).toBe(0);
+    }
+    expect((await prisma.auditLog.findMany()).map((a) => a.action)).toEqual(["kit_started"]);
+
+    // Every account: role, branch access, active; the inactive LA inactive.
+    const users = await prisma.user.findMany({ include: { role: true, homeBranch: true } });
+    expect(users).toHaveLength(CLEAN_ACCOUNTS.length);
+    const codesOf = async (email: string) => (await prisma.userBranch.findMany({ where: { user: { email } }, include: { branch: true } })).map((x) => x.branch.code).sort();
+    const l1 = (await prisma.branch.findMany({ where: { area: { name: KIT_L1.area }, division: { name: KIT_L1.division } } })).map((b) => b.code!).sort();
+    const roleName: Record<string, string> = { SUPERVISOR: "Branch Supervisor", LA_NO_REFRESH: "LA (no refresh)", APPROVER_SMALL: APPROVER_ROLES.small.name, APPROVER_LARGE: APPROVER_ROLES.large.name };
+    for (const a of CLEAN_ACCOUNTS) {
+      const u = users.find((x) => x.email === a.email);
+      expect(u, a.email).toBeTruthy();
+      expect(u!.name).toBe(a.name);
+      expect(u!.isTestUser).toBe(true);
+      expect(u!.active, a.email).toBe(!a.inactive);
+      if (roleName[a.role]) expect(u!.role.name, a.email).toBe(roleName[a.role]);
+      else expect(u!.role.key, a.email).toBe(a.role);
+      if (a.branches === "ALL") expect(u!.allBranches, a.email).toBe(true);
+      else if (!a.access) expect(await codesOf(a.email), a.email).toEqual([...a.branches].sort());
+    }
+    expect(await codesOf("kit.area.supervisor@example.test")).toEqual([...new Set([...l1, "390"])].sort());
+    expect(await codesOf("kit.la.luzon1@example.test")).toEqual(l1.filter((c) => c !== "174"));
+    expect(users.find((u) => u.email === "kit.la.luzon1@example.test")!.homeBranch?.code).toBe("165");
+    // The two approver bands.
+    const bands = await prisma.approvalBand.findMany({ include: { role: true }, orderBy: { fromCents: "asc" } });
+    expect(bands.map((b) => [b.fromCents, b.role.name])).toEqual([[0, APPROVER_ROLES.small.name], [APPROVER_ROLES.large.fromCents, APPROVER_ROLES.large.name]]);
+    // Alicia-Inactive is inactive; the expense kinds and the funds types are there.
+    expect((await prisma.branch.findUniqueOrThrow({ where: { code: "718" } })).active).toBe(false);
+    expect(await prisma.expenseKind.count()).toBeGreaterThanOrEqual(5);
+    expect(await prisma.fundsType.count()).toBeGreaterThanOrEqual(2);
+
+    // The pool: 40 distinct PNs in the real format, found by the sample MyLoans, none opened.
+    const pns = CLEAN_POOL.map((l) => l.pn);
+    expect(pns).toHaveLength(40);
+    expect(new Set(pns).size).toBe(40);
+    for (const pn of pns) {
+      expect(parsePn(pn).ok, pn).toBe(true);
+      expect(/^GD\d{3}20269030\d{2}$/.test(pn), pn).toBe(true); // the new 9-03xxx range
+      expect((await getMyLoansAdapter().getByPn(pn)).ok, pn).toBe(true);
+    }
+    expect(await prisma.loan.count()).toBe(0);
+    const by = (h: string) => CLEAN_POOL.filter((l) => poolHeading(l) === h).length;
+    expect(by("Antipolo (101)")).toBeGreaterThanOrEqual(8);
+    expect(by("Angono (165)")).toBeGreaterThanOrEqual(8);
+    expect(by("A. Mabini (168)")).toBe(6);
+    expect(by("Alaminos (390)")).toBe(6);
+
+    // A tester's first steps: opening a PN makes a fresh loan file; the special PNs behave as the answers say.
+    const tryOpen = async (email: string, pn: string) => { try { await openLoanFile(await asUser(email), { pn }); return "opened"; } catch (e) { return e instanceof Error ? e.message : String(e); } };
+    const outcomes: Record<string, string> = {
+      plain: await tryOpen("kit.la.antipolo@example.test", "GD1012026903001"),
+      unknownCode: await tryOpen("kit.la.antipolo@example.test", "GD7772026903011"),
+      inactive: await tryOpen("kit.la.roving@example.test", "GD7182026903040"),
+      luzonExcluded: await tryOpen("kit.la.luzon1@example.test", "GD1742026903032"),
+      // (Vitest has the built-in branch subset, not the real list: the access checks use its branches.)
+      luzonAngono: await tryOpen("kit.la.luzon1@example.test", "GD1652026903016"),
+      antipoloAtAngono: await tryOpen("kit.la.antipolo@example.test", "GD1652026903017"),
+      alaminosByLuzon: await tryOpen("kit.la.luzon1@example.test", "GD3902026903031"),
+      alaminosByArea: await tryOpen("kit.area.supervisor@example.test", "GD3902026903031"),
+      alaminosByRoving: await tryOpen("kit.la.roving@example.test", "GD3902026903031"),
+    };
+    expect(outcomes.plain).toBe("opened");
+    // The answers file says exactly this.
+    expect(outcomes.unknownCode, "777 in the PN, MyLoans says Antipolo").toBe("opened");
+    expect((await prisma.loan.findUniqueOrThrow({ where: { pn: "GD7772026903011" }, include: { branch: true } })).branch.code).toBe("101");
+    expect(outcomes.inactive).toBe("Alicia-Inactive (718) is inactive in Settings, so no new loan files can be opened for it.");
+    expect(outcomes.luzonExcluded, "LA Luzon 1 at Amang Rodriguez").toBe("Outside your branch access.");
+    expect(outcomes.luzonAngono, "LA Luzon 1 at Angono").toBe("opened");
+    expect(outcomes.antipoloAtAngono, "LA Antipolo at Angono").toBe("Outside your branch access.");
+    expect(outcomes.alaminosByLuzon, "LA Luzon 1 at Alaminos").toBe("Outside your branch access.");
+    expect(outcomes.alaminosByArea, "Area Supervisor at Alaminos").toBe("Your role does not allow opening loan files.");
+    expect(outcomes.alaminosByRoving, "Roving LA at Alaminos").toBe("opened");
+    expect(await prisma.branchReview.count()).toBe(0); // opening the PNs made no review item
+    const opened = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026903001" }, include: { transactions: true } });
+    expect(opened.transactions.length).toBeGreaterThan(0); // what rules 1 to 4 create on opening, nothing more
+    expect(await prisma.dpAssignment.count()).toBe(0);
+    expect(await prisma.cashAdvance.count()).toBe(0);
+  }, 600_000);
+
+  it("start with scenarios: builds the starting state through the app's services and saves the baseline", async () => {
+    await fresh();
+    const m = await buildBaseline(quiet, { variant: "scenarios", samples: () => buildSamples(quiet) });
+    expect(m).toMatchObject({ name: "baseline", kind: "baseline", variant: "scenarios", database: "gdfi_dms_test", savedOn: businessDate(new Date()) });
+    expect(loadedKit()?.variant).toBe("scenarios");
     expect(m.loanFiles).toBe(KIT_LOANS.filter((l) => l.opened).length);
     expect(existsSync(path.join(DIR, "baseline.dump"))).toBe(true);
-    expect(baselineStatus()).toMatchObject({ upToDate: true });
+    expect(baselineStatus("scenarios")).toMatchObject({ upToDate: true });
 
     // Every sample account: @example.test, the inactive one inactive; no seed test users.
     const users = await prisma.user.findMany({ include: { role: true, branches: true } });
@@ -136,7 +233,7 @@ describe("Manual Test Kit on the test database", () => {
     for (const pn of ["GD1012026902060", "GD1012026902061", "GD1682026902062"]) expect((await job(pn, "NOTARY")).status, pn).toBe("CLOSED");
     expect((await job("GD1682026902063", "NOTARY")).status).toBe("PENDING_ACCEPTANCE");
     const finished = await prisma.jobStage.findFirstOrThrow({ where: { kind: "VERIFY", assignment: { loan: { pn: "GD1012026902060" } } } });
-    expect(finished.finishedAt!.getTime()).toBeLessThan(Date.now() - 86_400_000);
+    expect(businessDate(finished.finishedAt!) < businessDate(new Date())).toBe(true); // finished on an earlier business day
     const advisories = await prisma.ltoAdvisory.findMany({ include: { ltoOffice: true } });
     expect(advisories).toHaveLength(3);
     expect(advisories.filter((a) => a.resolvedAt)).toHaveLength(1);
@@ -147,8 +244,27 @@ describe("Manual Test Kit on the test database", () => {
     expect(businessDate(late.releasedAt)).toBe(shiftBusinessDays(businessDate(new Date()), -4, holidays));
   }, 600_000);
 
-  it("every PN in the test sheet is a sample of the kit, and every sample is in the test sheet", () => {
+  it("the tester sheet lists the 40 PNs by branch and nothing about them; the answers file covers each one", () => {
     const sheet = readFileSync(path.join("docs", "MANUAL-TEST-KIT.md"), "utf8");
+    const inSheet = sheet.match(/\bGD\d{13}\b/g) ?? [];
+    expect([...inSheet].sort()).toEqual(CLEAN_POOL.map((l) => l.pn).sort()); // each PN once, no other PN
+    // Under its branch heading, each line just the PN.
+    for (const l of CLEAN_POOL) {
+      const at = sheet.indexOf(l.pn);
+      const heading = sheet.slice(0, at).match(/^### (.+)$/gm)?.at(-1)?.slice(4);
+      expect(heading, l.pn).toBe(poolHeading(l));
+      expect(sheet.split(/\r?\n/).find((x) => x.includes(l.pn))!.replace(/^[-*]\s*`?|`?\s*$/g, "")).toBe(l.pn);
+      expect(sheet.includes(l.borrower), `${l.pn} borrower must not be on the sheet`).toBe(false);
+    }
+    // Every account of the clean kit is on the sheet, with its role and branch access.
+    for (const a of CLEAN_ACCOUNTS) expect(sheet.split(/\r?\n/).some((x) => x.startsWith(`| ${a.name} | ${a.roleLabel} | ${a.accessLabel} |`)), a.name).toBe(true);
+    expect(sheet).toContain("MANUAL-TEST-KIT-ANSWERS.md");
+    const answers = readFileSync(path.join("docs", "MANUAL-TEST-KIT-ANSWERS.md"), "utf8");
+    for (const l of CLEAN_POOL) expect(answers.includes(l.pn), `${l.pn} in the answers`).toBe(true);
+  });
+
+  it("every PN in the scenarios sheet is a sample of the kit with scenarios, and every sample is in it", () => {
+    const sheet = readFileSync(path.join("docs", "MANUAL-TEST-KIT-SCENARIOS.md"), "utf8");
     // Every real-format PN except the format example and the deliberately wrong ones of the PN cases.
     const inSheet = new Set((sheet.match(/\bGD\d{13}\b/g) ?? []).filter((pn) => pn !== examplePn() && parsePn(pn).ok));
     // The old to new PN table lists every old sample PN (PN-0002001 ...).
@@ -187,7 +303,7 @@ describe("Manual Test Kit on the test database", () => {
     const before = await prisma.loan.count();
     try {
       writeFileSync(file, JSON.stringify({ ...JSON.parse(saved), migrations: ["20260101000000_old"] }));
-      expect(baselineStatus()).toMatchObject({ upToDate: false });
+      expect(baselineStatus("scenarios")).toMatchObject({ upToDate: false });
       await fresh();
       expect(() => restoreSave("baseline", quiet)).toThrow(OUT_OF_DATE);
       expect(await prisma.loan.count()).toBe(before);

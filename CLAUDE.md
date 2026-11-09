@@ -17,7 +17,7 @@
 ## Two databases and the Manual Test Kit
 
 - `gdfi_dms` is the person's own data and manual testing; `gdfi_dms_test` is for the automated tests (`npm run db:create-test`). Vitest, the integration helpers and Playwright always use `gdfi_dms_test` (`lib/env/test-db.ts`) and refuse any database without `test` in its name; `ALLOW_DESTRUCTIVE` does not change that. Never point a test run at `gdfi_dms`.
-- The Manual Test Kit (`npm run kit:*`, Settings > Test kit, `docs/MANUAL-TEST-KIT.md`) works only on `gdfi_dms` with `APP_ENV=local`, `TEST_MODE=true` and the sample MyLoans (`lib/kit/guard.ts`). When a sample case or account changes, update `lib/kit/catalog.ts`, `lib/kit/build.ts` and the test sheet together; `tests/integration/kit.test.ts` checks that they agree.
+- The Manual Test Kit (`npm run kit:*`, Settings > Test kit, `docs/MANUAL-TEST-KIT.md`) works only on `gdfi_dms` with `APP_ENV=local`, `TEST_MODE=true` and the sample MyLoans (`lib/kit/guard.ts`). The default is the clean kit (`lib/kit/clean.ts`, `lib/kit/build-clean.ts`, `docs/MANUAL-TEST-KIT.md` and `docs/MANUAL-TEST-KIT-ANSWERS.md`); `--with-scenarios` loads the old scenario data (`lib/kit/catalog.ts`, `lib/kit/build.ts`, `docs/MANUAL-TEST-KIT-SCENARIOS.md`). When an account or PN changes, update the matching catalog, builder and sheets together; `tests/integration/kit.test.ts` checks that they agree.
 
 ## Destructive commands
 
