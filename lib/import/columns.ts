@@ -6,7 +6,7 @@
 
 export type ImportListKey =
   | "branches" | "lto" | "loan-types" | "transaction-types" | "document-types"
-  | "checklist" | "tat" | "holidays" | "cash-advance" | "users" | "problem-reasons" | "hold-reasons" | "return-reasons" | "processing-stages" | "funds-types";
+  | "checklist" | "tat" | "holidays" | "cash-advance" | "users" | "problem-reasons" | "hold-reasons" | "return-reasons" | "processing-stages" | "funds-types" | "expense-kinds";
 
 export interface ImportColumn {
   /** Column name in the file (first row). */
@@ -184,7 +184,7 @@ export const IMPORT_LISTS: Record<ImportListKey, ImportListDef> = {
     keyHelp: "Rows are matched by transaction code and purpose together.",
     columns: [
       { name: "transaction_code", label: "Transaction code", what: "Short code of the transaction type.", required: "yes", allowed: "A code from Transaction types", example: "MORTGAGE", text: true },
-      { name: "kind", label: "Expense kind", what: "What the money is for.", required: "yes", allowed: "NOTARY_FEE, PPSR_FEE, LTO_FEE, TRANSPORT, OTHER", example: "LTO_FEE" },
+      { name: "kind", label: "Expense kind", what: "What the money is for: the kind's name or code from Settings, Expense kinds. OTHER also applies to any kind without its own rule.", required: "yes", allowed: "An active expense kind (name or code), e.g. LTO fee or LTO_FEE", example: "LTO_FEE", text: true },
       { name: "purpose", label: "Purpose", what: "A short description.", required: "yes", allowed: "Text", example: "LTO fees", text: true },
       { name: "suggested_amount", label: "Suggested amount", what: "Suggested amount in pesos. Leave blank when not set.", required: "no", allowed: "Number above 0, or blank", example: "1500" },
       { name: "max_amount", label: "Maximum per transaction", what: "Highest amount in pesos without a typed reason.", required: "yes", allowed: "Number above 0, not below the suggested amount", example: "3000" },
@@ -224,6 +224,20 @@ export const IMPORT_LISTS: Record<ImportListKey, ImportListDef> = {
     examples: [
       { code: "CHK", name: "Check", order: "3", needs_reference: "Yes", needs_account: "No", must_liquidate: "Yes", status: "Active", notes: EXAMPLE_NOTE },
       { code: "GC", name: "GCash payout", order: "4", needs_reference: "Yes", needs_account: "Yes", must_liquidate: "Yes", status: "Active", notes: EXAMPLE_NOTE },
+    ],
+  },
+  "expense-kinds": {
+    key: "expense-kinds", title: "Expense kinds", slug: "expense-kinds", keyColumns: ["name"],
+    keyHelp: "Rows are matched by name, ignoring capitals and spaces. A new name adds a kind; an existing name updates its amount and status. Other is built in: it is always active and always Person enters. Rename a kind in the form.",
+    columns: [
+      { name: "name", label: "Name", what: "What the money is for, in plain words.", required: "yes", allowed: "2 to 40 characters, unique ignoring capitals and spaces", example: "Courier", text: true },
+      { name: "amount_mode", label: "Amount", what: "How the amount field starts when this kind is picked. Blank keeps it (new rows: Person enters).", required: "no", allowed: "Person enters, Suggested, Fixed", example: "Suggested" },
+      { name: "amount", label: "Amount (PHP)", what: "The kind's own amount, for Suggested or Fixed. Blank for Person enters.", required: "no", allowed: "Above 0, at most 9,999,999.99, whole pesos or two decimals", example: "150" },
+      status, notes,
+    ],
+    examples: [
+      { name: "Courier", amount_mode: "Suggested", amount: "150", status: "Active", notes: EXAMPLE_NOTE },
+      { name: "Photocopy", amount_mode: "Person enters", amount: "", status: "Active", notes: EXAMPLE_NOTE },
     ],
   },
   "hold-reasons": {

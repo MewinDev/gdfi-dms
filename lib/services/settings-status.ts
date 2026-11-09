@@ -13,13 +13,13 @@ import { checkLockout } from "./lockout";
  * be made active again. Existing loan files, transactions and history keep it and its name.
  */
 export type StatusKind =
-  | "branch" | "transactionType" | "documentType" | "checklistRule" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "user" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage" | "fundsType";
+  | "branch" | "transactionType" | "documentType" | "checklistRule" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "user" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage" | "fundsType" | "expenseKind";
 
-export const STATUS_KINDS: StatusKind[] = ["branch", "transactionType", "documentType", "checklistRule", "loanType", "ltoOffice", "caRule", "holiday", "user", "approvalBand", "problemReason", "holdReason", "returnReason", "processingStage", "fundsType"];
+export const STATUS_KINDS: StatusKind[] = ["expenseKind", "branch", "transactionType", "documentType", "checklistRule", "loanType", "ltoOffice", "caRule", "holiday", "user", "approvalBand", "problemReason", "holdReason", "returnReason", "processingStage", "fundsType"];
 
 const NOUN: Record<StatusKind, string> = {
   branch: "Branch", transactionType: "Transaction type", documentType: "Document type", checklistRule: "Checklist item",
-  loanType: "Loan type", ltoOffice: "LTO office", caRule: "Cash-advance rule", holiday: "Holiday", user: "User", approvalBand: "Approval band", problemReason: "Problem reason", holdReason: "Hold reason", returnReason: "Return reason", processingStage: "Processing stage", fundsType: "Funds type",
+  loanType: "Loan type", ltoOffice: "LTO office", caRule: "Cash-advance rule", holiday: "Holiday", user: "User", approvalBand: "Approval band", problemReason: "Problem reason", holdReason: "Hold reason", returnReason: "Return reason", processingStage: "Processing stage", fundsType: "Funds type", expenseKind: "Expense kind",
 };
 
 /** Lists the app needs at least one active row of. */
@@ -45,6 +45,7 @@ async function loadRow(kind: StatusKind, id: string): Promise<(Row & { builtIn?:
     case "holdReason": { const r = await prisma.holdReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
     case "returnReason": { const r = await prisma.returnReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
     case "fundsType": { const r = await prisma.fundsType.findUnique({ where: { id } }); return r && { id, active: r.active, label: `${r.name} (${r.code})` }; }
+    case "expenseKind": { const r = await prisma.expenseKind.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name, builtIn: r.builtIn }; }
     case "processingStage": { const r = await prisma.processingStage.findUnique({ where: { id }, include: { type: true } }); return r && { id, active: r.active, label: `${r.type.name} · ${r.name}` }; }
     case "caRule": { const r = await prisma.cashAdvanceRule.findUnique({ where: { id }, include: { transactionType: true } }); return r && { id, active: r.active, label: `${r.transactionType.name} · ${r.purpose}` }; }
     case "holiday": { const r = await prisma.holidayCalendar.findUnique({ where: { id } }); return r && { id, active: r.active, label: `${r.name} (${r.date})` }; }
@@ -78,6 +79,7 @@ export async function inactiveRefusal(
   actor: { id: string },
   counts?: { activeLeft?: number },
 ): Promise<string | null> {
+  if (kind === "expenseKind" && row.builtIn) return "Other is built in: it is always active, so there is always a kind for anything else.";
   if (kind === "transactionType" && row.builtIn) return "The four built-in transaction types (Notary, For EDST, For Entry PPSR, Mortgage) are always active.";
   if (kind === "user") {
     if (row.id === actor.id) return "You cannot make yourself inactive.";
@@ -136,6 +138,11 @@ export async function inactiveEffect(kind: StatusKind, id: string): Promise<stri
       const n = await prisma.cashAdvance.count({ where: { fundsTypeId: id } });
       return `Used by ${n} funds record${n === 1 ? "" : "s"}. They keep it (and its name). It will not be offered for new requests. Make inactive?`;
     }
+    case "expenseKind": {
+      const k = await prisma.expenseKind.findUniqueOrThrow({ where: { id } });
+      const [rules, lines] = await Promise.all([prisma.cashAdvanceRule.count({ where: { kind: k.code, active: true } }), prisma.cashAdvanceLine.count({ where: { kind: k.code } })]);
+      return `Used by ${rules} active rule${rules === 1 ? "" : "s"} and ${lines} request line${lines === 1 ? "" : "s"}. They keep it (and its name). It will not be offered for new requests or new rules. Make inactive?`;
+    }
     case "returnReason": {
       const n = await prisma.dpAssignment.count({ where: { returnReasonId: id } });
       return `Used by ${n} return${n === 1 ? "" : "s"}. They keep it. It will not be offered for new returns. Make inactive?`;
@@ -183,6 +190,7 @@ export async function setRowActive(user: CurrentUser, kind: StatusKind, id: stri
       case "holdReason": await tx.holdReason.update({ where: { id }, data }); break;
       case "returnReason": await tx.returnReason.update({ where: { id }, data }); break;
       case "fundsType": await tx.fundsType.update({ where: { id }, data }); break;
+      case "expenseKind": await tx.expenseKind.update({ where: { id }, data }); break;
       case "processingStage": await tx.processingStage.update({ where: { id }, data }); break;
       case "holiday": await tx.holidayCalendar.update({ where: { id }, data }); break;
       case "user": await tx.user.update({ where: { id }, data }); break;

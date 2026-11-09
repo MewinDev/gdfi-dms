@@ -16,6 +16,8 @@ import { inactiveRefusal } from "./settings-status";
 import { checkLockout } from "./lockout";
 import { applyAccess, branchGrants, parseAccess, type AccessInput } from "./access";
 import { rebuildAccess } from "@/lib/branches/access";
+import { KIND_SCHEMA, saveExpenseKind } from "./expense-kinds";
+import { decimalToCents, peso } from "@/lib/funds/rules";
 
 const actorOf = (u: CurrentUser): Actor => ({ id: u.id, label: u.name });
 
@@ -119,7 +121,7 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
 // Settings (reference data). Every change is audited.
 // ---------------------------------------------------------------------------
 
-export type SettingsKind = "branch" | "transactionType" | "documentType" | "checklistRule" | "tat" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage" | "fundsType";
+export type SettingsKind = "branch" | "transactionType" | "documentType" | "checklistRule" | "tat" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage" | "fundsType" | "expenseKind";
 
 /** An optional number (blank means none), within limits. */
 const optNumber = (label: string, min: number, max: number) => z.preprocess(
@@ -187,7 +189,7 @@ export const SETTINGS_SCHEMAS = {
   // One rule per transaction type and expense kind: optional suggested amount, maximum per transaction.
   caRule: z.object({
     transactionTypeId: text("Transaction type"),
-    kind: z.enum(["NOTARY_FEE", "PPSR_FEE", "LTO_FEE", "TRANSPORT", "OTHER"], { message: "Pick the expense kind." }),
+    kind: z.string({ message: "Pick the expense kind." }).trim().min(1, "Pick the expense kind."),
     purpose: text("Purpose"),
     suggestedAmount: z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), money("Suggested amount").nullable()),
     maxAmount: money("Maximum amount"),
@@ -224,6 +226,8 @@ export const SETTINGS_SCHEMAS = {
       return out;
     }),
   }),
+  /** Expense kinds (Settings > Expense kinds): saved by lib/services/expense-kinds.ts (name rules, Other, amounts). */
+  expenseKind: KIND_SCHEMA,
   holiday: z.object({ date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD.").refine(realDate, "That date does not exist."), name: text("Name") }),
 } satisfies Record<SettingsKind, z.ZodType>;
 const schemas = SETTINGS_SCHEMAS;
@@ -283,7 +287,17 @@ export async function checkSettingsRow(kind: SettingsKind, id: string | null, da
   if (kind === "caRule") {
     const tt = await db.transactionType.findUnique({ where: { id: String(data.transactionTypeId) } });
     if (!tt) throw new UserError("Pick a transaction.", "transactionTypeId");
-    const twin = await db.cashAdvanceRule.findFirst({ where: { transactionTypeId: tt.id, kind: data.kind as never, active: true, ...(id ? { NOT: { id } } : {}) } });
+    // The kind: active for a new rule; an existing rule may keep an inactive one.
+    const cur = id ? await db.cashAdvanceRule.findUnique({ where: { id } }) : null;
+    const k = await db.expenseKind.findUnique({ where: { code: String(data.kind) } });
+    if (!k) throw new UserError("Pick the expense kind.", "expenseKind");
+    if (!k.active && cur?.kind !== k.code) throw new UserError(`${k.name} is inactive. Pick an active expense kind.`, "expenseKind");
+    // A kind's fixed amount cannot be changed by the processor, so the maximum cannot be below it.
+    const max = typeof data.maxAmount === "number" ? Math.round(data.maxAmount * 100) : decimalToCents(data.maxAmount as never);
+    if (k.amountMode === "FIXED" && k.amountCents !== null && max !== null && max < k.amountCents) {
+      throw new UserError(`${k.name} has a fixed amount of ${peso(k.amountCents)}. The maximum cannot be below it.`, "maxAmount");
+    }
+    const twin = await db.cashAdvanceRule.findFirst({ where: { transactionTypeId: tt.id, kind: k.code, active: true, ...(id ? { NOT: { id } } : {}) } });
     if (twin) throw new UserError(`${tt.name} already has an active rule for this expense kind. Change that rule instead.`, "expenseKind");
   }
 }
@@ -324,6 +338,8 @@ async function checkBranchRow(id: string | null, data: Record<string, unknown>, 
 
 export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id: string | null, raw: Record<string, unknown>) {
   if (!KIND_PERMISSION[kind] || !can(user, KIND_PERMISSION[kind])) throw new UserError("Your role does not allow changing this part of Settings.");
+  // Expense kinds have their own rules (Other is fixed, names unique ignoring case, amounts).
+  if (kind === "expenseKind") { await saveExpenseKind(user, id, raw); return; }
   const schema = schemas[kind];
   if (!schema) throw new UserError("Unknown setting.");
   const p = schema.safeParse(raw);
@@ -347,6 +363,7 @@ export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id:
     holiday: tx.holidayCalendar as unknown as Delegate,
     processingStage: tx.processingStage as unknown as Delegate,
     fundsType: tx.fundsType as unknown as Delegate,
+    expenseKind: tx.expenseKind as unknown as Delegate,
   });
 
   try {

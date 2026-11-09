@@ -48,6 +48,8 @@ export interface AdvanceRec {
   id: string; number: string; status: string; requestedAt: Date; approvedAt: Date | null; releasedAt: Date | null;
   /** Peso amounts in centavos. Null when the viewer may not see cash amounts (never sent to them). */
   requestedCents: number | null; releasedCents: number | null;
+  /** The lines in words: kind (Other with its description) and the amount source. */
+  linesText?: string;
 }
 export interface TxnRec {
   id: string; code: string; name: string; requiresDp: boolean; ownerRole: string; status: string; statusSince: Date; createdAt: Date;
@@ -647,7 +649,8 @@ function fundsWords(a: AdvanceRec): string {
   const st = a.status === "REQUESTED" ? "Requested" : a.status === "APPROVED" ? "Approved, waiting for release" : a.status === "DENIED" ? "Denied"
     : a.status === "CANCELLED" ? "Cancelled" : ["LIQUIDATED", "CLOSED"].includes(a.status) ? "Settled" : "Funded";
   const amount = a.releasedCents ?? a.requestedCents;
-  return amount === null ? st : `${st} (₱${(amount / 100).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+  const words = amount === null ? st : `${st} (₱${(amount / 100).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+  return a.linesText ? `${words} · ${a.linesText}` : words;
 }
 
 // ---------------------------------------------------------------------------

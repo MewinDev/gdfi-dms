@@ -10,7 +10,8 @@ import { canSeeJob, LTO_BLOCK_MESSAGE, lineTotals, loadAssignment, ltoBlocked } 
 import { heldFor } from "@/lib/services/pasuyo";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { businessDate, fmtShort } from "@/lib/time";
-import { EXPENSE_LABEL, peso, type ExpenseKindKey } from "@/lib/funds/rules";
+import { peso } from "@/lib/funds/rules";
+import { flagKindChoices, kindNames, lineKindText } from "@/lib/services/expense-kinds";
 import { doneTat, openHold, openProblem, txnFunds, txnTat } from "@/lib/jobs/view";
 import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { problemDays } from "@/lib/workflow/tat";
@@ -47,6 +48,7 @@ export const metadata: Metadata = { title: "Job" };
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePageAny([PERMISSIONS.JOBS_WORK, PERMISSIONS.FUNDS_VIEW_ALL, PERMISSIONS.REPORTS_TAT]);
   const { id } = await params;
+  const names = await kindNames();
   const a = await loadAssignment(prisma, id).catch(() => null);
   if (!a || !canSeeJob(user, a)) notFound();
   // Declined or returned to the LA: it went back to the LA who sent it. A processor never sees it again
@@ -93,7 +95,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const blocked = working && (await ltoBlocked(prisma, a)) ? LTO_BLOCK_MESSAGE : undefined;
   const reasons = await prisma.problemReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } });
   const lines = working
-    ? await Promise.all(t.advanceLines.filter((l) => !l.denied && l.releasedCents > 0).map(async (l) => ({ lineId: l.id, label: `${l.advance.number} · ${EXPENSE_LABEL[l.kind as ExpenseKindKey]}`, balanceCents: (await lineTotals(prisma, l.id)).balance })))
+    ? await Promise.all(t.advanceLines.filter((l) => !l.denied && l.releasedCents > 0).map(async (l) => ({ lineId: l.id, label: `${l.advance.number} · ${lineKindText(names, l)}`, balanceCents: (await lineTotals(prisma, l.id)).balance })))
     : [];
   const las = working && a.processing
     ? await prisma.user.findMany({ where: receiverWhere(a.loan.branchId), orderBy: { name: "asc" }, select: { id: true, name: true } })
@@ -133,7 +135,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const updates = a.status === "PENDING_ACCEPTANCE" ? await updatesBeforeAccept(a) : null;
   const docs = t.documents.filter((d) => d.documentId);
   const labels = !!t.labelsPrintedAt || (docs.length > 0 && docs.every((d) => d.labelPrintedAt));
-  const kinds = (t.fundsKinds as ExpenseKindKey[]).map((k) => EXPENSE_LABEL[k]).join(", ");
+  const kinds = t.fundsKinds.map((k) => names.get(k) ?? k).join(", ");
   const pDays = problemDays(t.problems, holidays, now);
   const incomplete = t.status === "IN_PROCESS" ? await prisma.loanException.findFirst({ where: { transactionId: t.id, type: "INCOMPLETE_PACKAGE", status: "OPEN" }, orderBy: { raisedAt: "desc" } }) : null;
 
@@ -345,7 +347,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 )}
                 {!problem && <RaiseProblemForm transactionId={t.id} reasons={reasons} />}
                 {mayHold && !hold && holdReasons.length > 0 && <PutOnHoldForm transactionId={t.id} reasons={holdReasons} />}
-                <FundsFlagForm assignmentId={a.id} needed={t.fundsNeeded} kinds={t.fundsKinds} />
+                <FundsFlagForm assignmentId={a.id} needed={t.fundsNeeded} kinds={t.fundsKinds} choices={await flagKindChoices(t.fundsKinds)} />
                 {canPass && (
                   <PasuyoForm
                     assignmentId={a.id} branches={passBranches} defaultBranchId={a.dpBranchId}
@@ -422,7 +424,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <h2 id="funds" className="text-lg font-bold text-navy">Funds</h2>
           <ul className="mt-2 flex flex-col gap-1 text-[15px]">
             {t.advanceLines.map((l) => (
-              <li key={l.id} className="flex flex-wrap items-center gap-2"><FundsTypePill code={l.advance.fundsTypeCode} name={l.advance.fundsTypeName} /><span>{l.advance.number} · {EXPENSE_LABEL[l.kind as ExpenseKindKey]} · asked {peso(l.requestedCents)}{l.releasedCents ? ` · ${l.advance.transferDate || l.advance.accountLast4 ? "sent" : "released"} ${peso(l.releasedCents)}` : ""}{l.denied ? " · not approved" : ""}</span></li>
+              <li key={l.id} className="flex flex-wrap items-center gap-2"><FundsTypePill code={l.advance.fundsTypeCode} name={l.advance.fundsTypeName} /><span>{l.advance.number} · {lineKindText(names, l)} · asked {peso(l.requestedCents)}{l.releasedCents ? ` · ${l.advance.transferDate || l.advance.accountLast4 ? "sent" : "released"} ${peso(l.releasedCents)}` : ""}{l.denied ? " · not approved" : ""}</span></li>
             ))}
           </ul>
         </section>

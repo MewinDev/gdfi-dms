@@ -210,13 +210,18 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   // Finance: approval and release show the office and estimate per line, and "Office changed".
   await signInAs(page, "fin");
   await page.goto("/funds?tab=approve");
-  await expect(page.getByText(/At Z LTO Cebu City: No estimate yet · Office changed from Z LTO Mandaue to Z LTO Cebu City/).first()).toBeVisible();
+  // Tablet: the For column opens with the row's Details.
+  if ((page.viewportSize()?.width ?? 0) === 820) await page.getByRole("button", { name: /^Show details of / }).first().click();
+  await expect(page.getByText("Z LTO Cebu City · No estimate yet").first()).toBeVisible();
+  await expect(page.getByText("Office changed from Z LTO Mandaue to Z LTO Cebu City").first()).toBeVisible();
   await shot(page, "approve-lto-line");
   await noSideways(page);
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
   await page.goto("/funds?tab=release");
-  await expect(page.getByText(/At Z LTO Cebu City: No estimate yet · Office changed from Z LTO Mandaue to Z LTO Cebu City/).first()).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) === 820) await page.getByRole("button", { name: /^Show details of / }).first().click();
+  await expect(page.getByText("Z LTO Cebu City · No estimate yet").first()).toBeVisible();
+  await expect(page.getByText("Office changed from Z LTO Mandaue to Z LTO Cebu City").first()).toBeVisible();
   await shot(page, "release-lto-line");
   await noSideways(page);
 });

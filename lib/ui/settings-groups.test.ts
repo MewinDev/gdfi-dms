@@ -33,7 +33,9 @@ describe("Settings groups", () => {
   it("every card belongs to exactly one group", () => {
     const all = SETTINGS_GROUPS.flatMap((x) => x.cards);
     expect(new Set(all).size).toBe(all.length);
-    expect(all).toHaveLength(22); // + Processing stages, beside Checklist items; + Test kit; + Funds types; + Processor capacity
+    expect(all).toHaveLength(23); // + Processing stages, beside Checklist items; + Test kit; + Funds types; + Processor capacity; + Expense kinds
+    const money = SETTINGS_GROUPS.find((x) => x.key === "time-money")!.cards as readonly string[];
+    expect(money.indexOf("expense-kinds")).toBe(money.indexOf("cash-advance") + 1); // beside Cash-advance rules and Funds types
     expect(SETTINGS_GROUPS.find((x) => x.key === "documents")!.cards).toContain("processing-stages");
     // Hold reasons sit beside Problem reasons.
     const docs = SETTINGS_GROUPS.find((x) => x.key === "documents")!.cards as readonly string[];

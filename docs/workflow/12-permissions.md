@@ -113,6 +113,8 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Approve cash advances | Approve or deny requests within the approval bands. | Funds | See all advances | `funds:approve` | Finance |
 | Release funds | Release money, confirm returned cash, close advances. | Funds | See all advances | `funds:release` | Finance |
 | Grant a funds exception | Let a processor with an overdue advance submit one more request. | Funds | See all advances | `funds:exception` | Finance |
+| See expense kinds | See Settings, Expense kinds: what a cash advance or fund transfer can be for, and each kind's amount. | Settings, Expense kinds | - | `funds:kinds_view` | LA, Admin, DP, Finance, Approvers |
+| Add and manage expense kinds (Change; View is See expense kinds) | Add, rename, reorder or switch off expense kinds and set their amount; "+ Add new kind" on the funds screens; change a fixed amount on one request. | Settings, Expense kinds; Funds, To approve; My funds | See expense kinds | `funds:kinds_manage` | Admin, Finance, Approvers |
 | See cash amounts in the Journey | Show peso amounts in a loan's Journey. Without it, the Journey shows the funds status only. | Loan File, Journey; LTO monitor amounts | See loan files | `journey:view_amounts` | Admin, Finance, Approvers |
 
 ### Monitoring
@@ -223,6 +225,8 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Approve cash advances | Funds | funds:approve | `funds:approve` |  |
 | Release funds | Funds | funds:release | `funds:release` |  |
 | Grant a funds exception | Funds | funds:exception | `funds:exception` |  |
+| See expense kinds | Settings, Expense kinds | none (the kinds were fixed in code) | `funds:kinds_view` | **Gap, closed** |
+| Add and manage expense kinds | Settings, Expense kinds; Funds, To approve; My funds | none (the kinds were fixed in code) | `funds:kinds_manage` | **Gap, closed** |
 | See cash amounts in the Journey | Loan File, Journey; LTO monitor amounts | journey:view_amounts | `journey:view_amounts` |  |
 | See the DP monitor | Monitoring, DPs; its CSV | monitor:dp | `monitor:dp` |  |
 | See the LTO monitor | Monitoring, LTO offices; its CSV | monitor:lto | `monitor:lto` |  |

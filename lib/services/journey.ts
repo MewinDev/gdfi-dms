@@ -5,7 +5,9 @@ import { prisma } from "@/lib/db";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
-import { FUNDS_LABEL } from "@/lib/funds/rules";
+import { FUNDS_LABEL, peso } from "@/lib/funds/rules";
+import { kindText } from "@/lib/funds/kinds";
+import { amountWords } from "./funds";
 import { txnFunds } from "@/lib/jobs/view";
 import { historySentence, progressStep } from "@/lib/ui/plain";
 import { NO_DETAILS, holdReasonName } from "@/lib/ui/holds";
@@ -28,7 +30,7 @@ export async function loadJourney(user: CurrentUser, loan: LoanDetail, now: Date
     prisma.documentMovement.findMany({ where: { documentItem: { loanId: loan.id } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
     prisma.cashAdvance.findMany({
       where: { lines: { some: { transaction: { loanId: loan.id } } } },
-      select: { id: true, number: true, status: true, createdAt: true, approvedAt: true, releasedAt: true, requestedCents: true, releasedCents: true, lines: { select: { transactionId: true } } },
+      select: { id: true, number: true, status: true, createdAt: true, approvedAt: true, releasedAt: true, requestedCents: true, releasedCents: true, lines: { select: { transactionId: true, kind: true, otherDescription: true, amountSource: true, presetCents: true, locked: true, requestedCents: true, kindRef: { select: { name: true } } } } },
       orderBy: { createdAt: "asc" },
     }),
   ]);
@@ -51,7 +53,8 @@ export function stripAmounts(text: string): string {
 
 type Audit = Awaited<ReturnType<typeof prisma.auditLog.findMany>>[number];
 type Movement = Awaited<ReturnType<typeof prisma.documentMovement.findMany>>[number];
-type Advance = { id: string; number: string; status: string; createdAt: Date; approvedAt: Date | null; releasedAt: Date | null; requestedCents: number; releasedCents: number; lines: { transactionId: string | null }[] };
+type AdvanceLine = { transactionId: string | null; kind?: string; otherDescription?: string; amountSource?: string; presetCents?: number | null; locked?: boolean; requestedCents?: number; kindRef?: { name: string } };
+type Advance = { id: string; number: string; status: string; createdAt: Date; approvedAt: Date | null; releasedAt: Date | null; requestedCents: number; releasedCents: number; lines: AdvanceLine[] };
 
 /** Plain sentence for an audit row (the old History text, plus holds and problems). */
 export function eventText(r: Audit): string {
@@ -122,6 +125,12 @@ export function journeyInput(loan: LoanDetail, rows: { audit: Audit[]; movements
   const advRec = (a: Advance) => ({
     id: a.id, number: a.number, status: a.status, requestedAt: a.createdAt, approvedAt: a.approvedAt, releasedAt: a.releasedAt,
     requestedCents: cents(a.requestedCents), releasedCents: a.releasedAt ? cents(a.releasedCents) : null,
+    // "Other: Courier ₱300.00 (typed; preset was ₱250.00)": the kind and where the amount came from (amounts only with the tick).
+    linesText: a.lines.filter((l) => l.kind).map((l) => {
+      const amt = amounts && l.requestedCents != null ? ` ${peso(l.requestedCents)}` : "";
+      const src = amountWords(l.amountSource ?? "TYPED", amounts ? l.presetCents ?? null : null, !!l.locked, l.requestedCents ?? 0);
+      return `${kindText(l.kind!, l.kindRef?.name, l.otherDescription)}${amt} (${src})`;
+    }).join("; "),
   });
 
   return {

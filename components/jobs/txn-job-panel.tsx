@@ -5,7 +5,7 @@ import { can, type CurrentUser, inScope } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { LoanDetail } from "@/lib/services/queries";
 import type { TatMap } from "@/lib/workflow/tat";
-import { EXPENSE_LABEL, type ExpenseKindKey } from "@/lib/funds/rules";
+import { flagKindChoices } from "@/lib/services/expense-kinds";
 import { liveAssignment } from "@/lib/ui/plain";
 import { openHold, openProblem, txnFunds, txnFundsType, txnTat } from "@/lib/jobs/view";
 import { FundsTypePill } from "@/components/funds/funds-type-pill";
@@ -48,7 +48,8 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
   const holdReasons = mayHold ? await prisma.holdReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, code: true } }) : [];
   const canFlag = can(user, PERMISSIONS.FUNDS_FLAG) && la && txn.type.requiresDp && txn.status === "ASSIGNED" && a?.status === "PENDING_ACCEPTANCE";
   const receiving = txn.status === "FORWARDED" && a && mayReceive(user, { ...a, loan });
-  const kinds = (txn.fundsKinds as ExpenseKindKey[]).map((k) => EXPENSE_LABEL[k]).join(", ");
+  const choices = await flagKindChoices(txn.fundsKinds);
+  const kinds = txn.fundsKinds.map((k) => choices.find((c) => c[0] === k)?.[1] ?? k).join(", ");
   // Sent, not accepted yet: the LA who may send can still change it (the server re-checks on every change).
   const changeable = !!a && txn.status === "ASSIGNED" && a.status === "PENDING_ACCEPTANCE" && la && can(user, PERMISSIONS.DP_SEND);
   const offices = changeable && txn.type.needsLto
@@ -88,7 +89,7 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
           <p className="text-[15px] font-semibold text-navy">Not accepted yet. You can still change this.</p>
           <div className="flex flex-wrap gap-2">
             <UpdatePapersButton target={`papers-${txn.id}`} />
-            {canFlag && <FundsFlagForm transactionId={txn.id} needed={txn.fundsNeeded} kinds={txn.fundsKinds} label="Change funds" />}
+            {canFlag && <FundsFlagForm transactionId={txn.id} needed={txn.fundsNeeded} kinds={txn.fundsKinds} label="Change funds" choices={choices} />}
             <ChangeProcessorForm transactionId={txn.id} current={{ dpId: a.dpUserId, secondId: a.secondaryDpUserId }} processors={processors} />
             {txn.type.needsLto && <ChangeLtoOfficeForm mode="la" id={txn.id} offices={offices} currentId={a.ltoOfficeId} warnings={offices.length ? await advisoryWarnings() : undefined} />}
             <ProcessorNoteForm transactionId={txn.id} />
@@ -101,7 +102,7 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
 
       {((canFlag && !changeable) || (laOwns && !problem && can(user, PERMISSIONS.PROBLEMS_RAISE) && reasons.length > 0) || (mayHold && holdReasons.length > 0)) && (
         <div className="flex flex-wrap gap-2">
-          {canFlag && !changeable && <FundsFlagForm transactionId={txn.id} needed={txn.fundsNeeded} kinds={txn.fundsKinds} />}
+          {canFlag && !changeable && <FundsFlagForm transactionId={txn.id} needed={txn.fundsNeeded} kinds={txn.fundsKinds} choices={choices} />}
           {laOwns && !problem && can(user, PERMISSIONS.PROBLEMS_RAISE) && reasons.length > 0 && <RaiseProblemForm transactionId={txn.id} reasons={reasons} />}
           {mayHold && holdReasons.length > 0 && <PutOnHoldForm transactionId={txn.id} reasons={holdReasons} />}
         </div>

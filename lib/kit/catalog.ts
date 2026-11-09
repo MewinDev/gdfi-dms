@@ -186,6 +186,15 @@ export const KIT_BRANCH_CHANGES = {
 export const KIT_PASTED_PN = { typed: "gd 101-2026-9-02050", pn: "GD1012026902050" } as const;
 
 /** The new PN the MyLoans "replaced" simulation gives GD1012026902044 (the first free number from 9100). */
+/**
+ * Two general expenses typed as Other ("Courier") by DP 1, Cash advance, still waiting for approval:
+ * Settings, Expense kinds shows "Often typed as Other" once a third "Courier" is typed.
+ */
+export const KIT_OTHER_SAMPLES = [
+  { description: "Courier", cents: 15_000 },
+  { description: "Courier", cents: 18_000 },
+] as const;
+
 export const KIT_REPLACEMENT_PN = "GD1012026909100";
 
 /** The kit's branches (real MyLoans branches; see lib/branches/builtin.ts). */

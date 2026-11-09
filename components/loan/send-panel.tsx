@@ -15,7 +15,7 @@ import { AdvisoryWarnings } from "@/components/monitoring/advisory-forms";
 type Result = { ok: boolean; message?: string; error?: string; field?: string; missing?: string[] } | null;
 
 export const FUND_KINDS: [string, string][] = [["NOTARY_FEE", "Notary fee"], ["PPSR_FEE", "PPSR fee"], ["LTO_FEE", "LTO fee"], ["TRANSPORT", "Transport"], ["OTHER", "Other"]];
-const kindName = (k: string) => FUND_KINDS.find((x) => x[0] === k)?.[1] ?? k;
+
 
 export interface SendOptions {
   loanId: string;
@@ -42,6 +42,8 @@ export interface SendOptions {
   fundsKinds: string[];
   /** Kinds with an active rule for this transaction type (Settings, Cash-advance rules). */
   suggestedKinds: string[];
+  /** "What are the funds for?": active expense kinds (Settings > Expense kinds), Other last. */
+  kindChoices?: [string, string][];
   /** Print labels for this transaction's papers (null: nothing to print or not allowed). */
   labelsHref: string | null;
   labelsPrinted: boolean;
@@ -109,6 +111,7 @@ export function SendPanel(p: SendPanelProps) {
   const [showAll, setShowAll] = useState(false);
   const [funds, setFunds] = useState<"" | "YES" | "NO">(o.fundsNeeded === "UNANSWERED" ? "" : o.fundsNeeded);
   const [kinds, setKinds] = useState<string[]>(o.fundsKinds);
+  const kindName = (k: string) => (o.kindChoices ?? FUND_KINDS).find((x) => x[0] === k)?.[1] ?? k;
   const [lto, setLto] = useState(o.defaultLtoOfficeId && o.ltoOffices.some((l) => l.id === o.defaultLtoOfficeId) ? o.defaultLtoOfficeId : "");
   const [late, setLate] = useState("");
   // Second processor (Pasuyo): optional; a different processor from any branch, with a reason.
@@ -228,7 +231,7 @@ export function SendPanel(p: SendPanelProps) {
             <div role="group" aria-label="What are the funds for?" className="flex flex-col gap-1.5">
               <p className="text-[13px] font-semibold text-ink-2">What are the funds for?</p>
               <div className="flex flex-wrap gap-2">
-                {FUND_KINDS.map(([k, l]) => {
+                {(o.kindChoices ?? FUND_KINDS).map(([k, l]) => {
                   const on = kinds.includes(k);
                   const sug = o.suggestedKinds.includes(k);
                   return (

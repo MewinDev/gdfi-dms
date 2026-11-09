@@ -110,18 +110,19 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   // Finance: approve, release.
   await signInAs(page, "fin");
   await page.goto("/funds?tab=approve");
-  await expect(page.getByRole("heading", { name: /CA-\d{4}-\d{4} · ₱1,500\.00/ })).toBeVisible();
+  await expect(page.locator("[data-advance] [data-amount]")).toHaveText("₱1,500.00");
   await shot(page, "finance-to-approve");
   await noSideways(page);
   await page.getByRole("button", { name: "Approve", exact: true }).click();
   // The card leaves the tab once it is decided, so check the saved status.
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
   await page.goto("/funds?tab=release");
-  await page.getByLabel(/Reference/).fill("VOUCHER-0001");
-  await page.getByRole("button", { name: "Release cash", exact: true }).click();
+  await page.getByRole("button", { name: "Release", exact: true }).click();
+  await page.getByRole("dialog").getByLabel(/Reference/).fill("VOUCHER-0001");
+  await page.getByRole("dialog").getByRole("button", { name: "Release cash", exact: true }).click();
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("RELEASED");
   await page.goto("/funds?tab=outstanding");
-  await expect(page.getByText(/balance ₱1,500\.00/)).toBeVisible();
+  await expect(page.locator("[data-advance] [data-amount]")).toHaveText("₱1,500.00");
   await shot(page, "finance-outstanding");
   await noSideways(page);
 

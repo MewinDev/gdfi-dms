@@ -10,6 +10,9 @@ import {
 import type { ActionState } from "@/lib/action";
 import { isTransfer, releaseVerb } from "@/lib/funds/types";
 import { FundsTypePill } from "./funds-type-pill";
+import { AmountInput, KindSelect, OtherDescriptionField, centsText } from "./kind-field";
+import { OTHER, kindOptions, otherDescriptionProblem, startingAmount, type AmountSource } from "@/lib/funds/kinds";
+import type { KindOption } from "@/lib/funds/kind-option";
 
 /** A funds type as the forms need it (Settings > Funds types). */
 export interface FundsTypeOption { id: string; code: string; name: string; needsReference: boolean; needsAccount: boolean }
@@ -33,14 +36,17 @@ function useCloseOnOk(state: ActionState, close: () => void) {
 export interface RequestJob {
   transactionId: string; loanPn: string; borrower: string; typeName: string;
   lto?: { id: string; name: string; estimate: string | null } | null;
-  kinds: { kind: string; label: string; suggestedCents: number | null; maxCents: number | null; suggestedFrom?: "office" | "rule" | null }[];
+  kinds: { kind: string; label: string; suggestedCents: number | null; maxCents: number | null; suggestedFrom?: "office" | "rule" | "preset" | null; locked?: boolean; source?: AmountSource | null }[];
 }
 
-export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "" }: { jobs: RequestJob[]; blocked?: string; types?: FundsTypeOption[]; defaultTypeId?: string }) {
+type Other = { kind: string; amount: string; note: string; desc: string };
+
+export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kinds: kinds0 = [], canAddKind = false }: { jobs: RequestJob[]; blocked?: string; types?: FundsTypeOption[]; defaultTypeId?: string; kinds?: KindOption[]; canAddKind?: boolean }) {
   const [typeId, setTypeId] = useState(defaultTypeId);
-  const init = () => Object.fromEntries(jobs.flatMap((j) => j.kinds.map((k) => [`${j.transactionId}|${k.kind}`, { on: true, amount: k.suggestedCents ? (k.suggestedCents / 100).toFixed(2) : "", reason: "" }])));
-  const [lines, setLines] = useState<Record<string, { on: boolean; amount: string; reason: string }>>(init);
-  const [others, setOthers] = useState<{ kind: "TRANSPORT" | "OTHER"; amount: string; note: string }[]>([]);
+  const [kinds, setKinds] = useState(kinds0);
+  const init = () => Object.fromEntries(jobs.flatMap((j) => j.kinds.map((k) => [`${j.transactionId}|${k.kind}`, { on: true, amount: k.suggestedCents ? (k.suggestedCents / 100).toFixed(2) : "", reason: "", desc: "" }])));
+  const [lines, setLines] = useState<Record<string, { on: boolean; amount: string; reason: string; desc: string }>>(init);
+  const [others, setOthers] = useState<Other[]>([]);
   // A sent request clears the form (the jobs move to My advances).
   const [state, action] = useActionState(async (p: ActionState, fd: FormData) => {
     const r = await requestAdvanceAction(p, fd);
@@ -48,12 +54,20 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "" }: {
     return r;
   }, null);
   const uid = useId();
-  const set = (key: string, patch: Partial<{ on: boolean; amount: string; reason: string }>) => setLines((x) => ({ ...x, [key]: { ...x[key], ...patch } }));
+  const set = (key: string, patch: Partial<{ on: boolean; amount: string; reason: string; desc: string }>) => setLines((x) => ({ ...x, [key]: { ...x[key], ...patch } }));
+  const kindOf = (code: string) => kinds.find((k) => k.code === code);
+  const startOf = (code: string) => { const k = kindOf(code); return startingAmount({ kind: k ? { code: k.code, amountMode: k.amountMode, amountCents: k.amountCents } : null }); };
+  const setOther = (i: number, patch: Partial<Other>) => setOthers((x) => x.map((y, j) => (j === i ? { ...y, ...patch } : y)));
+  const pickOtherKind = (i: number, code: string) => { const st = startOf(code); setOther(i, { kind: code, ...(st.cents !== null ? { amount: centsText(st.cents) } : { amount: "" }) }); };
   const chosen = jobs.flatMap((j) => j.kinds.map((k) => ({ j, k, key: `${j.transactionId}|${k.kind}` }))).filter(({ key }) => lines[key]?.on);
   const total = chosen.reduce((s, { key }) => s + (toC(lines[key].amount) ?? 0), 0) + others.reduce((s, o) => s + (toC(o.amount) ?? 0), 0);
+  // Why Send is off, in plain words (the server checks the same).
+  const missingDesc = chosen.find(({ k, key }) => k.kind === OTHER && otherDescriptionProblem(lines[key].desc)) ?? null;
+  const otherProblem = others.map((o) => (o.kind === OTHER ? otherDescriptionProblem(o.desc) : o.note.trim().length < 3 ? "Say what the other expense is for." : null)).find(Boolean) ?? null;
+  const why = blocked ? null : missingDesc ? `${missingDesc.j.loanPn}: ${otherDescriptionProblem(lines[missingDesc.key].desc)}` : otherProblem ? `Other expenses: ${otherProblem}` : total <= 0 ? "Tick at least one job or add an expense with an amount." : null;
   const payload = JSON.stringify({
-    lines: chosen.map(({ j, k, key }) => ({ transactionId: j.transactionId, kind: k.kind, cents: toC(lines[key].amount) ?? 0, overMaxReason: lines[key].reason })),
-    others: others.map((o) => ({ kind: o.kind, cents: toC(o.amount) ?? 0, note: o.note })),
+    lines: chosen.map(({ j, k, key }) => ({ transactionId: j.transactionId, kind: k.kind, cents: toC(lines[key].amount) ?? 0, overMaxReason: lines[key].reason, otherDescription: k.kind === OTHER ? lines[key].desc : "" })),
+    others: others.map((o) => ({ kind: o.kind, cents: toC(o.amount) ?? 0, note: o.note, otherDescription: o.kind === OTHER ? o.desc : "" })),
     fundsTypeId: typeId || undefined,
   });
 
@@ -76,16 +90,22 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "" }: {
                   const c = toC(v.amount);
                   const over = !!(k.maxCents && c && c > k.maxCents);
                   return (
-                    <div key={key} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem] sm:items-start">
+                    <div key={key} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem] sm:items-start" data-request-line={k.kind}>
                       <label className="inline-flex min-h-11 items-center gap-2 text-[15px]">
                         <input type="checkbox" checked={v.on} onChange={(e) => set(key, { on: e.target.checked })} className="h-5 w-5 accent-[var(--navy)]" />
                         {k.label}
-                        <span className="text-[13px] text-ink-2">{k.suggestedCents ? `suggested ${peso(k.suggestedCents)}${k.suggestedFrom === "office" ? " (from the LTO office)" : ""}` : "no suggested amount"}{k.maxCents ? ` · max ${peso(k.maxCents)}` : ""}</span>
+                        <span className="text-[13px] text-ink-2">{k.suggestedCents ? `${k.locked ? "fixed" : "suggested"} ${peso(k.suggestedCents)}${k.suggestedFrom === "office" ? " (from the LTO office)" : ""}` : "no suggested amount"}{k.maxCents ? ` · max ${peso(k.maxCents)}` : ""}</span>
                       </label>
                       <div>
-                        <label htmlFor={`${uid}-${key}`} className="sr-only">{k.label} amount (PHP)</label>
-                        <input id={`${uid}-${key}`} inputMode="decimal" disabled={!v.on} value={v.amount} onChange={(e) => set(key, { amount: e.target.value })} placeholder="0.00" className="input" aria-invalid={v.on && c === null} />
+                        {v.on ? (
+                          <AmountInput id={`${uid}-${key}`} label={`${k.label} amount (PHP)`} value={v.amount} onChange={(a) => set(key, { amount: a })} locked={!!k.locked} source={k.source ?? null} startCents={k.suggestedCents} invalid={c === null} />
+                        ) : (
+                          <><label htmlFor={`${uid}-${key}`} className="sr-only">{k.label} amount (PHP)</label><input id={`${uid}-${key}`} disabled value={v.amount} className="input" readOnly /></>
+                        )}
                       </div>
+                      {v.on && k.kind === OTHER && (
+                        <div className="sm:col-span-2"><OtherDescriptionField id={`${uid}-${key}-d`} value={v.desc} onChange={(x) => set(key, { desc: x })} serverError={state?.field === "otherDescription" ? state.error : undefined} /></div>
+                      )}
                       {v.on && over && (
                         <div className="sm:col-span-2">
                           <label htmlFor={`${uid}-${key}-r`} className="label">Above the maximum. Why?</label>
@@ -116,31 +136,31 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "" }: {
       )}
       <fieldset className="rounded-xl border border-line p-3">
         <legend className="px-1 text-[15px] font-semibold">Other expenses (not for one job)</legend>
-        {others.map((o, i) => (
-          <div key={i} className="mt-2 grid gap-2 sm:grid-cols-[9rem_9rem_minmax(0,1fr)_auto] sm:items-end">
-            <div>
-              <label htmlFor={`${uid}-ok-${i}`} className="label">Kind</label>
-              <select id={`${uid}-ok-${i}`} value={o.kind} onChange={(e) => setOthers((x) => x.map((y, j) => (j === i ? { ...y, kind: e.target.value as "TRANSPORT" | "OTHER" } : y)))} className="input">
-                <option value="TRANSPORT">Transport</option><option value="OTHER">Other</option>
-              </select>
+        {others.map((o, i) => {
+          const st = startOf(o.kind);
+          return (
+            <div key={i} className="mt-2 grid gap-2 rounded-xl border border-line p-2 sm:grid-cols-[minmax(0,12rem)_9rem_minmax(0,1fr)_auto] sm:items-start" data-other-expense>
+              <KindSelect id={`${uid}-ok-${i}`} name={`otherKind${i}`} label="Kind" value={o.kind} onChange={(code) => pickOtherKind(i, code)} kinds={kinds} onKindsChange={setKinds} canAdd={canAddKind} where="My funds" />
+              <AmountInput id={`${uid}-oa-${i}`} value={o.amount} onChange={(a) => setOther(i, { amount: a })} locked={st.locked} source={st.source} startCents={st.cents} />
+              {o.kind === OTHER ? (
+                <OtherDescriptionField id={`${uid}-od-${i}`} name={`otherDescription${i}`} value={o.desc} onChange={(x) => setOther(i, { desc: x })} />
+              ) : (
+                <div>
+                  <label htmlFor={`${uid}-on-${i}`} className="label">What for</label>
+                  <input id={`${uid}-on-${i}`} value={o.note} onChange={(e) => setOther(i, { note: e.target.value })} className="input" required minLength={3} />
+                </div>
+              )}
+              <button type="button" className="btn-ghost btn-sm sm:mt-7" onClick={() => setOthers((x) => x.filter((_, j) => j !== i))}>Remove</button>
             </div>
-            <div>
-              <label htmlFor={`${uid}-oa-${i}`} className="label">Amount (PHP)</label>
-              <input id={`${uid}-oa-${i}`} inputMode="decimal" value={o.amount} onChange={(e) => setOthers((x) => x.map((y, j) => (j === i ? { ...y, amount: e.target.value } : y)))} className="input" required />
-            </div>
-            <div>
-              <label htmlFor={`${uid}-on-${i}`} className="label">What for</label>
-              <input id={`${uid}-on-${i}`} value={o.note} onChange={(e) => setOthers((x) => x.map((y, j) => (j === i ? { ...y, note: e.target.value } : y)))} className="input" required minLength={3} />
-            </div>
-            <button type="button" className="btn-ghost btn-sm" onClick={() => setOthers((x) => x.filter((_, j) => j !== i))}>Remove</button>
-          </div>
-        ))}
-        <button type="button" className="btn-ghost btn-sm mt-2" onClick={() => setOthers((x) => [...x, { kind: "TRANSPORT", amount: "", note: "" }])}>Add an expense</button>
+          );
+        })}
+        <button type="button" className="btn-ghost btn-sm mt-2" onClick={() => { const first = kindOptions(kinds).find((k) => k.code === "TRANSPORT") ?? kindOptions(kinds)[0]; const st = startOf(first?.code ?? "TRANSPORT"); setOthers((x) => [...x, { kind: first?.code ?? "TRANSPORT", amount: centsText(st.cents), note: "", desc: "" }]); }}>Add an expense</button>
       </fieldset>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-[17px] font-bold text-navy">Total {peso(total)}</p>
-        <SubmitButton disabled={!!blocked || total <= 0}>Send to Finance</SubmitButton>
+        <SubmitButton disabled={!!blocked || !!why}>Send to Finance</SubmitButton>
       </div>
+      {why && total > 0 && <p className="text-[13px] font-semibold text-act-fg" data-send-why>{why}</p>}
       <FormMessage state={state} />
     </form>
   );
@@ -193,6 +213,7 @@ export function ReceiptForm({ lines, today }: { lines: { id: string; label: stri
         <input id={`${uid}-f`} type="file" name="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="input py-2" aria-invalid={state?.field === "file"} />
       </div>
       <div className="flex items-end"><SubmitButton>Add receipt</SubmitButton></div>
+      <p className="help sm:col-span-2 lg:col-span-4" data-liquidation-note>Type what was really spent. A receipt amount can always be changed, even for a kind with a fixed amount.</p>
       <div className="sm:col-span-2 lg:col-span-4"><FormMessage state={state} /></div>
     </form>
   );
@@ -379,5 +400,67 @@ export function GrantExceptionForm({ dpUserId, name }: { dpUserId: string; name:
       <SubmitButton className="btn-ghost btn-sm">Allow one more request</SubmitButton>
       {state && <FormMessage state={state} />}
     </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Funds page rows (design pass): the row's buttons. Same actions and fields as above; the long forms
+// open in a Sheet so the row stays one line.
+// ---------------------------------------------------------------------------
+
+/** Approve as asked, in one click: exactly what the full form sends when no amount is changed. */
+export function QuickApproveForm({ advanceId, lines }: { advanceId: string; lines: { id: string; requestedCents: number }[] }) {
+  const [state, action] = useActionState(decideAdvanceAction, null);
+  return (
+    <form action={action} className="contents" data-quick-approve>
+      <Hidden v={{ advanceId, note: "" }} />
+      {lines.map((l) => (
+        <span key={l.id} hidden>
+          <input type="hidden" name="lineId" value={l.id} />
+          <input type="hidden" name={`amount-${l.id}`} value={(l.requestedCents / 100).toFixed(2)} />
+        </span>
+      ))}
+      <SubmitButton name="decision" value="approve" className="btn-gold btn-sm fl-btn">Approve</SubmitButton>
+      {state && !state.ok && <div className="fl-msg"><FormMessage state={state} /></div>}
+    </form>
+  );
+}
+
+/** Opens the full approve-or-deny form (amounts per line, the note) in a Sheet. */
+export function DecideSheetButton({ number, label, cls = "btn-secondary btn-sm fl-btn", ...form }: { number: string; label: string; cls?: string; advanceId: string; lines: { id: string; label: string; requestedCents: number; overMaxReason: string }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className={cls} onClick={() => setOpen(true)}>{label}</button>
+      <Sheet open={open} onClose={() => setOpen(false)} title={`Approve or deny ${number}`}>
+        {open && <DecideAdvanceForm {...form} />}
+      </Sheet>
+    </>
+  );
+}
+
+/** Opens the release form of the advance's type in a Sheet ("Release" for cash, "Send" for a transfer). */
+export function ReleaseSheetButton({ number, advanceId, type, today }: { number: string; advanceId: string; type: Pick<FundsTypeOption, "code" | "name" | "needsReference" | "needsAccount">; today: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="btn-gold btn-sm fl-btn" onClick={() => setOpen(true)} data-release-open={type.code}>{isTransfer(type) ? "Send" : "Release"}</button>
+      <Sheet open={open} onClose={() => setOpen(false)} title={`${releaseVerb(type)}: ${number}`}>
+        {open && <ReleaseForm advanceId={advanceId} type={type} today={today} />}
+      </Sheet>
+    </>
+  );
+}
+
+/** Opens the top-up release form in a Sheet. */
+export function TopUpReleaseSheetButton({ number, ...form }: { number: string; topUpId: string; currentTypeId: string; types: FundsTypeOption[]; today: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="btn-gold btn-sm fl-btn" onClick={() => setOpen(true)}>Release</button>
+      <Sheet open={open} onClose={() => setOpen(false)} title={`Release the top-up: ${number}`}>
+        {open && <TopUpReleaseForm {...form} />}
+      </Sheet>
+    </>
   );
 }

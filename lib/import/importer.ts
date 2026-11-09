@@ -12,6 +12,8 @@ import { SETTINGS_SCHEMAS, USER_SCHEMA, checkSettingsRow, type SettingsKind } fr
 import { applyAccess, branchGrants, checkAccess, type AccessInput } from "@/lib/services/access";
 import { applyChange, loadSnapshot, lockoutRefusal } from "@/lib/services/lockout";
 import { UserError } from "@/lib/services/errors";
+import { checkKind } from "@/lib/services/expense-kinds";
+import { OTHER, amountModeText, codeFromName, nameKey, sortKinds, type AmountMode } from "@/lib/funds/kinds";
 import { IMPORT_LISTS, MAX_BYTES, MAX_ROWS, type ImportColumn, type ImportListKey } from "./columns";
 import { looksLikeFormula, parseCsv, toCsv } from "./csv";
 
@@ -421,20 +423,25 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
       break;
     }
     case "cash-advance": {
-      const [types, rules] = await Promise.all([db.transactionType.findMany(), db.cashAdvanceRule.findMany({ include: { transactionType: true } })]);
+      const [types, rules, kinds] = await Promise.all([db.transactionType.findMany(), db.cashAdvanceRule.findMany({ include: { transactionType: true } }), db.expenseKind.findMany()]);
       for (const row of rows) {
         const tcode = (row.cells.transaction_code ?? "").toUpperCase();
         const tt = types.find((t) => t.code === tcode);
         if (!tt) row.bad("transaction_code", tcode ? `no transaction type has the code ${tcode}.` : "is required.");
-        const kind = (row.cells.kind ?? "").trim().toUpperCase();
+        // The kind by its code or its name (ignoring capitals and spaces).
+        const typedKind = (row.cells.kind ?? "").trim();
+        const kindRow = kinds.find((k) => k.code === typedKind.toUpperCase()) ?? kinds.find((k) => k.nameKey === nameKey(typedKind));
+        if (typedKind && !kindRow) row.bad("kind", `no expense kind is called "${typedKind}". Use a name or code from Settings, Expense kinds.`);
+        const kind = kindRow?.code ?? typedKind.toUpperCase();
         const key = `${tcode}|${kind}`;
         const cur = rules.find((r) => `${r.transactionType.code}|${r.kind}` === key) ?? null;
         const map = { transactionTypeId: "transaction_code", kind: "kind", purpose: "purpose", suggestedAmount: "suggested_amount", maxAmount: "max_amount" };
         const num = (v?: string) => (v ?? "").replace(/,/g, "");
-        const data = tt ? validate(row, SETTINGS_SCHEMAS.caRule, { transactionTypeId: tt.id, kind, purpose: row.cells.purpose, suggestedAmount: num(row.cells.suggested_amount), maxAmount: num(row.cells.max_amount) }, map) : null;
+        const data = tt && (kindRow || !typedKind) ? validate(row, SETTINGS_SCHEMAS.caRule, { transactionTypeId: tt.id, kind, purpose: row.cells.purpose, suggestedAmount: num(row.cells.suggested_amount), maxAmount: num(row.cells.max_amount) }, map) : null;
         const s = statusOf(row.cells.status);
         if (s === "bad") row.bad("status", "type Active or Inactive.");
         const active = s === "bad" || s === null ? cur?.active ?? true : s;
+        if (data && !row.problems.length) await dbRule(row, "caRule", cur?.id ?? null, data as unknown as Record<string, unknown>, db, { ...map, expenseKind: "kind" });
         if (!data || row.problems.length) { finish(row, key, null); continue; }
         const changes = cur
           ? diff({ purpose: "Purpose", suggestedAmount: "Suggested amount", maxAmount: "Maximum per transaction", active: "Status" },
@@ -504,6 +511,48 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
           apply: async (tx, actor) => {
             if (!cur) await tx.fundsType.create({ data: { ...data, ...statusData(active, actor) } });
             else await tx.fundsType.update({ where: { id: cur.id }, data: { name: data.name, sortOrder: data.sortOrder, needsReference: data.needsReference, needsAccount: data.needsAccount, mustLiquidate: data.mustLiquidate, proposed: false, ...(cur.active !== active ? statusData(active, actor) : {}) } });
+          },
+        });
+      }
+      break;
+    }
+    case "expense-kinds": {
+      const existing = await db.expenseKind.findMany();
+      const MODES: Record<string, AmountMode | undefined> = { "person enters": "TYPED", "person enters it": "TYPED", typed: "TYPED", suggested: "SUGGESTED", fixed: "FIXED" };
+      const codes = existing.map((k) => k.code);
+      for (const row of rows) {
+        const name = (row.cells.name ?? "").trim();
+        const cur = existing.find((k) => k.nameKey === nameKey(name)) ?? null;
+        const modeCell = lower(row.cells.amount_mode);
+        const mode: AmountMode | "bad" = modeCell === "" ? ((cur?.amountMode as AmountMode | undefined) ?? "TYPED") : MODES[modeCell] ?? "bad";
+        if (mode === "bad") row.bad("amount_mode", "type Person enters, Suggested or Fixed.");
+        const amountCell = (row.cells.amount ?? "").trim();
+        const amount = amountCell === "" && modeCell === "" && cur?.amountCents != null ? (cur.amountCents / 100).toFixed(2) : amountCell;
+        const s = statusOf(row.cells.status);
+        if (s === "bad") row.bad("status", "type Active or Inactive.");
+        const active = s === "bad" || s === null ? cur?.active ?? true : s;
+        if (cur?.code === OTHER && active === false) row.bad("status", "Other is built in: it is always active.");
+        let data: Awaited<ReturnType<typeof checkKind>> | null = null;
+        if (mode !== "bad") {
+          try { data = await checkKind(db, cur?.id ?? null, { name: cur?.code === OTHER ? cur.name : name, amountMode: mode, amount }); } catch (e) {
+            if (!(e instanceof UserError)) throw e;
+            row.bad(e.field === "amount" ? "amount" : e.field === "amountMode" ? "amount_mode" : "name", e.message.replace(/^./, (c) => c.toLowerCase()));
+          }
+        }
+        if (!data || row.problems.length) { finish(row, nameKey(name), null); continue; }
+        const d = data;
+        const changes = cur ? diff({ amount: "Amount", active: "Status" }, { amount: amountModeText(cur.amountMode as AmountMode, cur.amountCents), active: cur.active }, { amount: amountModeText(d.amountMode, d.amountCents), active }) : [];
+        finish(row, d.nameKey, {
+          action: !cur ? "new" : changes.length ? "changed" : "unchanged", changes,
+          apply: async (tx, actor) => {
+            if (!cur) {
+              const code = codeFromName(d.name, codes);
+              codes.push(code);
+              const sortOrder = Math.max(0, ...sortKinds(await tx.expenseKind.findMany()).filter((k) => k.code !== OTHER).map((k) => k.sortOrder)) + 1;
+              await tx.expenseKind.create({ data: { code, name: d.name, nameKey: d.nameKey, amountMode: d.amountMode, amountCents: d.amountCents, sortOrder, ...statusData(active, actor) } });
+            } else {
+              await tx.expenseKind.update({ where: { id: cur.id }, data: { amountMode: d.amountMode, amountCents: d.amountCents, ...(cur.active !== active ? statusData(active, actor) : {}) } });
+            }
           },
         });
       }
@@ -787,6 +836,11 @@ export async function currentDataRows(list: ImportListKey): Promise<Record<strin
       return (await prisma.fundsType.findMany({ orderBy: { sortOrder: "asc" } })).map((r) => ({
         code: r.code, name: r.name, order: String(r.sortOrder), needs_reference: yn(r.needsReference), needs_account: yn(r.needsAccount), must_liquidate: yn(r.mustLiquidate),
         status: st(r.active), notes: r.proposed ? "Proposed, to be confirmed with Finance" : "",
+      }));
+    case "expense-kinds":
+      return sortKinds(await prisma.expenseKind.findMany()).map((k) => ({
+        name: k.name, amount_mode: k.amountMode === "FIXED" ? "Fixed" : k.amountMode === "SUGGESTED" ? "Suggested" : "Person enters",
+        amount: k.amountCents === null ? "" : (k.amountCents / 100).toFixed(2), status: st(k.active), notes: k.builtIn ? "Built-in: used when nothing else fits" : "",
       }));
     case "hold-reasons":
       return (await prisma.holdReason.findMany({ orderBy: { sortOrder: "asc" } })).map((r) => ({ code: r.code, name: r.name, order: String(r.sortOrder), status: st(r.active), notes: "" }));

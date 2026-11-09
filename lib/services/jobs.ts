@@ -1,4 +1,5 @@
 import "server-only";
+import { validFlagKinds } from "./expense-kinds";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
@@ -478,9 +479,10 @@ export async function receivePackage(u: CurrentUser, id: string, input: ReceiveI
 }
 
 /** The DP changes the funds flag after accepting (audit row). */
-export async function changeFundsFlag(u: CurrentUser, id: string, needed: boolean, kinds: string[]) {
+export async function changeFundsFlag(u: CurrentUser, id: string, needed: boolean, kinds0: string[]) {
   return withJob(u, id, async (tx, a) => {
     if (a.status !== "ACCEPTED") throw new UserError("Accept the job first.");
+    const kinds = await validFlagKinds(tx, kinds0, a.transaction.fundsKinds);
     if (needed && kinds.length === 0) throw new UserError("Tick what the funds are for.", "fundsKinds");
     const before = { fundsNeeded: a.transaction.fundsNeeded, fundsKinds: a.transaction.fundsKinds };
     const after = { fundsNeeded: needed ? "YES" : "NO", fundsKinds: needed ? kinds : [] } as const;

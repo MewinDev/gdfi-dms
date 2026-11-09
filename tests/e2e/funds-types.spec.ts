@@ -110,8 +110,8 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, gets the
   await page.goto("/funds?tab=approve");
   await expect(page.locator(`[data-advance="${ft.number}"] [data-funds-type="FT"]`)).toBeVisible();
   await expect(page.locator(`[data-advance="CA-E2E-0001"] [data-funds-type="CA"]`)).toBeVisible();
-  await expect(page.locator("[data-funds-type-filter]")).toContainText("Fund transfer · 1");
-  await expect(page.locator("[data-funds-type-filter]")).toContainText("Cash advance · 1");
+  await expect(page.locator('[data-filter-type="FT"] [data-type-count]')).toHaveText("1");
+  await expect(page.locator('[data-filter-type="CA"] [data-type-count]')).toHaveText("1");
   await shot(page, "finance-list-both-pills");
   await noSideways(page);
 
@@ -138,26 +138,36 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, gets the
   await page.goto("/funds?tab=release");
   const ftCard = page.locator(`[data-advance="${ft.number}"]`);
   const caCard = page.locator(`[data-advance="CA-E2E-0001"]`);
-  await expect(caCard.getByRole("button", { name: "Release cash", exact: true })).toBeVisible();
-  await expect(caCard.getByLabel("Transfer date")).toHaveCount(0);
-  await expect(ftCard.getByRole("button", { name: "Send transfer", exact: true })).toBeVisible();
-  await expect(ftCard.getByLabel("Transfer reference number")).toBeVisible();
-  await expect(ftCard.getByLabel("Last 4 digits")).toHaveAttribute("maxlength", "4");
-  await shot(page, "finance-release-cash-advance", caCard);
-  await shot(page, "finance-release-fund-transfer", ftCard);
+  // Each row's button opens the release form of its type (Release for cash, Send for a transfer).
+  await expect(caCard.getByRole("button", { name: "Release", exact: true })).toBeVisible();
+  await expect(ftCard.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   await noSideways(page);
+  await caCard.getByRole("button", { name: "Release", exact: true }).click();
+  let sheet = page.getByRole("dialog", { name: "Release cash: CA-E2E-0001" });
+  await expect(sheet.getByRole("button", { name: "Release cash", exact: true })).toBeVisible();
+  await expect(sheet.getByLabel("Transfer date")).toHaveCount(0);
+  await shot(page, "finance-release-cash-advance", sheet);
+  await sheet.getByRole("button", { name: "Close" }).click();
+  await ftCard.getByRole("button", { name: "Send", exact: true }).click();
+  sheet = page.getByRole("dialog", { name: `Send transfer: ${ft.number}` });
+  await expect(sheet.getByRole("button", { name: "Send transfer", exact: true })).toBeVisible();
+  await expect(sheet.getByLabel("Transfer reference number")).toBeVisible();
+  await expect(sheet.getByLabel("Last 4 digits")).toHaveAttribute("maxlength", "4");
+  await shot(page, "finance-release-fund-transfer", sheet);
 
   // Send the transfer: reference, date, bank, account name, last 4 digits.
-  await ftCard.getByLabel("Transfer reference number").fill("FT-889101");
-  await ftCard.getByLabel("Bank or e-wallet").fill("BPI");
-  await ftCard.getByLabel("Account name").fill("Test Document Processor");
-  await ftCard.getByLabel("Last 4 digits").fill("4821");
-  await ftCard.getByRole("button", { name: "Send transfer", exact: true }).click();
+  await sheet.getByLabel("Transfer reference number").fill("FT-889101");
+  await sheet.getByLabel("Bank or e-wallet").fill("BPI");
+  await sheet.getByLabel("Account name").fill("Test Document Processor");
+  await sheet.getByLabel("Last 4 digits").fill("4821");
+  await sheet.getByRole("button", { name: "Send transfer", exact: true }).click();
   await expect.poll(async () => (await db.cashAdvance.findUniqueOrThrow({ where: { id: ft.id } })).status).toBe("RELEASED");
   expect(await db.cashAdvance.findUniqueOrThrow({ where: { id: ft.id } })).toMatchObject({ releaseRef: "FT-889101", accountProvider: "BPI", accountLast4: "4821" });
   // Cash advance: as before, the reference note only.
-  await caCard.getByLabel(/Reference/).fill("VOUCHER-0002");
-  await caCard.getByRole("button", { name: "Release cash", exact: true }).click();
+  await caCard.getByRole("button", { name: "Release", exact: true }).click();
+  sheet = page.getByRole("dialog", { name: "Release cash: CA-E2E-0001" });
+  await sheet.getByLabel(/Reference/).fill("VOUCHER-0002");
+  await sheet.getByRole("button", { name: "Release cash", exact: true }).click();
   await expect.poll(async () => (await db.cashAdvance.findUniqueOrThrow({ where: { id: ca.id } })).status).toBe("RELEASED");
 
   // Outstanding shows the transfer details (account ending only) and the DP sees the pill.

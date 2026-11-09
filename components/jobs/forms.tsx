@@ -48,7 +48,7 @@ const Hidden = ({ v }: { v: Record<string, string> }) => <>{Object.entries(v).ma
 // Funds flag (LA until the DP accepts; DP after accepting)
 // ---------------------------------------------------------------------------
 
-export function FundsFlagForm({ transactionId, assignmentId, needed, kinds: k0, label = "Change funds flag" }: { transactionId?: string; assignmentId?: string; needed: "UNANSWERED" | "YES" | "NO"; kinds: string[]; label?: string }) {
+export function FundsFlagForm({ transactionId, assignmentId, needed, kinds: k0, label = "Change funds flag", choices = FUND_KINDS }: { transactionId?: string; assignmentId?: string; needed: "UNANSWERED" | "YES" | "NO"; kinds: string[]; label?: string; choices?: [string, string][] }) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState<ActionState, FormData>((assignmentId ? changeFundsFlagJobAction : setFundsFlagAction) as Act, null);
   const [funds, setFunds] = useState<"YES" | "NO">(needed === "YES" ? "YES" : "NO");
@@ -75,7 +75,7 @@ export function FundsFlagForm({ transactionId, assignmentId, needed, kinds: k0, 
             <fieldset aria-describedby={`${uid}-h`}>
               <legend className="label">What are the funds for?</legend>
               <div className="flex flex-wrap gap-x-5">
-                {FUND_KINDS.map(([k, l]) => (
+                {choices.map(([k, l]) => (
                   <label key={k} className="inline-flex min-h-11 items-center gap-2 text-[15px]">
                     <input type="checkbox" name="fundsKinds" value={k} checked={kinds.includes(k)} onChange={(e) => setKinds((x) => (e.target.checked ? [...x, k] : x.filter((y) => y !== k)))} className="h-5 w-5 accent-[var(--navy)]" />
                     {l}

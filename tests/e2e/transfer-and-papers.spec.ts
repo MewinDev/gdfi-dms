@@ -261,7 +261,7 @@ test("Finance on a held transaction: approving is refused with the lock message"
 
   await signInAs(page, "fin");
   await page.goto("/funds?tab=approve");
-  const card = page.locator("article", { hasText: adv.number }).first();
+  const card = page.locator(`[data-advance="${adv.number}"]`);
   await card.getByRole("button", { name: /^Approve/ }).first().click();
   const confirm = page.getByRole("dialog").filter({ hasText: /approve/i });
   if (await confirm.count()) await confirm.getByRole("button", { name: /^Approve/ }).last().click();

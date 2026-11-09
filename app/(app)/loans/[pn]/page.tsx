@@ -23,6 +23,7 @@ import { JourneyTab } from "@/components/loan/journey/journey-tab";
 import { AddTransaction, MarkDone } from "@/components/loan/add-transaction";
 import { DOC_STAGE_LABEL } from "@/components/loan/document-card";
 import { TxnJobPanel } from "@/components/jobs/txn-job-panel";
+import { flagKindChoices } from "@/lib/services/expense-kinds";
 import { SelectionFocus, StoredToast, TxnSideList, TxnStrip, type TxnItem } from "@/components/loan/txn-switcher";
 import { openHold, openProblem, txnTat } from "@/lib/jobs/view";
 import { FocusFromUrl, OpenItemsCard, type OpenRow } from "@/components/loan/open-items-client";
@@ -466,6 +467,7 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
     fundsNeeded: t.fundsNeeded,
     fundsKinds: t.fundsKinds,
     suggestedKinds: [...new Set(t.type.caRules.map((r) => r.kind))],
+    kindChoices: await flagKindChoices(t.fundsKinds),
     labelsHref: labelDocs.length ? `/loans/${loan.pn}/labels?ids=${labelDocs.map((d) => d.id).join(",")}` : null,
     labelsPrinted: labelDocs.length > 0 && labelDocs.every((d) => d.labelPrintedAt),
     next: nextAfter(loan, t),
