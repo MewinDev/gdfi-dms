@@ -10,9 +10,9 @@ test.beforeEach(async () => {
 
 async function openLoan(page: Page) {
   await signIn(page, "la");
-  await page.goto("/search?q=PN-0001001");
+  await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001001/);
+  await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
 }
 
 async function noSideScroll(page: Page) {
@@ -33,9 +33,9 @@ test("header: breadcrumb above, no boxed Back button beside the title, subtitle 
     const crumbs = main.getByRole("navigation", { name: "Breadcrumb" });
     await expect(crumbs.getByRole("link", { name: "Home" })).toBeVisible();
     await expect(crumbs.getByRole("link", { name: "My loans" })).toBeVisible();
-    await expect(crumbs.getByText("PN-0001001")).toHaveAttribute("aria-current", "page");
+    await expect(crumbs.getByText("GD1012026901001")).toHaveAttribute("aria-current", "page");
   }
-  const sub = main.getByText("Maria Santos · PN-0001001 · Quezon City · ₱450,000 · New");
+  const sub = main.getByText("Maria Santos · GD1012026901001 · Antipolo (101) · ₱450,000 · New");
   const t = (await title.boundingBox())!;
   const s = (await sub.boundingBox())!;
   expect(Math.abs(s.x - t.x)).toBeLessThan(2); // nothing to the left of either
@@ -46,7 +46,7 @@ test("header: breadcrumb above, no boxed Back button beside the title, subtitle 
   await page.getByRole("link", { name: "Start checking" }).click();
   await expect(main.getByRole("heading", { level: 1, name: "Check documents" })).toBeVisible();
   if (!phone(page)) {
-    await expect(main.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Home›My loans›PN-0001001›Check documents");
+    await expect(main.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Home›My loans›GD1012026901001›Check documents");
   }
   await noSideScroll(page);
 });
@@ -88,7 +88,7 @@ test("progress: all 10 steps, done / now / later, labels not cut; Step 3 of 10 i
 test("the current step follows the loan file's real stage", async ({ page }) => {
   await openLoan(page);
   for (const [stage, n] of [["In process", 4], ["Awaiting LA acceptance", 5], ["For Vault Transmittal", 6], ["In Safekeeping", 7]] as const) {
-    await db.loan.update({ where: { pn: "PN-0001001" }, data: { stage } });
+    await db.loan.update({ where: { pn: "GD1012026901001" }, data: { stage } });
     await page.reload();
     const progress = page.getByRole("region", { name: "Progress" });
     if (phone(page)) await expect(progress).toContainText(`Step ${n} of 10 · ${STEPS[n - 1]}`);

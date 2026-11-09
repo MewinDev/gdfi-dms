@@ -96,8 +96,9 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
       throw new UserError(`${job.loanPn} ${job.typeName}: ${EXPENSE_LABEL[l.kind]} is above the maximum of ${peso(k.maxCents)}. Type a reason.`, "overMaxReason");
     }
   }
-  const branchId = (await prisma.userBranch.findFirst({ where: { userId: u.id }, orderBy: { branch: { name: "asc" } } }))?.branchId;
-  if (!branchId) throw new UserError("You are not assigned to a branch.");
+  // The processor's home branch (Users, Edit, Branch access); else the first branch of their access.
+  const branchId = u.homeBranchId ?? (await prisma.userBranch.findFirst({ where: { userId: u.id }, orderBy: { branch: { name: "asc" } } }))?.branchId;
+  if (!branchId) throw new UserError("You have no home branch yet. Ask Admin to set it (Users, Edit, Branch access).");
   const types = await prisma.fundsType.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
   const type = d.fundsTypeId ? types.find((t) => t.id === d.fundsTypeId) : defaultFundsType(types);
   if (!type) throw new UserError(d.fundsTypeId ? "Pick an active funds type." : "No funds type is active. Ask Admin (Settings, Funds types).", "fundsTypeId");

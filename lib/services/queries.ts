@@ -110,6 +110,8 @@ export interface LoanListFilters {
   stage?: string;
   classification?: string;
   branch?: string;
+  /** Area id: loans of any branch in that area. */
+  area?: string;
   loanType?: string;
   tat?: string; // ON_TIME | DUE_TODAY | OVERDUE
   needsAction?: string; // "1"
@@ -126,7 +128,13 @@ export interface LoanRow {
   borrowerName: string;
   loanType: string;
   productName: string;
+  /** "Antipolo (101)". */
   branch: string;
+  branchId: string;
+  branchName: string;
+  branchCode: string | null;
+  /** The branch's Area ("" when the branch has none yet). */
+  area: string;
   releasedAt: Date;
   amount: number;
   classification: string;
@@ -149,6 +157,7 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
   if (f.stage) where.stage = f.stage;
   if (f.classification) where.classification = f.classification as "FINANCING" | "REFINANCING";
   if (f.branch) where.branchId = f.branch;
+  if (f.area) where.branch = { areaId: f.area };
   if (f.loanType) where.loanType = f.loanType;
   if (f.holdReason) where.holds = { some: { resumedAt: null, ...(f.holdReason === "ANY" ? {} : { reasonId: f.holdReason }) } };
   if (f.q) {
@@ -158,13 +167,15 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
       { cin: { contains: q, mode: "insensitive" } },
       { cif: { contains: q, mode: "insensitive" } },
       { borrowerName: { contains: q, mode: "insensitive" } },
+      // The branch code (3 digits) finds that branch's loan files.
+      ...(/^\d{3}$/.test(q) ? [{ branch: { code: q } }] : []),
     ];
   }
   const loans = await prisma.loan.findMany({
     where,
     orderBy: [{ releasedAt: "asc" }, { pn: "asc" }],
     include: {
-      branch: { select: { name: true } },
+      branch: { select: { id: true, name: true, code: true, area: { select: { name: true } } } },
       transactions: { where: { status: "IN_PROCESS" }, select: { type: { select: { code: true } } } },
       _count: { select: { exceptions: { where: { status: "OPEN" } }, problems: { where: { resolvedAt: null } }, sourceChanges: { where: { state: "OPEN" } } } },
     },
@@ -176,7 +187,8 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
     const needsAction = LA_STAGES.includes(l.stage) || l._count.exceptions > 0;
     return {
       id: l.id, pn: l.pn, borrowerName: l.borrowerName, loanType: l.loanType, productName: l.productName,
-      branch: l.branch.name, releasedAt: l.releasedAt, amount: Number(l.totalReleasedAmount),
+      branch: l.branch.code ? `${l.branch.name} (${l.branch.code})` : l.branch.name, branchId: l.branch.id, branchName: l.branch.name, branchCode: l.branch.code, area: l.branch.area?.name ?? "",
+      releasedAt: l.releasedAt, amount: Number(l.totalReleasedAmount),
       classification: l.classification, stage: l.stage, tat, nextStep: next,
       // Open problems on jobs count as problems too (red chip on Home and Loans).
       openExceptions: l._count.exceptions + l._count.problems, needsAction, archived: !!l.archivedAt,

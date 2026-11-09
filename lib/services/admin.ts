@@ -1,6 +1,7 @@
 import { FIELD_TYPES, fieldKey, type EvidenceField } from "@/lib/stages/rules";
 import { refuseInProduction } from "@/lib/env";
 import "server-only";
+import { checkPn } from "@/lib/pn";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -12,6 +13,8 @@ import { setSetting, getSetting, type SettingKey } from "@/lib/settings";
 import { UserError } from "./errors";
 import { isTestMode } from "@/lib/test-mode";
 import { countActiveManagers, inactiveRefusal } from "./settings-status";
+import { applyAccess, branchGrants, parseAccess, type AccessInput } from "./access";
+import { rebuildAccess } from "@/lib/branches/access";
 
 const actorOf = (u: CurrentUser): Actor => ({ id: u.id, label: u.name });
 
@@ -35,7 +38,10 @@ export const USER_SCHEMA = z.object({
   email: z.string().trim().toLowerCase().email("Enter a valid email.").refine((e) => e.endsWith("@gdfi.ph"), "Use a @gdfi.ph email."),
   roleId: text("Role"),
   active: bool,
-  branchIds: z.array(z.string()),
+  /** Older callers and the users import: single-branch grants. The Users screen sends `access` instead. */
+  branchIds: z.array(z.string()).optional(),
+  /** Branch access (where the person works): { all, grants, homeBranchId } or its JSON. */
+  access: z.unknown().optional(),
 });
 
 export async function saveUser(user: CurrentUser, id: string | null, raw: Record<string, unknown>) {
@@ -72,13 +78,15 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
       if ((await countActiveManagers(id)) === 0) throw new UserError("This is the last active person who can manage roles and access.", d.active ? "roleId" : "active");
     }
   }
-  // A role limited to assigned branches that works loan files needs at least one branch.
-  if (role.branchAccess === "ASSIGNED" && effectivePermissions(role).has(PERMISSIONS.LOANS_VIEW) && effectivePermissions(role).has(PERMISSIONS.CHECKLIST_TICK) && d.branchIds.length === 0) {
-    throw new UserError(`Pick at least one branch: ${role.name} works only in assigned branches.`, "branchIds");
-  }
+  // Branch access: what the form sent; a new user without one gets the role's default (All, or none yet).
+  const access: AccessInput | null = d.access !== undefined && d.access !== null && d.access !== ""
+    ? parseAccess(d.access)
+    : d.branchIds
+      ? { all: false, grants: branchGrants(d.branchIds), homeBranchId: d.branchIds[0] ?? null }
+      : id ? null : { all: role.branchAccess === "ALL", grants: [], homeBranchId: null };
 
   await prisma.$transaction(async (tx) => {
-    const before = id ? await tx.user.findUnique({ where: { id }, include: { role: true, branches: { include: { branch: true } } } }) : null;
+    const before = id ? await tx.user.findUnique({ where: { id }, include: { role: true } }) : null;
     if (id && !before) throw new UserError("User not found.");
     if (!id && (await tx.user.findUnique({ where: { email: d.email } }))) throw new UserError("A user with this email already exists.", "email");
     const saved = id
@@ -96,16 +104,15 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
         summary: `User ${saved.name} made ${d.active ? "active" : "inactive"}`, before: { active: before.active }, after: { active: d.active },
       });
     }
-    await tx.userBranch.deleteMany({ where: { userId: saved.id } });
-    for (const branchId of d.branchIds) await tx.userBranch.create({ data: { userId: saved.id, branchId } });
-    const branches = await tx.branch.findMany({ where: { id: { in: d.branchIds } }, select: { name: true } });
+    // Where the person works: validated, written and audited on its own (who, before, after).
+    const where = access ? await applyAccess(tx, actorOf(user), saved.id, role, access, { isNew: !id }) : null;
     await writeAudit(tx, {
       actor: actorOf(user), mode: "MANUAL", action: id ? "user_updated" : "user_created", entityType: "User", entityId: saved.id,
       summary: `${id ? "Updated" : "Added test"} user ${saved.email}`,
-      before: before ? { name: before.name, role: before.role.name, active: before.active, branches: before.branches.map((b) => b.branch.name) } : undefined,
-      after: { name: d.name, role: role.name, active: d.active, branches: branches.map((b) => b.name) },
+      before: before ? { name: before.name, role: before.role.name, active: before.active } : undefined,
+      after: { name: d.name, role: role.name, active: d.active, ...(where ? { access: where.summary } : {}) },
     });
-  });
+  }, { timeout: 30_000 });
 }
 
 // ---------------------------------------------------------------------------
@@ -134,8 +141,17 @@ const realDate = (d: string) => !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && n
  * Make active (lib/services/settings-status.ts), which has the hard limits and the audit row.
  */
 export const SETTINGS_SCHEMAS = {
+  /**
+   * A branch. Code: the 3-digit MyLoans code (100 to 999); blank only on an existing "Code needed" branch.
+   * For a branch from MyLoans only the DMS fields (usual LTO office) may change (checkSettingsRow).
+   */
   branch: z.object({
-    code: codeOf("Code", 2, 10), name: text("Name"),
+    code: z.string().trim().nullish().transform((s) => s || null)
+      .refine((c) => c === null || /^[1-9]\d{2}$/.test(c), "The branch code must be 3 digits (100 to 999)."),
+    name: text("Name"),
+    address: z.string().trim().max(300, "The address is too long.").nullish().transform((s) => s ?? ""),
+    divisionId: z.string().trim().nullish().transform((s) => s || null),
+    areaId: z.string().trim().nullish().transform((s) => s || null),
     usualLtoOfficeId: z.string().trim().nullish().transform((s) => s || null),
   }),
   transactionType: z.object({
@@ -258,10 +274,7 @@ export async function checkSettingsRow(kind: SettingsKind, id: string | null, da
       throw new UserError("A stage stays with its transaction type. Add a new stage to the other type instead.", "typeId");
     }
   }
-  if (kind === "branch" && data.usualLtoOfficeId) {
-    const o = await db.ltoOffice.findUnique({ where: { id: String(data.usualLtoOfficeId) } });
-    if (!o || !o.active) throw new UserError("Pick an active LTO office.", "usualLtoOfficeId");
-  }
+  if (kind === "branch") await checkBranchRow(id, data, db);
   if (kind === "approvalBand") {
     const role = await db.role.findUnique({ where: { id: String(data.roleId) } });
     if (!role || !role.active) throw new UserError("Pick an active role.", "roleId");
@@ -280,6 +293,34 @@ type Delegate = {
   update(a: { where: { id: string }; data: unknown }): Promise<{ id: string }>;
   create(a: { data: unknown }): Promise<{ id: string }>;
 };
+
+const BRANCH_READ_ONLY = [["code", "Code"], ["name", "Name"], ["address", "Address"], ["divisionId", "Division"], ["areaId", "Area"]] as const;
+
+/**
+ * Branch rules. A branch from MyLoans: code, name, address, division and area come from MyLoans and
+ * change only there (through the Branch review); the usual LTO office is the DMS's own and stays
+ * editable. A branch made by hand is fully editable; a new one needs its 3-digit code.
+ */
+async function checkBranchRow(id: string | null, data: Record<string, unknown>, db: Prisma.TransactionClient | typeof prisma) {
+  const cur = id ? await db.branch.findUnique({ where: { id } }) : null;
+  if (id && !cur) throw new UserError("Row not found.");
+  if (cur && cur.source === "MYLOANS") {
+    for (const [k, label] of BRANCH_READ_ONLY) {
+      // Not sent (or sent empty): keep the MyLoans value. A different value is refused.
+      if (data[k] === undefined || data[k] === null || data[k] === "") { data[k] = cur[k]; continue; }
+      if (String(data[k] ?? "") !== String(cur[k] ?? "")) throw new UserError(`${label} comes from MyLoans and can only change there (Settings, Branches, Branch review).`, k);
+    }
+  }
+  if (!cur && !data.code) throw new UserError("Type the 3-digit branch code (as in MyLoans).", "code");
+  if (data.code && (await db.branch.findFirst({ where: { code: String(data.code), ...(id ? { NOT: { id } } : {}) } }))) throw new UserError("That code is already used.", "code");
+  if (data.areaId && !data.divisionId) throw new UserError("Pick the division of this area too.", "divisionId");
+  if (data.divisionId && !(await db.division.findUnique({ where: { id: String(data.divisionId) } }))) throw new UserError("Pick a division from the list.", "divisionId");
+  if (data.areaId && !(await db.area.findUnique({ where: { id: String(data.areaId) } }))) throw new UserError("Pick an area from the list.", "areaId");
+  if (data.usualLtoOfficeId && data.usualLtoOfficeId !== cur?.usualLtoOfficeId) {
+    const o = await db.ltoOffice.findUnique({ where: { id: String(data.usualLtoOfficeId) } });
+    if (!o || !o.active) throw new UserError("Pick an active LTO office.", "usualLtoOfficeId");
+  }
+}
 
 export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id: string | null, raw: Record<string, unknown>) {
   if (!KIND_PERMISSION[kind] || !can(user, KIND_PERMISSION[kind])) throw new UserError("Your role does not allow changing this part of Settings.");
@@ -315,6 +356,8 @@ export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id:
       if (id && !before) throw new UserError("Row not found.");
       // A hold reason or funds type saved by Admin is no longer "Proposed, to be confirmed".
       const saved = id ? await del.update({ where: { id }, data: kind === "holdReason" || kind === "fundsType" ? { ...data, proposed: false } : data }) : await del.create({ data });
+      // A branch's area or division decides who has it through an Area or Division grant.
+      if (kind === "branch") await rebuildAccess(tx, "groups");
       await writeAudit(tx, {
         actor: actorOf(user), mode: "MANUAL", action: id ? "setting_updated" : "setting_created", entityType: kind, entityId: saved.id,
         summary: `${id ? "Updated" : "Added"} ${kind.replace(/([A-Z])/g, " $1").toLowerCase()} setting`,
@@ -346,8 +389,9 @@ export async function setToggle(user: CurrentUser, key: Extract<SettingKey, "myl
 export async function setMockOverride(user: CurrentUser, pn: string, amount: number | null) {
   refuseInProduction("The sample MyLoans (mock)");
   if (!can(user, PERMISSIONS.SETTINGS_SYSTEM)) throw new UserError("Your role does not allow changing these switches.");
-  const key = pn.trim().toUpperCase();
-  if (!/^PN-\d+$/.test(key)) throw new UserError('Enter a PN such as "PN-0001001".', "pn");
+  const parsed = await checkPn(pn);
+  if (!parsed.ok) throw new UserError(`This does not look like a PN. ${parsed.message}`, "pn");
+  const key = parsed.pn;
   if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) throw new UserError("Amount must be above 0.", "amount");
   await prisma.$transaction(async (tx) => {
     const cur = { ...(await getSetting("myloans.mockOverrides", tx)) };

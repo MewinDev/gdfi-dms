@@ -46,8 +46,8 @@ afterAll(async () => {
 });
 
 async function open() {
-  await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
-  return prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+  await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
+  return prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
 }
 async function tick(code: string) {
   const loan = await open();
@@ -213,7 +213,7 @@ describe("Journey: cash amounts stay on the server unless allowed", () => {
     await releaseAdvance(fin, r.id, { ref: "VOUCHER-1" });
 
     const view = async (u: CurrentUser) => {
-      const loan = (await getLoanForUser(u, "PN-0001003"))!;
+      const loan = (await getLoanForUser(u, "GD1652026901003"))!;
       return JSON.stringify((await loadJourney(u, loan)).journey);
     };
     expect(await view(fin)).toContain("₱1,500.00");
@@ -262,7 +262,7 @@ describe("Custody trail: who and where at each hand-over", () => {
 
     const j = (await loadJourney(la, (await getLoanForUser(la, loan.pn))!)).journey;
     const d = j.docs.find((x) => x.id === docs[0].id)!;
-    expect(d.periods.map((p) => p.holder)).toEqual(["Test Loan Associate (LA, Cebu)", "Test Document Processor (DP)", "Test Loan Associate (LA, Cebu)"]);
+    expect(d.periods.map((p) => p.holder)).toEqual(["Test Loan Associate (LA, Angono)", "Test Document Processor (DP)", "Test Loan Associate (LA, Angono)"]);
     expect(d.trail[0]).toMatchObject({ label: "Received by the LA", acknowledgedBy: "Test Loan Associate" });
   });
 });

@@ -54,15 +54,19 @@ const notes: ImportColumn = {
 export const IMPORT_LISTS: Record<ImportListKey, ImportListDef> = {
   branches: {
     key: "branches", title: "Branches", slug: "branches", keyColumns: ["code"],
-    keyHelp: "Rows are matched by code. A new code adds a branch; an existing code updates it.",
+    keyHelp: "Rows are matched by the branch code. A new code adds a branch made in the DMS; an existing code updates it. For a branch from MyLoans only the usual LTO office can change here: its code, name, division, area, address and status come from MyLoans (use Import from MyLoans).",
     columns: [
-      { name: "code", label: "Branch code", what: "Short code of the branch.", required: "yes", allowed: "2 to 10 capital letters or numbers", example: "ILO", text: true },
-      { name: "name", label: "Branch name", what: "Branch name as MyLoans spells it.", required: "yes", allowed: "Text, unique", example: "Iloilo", text: true },
+      { name: "code", label: "Branch code", what: "The 3-digit MyLoans branch code.", required: "yes", allowed: "3 digits, 100 to 999", example: "101", text: true },
+      { name: "name", label: "Branch name", what: "Branch name as MyLoans spells it.", required: "yes", allowed: "Text, unique", example: "Antipolo", text: true },
+      { name: "division", label: "Division", what: "The MyLoans division (business line).", required: "no", allowed: "A division name from Settings, Branches, or blank", example: "Branch Division", text: true },
+      { name: "area", label: "Area", what: "The MyLoans area.", required: "no", allowed: "An area name from Settings, Branches, or blank", example: "LUZON 1 (NGMA + RIZAL)", text: true },
+      { name: "address", label: "Address", what: "The branch address.", required: "no", allowed: "Text, or blank", example: "Unit 6 FLJ Building, Antipolo City", text: true },
+      { name: "usual_lto_office", label: "Usual LTO office", what: "Pre-selected when sending a transaction that needs LTO processing.", required: "no", allowed: "An LTO office code, or blank for none", example: "LTO-QC", text: true },
       status, notes,
     ],
     examples: [
-      { code: "ILO", name: "Iloilo", status: "Active", notes: EXAMPLE_NOTE },
-      { code: "BAG", name: "Baguio", status: "Active", notes: EXAMPLE_NOTE },
+      { code: "101", name: "Antipolo", division: "Branch Division", area: "LUZON 1 (NGMA + RIZAL)", address: "Unit 6 FLJ Building, Antipolo City", usual_lto_office: "LTO-QC", status: "Active", notes: EXAMPLE_NOTE },
+      { code: "189", name: "Angono - Car Financing", division: "Car Financing Division", area: "Luzon 1 - CFD", address: "", usual_lto_office: "", status: "Active", notes: EXAMPLE_NOTE },
     ],
   },
   lto: {
@@ -274,12 +278,13 @@ export const IMPORT_LISTS: Record<ImportListKey, ImportListDef> = {
       { name: "name", label: "Name", what: "Full name.", required: "yes", allowed: "Text", example: "Juan Dela Cruz", text: true },
       { name: "email", label: "Email", what: "Work email. Cannot change once added.", required: "yes", allowed: "An @gdfi.ph email", example: "juan.delacruz@gdfi.ph", text: true },
       { name: "role", label: "Role", what: "The role name, as in Settings > Roles and access (any case). Custom roles work too. Only roles that may sign in let the person sign in.", required: "yes", allowed: "An active role name, e.g. Loan Associate", example: "Loan Associate", text: true },
-      { name: "branches", label: "Branches", what: "Branch codes, separated by ; (semicolon).", required: "no", allowed: "Branch codes, e.g. QC;CEB", example: "QC;CEB", text: true },
+      { name: "branches", label: "Branches", what: "Where the person works: 3-digit branch codes separated by ; (semicolon), or ALL for all branches. Blank keeps what the person has. Whole areas, divisions and exceptions are set in Users, Edit, Branch access; this column changes only the single branches and keeps them.", required: "no", allowed: "Branch codes, e.g. 101;165, or ALL", example: "101;165", text: true },
+      { name: "home_branch", label: "Home branch", what: "The default branch for new work and sending. Must be one of the person's branches. Blank keeps it (or takes the first branch).", required: "no", allowed: "A branch code, e.g. 101", example: "101", text: true },
       status, notes,
     ],
     examples: [
-      { name: "Juan Dela Cruz", email: "juan.delacruz@gdfi.ph", role: "Loan Associate", branches: "QC;CEB", status: "Active", notes: EXAMPLE_NOTE },
-      { name: "Maria Reyes", email: "maria.reyes@gdfi.ph", role: "Document Processor / Collateral & Mortgage", branches: "DVO", status: "Active", notes: EXAMPLE_NOTE },
+      { name: "Juan Dela Cruz", email: "juan.delacruz@gdfi.ph", role: "Loan Associate", branches: "101;165", home_branch: "101", status: "Active", notes: EXAMPLE_NOTE },
+      { name: "Maria Reyes", email: "maria.reyes@gdfi.ph", role: "Document Processor / Collateral & Mortgage", branches: "390", home_branch: "", status: "Active", notes: EXAMPLE_NOTE },
     ],
   },
 };

@@ -8,13 +8,13 @@ test.beforeEach(async () => {
   await addDavaoFixture();
 });
 
-test("LA: find PN-0001001, open loan file, tick the papers, send to a processor", async ({ page }) => {
+test("LA: find GD1012026901001, open loan file, tick the papers, send to a processor", async ({ page }) => {
   await signIn(page, "la");
 
   // Find a loan
   await page.goto("/loans");
   const main = page.getByRole("main");
-  await main.getByLabel("Find a loan").fill("PN-0001001");
+  await main.getByLabel("Find a loan").fill("GD1012026901001");
   await main.getByRole("button", { name: /^Find/ }).click();
   await expect(main.getByText("Loan found")).toBeVisible();
   await expect(main.getByText("This is a Refinancing loan. Nothing to answer.")).toBeVisible();
@@ -22,7 +22,7 @@ test("LA: find PN-0001001, open loan file, tick the papers, send to a processor"
 
   // Open loan file (automatic rules run, no confirmation dialog)
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001001\?tab=transactions/);
+  await expect(page).toHaveURL(/\/loans\/GD1012026901001\?tab=transactions/);
   await expect(page.getByText("Loan file opened.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Check the papers for Notary" })).toBeVisible();
   for (const name of ["EDST", "Entry of PPSR", "Mortgage"]) {
@@ -35,7 +35,7 @@ test("LA: find PN-0001001, open loan file, tick the papers, send to a processor"
   for (const item of ["Promissory Note", "Disclosure Statement", "Chattel Mortgage (for notarization)", "Valid IDs of borrower (2)", "Deed of Sale"]) {
     await notary.getByLabel(item).check();
   }
-  await expect(notary.getByText("PN-0001001-PN-01")).toBeVisible();
+  await expect(notary.getByText("GD1012026901001-PN-01")).toBeVisible();
 
   // Send to a Document Processor (the recommended one is preselected), then confirm
   await expect(notary.getByText("Recommended")).toBeVisible();
@@ -51,7 +51,7 @@ test("LA: find PN-0001001, open loan file, tick the papers, send to a processor"
   // Sent: the next transaction that needs the LA opens, with a toast.
   await expect(page.getByRole("status").filter({ hasText: "Notary sent. Next: EDST" })).toBeVisible();
   await expect(page).toHaveURL(/tx=EDST/);
-  await page.goto("/loans/PN-0001001?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1012026901001?tab=todo&tx=NOTARY");
   await expect(page.getByRole("region", { name: "Notary: job" }).getByText(/Waiting for them to accept\./)).toBeVisible();
 
   // The sample card now says "Opened"
@@ -61,10 +61,10 @@ test("LA: find PN-0001001, open loan file, tick the papers, send to a processor"
   await expect(samples.getByRole("button", { name: /Ana Villanueva/ })).toContainText("Try it");
 
   // The full journey is still available
-  await page.goto("/loans/PN-0001001?tab=journey");
+  await page.goto("/loans/GD1012026901001?tab=journey");
   await expect(page.getByText("Phase 10: Closure, archival, retention")).toBeVisible();
 
   // Out-of-branch loan file: 404 even by typing the URL
-  const res = await page.goto("/loans/PN-0009007");
+  const res = await page.goto("/loans/GD3902026909007");
   expect(res?.status()).toBe(404);
 });

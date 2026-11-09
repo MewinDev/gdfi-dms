@@ -73,9 +73,9 @@ async function receiveComplete(page: Page, pn: string, code: string) {
   await expect.poll(async () => (await txnOf(pn, code)).status).toBe("COMPLETED");
 }
 
-test("Full path, PN-0001001: stages with evidence, a problem at the LTO, Check and verify, manual forward, liquidation, receive, vault gate", async ({ page }) => {
+test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Check and verify, manual forward, liquidation, receive, vault gate", async ({ page }) => {
   test.setTimeout(900_000);
-  const PN = "PN-0001001";
+  const PN = "GD1012026901001";
   await signInAs(page, "la");
   await openPn(page, PN);
   const branch = (await db.loan.findUniqueOrThrow({ where: { pn: PN }, include: { branch: true } })).branch.name;
@@ -239,7 +239,7 @@ test("Full path, PN-0001001: stages with evidence, a problem at the LTO, Check a
 
 test("Incomplete: the LA records it, the DP sees Package incomplete, corrects and forwards again", async ({ page }) => {
   test.setTimeout(400_000);
-  const PN = "PN-0001003";
+  const PN = "GD1652026901003";
   await signInAs(page, "la");
   await openPn(page, PN);
   await send(page, PN, "NOTARY", "NO");
@@ -247,7 +247,7 @@ test("Incomplete: the LA records it, the DP sees Package incomplete, corrects an
   const job = await jobOf(PN, "NOTARY");
   await accept(page, job.id);
   await workStagesUi(page, { name: "Atty. Uy", docNo: "1", pageNo: "2", bookNo: "3" });
-  await completeAndForwardUi(page, "Cebu");
+  await completeAndForwardUi(page, "Angono");
   await signInAs(page, "la");
   await page.goto(`/loans/${PN}?tab=todo&work=${job.transactionId}`);
   const form = page.locator("[data-receive-form]");
@@ -262,7 +262,7 @@ test("Incomplete: the LA records it, the DP sees Package incomplete, corrects an
   await shot(page, "dp-package-incomplete");
   await noSideways(page);
   const fwd = page.locator("[data-forward]");
-  await fwd.getByLabel("1. Branch").selectOption({ label: "Cebu" });
+  await fwd.getByLabel("1. Branch").selectOption({ label: "Angono" });
   await fwd.getByLabel("2. Loan Associate").selectOption({ label: "Test Loan Associate" });
   await fwd.getByRole("button", { name: "Forward to branch" }).click();
   await page.getByRole("alertdialog", { name: "Forward the package?" }).getByRole("button", { name: /^Forward \d+ papers?$/ }).click();
@@ -288,7 +288,7 @@ test("Screens: Settings Processing stages, DP Home with On hold (a returned job 
   await noSideways(page);
 
   // Two jobs: one put on hold, one returned to the LA.
-  const PN = "PN-0001003";
+  const PN = "GD1652026901003";
   await signInAs(page, "la");
   await openPn(page, PN);
   await send(page, PN, "NOTARY", "NO");

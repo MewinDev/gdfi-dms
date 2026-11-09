@@ -74,7 +74,7 @@ export async function changeProcessor(u: CurrentUser, transactionId: string, raw
     await assertNotHeld(tx, t.id);
     const job = await pendingJobInLock(tx, t.id);
     if (job.dpUserId === dp.id && (job.secondaryDpUserId ?? null) === (second?.id ?? null)) throw new UserError("Pick a different processor.", "dpUserId");
-    const branchId = dp.branches.some((b) => b.branchId === job.dpBranchId) ? job.dpBranchId : dp.branches[0]?.branchId ?? job.dpBranchId;
+    const branchId = dp.allBranches || dp.branches.some((b) => b.branchId === job.dpBranchId) ? job.dpBranchId : dp.homeBranchId ?? dp.branches[0]?.branchId ?? job.dpBranchId;
     // Same job, same clock (sent time kept): only who does it changes.
     await tx.dpAssignment.update({ where: { id: job.id }, data: { dpUserId: dp.id, dpBranchId: branchId, secondaryDpUserId: second?.id ?? null, pasuyoReason: second ? d.reason : null } });
     if (second && second.id !== job.secondaryDpUserId) {

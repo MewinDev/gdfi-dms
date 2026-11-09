@@ -9,7 +9,11 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { dpByDay, dpDrill, dpMonitor, filterOptions, ltoByDay, ltoDrill, ltoMonitor, openJobCounts, parseMonitorQuery } from "@/lib/services/monitoring";
 import { businessDate } from "@/lib/time";
+import { buildPn } from "@/lib/pn/format";
 import { asUser, cleanLoans } from "./helpers";
+
+/** Perf loans: the real PN format with branch code 174 (a hint only; the loans sit at 101, 165 and 390). */
+const PERF_PREFIX = "GD1742026";
 
 const N = 20_000;
 const CHUNK = 5_000;
@@ -21,10 +25,10 @@ beforeAll(async () => {
   process.env.TEST_MODE = "true";
   monitor = await asUser("test.monitor@gdfi.ph");
   // PERF_KEEP=1 keeps the data between runs (while tuning); a normal run always starts clean.
-  if (process.env.PERF_KEEP === "1" && (await prisma.loan.count({ where: { pn: { startsWith: "PN-7" } } })) === N) return;
+  if (process.env.PERF_KEEP === "1" && (await prisma.loan.count({ where: { pn: { startsWith: PERF_PREFIX } } })) === N) return;
   await cleanLoans();
   const admin = await prisma.user.findUniqueOrThrow({ where: { email: "test.admin@gdfi.ph" } });
-  const branches = await prisma.branch.findMany({ where: { code: { in: ["QC", "CEB", "DVO"] } } });
+  const branches = await prisma.branch.findMany({ where: { code: { in: ["101", "165", "390"] } } });
   const dps = await prisma.user.findMany({ where: { email: { in: ["test.dp@gdfi.ph", "dp.rico@gdfi.ph", "dp.joy@gdfi.ph", "dp.paolo@gdfi.ph", "dp.grace@gdfi.ph", "dp.ben@gdfi.ph"] } } });
   const offices = await prisma.ltoOffice.findMany({ where: { active: true } });
   const notary = await prisma.transactionType.findUniqueOrThrow({ where: { code: "NOTARY" } });
@@ -43,7 +47,7 @@ beforeAll(async () => {
     });
     await prisma.loan.createMany({
       data: plan.map(({ i, b, sentAt }) => ({
-        id: `perf-l-${i}`, pn: `PN-${7_000_000 + i}`, borrowerName: `Perf Borrower ${i}`, branchId: b.id, loanType: "New", productName: "Auto Refinancing", totalReleasedAmount: 450_000,
+        id: `perf-l-${i}`, pn: buildPn("174", 2026, i + 1), borrowerName: `Perf Borrower ${i}`, branchId: b.id, loanType: "New", productName: "Auto Refinancing", totalReleasedAmount: 450_000,
         releasedAt: sentAt, sourceStatus: "RELEASED", retrievedAt: sentAt, openedById: admin.id, classification: "REFINANCING" as const, mortgageResult: "MORTGAGE" as const, ruleFired: "perf test", stage: "In process",
       })),
     });
@@ -122,6 +126,10 @@ describe(`Monitoring with ${N.toLocaleString("en-PH")} loans`, () => {
     const office = await prisma.ltoOffice.findFirstOrThrow({ where: { active: true } });
     await timed("lto drill-down", () => ltoDrill(monitor, parseMonitorQuery({ tab: "lto" }, monitor, today), office.id));
     await timed("send panel open counts", () => openJobCounts());
+    // The Area filter (jobs of any branch in the area; processors with any branch there).
+    const area = (await prisma.branch.findUniqueOrThrow({ where: { code: "101" } })).areaId!;
+    const byArea = await timed("dp page, area filter", () => dpMonitor(monitor, parseMonitorQuery({ tab: "dp", area }, monitor, today)));
+    expect(byArea.tiles.assigned + byArea.tiles.inProcess + byArea.tiles.onHold).toBeGreaterThan(0);
     for (const [k, v] of Object.entries(timings)) expect(v, k).toBeLessThan(1000);
   });
 });

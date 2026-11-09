@@ -28,9 +28,9 @@ export async function GET(req: NextRequest) {
     });
   }
   const { rows } = await tatReport(user, f);
-  const header = ["PN", "Borrower", "Branch", "Transaction", "Processor", "Job", "TAT", "Late", "Funds", "Funds type", "Type", "Open problem", "Problem days", "Outside our control", "Open hold", "Hold days", "Attempts"];
+  const header = ["PN", "Borrower", "Branch", "Branch code", "Area", "Transaction", "Processor", "Job", "TAT", "Late", "Funds", "Funds type", "Type", "Open problem", "Problem days", "Outside our control", "Open hold", "Hold days", "Attempts"];
   const lines = [header.join(",")].concat(rows.map((r) => [
-    r.pn, r.borrower, r.branch, r.typeName, r.dpName, r.tab, r.tat?.text ?? "", r.tat?.lateText ?? "", FUNDS_LABEL[r.funds], r.fundsType ? `${r.fundsType.code} · ${r.fundsType.name}` : "", r.problem ? "Problem" : r.hold ? "Hold" : "", r.problem?.reason ?? "", r.problemDaysTotal, r.problem?.outsideControl ? "Yes" : "No", r.hold?.reason ?? "", r.holdDaysTotal, r.attempts,
+    r.pn, r.borrower, r.branch, r.branchCode ?? "", r.area, r.typeName, r.dpName, r.tab, r.tat?.text ?? "", r.tat?.lateText ?? "", FUNDS_LABEL[r.funds], r.fundsType ? `${r.fundsType.code} · ${r.fundsType.name}` : "", r.problem ? "Problem" : r.hold ? "Hold" : "", r.problem?.reason ?? "", r.problemDaysTotal, r.problem?.outsideControl ? "Yes" : "No", r.hold?.reason ?? "", r.holdDaysTotal, r.attempts,
   ].map(esc).join(",")));
   await prisma.auditLog.create({ data: { actorId: user.id, actorLabel: user.name, mode: "MANUAL", action: "tat_report_exported", entityType: "Report", summary: `Exported the TAT and problems report (${rows.length} row(s))`, details: f } });
   return new NextResponse("﻿" + lines.join("\r\n"), {

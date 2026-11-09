@@ -30,21 +30,21 @@ async function noSideways(page: Page) {
 }
 const toast = (page: Page) => page.locator("[data-live-toast]");
 async function openPn3(page: Page) {
-  await page.goto("/loans?fill=PN-0001003");
+  await page.goto("/loans?fill=GD1652026901003");
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001003/);
+  await expect(page).toHaveURL(/\/loans\/GD1652026901003/);
 }
-const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code } }, include: { checks: { include: { rule: true } } } });
+const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code } }, include: { checks: { include: { rule: true } } } });
 const outline = (page: Page, sel: string) => page.locator(sel).first().evaluate((e) => { const s = getComputedStyle(e); return `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor}`; });
 
 test("Softer borders; the focus ring shows for the keyboard only", async ({ page }) => {
   await signInAs(page, "la");
   await openPn3(page);
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const card = page.getByRole("region", { name: "Notary", exact: true });
   if (page.viewportSize()!.width >= 600) {
     const b = await card.evaluate((e) => { const s = getComputedStyle(e); return `${s.borderTopWidth} ${s.borderTopColor}`; });
@@ -80,7 +80,7 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
   await signInAs(page, "la");
   await openPn3(page);
   // Send Notary (required papers only) to the test processor.
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const papers = page.getByRole("group", { name: "Notary papers" });
   const notary = await txnOf("NOTARY");
   for (const c of notary.checks.filter((x) => x.required)) await papers.getByLabel(c.rule!.label).check();
@@ -95,7 +95,7 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
   await expect.poll(async () => (await txnOf("NOTARY")).status).toBe("ASSIGNED");
 
   // A. The Sent card: not accepted yet, the change actions.
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const before = page.locator("[data-before-accept]");
   await expect(before).toContainText("Not accepted yet. You can still change this.");
   for (const b of ["Update papers", "Change funds", "Change processor", "Add a note for the processor", "Pull back"]) await expect(before.getByRole("button", { name: b })).toBeVisible();
@@ -166,7 +166,7 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
 
   // The LA who sent it: the findings at the top, the Requested tag, the Open items rows; the processor is chosen again (nothing pre-selected).
   await signInAs(page, "la");
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   await expect(page.locator("[data-sent-back=returned] [data-findings]")).toContainText("Missing paper");
   await expect(page.locator("[data-sent-back=returned] [data-findings]")).toContainText("Bring the original ID");
   const tag = page.getByRole("group", { name: "Notary papers" }).locator("[data-requested]");

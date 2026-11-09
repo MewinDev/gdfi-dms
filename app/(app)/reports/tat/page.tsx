@@ -14,7 +14,8 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
   const user = await requirePagePermission(PERMISSIONS.REPORTS_TAT);
   const sp = await searchParams;
   const [{ rows, all }, reasons] = await Promise.all([tatReport(user, sp), reasonReport(user, sp)]);
-  const branches = [...new Set(all.map((r) => r.branch))].sort();
+  // Branch choices: the name (kept as the filter value) shown with its code, "Antipolo (101)".
+  const branches = [...new Map(all.map((r) => [r.branch, r.branchCode ? `${r.branch} (${r.branchCode})` : r.branch])).entries()].sort(([a], [z]) => a.localeCompare(z));
   const types = [...new Map(all.map((r) => [r.typeCode, r.typeName])).entries()];
   const stageNames = [...new Set(all.map((r) => r.stage).filter((x): x is string => !!x))].sort();
   // Funds types on these jobs, with counts (the filter and its numbers).
@@ -41,7 +42,7 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
           <label htmlFor="tb" className="label">Branch</label>
           <select id="tb" name="branch" defaultValue={sp.branch ?? ""} className="input">
             <option value="">All</option>
-            {branches.map((b) => <option key={b}>{b}</option>)}
+            {branches.map(([b, label]) => <option key={b} value={b}>{label}</option>)}
           </select>
         </div>
         <div>

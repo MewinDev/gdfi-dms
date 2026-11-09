@@ -25,9 +25,9 @@ const entry = (page: Page, code: string) => page.locator(`[data-txn=${code}]`).f
 
 async function openChecking(page: Page) {
   await signIn(page, "la");
-  await page.goto("/search?q=PN-0001001");
+  await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001001/);
+  await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
   await page.getByRole("link", { name: "Start checking" }).click();
   await expect(page).toHaveURL(/tx=NOTARY/);
 }
@@ -65,7 +65,7 @@ test("side list or strip: only the others (desktop), swap on select, ?tx= surviv
   await expect(pkg.getByText(new RegExp(`^1 of ${total} required papers$`))).toBeVisible();
 
   // An open problem shows a red chip on its entry.
-  const ppsr = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001001" }, type: { code: "PPSR" } } });
+  const ppsr = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1012026901001" }, type: { code: "PPSR" } } });
   const reason = await db.problemReason.findFirstOrThrow({ where: { active: true } });
   await db.problem.create({ data: { loanId: ppsr.loanId, transactionId: ppsr.id, reasonId: reason.id, raisedByLabel: "E2E", raisedAt: new Date(Date.now() - 2 * 86_400_000) } });
   await page.reload();
@@ -106,7 +106,7 @@ test("side list or strip: only the others (desktop), swap on select, ?tx= surviv
 
 test("default selection: an empty or unknown ?tx= opens the first one that needs action", async ({ page }) => {
   await openChecking(page);
-  await page.goto("/loans/PN-0001001?tab=todo&tx=NOPE");
+  await page.goto("/loans/GD1012026901001?tab=todo&tx=NOPE");
   await expect(page.getByRole("region", { name: "Notary", exact: true })).toBeVisible();
   await noSideways(page);
 });

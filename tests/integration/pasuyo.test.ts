@@ -38,8 +38,8 @@ afterAll(async () => {
 });
 
 async function ready(code: string) {
-  await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
-  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+  await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
+  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
   const txn = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code } }, include: { checks: true } });
   await saveChecklist(la, { transactionId: txn.id, checkedIds: txn.checks.map((c) => c.id), newOthers: [] });
   return { loan, txn };
@@ -55,7 +55,7 @@ describe("LA: a second processor (Pasuyo) at Send", () => {
     const { loan, txn } = await ready("NOTARY");
     await expect(assignToDp(la, input(loan, txn.id, { pasuyo: true, secondaryDpUserId: dp.id, pasuyoReason: "Busy" }))).rejects.toThrow(/different person/);
     await expect(assignToDp(la, input(loan, txn.id, { pasuyo: true, secondaryDpUserId: dp2.id, pasuyoReason: "" }))).rejects.toThrow(/enter the reason/);
-    await assignToDp(la, input(loan, txn.id, { pasuyo: true, secondaryDpUserId: dp2.id, pasuyoReason: "Cebu notary is closer" }));
+    await assignToDp(la, input(loan, txn.id, { pasuyo: true, secondaryDpUserId: dp2.id, pasuyoReason: "Angono notary is closer" }));
     const job = await jobOf(txn.id);
     expect(job.secondaryDpUserId).toBe(dp2.id);
     expect(await prisma.pasuyoEvent.count({ where: { assignmentId: job.id, fromUserId: null, toUserId: dp2.id } })).toBe(1);
@@ -89,7 +89,7 @@ describe("DP: Pasuyo, pass a job to a second processor", () => {
     const before = await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } });
     await expect(passJob(dp, job.id, { toUserId: dp.id, reason: "x x x" })).rejects.toThrow(/other than the current one/);
     await expect(passJob(dp, job.id, { toUserId: dp2.id, reason: "" })).rejects.toThrow(/why a second processor/);
-    await passJob(dp, job.id, { toUserId: dp2.id, reason: "I am out of town", note: "Papers at the Cebu office" });
+    await passJob(dp, job.id, { toUserId: dp2.id, reason: "I am out of town", note: "Papers at the Angono office" });
 
     const after = await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } });
     expect(after.statusSince).toEqual(before.statusSince); // the clock does not reset

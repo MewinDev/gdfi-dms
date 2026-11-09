@@ -1,4 +1,5 @@
 import type { MyLoansAdapter, MyLoansLookup } from "./types";
+import { cleanPn } from "@/lib/pn/format";
 
 /**
  * One way to ask MyLoans for a loan, per server process: simultaneous asks for the same PN share one
@@ -33,7 +34,7 @@ export function noteCall(ms: number, r: { ok: boolean; retryAfterMs?: number }, 
 
 export async function lookupPn(adapter: MyLoansAdapter, pn: string, o: { fresh?: boolean; now?: () => number } = {}): Promise<MyLoansLookup> {
   const now = o.now ?? Date.now;
-  const key = pn.trim().toUpperCase();
+  const key = cleanPn(pn);
   const hit = cache.get(key);
   if (!o.fresh && hit && now() - hit.at < CACHE_MS) { stats.saved++; return hit.value; }
   const running = inflight.get(key);

@@ -5,10 +5,10 @@ import { readImportFile, templateCsv } from "./importer";
 
 describe("CSV", () => {
   it("writes UTF-8 with BOM and reads it back (quotes, commas, accents, CRLF)", () => {
-    const csv = toCsv(["code", "name"], [{ code: "QC", name: 'Quezon City, "Main"' }, { code: "PN", name: "Peñaranda ₱" }]);
+    const csv = toCsv(["code", "name"], [{ code: "101", name: 'Quezon City, "Main"' }, { code: "PN", name: "Peñaranda ₱" }]);
     expect(csv.startsWith("﻿")).toBe(true);
     expect(csv).toContain("\r\n");
-    expect(parseCsv(csv)).toEqual([["code", "name"], ["QC", 'Quezon City, "Main"'], ["PN", "Peñaranda ₱"]]);
+    expect(parseCsv(csv)).toEqual([["code", "name"], ["101", 'Quezon City, "Main"'], ["PN", "Peñaranda ₱"]]);
   });
 
   it("reads LF files and a last line without a newline", () => {
@@ -44,21 +44,21 @@ describe("Template columns equal importer columns, for every list", () => {
 
 describe("Reading a file", () => {
   it("refuses changed column names, plainly", () => {
-    const r = readImportFile("branches", "code,branch_name\nQC,Quezon City\n");
+    const r = readImportFile("branches", "code,branch_name\n101,Antipolo\n");
     expect("error" in r && r.error).toMatch(/column this list does not use: "branch_name"/);
     const m = readImportFile("branches", "code\nQC\n");
     expect("error" in m && m.error).toMatch(/missing the column "name"/);
   });
 
   it("refuses formula-looking text in text columns, with row and column", () => {
-    const r = readImportFile("branches", "code,name\nQC,Quezon City\nZZ,=HYPERLINK(\"x\")\n");
+    const r = readImportFile("branches", "code,name\n101,Antipolo\n102,=HYPERLINK(\"x\")\n");
     expect("error" in r && r.error).toMatch(/^Row 3, Branch name: .*formula/);
   });
 
   it("refuses more than the row limit and skips blank lines", () => {
     const many = ["code,name", ...Array.from({ length: MAX_ROWS + 1 }, (_, i) => `B${i},Branch ${i}`)].join("\n");
     expect("error" in readImportFile("branches", many)).toBe(true);
-    const r = readImportFile("branches", "code,name\n\nQC,Quezon City\n,\n");
+    const r = readImportFile("branches", "code,name\n\n101,Antipolo\n,\n");
     expect("records" in r && r.records.map((x) => x.line)).toEqual([3]);
   });
 });

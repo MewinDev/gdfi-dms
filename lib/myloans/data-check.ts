@@ -7,8 +7,11 @@ import type { MyLoansRecord } from "./types";
  */
 
 export interface DataCheckContext {
-  /** Branch names the user may act on. `null` means all branches (no branch restriction). */
-  allowedBranchNames: string[] | null;
+  /**
+   * The branches the user may act on (their access), by MyLoans code and name. `null` means all branches.
+   * The record's branch code is matched first; the name only when the record has no code that matches.
+   */
+  allowedBranches: { code: string | null; name: string }[] | null;
   /** Today's date (YYYY-MM-DD, business time zone). */
   today: string;
 }
@@ -50,13 +53,18 @@ export function parseAmount(v: unknown): number | null {
   return null;
 }
 
+/** Is the record's branch one of these (code first, then name)? */
+export function inBranches(record: Pick<MyLoansRecord, "branchCode" | "branchName">, list: { code: string | null; name: string }[]): boolean {
+  const code = record.branchCode?.trim();
+  if (code && list.some((b) => b.code === code)) return true;
+  const name = record.branchName?.trim().toLowerCase();
+  return !!name && list.some((b) => b.name.toLowerCase() === name && (!code || !b.code));
+}
+
 export function runDataCheck(record: MyLoansRecord, ctx: DataCheckContext): DataCheckResult {
   // Branch
-  if (ctx.allowedBranchNames !== null) {
-    const allowed = ctx.allowedBranchNames.map((b) => b.toLowerCase());
-    if (!record.branchName || !allowed.includes(record.branchName.toLowerCase())) {
-      return fail("branch", "Branch", "Outside your branch access.");
-    }
+  if (ctx.allowedBranches !== null && !inBranches(record, ctx.allowedBranches)) {
+    return fail("branch", "Branch", "Outside your branch access.");
   }
   // Source status
   if ((record.status ?? "").toUpperCase() !== "RELEASED") {

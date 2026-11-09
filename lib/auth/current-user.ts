@@ -5,21 +5,11 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { SESSION_COOKIE, verifySession } from "./session";
 import type { Permission } from "./permissions";
-import { effectivePermissions, maySignIn } from "./access";
+import { maySignIn } from "./access";
+import { CURRENT_USER_INCLUDE, toCurrentUser, type CurrentUser } from "./build-user";
 import { isTestMode } from "@/lib/test-mode";
 
-export interface CurrentUser {
-  id: string;
-  email: string;
-  name: string;
-  roleKey: string;
-  roleName: string;
-  permissions: Set<string>;
-  branchIds: string[];
-  branchNames: string[];
-  /** null = all branches */
-  scopeBranchIds: string[] | null;
-}
+export type { CurrentUser } from "./build-user";
 
 /**
  * The signed-in user, re-read from the database on every request: a change to a role, its
@@ -30,27 +20,9 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const store = await cookies();
   const session = await verifySession(store.get(SESSION_COOKIE)?.value);
   if (!session) return null;
-  const user = await prisma.user.findUnique({
-    where: { id: session.sub },
-    include: { role: true, branches: { include: { branch: true } } },
-  });
+  const user = await prisma.user.findUnique({ where: { id: session.sub }, include: CURRENT_USER_INCLUDE });
   if (!user || !maySignIn(user, user.role, isTestMode())) return null;
-  const permissions = effectivePermissions(user.role) as Set<string>;
-  // Inactive branches stay in scope: their existing loan files keep working. Opening NEW loan files
-  // for an inactive branch is refused in lib/services/loan-file.ts.
-  const branchIds = user.branches.map((b) => b.branchId);
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    roleKey: user.role.key,
-    roleName: user.role.name,
-    permissions,
-    branchIds,
-    branchNames: user.branches.map((b) => b.branch.name),
-    // Branch access comes from the role: all branches, or only the person's assigned branches.
-    scopeBranchIds: user.role.branchAccess === "ALL" ? null : branchIds,
-  };
+  return toCurrentUser(user);
 });
 
 /** The one authorization check. Every server check goes through here. */

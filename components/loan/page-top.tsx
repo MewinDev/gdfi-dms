@@ -6,13 +6,15 @@ import Link from "next/link";
  * subtitle line directly under the title. Nothing sits to the left of the title.
  */
 export function PageTop({
-  crumbs, back, title, subtitle, right,
+  crumbs, back, title, subtitle, right, note,
 }: {
   crumbs: { label: string; href?: string }[];
   back: { label: string; href: string };
   title: string;
-  subtitle: string;
+  subtitle: React.ReactNode;
   right?: React.ReactNode;
+  /** A small line under the subtitle (the Loan File: "Opened at Antipolo (101)"). */
+  note?: React.ReactNode;
 }) {
   return (
     <header className="flex flex-col gap-1">
@@ -36,6 +38,7 @@ export function PageTop({
         {right && <span className="-my-2 flex shrink-0 items-center self-center">{right}</span>}
       </div>
       <p className="text-[15px] text-ink-2">{subtitle}</p>
+      {note && <p className="text-[13px] text-ink-2" data-opened-at>{note}</p>}
     </header>
   );
 }

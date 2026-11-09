@@ -80,7 +80,15 @@ They run only when all of these hold (`lib/kit/guard.ts`, unit-tested), checked 
 
 Elsewhere the Test kit card is not listed, `/admin/settings?open=test-kit`, `/admin/test-kit` and `/admin/test-kit/sheet` are "not found", and the server actions refuse, even for Admin. The `kit:*` commands blank the `GRAPH_*` values for their own run; the sample accounts use `@example.test`; the email switch is set to Not active after every start, reset and restore.
 
+**The real branch list.** `kit:start` and `kit:rebuild` import `storage/kit/myloans-branches.csv` when it is there, through the same import code as Settings, Branches, Import from MyLoans, so the kit has the real 6 divisions, 25 areas and 298 branches with their codes. Put the file (the MyLoans export, comma-separated with the header row, or the tab-separated dump) at exactly that path. Git ignores `storage/`: never commit it. Without the file the kit uses a small built-in subset (12 branches in 3 divisions, `lib/branches/builtin.ts`). The automated tests always use the built-in subset and never read the file (a database with `test` in its name never does).
+
 Files: `storage/kit/` (ignored by Git): `baseline.dump` and `baseline.json`, and `backups/<name>.dump` and `.json`. They are `pg_dump` files, moved in and out of the container with `docker cp`, so a backup can be copied to another PC. Reset and Restore ask for the typed word RESET and take an automatic backup first (`pre-reset-<time>`, the last 5 kept). A save made with other migrations is not restored: after a new migration run `npm run kit:rebuild`.
+
+## MyLoans: no direct database access
+
+The DMS never connects to the MyLoans database (MYLOSDB) and never runs SQL against it. Loans come from the MyLoans API (`MYLOANS_BASE_URL`, `MYLOANS_API_KEY`); the branch list comes from the API through `listBranches()` (`lib/myloans/http-adapter.ts`, mapped in `lib/myloans/live-mapping.ts`), or from an export file (Settings, Branches, Import from MyLoans) until the API has it. If the MyLoans team can only offer database access, it must be a read-only login on a read-only view or replica, used only inside that one adapter method, never ad-hoc SQL elsewhere in the app; its connection string is a secret like the API key (hosting settings or `.env.local`, never `.env` or Git).
+
+The branch list runs once a day at about 02:00 PHT through the existing cron endpoint (`/api/cron/myloans-sync`, `CRON_SECRET`); the time and a pause switch are in Settings, Branches.
 
 ## Migration names
 

@@ -41,12 +41,15 @@ export async function GET(req: NextRequest) {
     lines = byDayLines(tab === "dp" ? await dpByDay(user, q) : await ltoByDay(user, q));
   } else if (tab === "dp") {
     const m = await dpMonitor(user, q);
-    lines = [line(["Branch group", "Processor", "Assigned (now)", "In process (now)", "On hold (now)", "Overdue (now)", "Declined", "Returned", "Avg days to accept", "Jobs", "Avg processing days", "Jobs", "Avg total days", "Jobs", "Capacity", "Open jobs", "Availability %", "Status"])];
+    lines = [line(["Area", "Branch", "Processor", "Branch codes", "Assigned (now)", "In process (now)", "On hold (now)", "Overdue (now)", "Declined", "Returned", "Avg days to accept", "Jobs", "Avg processing days", "Jobs", "Avg total days", "Jobs", "Capacity", "Open jobs", "Availability %", "Status"])];
     for (const g of m.groups) {
       for (const r of g.rows) {
-        lines.push(line([g.label, r.name, r.assigned, r.inProcess, r.onHold, r.overdue, r.declined, r.returned, days(r.accept.days), r.accept.n, days(r.processing.days), r.processing.n, days(r.total.days), r.total.n, r.avail.capacity, r.open, r.avail.pct, AVAILABILITY_LABEL[r.avail.status]]));
+        lines.push(line([g.label, r.branchGroup, r.name, r.branches.map((b) => /\((\d{3})\)$/.exec(b)?.[1] ?? "").filter(Boolean).join(" "), r.assigned, r.inProcess, r.onHold, r.overdue, r.declined, r.returned, days(r.accept.days), r.accept.n, days(r.processing.days), r.processing.n, days(r.total.days), r.total.n, r.avail.capacity, r.open, r.avail.pct, AVAILABILITY_LABEL[r.avail.status]]));
       }
-      lines.push(line([g.label, "Subtotal", g.sub.assigned, g.sub.inProcess, g.sub.onHold, g.sub.overdue, g.sub.declined, g.sub.returned, days(g.sub.accept.days), g.sub.accept.n, days(g.sub.processing.days), g.sub.processing.n, days(g.sub.total.days), g.sub.total.n, "", g.sub.open, g.sub.availPct ?? "", ""]));
+      if (g.branches.length > 1) {
+        for (const bg of g.branches) lines.push(line([g.label, bg.label, "Subtotal", "", bg.sub.assigned, bg.sub.inProcess, bg.sub.onHold, bg.sub.overdue, bg.sub.declined, bg.sub.returned, days(bg.sub.accept.days), bg.sub.accept.n, days(bg.sub.processing.days), bg.sub.processing.n, days(bg.sub.total.days), bg.sub.total.n, "", bg.sub.open, bg.sub.availPct ?? "", ""]));
+      }
+      lines.push(line([g.label, "", "Subtotal", "", g.sub.assigned, g.sub.inProcess, g.sub.onHold, g.sub.overdue, g.sub.declined, g.sub.returned, days(g.sub.accept.days), g.sub.accept.n, days(g.sub.processing.days), g.sub.processing.n, days(g.sub.total.days), g.sub.total.n, "", g.sub.open, g.sub.availPct ?? "", ""]));
     }
   } else {
     const m = await ltoMonitor(user, q);

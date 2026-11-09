@@ -20,7 +20,7 @@ import { GET as healthGet } from "@/app/api/health/route";
 import { asUser, cleanLoans } from "./helpers";
 
 let la: CurrentUser, admin: CurrentUser;
-const PN = "PN-0001003";
+const PN = "GD1652026901003";
 const REFUSED = /is not available in production\./;
 const saved = { ...process.env };
 let loanId = "";

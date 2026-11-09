@@ -286,7 +286,8 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** "In plain words": what a role can do, built from its switches. */
 export function plainWords(keys: Iterable<string>, branchAccess: "ASSIGNED" | "ALL"): string[] {
   const on = new Set(keys);
-  const where = branchAccess === "ALL" ? "in all branches" : "in assigned branches";
+  // Where comes from each person (Users, Edit, Branch access); the role only gives the default for new users.
+  const where = branchAccess === "ALL" ? "in all branches (the default for new users)" : "in the branches of their own access";
   const lines: string[] = [];
   for (const g of PERMISSION_GROUPS) {
     const yes = g.items.filter((i) => on.has(i.key)).map((i) => i.can);

@@ -119,7 +119,7 @@ export const isEmailEvent = (k: string): k is EmailEventKey => k in EMAIL_EVENTS
 
 /** Placeholders a message may use, with what each one becomes. */
 export const PLACEHOLDERS = {
-  pn: "The PN, for example PN-0001003",
+  pn: "The PN, for example GD1652026901003",
   transaction: "The transaction, for example Notary",
   who: "Who did it",
   when: "When, in Philippine time",
@@ -151,7 +151,7 @@ export function fillLines(template: string, vars: EmailVars): string[] {
 
 /** Sample values for the preview in Settings. */
 export const SAMPLE_VARS: EmailVars = {
-  pn: "PN-0001003", transaction: "Notary", who: "Ana Reyes (LA)", when: "Nov 7, 2026, 2:15 PM PHT", reason: "Reason: The ID copy is in the brown envelope.",
+  pn: "GD1652026901003", transaction: "Notary", who: "Ana Reyes (LA)", when: "Nov 7, 2026, 2:15 PM PHT", reason: "Reason: The ID copy is in the brown envelope.",
   status: "put on hold", amount: "₱1,500.00", number: "CA-2026-0001", kind: "Cash advance", count: "3", recipient: "Joy Navarro", office: "LTO Quezon City District Office",
 };
 

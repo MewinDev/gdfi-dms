@@ -10,7 +10,7 @@ import { signIn } from "./helpers";
  */
 const DIR = "docs/screenshots/on-hold";
 mkdirSync(DIR, { recursive: true });
-const PN = "PN-0001003";
+const PN = "GD1652026901003";
 const REMARKS = "No Available DP";
 
 test.beforeEach(async () => {

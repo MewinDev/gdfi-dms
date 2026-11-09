@@ -27,7 +27,8 @@ async function cleanup() {
   await prisma.transactionType.deleteMany({ where: { code: { startsWith: "Z" } } });
   await prisma.retentionRule.deleteMany({ where: { documentTypeId: { in: dt.map((d) => d.id) } } });
   await prisma.documentType.deleteMany({ where: { code: { startsWith: "Z" } } });
-  await prisma.branch.deleteMany({ where: { code: { startsWith: "Z" } } });
+  // Branches the tests make by hand ("Zeta ..."; branch codes are 3 digits now).
+  await prisma.branch.deleteMany({ where: { name: { startsWith: "Zeta" } } });
   await prisma.ltoOffice.deleteMany({ where: { code: { startsWith: "Z" } } });
   await prisma.holidayCalendar.deleteMany({ where: { date: { startsWith: "2099-" } } });
   await prisma.user.deleteMany({ where: { email: { startsWith: "zz." } } });
@@ -35,7 +36,9 @@ async function cleanup() {
   for (const m of [prisma.branch, prisma.documentType, prisma.ltoOffice, prisma.loanType] as unknown as { updateMany(a: unknown): Promise<unknown> }[]) {
     await m.updateMany({ where: { active: false }, data: { active: true, deactivatedAt: null, deactivatedById: null } });
   }
-  await prisma.branch.update({ where: { code: "MKT" }, data: { name: "Makati" } });
+  await prisma.branch.update({ where: { code: "168" }, data: { name: "A. Mabini" } });
+  // Alicia-Inactive (718) is inactive in the seeded list: keep it so.
+  await prisma.branch.updateMany({ where: { code: "718" }, data: { active: false } });
   await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.la@gdfi.ph", "dp.rico@gdfi.ph"] } }, data: { active: true, deactivatedAt: null, deactivatedById: null } });
 }
 
@@ -60,9 +63,9 @@ const refused = async (p: Promise<unknown>, msg: RegExp) => {
 };
 
 describe("Migration", () => {
-  it("leaves current data active and marks the four built-in transaction types", async () => {
+  it("leaves current data active and marks the four built-in transaction types (Alicia-Inactive 718 is inactive in MyLoans)", async () => {
     const counts = await Promise.all([
-      prisma.branch.count({ where: { active: false } }), prisma.loanType.count({ where: { active: false } }),
+      prisma.branch.count({ where: { active: false, code: { not: "718" } } }), prisma.loanType.count({ where: { active: false } }),
       prisma.ltoOffice.count({ where: { active: false } }), prisma.holidayCalendar.count({ where: { active: false } }),
       prisma.documentType.count({ where: { active: false } }), prisma.transactionType.count({ where: { active: false } }),
     ]);
@@ -97,8 +100,8 @@ describe("Transaction types", () => {
     const tt = await prisma.transactionType.findUniqueOrThrow({ where: { code: "ZCOLL" } });
     await saveSettingsRow(admin, "checklistRule", null, { transactionTypeId: tt.id, documentTypeId: pn.id, label: "Signed letter", required: true, originality: "ORIGINAL", sortOrder: "1" });
 
-    await openLoanFile(la, { pn: "PN-0001001" });
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001001" } });
+    await openLoanFile(la, { pn: "GD1012026901001" });
+    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026901001" } });
     await addCustomTransaction(la, { loanId: loan.id, typeId: tt.id });
     const txn = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, typeId: tt.id }, include: { checks: { include: { rule: true } } } });
     expect(txn.origin).toBe("ADDED");
@@ -121,8 +124,8 @@ describe("Transaction types", () => {
     // Inactive custom types can no longer be added.
     await setRowActive(admin, "transactionType", tt.id, false);
     await cleanLoans();
-    await openLoanFile(la, { pn: "PN-0001001" });
-    const loan2 = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001001" } });
+    await openLoanFile(la, { pn: "GD1012026901001" });
+    const loan2 = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026901001" } });
     await refused(addCustomTransaction(la, { loanId: loan2.id, typeId: tt.id }), /inactive/);
   });
 });
@@ -163,18 +166,20 @@ describe("Inactive instead of delete", () => {
   });
 
   it("an inactive branch: no new loan files, but existing loan files are untouched and still open", async () => {
-    await openLoanFile(la, { pn: "PN-0001001" }); // Quezon City
-    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "QC" } });
-    await setRowActive(admin, "branch", qc.id, false);
+    await openLoanFile(la, { pn: "GD1012026901001" }); // Antipolo
+    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
+    // Antipolo comes from MyLoans: the DMS cannot switch it off; MyLoans closing it (an accepted review) does.
+    await expect(setRowActive(admin, "branch", qc.id, false)).rejects.toThrow(/comes from MyLoans/);
+    await prisma.branch.update({ where: { id: qc.id }, data: { active: false, deactivatedAt: new Date() } });
     const la2 = await asUser("test.la@gdfi.ph");
     expect(la2.branchIds).toContain(qc.id); // existing loan files stay reachable
-    expect(await prisma.loan.findUnique({ where: { pn: "PN-0001001" } })).not.toBeNull();
+    expect(await prisma.loan.findUnique({ where: { pn: "GD1012026901001" } })).not.toBeNull();
     const n = await prisma.loan.count();
     await cleanLoans();
-    await expect(openLoanFile(la2, { pn: "PN-0001001" })).rejects.toThrow(/Quezon City is inactive/);
+    await expect(openLoanFile(la2, { pn: "GD1012026901001" })).rejects.toThrow(/Antipolo \(101\) is inactive/);
     expect(await prisma.loan.count()).toBe(0);
     expect(n).toBe(1);
-    await setRowActive(admin, "branch", qc.id, true);
+    await prisma.branch.update({ where: { id: qc.id }, data: { active: true, deactivatedAt: null } });
   });
 
   it("an inactive holiday is no longer skipped", async () => {
@@ -192,11 +197,16 @@ describe("Inactive instead of delete", () => {
     expect(admins).toBe(1);
     expect(await inactiveRefusal("user", { id: admin.id, roleKey: "ADMIN" }, { id: "someone-else" })).toMatch(/last active Admin/);
 
-    const others = await prisma.branch.findMany({ where: { active: true, code: { not: "QC" } } });
-    for (const b of others) await setRowActive(admin, "branch", b.id, false);
-    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "QC" } });
-    await refused(setRowActive(admin, "branch", qc.id, false), /last active branch/);
-    for (const b of others) await setRowActive(admin, "branch", b.id, true);
+    // The last active branch (a branch made in the DMS; the others switched off as MyLoans would).
+    await saveSettingsRow(admin, "branch", null, { code: "869", name: "Zeta Last" });
+    const last = await prisma.branch.findUniqueOrThrow({ where: { code: "869" } });
+    const others = await prisma.branch.findMany({ where: { active: true, id: { not: last.id } }, select: { id: true } });
+    await prisma.branch.updateMany({ where: { id: { in: others.map((b) => b.id) } }, data: { active: false } });
+    try {
+      await refused(setRowActive(admin, "branch", last.id, false), /last active branch/);
+    } finally {
+      await prisma.branch.updateMany({ where: { id: { in: others.map((b) => b.id) } }, data: { active: true } });
+    }
   });
 });
 
@@ -204,41 +214,45 @@ describe("Import", () => {
   const branchesCsv = (rows: Record<string, string>[]) => toCsv(["code", "name", "status", "notes"], rows);
 
   it("Check file counts new, changed, unchanged and problem rows; nothing is saved", async () => {
+    await saveSettingsRow(admin, "branch", null, { code: "861", name: "Zeta Hand" }); // made in the DMS: editable here
     const file = branchesCsv([
-      { code: "QC", name: "Quezon City", status: "Active" }, // unchanged
-      { code: "MKT", name: "Makati City", status: "" }, // changed
-      { code: "ZA1", name: "Zeta One", status: "Active" }, // new
-      { code: "ZA2", name: "Cebu", status: "Active" }, // problem: name used by another branch
-      { code: "ZA3", name: "Zeta Three", status: "Maybe" }, // problem: status
-      { code: "ZA4", name: "Example", status: "Active", notes: "EXAMPLE, delete this row" }, // problem: example
+      { code: "101", name: "Antipolo", status: "Active" }, // unchanged
+      { code: "861", name: "Zeta Hand Renamed", status: "" }, // changed
+      { code: "862", name: "Zeta One", status: "Active" }, // new
+      { code: "863", name: "Angono", status: "Active" }, // problem: name used by another branch
+      { code: "864", name: "Zeta Three", status: "Maybe" }, // problem: status
+      { code: "865", name: "Example", status: "Active", notes: "EXAMPLE, delete this row" }, // problem: example
+      { code: "168", name: "Makati City", status: "" }, // problem: a MyLoans branch's name changes only in MyLoans
     ]);
     const plan = await checkImport(admin, "branches", "b.csv", file);
     if (!plan.ok) throw new Error(plan.error);
-    expect(plan.counts).toEqual({ new: 1, changed: 1, unchanged: 1, problem: 3 });
+    expect(plan.counts).toEqual({ new: 1, changed: 1, unchanged: 1, problem: 4 });
     const problems = plan.rows.filter((r) => r.action === "problem").flatMap((r) => r.problems);
     expect(problems).toContain("Row 5, Branch name: already used by another branch.");
     expect(problems).toContain("Row 6, Status: type Active or Inactive.");
     expect(problems.some((p) => p.startsWith("Row 7: this is an example row"))).toBe(true);
-    expect(await prisma.branch.count({ where: { code: { startsWith: "Z" } } })).toBe(0);
-    expect((await prisma.branch.findUniqueOrThrow({ where: { code: "MKT" } })).name).toBe("Makati");
+    expect(problems.some((p) => p.startsWith("Row 8, Branch name: this branch comes from MyLoans"))).toBe(true);
+    expect(await prisma.branch.count({ where: { code: { in: ["862", "863", "864"] } } })).toBe(0);
+    expect((await prisma.branch.findUniqueOrThrow({ where: { code: "168" } })).name).toBe("A. Mabini");
   });
 
   it("Import re-checks, applies valid rows in one go, never deletes, writes one audit row", async () => {
     const totalBefore = await prisma.branch.count();
     const auditBefore = await prisma.auditLog.count({ where: { action: "settings_imported" } });
     const file = branchesCsv([
-      { code: "ZB1", name: "Zeta B1", status: "Active" },
-      { code: "ZB2", name: "Zeta B2", status: "Inactive" },
-      { code: "MKT", name: "Makati City", status: "" },
-      { code: "ZB3", name: "", status: "" }, // problem: name required
-    ]); // QC, CEB, DVO are not in the file: they stay.
+      { code: "866", name: "Zeta B1", status: "Active" },
+      { code: "867", name: "Zeta B2", status: "Inactive" },
+      { code: "861", name: "Zeta Hand Again", status: "" },
+      { code: "868", name: "", status: "" }, // problem: name required
+    ]); // Antipolo, Angono and the rest are not in the file: they stay.
     const r = await runImport(admin, "branches", "branches.csv", file);
     if (!r.ok) throw new Error(r.error);
     expect(r.counts).toEqual({ new: 2, changed: 1, unchanged: 0, problem: 1 });
     expect(await prisma.branch.count()).toBe(totalBefore + 2);
-    expect((await prisma.branch.findUniqueOrThrow({ where: { code: "ZB2" } })).active).toBe(false);
-    expect(await prisma.branch.findUnique({ where: { code: "ZB3" } })).toBeNull();
-    expect(await prisma.branch.findUnique({ where: { code: "CEB" } })).not.toBeNull();
+    expect((await prisma.branch.findUniqueOrThrow({ where: { code: "867" } })).active).toBe(false);
+    expect((await prisma.branch.findUniqueOrThrow({ where: { code: "866" } })).source).toBe("DMS");
+    expect(await prisma.branch.findUnique({ where: { code: "868" } })).toBeNull();
+    expect(await prisma.branch.findUnique({ where: { code: "165" } })).not.toBeNull();
     const audits = await prisma.auditLog.findMany({ where: { action: "settings_imported" }, orderBy: { at: "desc" } });
     expect(audits.length).toBe(auditBefore + 1);
     expect(audits[0].summary).toBe("Imported Branches from branches.csv: 2 new, 1 updated, 0 unchanged, 1 skipped");
@@ -251,7 +265,7 @@ describe("Import", () => {
   });
 
   it("refuses formula-looking text; unknown codes in Checklist items are row problems, not crashes", async () => {
-    const bad = await checkImport(admin, "branches", "x.csv", branchesCsv([{ code: "ZC1", name: "@SUM(1)", status: "" }]));
+    const bad = await checkImport(admin, "branches", "x.csv", branchesCsv([{ code: "870", name: "@SUM(1)", status: "" }]));
     expect(bad.ok).toBe(false);
     expect(!bad.ok && bad.error).toMatch(/formula/);
 
@@ -276,8 +290,8 @@ describe("Import", () => {
     ]));
     expect(tt.ok && tt.rows[0].problems[0]).toMatch(/built-in/);
     const u = await checkImport(admin, "users", "u.csv", toCsv(["name", "email", "role", "branches", "status"], [
-      { name: admin.name, email: admin.email, role: "ADMIN", branches: "QC", status: "Inactive" },
-      { name: "Zed Person", email: "zz.person@gdfi.ph", role: "DP", branches: "QC;CEB", status: "Active" },
+      { name: admin.name, email: admin.email, role: "ADMIN", branches: "101", status: "Inactive" },
+      { name: "Zed Person", email: "zz.person@gdfi.ph", role: "DP", branches: "101;165", status: "Active" },
     ]));
     if (!u.ok) throw new Error(u.error);
     expect(u.rows[0].problems.join(" ")).toMatch(/cannot make yourself inactive/);

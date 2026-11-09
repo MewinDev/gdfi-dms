@@ -56,6 +56,18 @@ export function SourceReviewSheet({ review, open, onClose }: { review: ReviewDat
           <h3 id={`${uid}-means`} className="mb-1 text-[15px] font-bold text-navy">What it means</h3>
           <div className="flex flex-col gap-1 text-[14px]" data-source-means>{review.sentences.map((s) => <p key={s}>{s}</p>)}</div>
         </section>
+        {review.branchMove && (
+          <section aria-labelledby={`${uid}-branch`} className="rounded-xl border border-line bg-fill p-3" data-branch-move>
+            <h3 id={`${uid}-branch`} className="mb-1 text-[15px] font-bold text-navy">Branch: {review.branchMove.from} → {review.branchMove.to}</h3>
+            <ul className="flex flex-col gap-1 text-[14px]">
+              {review.branchMove.openedAt && <li>{review.branchMove.openedAt} (from the PN; it stays).</li>}
+              <li>The loan&apos;s branch changes only when you apply this. After that it shows &ldquo;{review.branchMove.openedAt ? `${review.branchMove.openedAt}, now at ${review.branchMove.to}` : `Now at ${review.branchMove.to}`}&rdquo;.</li>
+              {!review.branchMove.known && <li className="font-semibold text-bad-fg">{review.branchMove.to} is not a branch here yet: accept it in Settings, Branches (Branch review) first.</li>}
+              <li>Who can see it: {review.branchMove.seeBefore} {review.branchMove.seeBefore === 1 ? "person" : "people"} now, {review.branchMove.seeAfter} after.{review.branchMove.lose.length > 0 && <> Loses access: {review.branchMove.lose.join(", ")}.</>}{review.branchMove.gain.length > 0 && <> Gains access: {review.branchMove.gain.join(", ")}.</>}</li>
+              <li>Open work with: {review.branchMove.las.length ? review.branchMove.las.join(", ") : "no Loan Associate (nothing sent)"}.</li>
+            </ul>
+          </section>
+        )}
         {review.affected.length > 0 && (
           <section aria-labelledby={`${uid}-who`}>
             <h3 id={`${uid}-who`} className="mb-1 text-[15px] font-bold text-navy">Who is affected</h3>
@@ -241,6 +253,7 @@ export function SimulateSourceChange({ loanId }: { loanId: string }) {
           <option value="product">Change the product name</option>
           <option value="cancel">Set the loan cancelled</option>
           <option value="replace">Create a replacement PN</option>
+          <option value="branch">Move the loan to another branch</option>
         </select>
       </div>
       <SubmitButton className="btn-secondary">Simulate</SubmitButton>

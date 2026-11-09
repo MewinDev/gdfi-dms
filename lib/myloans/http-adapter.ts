@@ -1,7 +1,7 @@
-import type { MyLoansAdapter, MyLoansChanged, MyLoansLookup, MyLoansSearch } from "./types";
+import type { ListBranchesOptions, MyLoansAdapter, MyLoansBranches, MyLoansChanged, MyLoansLookup, MyLoansSearch } from "./types";
 import { NOT_FOUND_MESSAGE, UNAVAILABLE_MESSAGE } from "./types";
 import { myLoansBaseUrl } from "@/lib/env";
-import { LIVE_CAPABILITIES, LIVE_PATHS, mapChanged, mapLoan, mapSearch } from "./live-mapping";
+import { LIVE_CAPABILITIES, LIVE_PATHS, mapBranches, mapChanged, mapLoan, mapSearch } from "./live-mapping";
 
 /**
  * Live MyLoans adapter, written against the contract. Paths and field names live in live-mapping.ts
@@ -61,5 +61,15 @@ export class HttpMyLoansAdapter implements MyLoansAdapter {
     const r = await this.get(LIVE_PATHS.changedSince(since, limit));
     if (!r || r.status < 200 || r.status >= 300) return { ok: false, reason: "UNAVAILABLE", message: UNAVAILABLE_MESSAGE, retryAfterMs: r?.retryAfterMs };
     return { ok: true, records: mapChanged(r.body).slice(0, limit), until: new Date() };
+  }
+
+
+  /** Placeholder until the MyLoans team gives a branch endpoint (LIVE_CAPABILITIES.branches is false). */
+  async listBranches(o: ListBranchesOptions): Promise<MyLoansBranches> {
+    if (!this.capabilities.branches) return { ok: false, reason: "UNSUPPORTED", message: "MyLoans has no branch list yet. Use Import from MyLoans (a file)." };
+    const r = await this.get(LIVE_PATHS.branches(o.page, o.pageSize, this.capabilities.branchesUpdatedSince ? o.updatedSince : null));
+    if (!r || r.status < 200 || r.status >= 300) return { ok: false, reason: "UNAVAILABLE", message: UNAVAILABLE_MESSAGE, retryAfterMs: r?.retryAfterMs };
+    const m = mapBranches(r.body);
+    return { ok: true, branches: m.rows, nextPage: m.nextPage };
   }
 }

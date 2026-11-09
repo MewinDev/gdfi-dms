@@ -13,7 +13,7 @@ The page is **Monitoring** in the sidebar, for people with `monitor:dp` (tab **D
 - **Philippine time** for every date and time.
 - **Dates filter**: Today, Yesterday, Last 7 days, Last 30 days (the default), This month, Last month, or Custom (From and To, both days included, no future dates, To not before From). The chosen dates are in the heading ("9 Nov to 9 Nov 2026"). Finished jobs, averages, declines, returns, transactions at an office and advisories resolved use these dates.
 - **As of now**: assigned, in process, on hold, overdue, availability and "at the LTO now" are always today's state, whatever the dates.
-- **Branch and transaction** filters apply to every count (a job belongs to the loan's branch).
+- **Area, Branch and transaction** filters apply to every count (a job belongs to the loan's branch; the Area filter keeps the jobs of any branch in that Area). Branches are listed as "Name (code)", for example "Antipolo (101)", only those in the person's access; branches hidden from the DMS are not offered. A processor is listed when **any** of their branches is in the Area or is the Branch picked.
 - **Totals / By day**: By day shows, for each day (each week, Monday to Sunday, when the range is over 92 days), what happened that day. The CSV follows the view on screen.
 
 ## DP monitor
@@ -37,11 +37,21 @@ The page is **Monitoring** in the sidebar, for people with `monitor:dp` (tab **D
 
 A job passed to a second processor (Pasuyo) counts for the second processor once accepted; assigned, declined and time to accept stay with the processor it was sent to.
 
-**Grouping:** by the processor's branches. A processor of one branch is under that branch; a processor of two branches is under one group naming both ("Cebu · Quezon City"), so nobody is counted twice. Each group has a subtotal and can be collapsed.
+**Grouping: Area, then Branch.** The Area is the MyLoans Area of the processor's branches (for example "LUZON 1 (NGMA + RIZAL)").
+
+- A processor whose branches are all in one Area is under that Area, and inside it under their branch ("Antipolo (101)"), or under one line naming all their branches when they have several in that Area ("Angono (165) · Antipolo (101)"; more than three: "5 branches").
+- A processor with branches in more than one Area is under the group **Several areas** (shown last).
+- Every branch of the processor shows as a chip on their row.
+- Each processor is in exactly one Area group and one branch line, so nobody is counted twice: the branch subtotals add up to the Area subtotal, and the Area subtotals add up to the totals.
+- Each Area has a subtotal (and each branch line too when the Area has more than one); an Area can be collapsed. By day groups by Area the same way.
+
+**Example.** Rico and Joy work only at Antipolo (101), Paolo and Grace only at Angono (165), and the test DP at both; all three branches are in LUZON 1 (NGMA + RIZAL). The Area LUZON 1 (NGMA + RIZAL) has three lines: "Angono (165)" (Paolo, Grace), "Angono (165) · Antipolo (101)" (the test DP) and "Antipolo (101)" (Rico, Joy). A processor of Antipolo (101) and Alaminos (390, LUZON 3 NORTH) is under Several areas, once. Filtering on LUZON 3 NORTH keeps that processor (one of their branches is there) and Ben of Alaminos, and only the jobs of LUZON 3 NORTH loans.
 
 **Example.** DP 2 finished two jobs in the last 30 days. Job A was sent on Monday, accepted on Tuesday and finished the next Monday: time to accept 1 day, processing 4 days, total 5 days. Job B was sent, accepted and finished within two days: 0, 1 and 1. The row shows "Avg time to accept 0.5 days · 2 jobs", "Avg processing 2.5 days · 2 jobs", "Avg total 3 days · 2 jobs". DP 2 has 8 open jobs and the default capacity: "20% · 8 of 10 in use", Busy.
 
 **Drill-down:** a processor's open jobs (PN, transaction, status, age in business days since sent, due date) and the declined and returned of the period.
+
+**CSV:** follows the view and the filters. Totals have the columns Area, Branch, Processor and Branch codes, then the counts, with a subtotal row per branch line (when the Area has more than one) and per Area.
 
 **Send panel:** each processor shows the availability chip and "{open} of {capacity}". Full processors stay selectable with a warning; a processor on leave is shown disabled. Sending to a processor on leave is also refused on the server.
 
@@ -57,7 +67,7 @@ A job passed to a second processor (Pasuyo) counts for the second processor once
 | **Actual spent** | Only with `journey:view_amounts`: the spends logged on Transport lines of funds records for that office, on attempt days in the dates chosen. |
 | **Busiest office** | The most transactions in the dates chosen. |
 
-**Grouping:** by the office's area (its city in Settings, LTO offices), with subtotals. **Drill-down:** the office's jobs at the LTO now and picked up in the period (PN, transaction, processor, drop off, pickup, days). **By day:** drop offs, pickups and advisories filed each day.
+**Grouping:** by the office's area (its city in Settings, LTO offices), with subtotals. (LTO offices are not branches: they keep their own city grouping.) **Drill-down:** the office's jobs at the LTO now and picked up in the period (PN, transaction, processor, drop off, pickup, days). **By day:** drop offs, pickups and advisories filed each day.
 
 ## LTO advisories
 

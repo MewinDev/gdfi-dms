@@ -31,20 +31,20 @@ async function openItems(page: Page) {
   if (!(await box.evaluate((d) => (d as HTMLDetailsElement).open))) await box.locator("summary").click();
   return box;
 }
-const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code } } });
+const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code } } });
 async function addProblem(code: string, daysAgo: number) {
   const t = await txnOf(code);
   const reason = await db.problemReason.findUniqueOrThrow({ where: { code: "LTO_DOWN" } });
   await db.problem.create({ data: { loanId: t.loanId, transactionId: t.id, reasonId: reason.id, raisedByLabel: "Test Document Processor", raisedAt: new Date(Date.now() - daysAgo * 86_400_000) } });
 }
 async function openPn3(page: Page) {
-  await page.goto("/loans?fill=PN-0001003");
+  await page.goto("/loans?fill=GD1652026901003");
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001003/);
+  await expect(page).toHaveURL(/\/loans\/GD1652026901003/);
 }
 /** The title chips of the selected transaction (header row on tablet and desktop, under it on phone). */
 const titleChips = (page: Page) => page.locator("[data-title-chip]").filter({ visible: true });
@@ -53,7 +53,7 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   test.setTimeout(240_000);
   await signIn(page, "la");
   await openPn3(page);
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   await expect(page.locator("[data-open-items]")).toHaveCount(0); // nothing open: no card
   const papers = page.getByRole("group", { name: "Notary papers" });
   await papers.getByLabel("Disclosure Statement").check();
@@ -94,7 +94,7 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   await expect(titleChips(page)).toHaveText(["1 paper requested"]); // the hold summary says On hold: no second pill
 
   // Put on hold (Mortgage): purpose and a one-line example for the chosen reason.
-  await page.goto("/loans/PN-0001003?tab=todo&tx=MORTGAGE");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=MORTGAGE");
   await page.getByRole("button", { name: "Put on hold" }).click();
   const hold = page.getByRole("dialog", { name: "Put on hold" });
   await expect(hold.locator("[data-purpose]")).toHaveText("Use this when the work is waiting on something outside your hands, for example the borrower or an LTO appointment. It is not a fault. The turnaround time keeps counting.");
@@ -110,7 +110,7 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   // Problems on PPSR and Notary: the grouped card, one button per row, "Show all".
   await addProblem("PPSR", 2);
   await addProblem("NOTARY", 1);
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   let list = await openItems(page);
   await expect(list).toContainText("Things that need follow-up before this loan can move.");
   await expect(list.locator("[data-open-row]")).toHaveCount(3);
@@ -165,7 +165,7 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   await expect(page).toHaveURL(/tx=PPSR/);
 
   // Ticking the requested paper closes the missing paper: tag and row go.
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   await page.getByRole("group", { name: "Notary papers" }).getByLabel("Promissory Note").check();
   await expect(page.getByRole("group", { name: "Notary papers" }).locator("[data-requested]")).toHaveCount(0, { timeout: 30_000 });
   list = await openItems(page);
@@ -173,7 +173,7 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   await noSideways(page);
 
   // The Journey: plain words, no "Pending".
-  await page.goto("/loans/PN-0001003?tab=journey");
+  await page.goto("/loans/GD1652026901003?tab=journey");
   await expect(page.locator("[data-journey]")).toContainText("asked for a missing paper for Notary: Promissory Note");
   expect(await page.locator("main").innerText()).not.toMatch(/pending/i);
 });
@@ -181,7 +181,7 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
 test("Put on hold: pressed with no reason, it says \"Pick a reason\" and saves nothing", async ({ page }) => {
   await signIn(page, "la");
   await openPn3(page);
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   await page.getByRole("button", { name: "Put on hold" }).click();
   const sheet = page.getByRole("dialog", { name: "Put on hold" });
   await sheet.getByRole("button", { name: "Put on hold" }).evaluate((b) => { (b as HTMLButtonElement).disabled = false; });
@@ -194,7 +194,7 @@ test("Ask for missing paper: pressed with no paper, it says \"Pick at least one 
   await signIn(page, "la");
   await openPn3(page);
   // "Something wrong?" on the To do tab: Missing paper goes to the pop-up on Check documents.
-  await page.goto("/loans/PN-0001003?tab=todo");
+  await page.goto("/loans/GD1652026901003?tab=todo");
   await page.getByRole("button", { name: "Report a problem" }).click();
   await page.getByRole("link", { name: "Choose the papers" }).click();
   await expect(page).toHaveURL(/ask=missing/);

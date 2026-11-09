@@ -40,7 +40,7 @@ export type MyLoansLookup =
   | { ok: false; reason: FailReason; message: string; retryAfterMs?: number };
 
 /** One row of a search result (never more than the limit asked for). */
-export interface MyLoansHit { pn: string; borrowerName: string; status: string | null; releaseDate: string | null; branchName: string | null }
+export interface MyLoansHit { pn: string; borrowerName: string; status: string | null; releaseDate: string | null; branchName: string | null; branchCode?: string | null }
 
 export type MyLoansSearch =
   | { ok: true; hits: MyLoansHit[] }
@@ -56,6 +56,22 @@ export interface SourceCapabilities {
   search: boolean;
   /** A feed of PNs changed since a time. Without it the background refresh re-reads each active loan. */
   changedSince: boolean;
+  /** The branch list (listBranches). Without it branches come from Import from MyLoans (a file). */
+  branches?: boolean;
+  /** listBranches can return only the branches changed since a time (incremental runs). */
+  branchesUpdatedSince?: boolean;
+}
+
+/** One page of the MyLoans branch list (the same normalized row as Import from MyLoans). */
+export type MyLoansBranches =
+  | { ok: true; branches: import("@/lib/branches/file").MyLoansBranchRow[]; nextPage: number | null }
+  | { ok: false; reason: "UNSUPPORTED" | "UNAVAILABLE"; message: string; retryAfterMs?: number };
+
+export interface ListBranchesOptions {
+  /** Only branches changed since this time (when branchesUpdatedSince is supported); null = the full list. */
+  updatedSince: Date | null;
+  page: number;
+  pageSize: number;
 }
 
 export interface MyLoansAdapter {
@@ -67,6 +83,11 @@ export interface MyLoansAdapter {
   search(query: string, limit: number): Promise<MyLoansSearch>;
   /** Loans changed since a time, at most `limit`. Optional (see capabilities). */
   getChangedSince(since: Date, limit: number): Promise<MyLoansChanged>;
+  /**
+   * The branch list (id, code, name, area, division, status, address, updatedAt), paged. Optional (see
+   * capabilities.branches). The DMS never reads the MyLoans database: this method (or a file) is the feed.
+   */
+  listBranches?(o: ListBranchesOptions): Promise<MyLoansBranches>;
 }
 
 export const UNAVAILABLE_MESSAGE = "MyLoans did not answer. Try again in a moment.";

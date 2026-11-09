@@ -17,9 +17,9 @@ async function noSideScroll(page: Page) {
 test("Admin Loans: one toolbar, Filters with a count, chips, Clear all, Show results, refresh keeps filters", async ({ page }) => {
   // One loan file so filters have something to count.
   await signIn(page, "la");
-  await page.goto("/search?q=PN-0001001");
+  await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001001/);
+  await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
   await page.context().clearCookies();
   await signIn(page, "admin");
 
@@ -41,21 +41,21 @@ test("Admin Loans: one toolbar, Filters with a count, chips, Clear all, Show res
   await filtersBtn(page).click();
   await panel(page).getByLabel("Classification").selectOption("REFINANCING");
   await expect(panel(page).getByRole("button", { name: "Show results (1)" })).toBeVisible();
-  const qc = await db.branch.findUniqueOrThrow({ where: { code: "QC" } });
+  const qc = await db.branch.findUniqueOrThrow({ where: { code: "101" } });
   await panel(page).getByLabel("Branch").selectOption(qc.id);
   await panel(page).getByRole("button", { name: /^Show results/ }).click();
   await expect(page).toHaveURL(/classification=REFINANCING/);
   await expect(filtersBtn(page)).toHaveAccessibleName("Filters, 2 on");
   const main = page.getByRole("main");
   await expect(main.getByRole("link", { name: "Remove filter Classification: Refinancing" })).toBeVisible();
-  await expect(main.getByRole("link", { name: "Remove filter Branch: Quezon City" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Remove filter Branch: Antipolo (101)" })).toBeVisible();
 
   // Refresh keeps them.
   await page.reload();
-  await expect(main.getByRole("link", { name: "Remove filter Branch: Quezon City" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Remove filter Branch: Antipolo (101)" })).toBeVisible();
 
   // Removing a chip updates the list at once.
-  await main.getByRole("link", { name: "Remove filter Branch: Quezon City" }).click();
+  await main.getByRole("link", { name: "Remove filter Branch: Antipolo (101)" }).click();
   await expect(page).not.toHaveURL(/branch=/);
   await expect(filtersBtn(page)).toHaveAccessibleName("Filters, 1 on");
   await main.getByRole("link", { name: "Clear all" }).click();

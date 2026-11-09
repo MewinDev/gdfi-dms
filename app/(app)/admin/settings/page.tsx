@@ -21,6 +21,8 @@ import { inactiveEffect, type StatusKind } from "@/lib/services/settings-status"
 import { PageHeader } from "@/components/ui/basics";
 import { FundsSettingsForm, MockOverrideForm, SettingsEditForm, ToggleForm, type FieldDef } from "@/components/admin/forms";
 import { TestKitPanel } from "@/components/admin/test-kit";
+import { PnFormatForm } from "@/components/admin/pn-format";
+import { getPnFormat } from "@/lib/pn";
 import { kitScreensAvailable } from "@/lib/kit/access";
 import { kitPanelData } from "@/lib/kit/panel-data";
 import { EmailEventRow, EmailMasterSwitch, EmailTemplateForm, RecentEmails, TestEmailButton } from "@/components/admin/email";
@@ -36,6 +38,7 @@ import { SettingsModal } from "@/components/admin/settings-modal";
 import { SettingsList, type ListRow } from "@/components/admin/settings-list";
 import { StatusPanel } from "@/components/admin/status-panel";
 import { ImportStep } from "@/components/admin/import-step";
+import { BranchesModal, type BranchFilter } from "@/components/admin/branches/area";
 import {
   AlertIcon, ArrowLeftIcon, BellIcon, PauseIcon, RefreshIcon, BuildingIcon, CalendarIcon, ChecklistIcon, ClockIcon, CoinsIcon, FileTextIcon, FlaskIcon, LayersIcon, ListIcon, MapPinIcon, SettingsIcon, TagIcon, UsersIcon,
 } from "@/components/ui/icons";
@@ -44,7 +47,7 @@ export const metadata: Metadata = { title: "Settings" };
 
 /** The Settings areas. Grouping and order on the page: lib/ui/settings-groups.ts. */
 const AREAS = [
-  { key: "branches", title: "Branches", desc: "The branches loan files belong to.", help: "Add a branch or rename it. Nothing is deleted: make it inactive instead.", Icon: BuildingIcon },
+  { key: "branches", title: "Branches", desc: "Codes, areas and divisions from MyLoans.", help: "MyLoans is the source of truth for codes, names, areas, divisions and status: change them through Import from MyLoans and the Branch review. Nothing is deleted: a branch is switched off or hidden.", Icon: BuildingIcon },
   { key: "transaction-types", title: "Transaction types", desc: "Names, who does them and whether a processor is needed.", help: "The automation creates the four built-in types. Types you add here can be added to a loan file by the Loan Associate.", Icon: LayersIcon },
   { key: "document-types", title: "Document types", desc: "The kinds of paper that checklist items use.", help: "Add or change a paper type. A short code locks once a checklist item or loan file uses it.", Icon: FileTextIcon },
   { key: "checklist", title: "Checklist items", desc: "The papers for each transaction, required or optional.", help: "Changes apply to loan files opened from now on. Open loan files keep their papers and settings.", Icon: ChecklistIcon },
@@ -61,7 +64,7 @@ const AREAS = [
   { key: "hold-reasons", title: "Hold reasons", desc: "Why a job can wait (not a fault).", help: "Offered when someone puts work on hold (remarks are required for every reason). Add, rename, reorder (Order) or switch off; a switched-off reason stays on old holds, which keep the name they had. The list was seeded as \"Proposed, to be confirmed with the team\"; saving a reason confirms it. The turnaround time keeps counting.", Icon: PauseIcon },
   { key: "return-reasons", title: "Return reasons", desc: "Why a processor returns a job to the Loan Associate.", help: "Offered when a processor returns an accepted job for papers. The turnaround time keeps counting. Nothing is deleted: make it inactive instead.", Icon: ArrowLeftIcon },
   { key: "holidays", title: "Holidays", desc: "Days skipped when counting turnaround times.", help: "Add or change a holiday. An inactive holiday is no longer skipped.", Icon: CalendarIcon },
-  { key: "system", title: "System and test mode", desc: "MyLoans adapter, simulator and test switches.", help: "These switches save as soon as you press them.", Icon: SettingsIcon },
+  { key: "system", title: "System and test mode", desc: "PN format, MyLoans adapter, simulator and test switches.", help: "These switches save as soon as you press them.", Icon: SettingsIcon },
   { key: "myloans-sync", title: "MyLoans sync", desc: "How often loan files are checked against MyLoans.", help: "Only the loans someone opened are checked, never the whole MyLoans. A change that matters waits for Admin to review it.", Icon: RefreshIcon },
   { key: "email", title: "Email notifications", desc: "Emails for the updates people already get in GDFI DMS.", help: "Email is another way to get the same updates. Turn it on when the system goes live.", Icon: BellIcon },
   { key: "test-data", title: "Test data", desc: "Sample PNs on Find a loan.", help: "Only in test mode.", Icon: FlaskIcon },
@@ -74,7 +77,7 @@ const listHref = (key: string) => `${BASE}?open=${key}`;
 const editHref = (key: string, id: string) => `${BASE}?open=${key}&edit=${id}`;
 const importHref = (key: string) => `${BASE}?open=${key}&step=import`;
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string }> }) {
   // Settings opens for anyone who may change at least one area; each card shows only if allowed.
   const user = await requirePageAny([...SETTINGS_PERMISSIONS, PERMISSIONS.ROLES_MANAGE, PERMISSIONS.TESTDATA_RESET, PERMISSIONS.EMAIL_MANAGE, PERMISSIONS.SOURCE_MANAGE, PERMISSIONS.DP_CAPACITY_MANAGE]);
   const sp = await searchParams;
@@ -139,7 +142,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </section>
         ))}
       </div>
-      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} />}
+      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show }} />}
     </div>
   );
 }
@@ -149,7 +152,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
   const pair = (m: { count(a: { where: { active: boolean } }): Promise<number> }) => Promise.all([m.count({ where: { active: true } }), m.count({ where: { active: false } })]);
   const [bands, reasons, holdReasons, returnReasons] = await Promise.all([pair(prisma.approvalBand), pair(prisma.problemReason), pair(prisma.holdReason), pair(prisma.returnReason)]);
   const [branches, types, docs, rules, required, tats, loanTypes, lto, ca, holidays, sim, unavailable] = await Promise.all([
-    pair(prisma.branch), pair(prisma.transactionType), pair(prisma.documentType), pair(prisma.checklistRule),
+    Promise.all([prisma.branch.count({ where: { active: true, hidden: false } }), prisma.branch.count({ where: { active: false, hidden: false } })]), pair(prisma.transactionType), pair(prisma.documentType), pair(prisma.checklistRule),
     prisma.checklistRule.count({ where: { active: true, required: true } }), prisma.tatRule.count(), pair(prisma.loanType),
     pair(prisma.ltoOffice), pair(prisma.cashAdvanceRule), pair(prisma.holidayCalendar),
     getSetting("simulator.enabled"), getSetting("myloans.simulateUnavailable"),
@@ -201,8 +204,11 @@ interface ListArea {
   filterLabel?: string;
 }
 
-async function AreaModal({ area, edit, step, testMode, user, filter }: { area: (typeof AREAS)[number]; edit?: string; step?: string; testMode: boolean; user: CurrentUser; filter: OutboxFilter }) {
+async function AreaModal({ area, edit, step, testMode, user, filter, branchFilter }: { area: (typeof AREAS)[number]; edit?: string; step?: string; testMode: boolean; user: CurrentUser; filter: OutboxFilter; branchFilter: BranchFilter }) {
   const common = { id: "settings-modal", title: area.title, help: area.help, closeHref: BASE, returnFocusId: `card-${area.key}` };
+
+  // Settings, Branches: its own list, edit, Import from MyLoans, Branch review and sync steps.
+  if (area.key === "branches") return <BranchesModal common={common} edit={edit} step={step} user={user} filter={branchFilter} />;
 
   if (area.key === "myloans-sync") {
     return (
@@ -319,26 +325,6 @@ const ORIG_TEXT = { ORIGINAL: "Original", COPY: "Copy", EITHER: "Either" } as co
 
 async function loadListArea(key: AreaKey): Promise<ListArea | null> {
   switch (key) {
-    case "branches": {
-      const [rows, offices] = await Promise.all([
-        prisma.branch.findMany({ orderBy: { name: "asc" }, include: { usualLtoOffice: true } }),
-        prisma.ltoOffice.findMany({ orderBy: { name: "asc" } }),
-      ]);
-      const f = (r?: (typeof rows)[number]): FieldDef[] => [
-        { name: "code", label: "Code", type: "text", value: r?.code, width: "sm" },
-        { name: "name", label: "Name", type: "text", value: r?.name, width: "lg" },
-        {
-          name: "usualLtoOfficeId", label: "Usual LTO office (optional)", type: "select", value: r?.usualLtoOfficeId ?? "", width: "lg",
-          options: [["", "None"], ...offices.filter((o) => o.active || o.id === r?.usualLtoOfficeId).map((o) => [o.id, `${o.name}${o.active ? "" : " · Inactive"}`] as [string, string])],
-          help: "Pre-selected when sending a transaction that needs LTO processing. The Loan Associate can change it.",
-        },
-      ];
-      return {
-        kind: "branch", statusKind: "branch", noun: "branch", addLabel: "Add branch", filterLabel: "Find a branch",
-        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: `${r.code}${r.usualLtoOffice ? ` · usual LTO: ${r.usualLtoOffice.name}` : ""}`, inactive: !r.active, href: editHref(key, r.id) })),
-        fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
-      };
-    }
     case "transaction-types": {
       const rows = await prisma.transactionType.findMany({ orderBy: { sortOrder: "asc" }, include: { _count: { select: { rules: { where: { active: true } } } } } });
       const locked = new Map(await Promise.all(rows.map(async (r) => [r.id, await codeInUse("transactionType", r.id)] as const)));
@@ -694,10 +680,11 @@ const listHref_ = (key: string) => `${BASE}?open=${key}`;
 const ENV_LABEL = { local: "Local", staging: "Staging", production: "Production" } as const;
 
 async function SystemArea() {
-  const [unavailable, sim, overrides] = await Promise.all([
+  const [unavailable, sim, overrides, pnFormat] = await Promise.all([
     getSetting("myloans.simulateUnavailable"),
     getSetting("simulator.enabled"),
     getSetting("myloans.mockOverrides"),
+    getPnFormat(),
   ]);
   const mode = (process.env.MYLOANS_MODE ?? "mock").toLowerCase();
   const env = appEnv();
@@ -715,6 +702,7 @@ async function SystemArea() {
       <p className="flex min-h-11 items-center gap-2 rounded-xl bg-fill px-3 py-2 text-sm" data-timezone-line>
         <ClockIcon size={18} /> Times are shown in Philippine time (PHT)
       </p>
+      <PnFormatForm value={pnFormat} />
       <p className="text-sm">MyLoans adapter: <span className="chip c-mute">{mode === "live" ? "Live (HTTP)" : "Mock"}</span> <span className="text-xs text-ink-2">Set with MYLOANS_MODE on the server.</span></p>
       {env !== "production" && (
         <>

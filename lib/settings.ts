@@ -48,6 +48,17 @@ export const SETTING_DEFAULTS = {
   "email.events": {} as Record<string, boolean>,
   /** Email notifications: edited messages per event (missing = the default in lib/email/templates.ts). */
   "email.templates": {} as Record<string, { subject: string; body: string }>,
+  /** PN format (Settings, System, PN format): the parts and the switch that turns the check off. */
+  "pn.format": { enabled: true, prefix: "GD", branchDigits: 3, yearDigits: 4, system: "9", runningDigits: 5 } as import("@/lib/pn/format").PnFormat,
+  /**
+   * Branches from MyLoans: the daily run (time in PHT, pause switch), the updated-since cursor (last
+   * successful run), the last weekly full check, and the hourly lock for an unknown code in a PN.
+   */
+  "branches.sync": { time: "02:00", paused: false, lastRunDate: null, lastSuccessAt: null, lastFullAt: null, lastLookupAt: null } as {
+    time: string; paused: boolean; lastRunDate: string | null; lastSuccessAt: string | null; lastFullAt: string | null; lastLookupAt: string | null;
+  },
+  /** Mock-only: branch list changes in the sample MyLoans (rename, code change, close), by MyLoans branch id. */
+  "myloans.mockBranches": { overrides: {}, extra: [] } as { overrides: Record<string, Partial<import("@/lib/branches/file").MyLoansBranchRow>>; extra: import("@/lib/branches/file").MyLoansBranchRow[] },
 };
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type SettingValue<K extends SettingKey> = (typeof SETTING_DEFAULTS)[K];

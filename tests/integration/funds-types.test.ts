@@ -49,10 +49,10 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-/** PN-0001003 Mortgage (needs funds, LTO fee), sent to and accepted by the test DP. */
+/** GD1652026901003 Mortgage (needs funds, LTO fee), sent to and accepted by the test DP. */
 async function acceptedMortgage(code = "MORTGAGE") {
-  await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
-  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+  await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
+  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
   const txn = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code } }, include: { checks: true } });
   await saveChecklist(la, { transactionId: txn.id, checkedIds: txn.checks.map((c) => c.id), newOthers: [] });
   const lto = await prisma.ltoOffice.findFirstOrThrow({ where: { active: true }, orderBy: { code: "asc" } });

@@ -25,6 +25,8 @@ export interface Tracked {
   amount: number | string | null;
   releaseDate: string | null;
   branchName: string | null;
+  /** The loan's CURRENT branch code in MyLoans (the PN's code only says where it was opened). */
+  branchCode: string | null;
   previousPn: string | null;
 }
 export type TrackedKey = keyof Tracked;
@@ -46,6 +48,7 @@ export const FIELDS: Record<TrackedKey, { label: string; kind: FieldKind }> = {
   amount: { label: "Amount", kind: "material" },
   releaseDate: { label: "Release date", kind: "material" },
   branchName: { label: "Branch", kind: "material" },
+  branchCode: { label: "Branch code", kind: "material" },
   previousPn: { label: "Replaces PN", kind: "replacement" },
 };
 const KEYS = Object.keys(FIELDS) as TrackedKey[];
@@ -63,7 +66,7 @@ export function trackedOf(r: MyLoansRecord): Tracked {
     cin: txt(r.cin), cif: txt(r.cif), status: txt(r.status)?.toUpperCase() ?? null,
     loanType: txt(r.loanType), productName: txt(r.productName),
     amount: n !== null ? Math.round(n * 100) : txt(r.totalReleasedAmount),
-    releaseDate: txt(r.releaseDate)?.slice(0, 10) ?? null, branchName: txt(r.branchName), previousPn: txt(r.previousPn)?.toUpperCase() ?? null,
+    releaseDate: txt(r.releaseDate)?.slice(0, 10) ?? null, branchName: txt(r.branchName), branchCode: txt(r.branchCode), previousPn: txt(r.previousPn)?.toUpperCase() ?? null,
   };
 }
 
@@ -84,7 +87,8 @@ export const isReleased = (status: string | null | undefined) => (status ?? "").
  */
 export function detectChanges(previous: Tracked | null, current: Tracked): { category: ChangeCategory; changes: FieldChange[] } {
   if (!previous) return { category: "NONE", changes: [] };
-  const changes: FieldChange[] = KEYS.filter((k) => (previous[k] ?? null) !== (current[k] ?? null)).map((k) => ({
+  // A field the previous copy did not track yet (an older snapshot) is not a change.
+  const changes: FieldChange[] = KEYS.filter((k) => k in previous && (previous[k] ?? null) !== (current[k] ?? null)).map((k) => ({
     field: k, label: FIELDS[k].label, kind: FIELDS[k].kind, was: previous[k] ?? null, now: current[k] ?? null,
   }));
   const has = (kind: FieldKind) => changes.some((c) => c.kind === kind);

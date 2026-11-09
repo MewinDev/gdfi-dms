@@ -8,7 +8,7 @@ import { db, resetLoans } from "./db";
  */
 const DIR = "docs/screenshots/hold-and-return";
 mkdirSync(DIR, { recursive: true });
-const PN = "PN-0001003";
+const PN = "GD1652026901003";
 
 test.beforeEach(async () => {
   await resetLoans();
@@ -93,8 +93,8 @@ test("Hold owner and lock: the held transaction is locked; only the holder resum
   await shot(page, "remark-counters", false);
   await box.fill("x".repeat(501));
   await expect(save).toBeDisabled();
-  await box.fill("No processor is free in Cebu until Monday");
-  await expect(form.locator("[data-count]")).toHaveText("41 / 500");
+  await box.fill("No processor is free in Angono until Monday");
+  await expect(form.locator("[data-count]")).toHaveText("43 / 500");
   await save.click();
   await expect(form).toBeHidden();
 

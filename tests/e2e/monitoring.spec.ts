@@ -46,7 +46,7 @@ async function fixtureJob(i: number, o: { branch: string; dp: string; status: "P
   const b = await db.branch.findUniqueOrThrow({ where: { code: o.branch } });
   const dp = await db.user.findUniqueOrThrow({ where: { email: o.dp } });
   const notary = await db.transactionType.findUniqueOrThrow({ where: { code: "NOTARY" } });
-  const pn = `PN-000${8000 + i}`;
+  const pn = `GD${o.branch}20269${String(8000 + i).padStart(5, "0")}`;
   const loan = await db.loan.create({
     data: {
       pn, borrowerName: `E2E Monitor ${i}`, branchId: b.id, loanType: "New", productName: "Auto Refinancing", totalReleasedAmount: 400000, releasedAt: o.sent, sourceStatus: "RELEASED",
@@ -88,20 +88,20 @@ test.beforeEach(async () => {
   await db.ltoOffice.update({ where: { id: officeQc }, data: { distanceKm: 8, suggestedTransportCents: 40000 } });
 
   // Test DP: at the LTO now (Quezon City), and one waiting 3 business days (overdue).
-  reportJob = (await fixtureJob(1, { branch: "QC", dp: "test.dp@gdfi.ph", status: "ACCEPTED", txn: "IN_PROCESS", sent: bdAgo(2), accepted: bdAgo(2), office: officeQc, stages: { drop: bdAgo(1) } })).jobId;
-  await fixtureJob(2, { branch: "QC", dp: "test.dp@gdfi.ph", status: "PENDING_ACCEPTANCE", txn: "ASSIGNED", sent: bdAgo(3), office: officeQc });
+  reportJob = (await fixtureJob(1, { branch: "101", dp: "test.dp@gdfi.ph", status: "ACCEPTED", txn: "IN_PROCESS", sent: bdAgo(2), accepted: bdAgo(2), office: officeQc, stages: { drop: bdAgo(1) } })).jobId;
+  await fixtureJob(2, { branch: "101", dp: "test.dp@gdfi.ph", status: "PENDING_ACCEPTANCE", txn: "ASSIGNED", sent: bdAgo(3), office: officeQc });
   // Rico: two finished jobs with different times.
-  await fixtureJob(3, { branch: "QC", dp: "dp.rico@gdfi.ph", status: "CLOSED", txn: "COMPLETED", sent: bdAgo(6), accepted: bdAgo(5), office: officeQc, stages: { drop: bdAgo(4), pick: bdAgo(2), verify: bdAgo(1) } });
-  await fixtureJob(4, { branch: "QC", dp: "dp.rico@gdfi.ph", status: "CLOSED", txn: "COMPLETED", sent: bdAgo(2), accepted: bdAgo(2), office: officeQc, stages: { drop: bdAgo(2), pick: bdAgo(1), verify: bdAgo(1) } });
-  // Joy: Full (2 of 2). Paolo (Cebu): declined one today.
-  await fixtureJob(5, { branch: "QC", dp: "dp.joy@gdfi.ph", status: "PENDING_ACCEPTANCE", txn: "ASSIGNED", sent: bdAgo(0), office: officeQc });
-  await fixtureJob(6, { branch: "QC", dp: "dp.joy@gdfi.ph", status: "ACCEPTED", txn: "IN_PROCESS", sent: bdAgo(1), accepted: bdAgo(0), office: officeQc, stages: {} });
-  await fixtureJob(7, { branch: "CEB", dp: "dp.paolo@gdfi.ph", status: "DECLINED", txn: "RETURNED", sent: bdAgo(0), office: officeCeb });
+  await fixtureJob(3, { branch: "101", dp: "dp.rico@gdfi.ph", status: "CLOSED", txn: "COMPLETED", sent: bdAgo(6), accepted: bdAgo(5), office: officeQc, stages: { drop: bdAgo(4), pick: bdAgo(2), verify: bdAgo(1) } });
+  await fixtureJob(4, { branch: "101", dp: "dp.rico@gdfi.ph", status: "CLOSED", txn: "COMPLETED", sent: bdAgo(2), accepted: bdAgo(2), office: officeQc, stages: { drop: bdAgo(2), pick: bdAgo(1), verify: bdAgo(1) } });
+  // Joy: Full (2 of 2). Paolo (Angono): declined one today.
+  await fixtureJob(5, { branch: "101", dp: "dp.joy@gdfi.ph", status: "PENDING_ACCEPTANCE", txn: "ASSIGNED", sent: bdAgo(0), office: officeQc });
+  await fixtureJob(6, { branch: "101", dp: "dp.joy@gdfi.ph", status: "ACCEPTED", txn: "IN_PROCESS", sent: bdAgo(1), accepted: bdAgo(0), office: officeQc, stages: {} });
+  await fixtureJob(7, { branch: "165", dp: "dp.paolo@gdfi.ph", status: "DECLINED", txn: "RETURNED", sent: bdAgo(0), office: officeCeb });
   await db.user.update({ where: { email: "dp.joy@gdfi.ph" }, data: { dpCapacity: 2 } });
   const until = new Date(Date.now() + 7 * DAY + 8 * H).toISOString().slice(0, 10);
   await db.user.update({ where: { email: "dp.rico@gdfi.ph" }, data: { dpOnLeave: true, dpLeaveUntil: until } });
 
-  // Advisories: active 2 hours ago (Quezon City), older than 24 hours (Cebu), resolved (Makati).
+  // Advisories: active 2 hours ago (Antipolo), older than 24 hours (Angono), resolved (A. Mabini).
   const dp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
   const mon = await db.user.findUniqueOrThrow({ where: { email: "test.monitor@gdfi.ph" } });
   await db.ltoAdvisory.create({ data: { ltoOfficeId: officeQc, type: "SYSTEM_DOWN", remarks: "The LTMS terminals are offline.", startedAt: new Date(Date.now() - 2 * H), filedById: dp.id, filedByLabel: dp.name } });
@@ -116,7 +116,7 @@ test.afterAll(async () => {
   await db.ltoOffice.update({ where: { code: "LTO-QC" }, data: { distanceKm: null, suggestedTransportCents: null } });
 });
 
-test("DP monitor: grouped by branch, availability, drill-down without loan links, filters and CSV", async ({ page }) => {
+test("DP monitor: grouped by area then branch, availability, drill-down without loan links, filters and CSV", async ({ page }) => {
   await signInAs(page, "monitor");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Monitoring:");
   await expect(page.getByText("Includes time on hold").first()).toBeVisible();
@@ -131,25 +131,29 @@ test("DP monitor: grouped by branch, availability, drill-down without loan links
   await expect(row("Joy Navarro")).toContainText("2 of 2 in use");
   await expect(row("Rico Dela Cruz")).toContainText(/On leave\s*until/);
   await expect(row("Test Document Processor")).toContainText("2 of 10 in use");
-  await expect(rows.locator('[data-group="Quezon City"]').first()).toBeVisible();
+  // Area, then Branch: LUZON 1 (NGMA + RIZAL) > Antipolo (101) (Rico, Joy) and Angono (165) · Antipolo (101) (the test DP).
+  await expect(rows.locator('[data-group="LUZON 1 (NGMA + RIZAL)"]').first()).toBeVisible();
+  await expect(rows.locator('[data-group="LUZON 1 (NGMA + RIZAL)"] [data-branch-group="Antipolo (101)"]').first()).toBeVisible();
   if (wide(page)) {
     await expect(row("Rico Dela Cruz")).toContainText("2 jobs");
-    await expect(rows.locator('[data-subtotal="Quezon City"]')).toBeVisible();
+    await expect(rows.locator('[data-subtotal="LUZON 1 (NGMA + RIZAL)"]')).toBeVisible();
+    await expect(rows.locator('[data-branch-subtotal="Antipolo (101)"]')).toBeVisible();
+    await expect(row("Test Document Processor").locator("[data-branch-chips]")).toContainText("Angono (165)");
   }
   await noSideways(page);
   await shot(page, "dp-monitor-grouped");
 
   // Collapse a group (kept in the URL).
-  await rows.locator('[data-group-toggle="Quezon City"]').first().click();
-  await expect(page).toHaveURL(/hide=quezon-city/);
+  await rows.locator('[data-group-toggle="LUZON 1 (NGMA + RIZAL)"]').first().click();
+  await expect(page).toHaveURL(/hide=luzon-1-ngma-rizal/);
   await expect(row("Joy Navarro")).toHaveCount(0);
-  await rows.locator('[data-group-toggle="Quezon City"]').first().click();
+  await rows.locator('[data-group-toggle="LUZON 1 (NGMA + RIZAL)"]').first().click();
 
   // Drill-down: open jobs; the PN is plain text (no loan permission).
   await (wide(page) ? row("Test Document Processor").getByRole("link") : row("Test Document Processor")).click();
   const sheet = page.getByRole("dialog", { name: "Test Document Processor" });
-  await expect(sheet.locator('[data-drill-row="PN-0009002"]').or(sheet.locator('[data-drill-row="PN-0008002"]')).first()).toContainText("Overdue");
-  await expect(sheet.getByRole("link", { name: /PN-000800/ })).toHaveCount(0);
+  await expect(sheet.locator('[data-drill-row="GD1012026908002"]').first()).toContainText("Overdue");
+  await expect(sheet.getByRole("link", { name: /GD10120269080/ })).toHaveCount(0);
   await expect(sheet.locator("[data-pn-plain]").first()).toBeVisible();
   await shot(page, "dp-drilldown", false);
   await sheet.getByRole("button", { name: "Close" }).click();
@@ -167,6 +171,14 @@ test("DP monitor: grouped by branch, availability, drill-down without loan links
   await expect(page.getByRole("heading", { level: 1 })).toContainText(label);
   await page.goto(`/monitoring?tab=dp&range=custom&from=${today}&to=2026-01-01`);
   await expect(page.getByRole("alert")).toContainText("\"To\" cannot be before \"From\".");
+
+  // The Area filter: processors with any branch in the area (Ben at Alaminos), not the others.
+  const l3 = await db.area.findFirstOrThrow({ where: { name: "LUZON 3 NORTH" } });
+  await page.goto(`/monitoring?tab=dp&area=${l3.id}`);
+  await expect(page.locator("#mf-area")).toHaveValue(l3.id);
+  const areaRows = wide(page) ? page.locator("[data-dp-table]") : page.locator("[data-dp-cards]");
+  await expect(areaRows.locator('[data-dp-row="Ben Ocampo"]')).toBeVisible();
+  await expect(areaRows.locator('[data-dp-row="Joy Navarro"]')).toHaveCount(0);
 
   // By day, then the CSV follows the view.
   await page.goto("/monitoring?tab=dp&view=day&range=7d");
@@ -195,7 +207,7 @@ test("LTO monitor: areas, advisories with the 24-hour prompt, drill-down, no amo
 
   await (wide(page) ? qc.getByRole("link") : qc).click();
   const sheet = page.getByRole("dialog", { name: "LTO Quezon City District Office" });
-  await expect(sheet.getByRole("region", { name: "At the LTO now" })).toContainText("PN-0008001");
+  await expect(sheet.getByRole("region", { name: "At the LTO now" })).toContainText("GD1012026908001");
   await expect(sheet.getByRole("region", { name: "Picked up in the period" })).toContainText("2 business days");
   await shot(page, "lto-drilldown", false);
   await sheet.getByRole("button", { name: "Close" }).click();
@@ -223,7 +235,7 @@ test("Refusals: no monitor permission means not found and a refused CSV; Admin s
   if (wide(page)) await expect(page.getByRole("columnheader", { name: "Estimated travel cash" })).toBeVisible();
   else await expect(page.getByText(/^Travel cash: .+ estimated/).first()).toBeVisible();
   await page.goto("/monitoring?tab=dp&open=1&dp=" + (await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } })).id);
-  await expect(page.getByRole("dialog").getByRole("link", { name: "PN-0008001" })).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("link", { name: "GD1012026908001" })).toBeVisible();
 });
 
 test("DP job at an LTO stage: Report an LTO problem; the warning on the job", async ({ page }) => {
@@ -247,11 +259,11 @@ test("Check documents: the Send panel shows availability chips, the processor on
   await signInAs(page, "la");
   await page.goto("/loans");
   const main = page.getByRole("main");
-  await main.getByLabel("Find a loan").fill("PN-0001001");
+  await main.getByLabel("Find a loan").fill("GD1012026901001");
   await main.getByRole("button", { name: /^Find/ }).click();
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001001/);
-  await page.goto("/loans/PN-0001001?tab=todo&tx=NOTARY");
+  await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
+  await page.goto("/loans/GD1012026901001?tab=todo&tx=NOTARY");
   const group = page.getByRole("group", { name: /papers$/ }).first();
   for (const b of await group.getByRole("checkbox").all()) if (!(await b.isChecked())) await b.check();
   const showAll = page.getByRole("button", { name: /^Show all/ });

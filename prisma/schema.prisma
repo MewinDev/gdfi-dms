@@ -180,29 +180,37 @@ model Role {
 }
 
 model User {
-  id              String       @id @default(cuid())
-  email           String       @unique
+  id              String            @id @default(cuid())
+  email           String            @unique
   name            String
-  active          Boolean      @default(true)
+  active          Boolean           @default(true)
   /// Inactive instead of delete: when and by whom it was made inactive (null while active).
   deactivatedAt   DateTime?
   deactivatedById String?
   roleId          String
-  role            Role         @relation(fields: [roleId], references: [id])
+  role            Role              @relation(fields: [roleId], references: [id])
   /// Identity provider subject (Entra object id) once Microsoft sign-in is enabled.
-  externalId      String?      @unique
-  isTestUser      Boolean      @default(false)
+  externalId      String?           @unique
+  isTestUser      Boolean           @default(false)
   /// Email me for non-urgent updates (urgent ones always go while emails are on).
-  emailNonUrgent  Boolean      @default(true)
+  emailNonUrgent  Boolean           @default(true)
   /// Processors: their own capacity in open jobs (null = the default in Settings, Processor capacity).
   dpCapacity      Int?
   /// Processors: On leave (0% available, shown disabled in the Send panel), optionally until a date.
-  dpOnLeave       Boolean      @default(false)
+  dpOnLeave       Boolean           @default(false)
   /// The last day of the leave, YYYY-MM-DD in Philippine time (null = until switched off).
   dpLeaveUntil    String?
+  /// The derived access set (user_branch_access). Empty when allBranches is true.
   branches        UserBranch[]
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  /// All branches (no rows in user_branch_access). Admin is always All.
+  allBranches     Boolean           @default(false)
+  /// Grants and exceptions (Users, Edit, Branch access).
+  accessGrants    UserAccessGrant[]
+  /// Default branch for new work and sending; must be inside the access.
+  homeBranchId    String?
+  homeBranch      Branch?           @relation("UserHomeBranch", fields: [homeBranchId], references: [id])
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   openedLoans        Loan[]               @relation("LoanOpenedBy")
   notifications      Notification[]
@@ -223,26 +231,103 @@ model User {
   exceptionsResolved LoanException[]      @relation("ExceptionResolvedBy")
 }
 
+/// Where a record comes from: the MyLoans branch list (code, name, area, division and status are
+/// read-only in the DMS), or added by hand in the DMS (fully editable).
+enum RecordSource {
+  MYLOANS
+  DMS
+}
+
+/// A MyLoans Division: a business line (Branch Division, Car Financing Division ...), not a region.
+/// Filled from the MyLoans branch list; never deleted (inactive instead).
+model Division {
+  id           String            @id @default(cuid())
+  /// The MyLoans division_id (stable). Null for one added by hand or from a list without ids.
+  myloansId    Int?              @unique
+  code         String?
+  name         String
+  active       Boolean           @default(true)
+  source       RecordSource      @default(DMS)
+  lastSyncedAt DateTime?
+  branches     Branch[]
+  grants       UserAccessGrant[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+/// A MyLoans Area (regional: "LUZON 1 (NGMA + RIZAL)", "Luzon 3 - CFD"). The same area id can appear
+/// under two divisions in MyLoans, so a branch stores both its division and its area, and the access
+/// tree and the Monitoring groups use the pair (Division, Area).
+model Area {
+  id           String            @id @default(cuid())
+  /// The MyLoans area_id (stable). Null for one added by hand or from a list without ids.
+  myloansId    Int?              @unique
+  code         String?
+  name         String
+  active       Boolean           @default(true)
+  source       RecordSource      @default(DMS)
+  lastSyncedAt DateTime?
+  branches     Branch[]
+  grants       UserAccessGrant[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+/// Loans, users and everything else point at a branch by its internal id, never by name or code, so a
+/// rename or a code fix never breaks anything. Never deleted: switched off (inactive) or hidden.
 model Branch {
-  id                String         @id @default(cuid())
-  code              String         @unique
-  name              String         @unique
-  active            Boolean        @default(true)
+  id                String            @id @default(cuid())
+  /// MyLoans branch code: exactly 3 digits (100 to 999), unique. Null = "Code needed" (never guessed).
+  code              String?           @unique
+  /// The code it had before codes became the 3-digit MyLoans codes (for example QC). History only.
+  legacyCode        String?
+  name              String            @unique
+  address           String            @default("")
+  active            Boolean           @default(true)
   /// Inactive instead of delete: when and by whom it was made inactive (null while active).
   deactivatedAt     DateTime?
   deactivatedById   String?
+  source            RecordSource      @default(DMS)
+  /// The MyLoans branch_id (stable). Matching uses it first, the code only when there is no id.
+  myloansBranchId   Int?              @unique
+  divisionId        String?
+  division          Division?         @relation(fields: [divisionId], references: [id])
+  areaId            String?
+  area              Area?             @relation(fields: [areaId], references: [id])
+  /// Hide from DMS (test or retired branches; source:manage): not in pickers, trees, filters or counts,
+  /// cannot be chosen for new work, stays on old loans. Survives every import and sync.
+  hidden            Boolean           @default(false)
+  hiddenAt          DateTime?
+  hiddenById        String?
+  /// A short note, e.g. "Looks like a test or unused branch".
+  note              String            @default("")
+  /// MyLoans updated_at when the source gives one; lastSeenAt: when it was last in a MyLoans list.
+  myloansUpdatedAt  DateTime?
+  lastSeenAt        DateTime?
+  lastSyncedAt      DateTime?
+  /// Hash of the MyLoans fields as last applied (only differences reach the review).
+  syncHash          String?
   users             UserBranch[]
+  homeUsers         User[]            @relation("UserHomeBranch")
+  grants            UserAccessGrant[]
+  reviews           BranchReview[]
   loans             Loan[]
   dpWork            DpAssignment[]
-  receivingPackages DpAssignment[] @relation("DpReceivingBranch")
+  receivingPackages DpAssignment[]    @relation("DpReceivingBranch")
   cashAdvances      CashAdvance[]
   /// Pre-selected in the Send panel for transactions that need LTO processing (optional).
   usualLtoOfficeId  String?
-  usualLtoOffice    LtoOffice?     @relation("BranchUsualLto", fields: [usualLtoOfficeId], references: [id])
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  usualLtoOffice    LtoOffice?        @relation("BranchUsualLto", fields: [usualLtoOfficeId], references: [id])
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([areaId])
+  @@index([divisionId])
 }
 
+/// user_branch_access: the DERIVED access set (where a person works), rebuilt from the user's grants
+/// and exceptions (lib/branches/access.ts) whenever they change, a branch moves to another area, or a
+/// branch, area or division appears. "All branches" is User.allBranches with no rows. Never edited by hand.
 model UserBranch {
   userId   String
   branchId String
@@ -250,6 +335,117 @@ model UserBranch {
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@id([userId, branchId])
+  @@index([branchId])
+  @@map("user_branch_access")
+}
+
+enum AccessGrantKind {
+  DIVISION
+  AREA
+  BRANCH
+}
+
+/// Branch access per user (roles say what a person can do; branch access says where): the union of
+/// grants (a whole Division, a whole Area within a Division, or one Branch) minus exceptions (exclude:
+/// a branch unticked inside a ticked Area or Division). Area and Division grants are dynamic.
+model UserAccessGrant {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind       AccessGrantKind
+  /// DIVISION: the division. AREA: the division of the (Division, Area) pair.
+  divisionId String?
+  division   Division?       @relation(fields: [divisionId], references: [id])
+  areaId     String?
+  area       Area?           @relation(fields: [areaId], references: [id])
+  branchId   String?
+  branch     Branch?         @relation(fields: [branchId], references: [id])
+  /// true: an exception (this branch is left out of a ticked Area or Division). BRANCH kind only.
+  exclude    Boolean         @default(false)
+  createdAt  DateTime        @default(now())
+
+  @@index([userId])
+  @@index([areaId])
+  @@index([divisionId])
+  @@index([branchId])
+}
+
+enum BranchReviewKind {
+  NEW_BRANCH
+  RENAMED
+  CODE_CHANGED
+  MOVED
+  DETAILS_CHANGED
+  CLOSED
+  REOPENED
+  NOT_IN_LIST
+  UNKNOWN_CODE
+  NEW_AREA
+  RENAMED_AREA
+  NEW_DIVISION
+  RENAMED_DIVISION
+}
+
+enum BranchReviewState {
+  OPEN
+  ACCEPTED
+  IGNORED
+}
+
+/// A difference between the MyLoans branch list and the DMS copy, waiting for Admin (Accept applies it,
+/// Ignore leaves the DMS as it is). Nothing changes silently and nothing is deleted.
+model BranchReview {
+  id                String            @id @default(cuid())
+  kind              BranchReviewKind
+  state             BranchReviewState @default(OPEN)
+  /// The DMS branch it is about (null for a new branch, area or division).
+  branchId          String?
+  branch            Branch?           @relation(fields: [branchId], references: [id])
+  myloansBranchId   Int?
+  myloansAreaId     Int?
+  myloansDivisionId Int?
+  code              String?
+  /// "Antipolo (101)", "Area LUZON 1 (NGMA + RIZAL)".
+  title             String
+  /// { row: the MyLoans row (normalized), fields: [{ field, label, was, now }] ... }
+  payload           Json
+  /// file | api | cron | lookup
+  source            String
+  runId             String?
+  /// UNKNOWN_CODE: the PN that showed the code.
+  pn                String?
+  firstSeenAt       DateTime          @default(now())
+  detectedAt        DateTime          @default(now())
+  decidedById       String?
+  decidedByLabel    String?
+  decidedAt         DateTime?
+  note              String?
+
+  @@index([state, kind])
+  @@index([branchId])
+  @@index([myloansBranchId])
+}
+
+/// One run of the branch list from MyLoans (file import, API, the daily schedule, an unknown code).
+model BranchSyncRun {
+  id             String   @id @default(cuid())
+  at             DateTime @default(now())
+  /// file | api | cron | lookup
+  trigger        String
+  /// FILE | FULL | INCREMENTAL
+  mode           String
+  ok             Boolean
+  newCount       Int      @default(0)
+  changedCount   Int      @default(0)
+  unchangedCount Int      @default(0)
+  missingCount   Int      @default(0)
+  errorCount     Int      @default(0)
+  error          String?
+  ms             Int      @default(0)
+  fileName       String?
+  byLabel        String   @default("System")
+
+  @@index([at])
 }
 
 // ---------------------------------------------------------------------------

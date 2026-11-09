@@ -166,17 +166,17 @@ describe("Outcome table", () => {
 });
 
 describe("Section 9 mock PNs (rules part)", () => {
-  it("PN-0001001 Refinancing, Mortgage -> 4", () => {
+  it("GD1012026901001 Refinancing, Mortgage -> 4", () => {
     expect(evaluateLoanRules({ productName: "Auto Refinancing", loanType: "New", totalReleasedAmount: 450_000 }).transactions).toHaveLength(4);
   });
-  it("PN-0001003 Financing Transferred Renewal 1,000,000 -> Mortgage (boundary)", () => {
+  it("GD1652026901003 Financing Transferred Renewal 1,000,000 -> Mortgage (boundary)", () => {
     const r = evaluateLoanRules({
       productName: "Auto Financing", loanType: "Renewal", totalReleasedAmount: 1_000_000,
       financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED",
     });
     expect(r.mortgage).toBe("MORTGAGE");
   });
-  it("PN-0001006 blank -> Refinancing, Mortgage", () => {
+  it("GD1012026901006 blank -> Refinancing, Mortgage", () => {
     const r = evaluateLoanRules({ productName: "", loanType: "Renewal", totalReleasedAmount: 800_000 });
     expect(r.classification).toBe("REFINANCING");
     expect(r.mortgage).toBe("MORTGAGE");

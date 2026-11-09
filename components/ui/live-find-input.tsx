@@ -65,7 +65,7 @@ export function LiveFindInput({
   let status = "";
   if (state.kind === "loading") status = "Looking in MyLoans…";
   else if (state.kind === "done" && !state.r.ok) status = state.r.message;
-  else if (state.kind === "done" && hits.length === 0) status = exactOnly ? "No match. MyLoans here finds the whole PN only, for example PN-0001001." : "No match in MyLoans.";
+  else if (state.kind === "done" && hits.length === 0) status = exactOnly ? "No match. MyLoans here finds the whole PN only, for example GD1012026901001." : "No match in MyLoans.";
   else if (hits.length) status = `${hits.length} match${hits.length === 1 ? "" : "es"} in MyLoans.`;
 
   return (

@@ -43,7 +43,7 @@ describe("Email messages", () => {
     expect(html).toContain(EMAIL_FOOTER);
     expect(text).toContain("Open in GDFI DMS: http://localhost:3001/jobs/1");
     expect(text).toContain(EMAIL_FOOTER);
-    expect(fill(EMAIL_EVENTS.job_sent.subject, SAMPLE_VARS)).toBe("PN-0001003: Notary sent to you");
+    expect(fill(EMAIL_EVENTS.job_sent.subject, SAMPLE_VARS)).toBe("GD1652026901003: Notary sent to you");
   });
 });
 

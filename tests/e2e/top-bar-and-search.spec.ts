@@ -29,9 +29,9 @@ test("LA: no search in the top bar on Home and Loan File; the system name is on 
   await expectCleanTopBar(page, "Updates");
 
   // Open a loan file
-  await page.goto("/search?q=PN-0001001");
+  await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001001/);
+  await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
   await expectCleanTopBar(page, "Loan File");
   await expect(visibleSearchBox(page)).toHaveCount(0);
 });
@@ -53,7 +53,7 @@ test("LA: the Loans page has the search, and / focuses it", async ({ page }) => 
   await expect(box).toHaveValue("");
 
   // The search still works the same way.
-  await box.fill("PN-0001001");
+  await box.fill("GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: /^Find loan/ }).click();
   await expect(page.getByRole("main").getByText("Loan found")).toBeVisible();
 });

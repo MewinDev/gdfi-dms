@@ -1,6 +1,7 @@
 import type { Tx } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { queueEmails, type EmailSpec } from "@/lib/email/outbox";
+import { worksAtWhere } from "@/lib/branches/access";
 
 /**
  * In-app notifications, and their email channel: with `email` set, the same call queues an email
@@ -26,10 +27,10 @@ export async function notify(tx: Tx, n: NotifyInput) {
   if (n.email) await queueEmails(tx, n.email, { userIds: ids, loanId: n.loanId, link: n.link });
 }
 
-/** People of a branch who get branch-level updates: active, with "Accept returned papers" (the Loan Associates). */
+/** People of a branch who get branch-level updates: active, with "Accept returned papers" (the Loan Associates), whose access has the branch (or All branches). */
 export async function branchLaUserIds(tx: Tx, branchId: string): Promise<string[]> {
   const rows = await tx.user.findMany({
-    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.RETURNS_ACCEPT } }, branches: { some: { branchId } } },
+    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.RETURNS_ACCEPT } }, ...worksAtWhere(branchId) },
     select: { id: true },
   });
   return rows.map((r) => r.id);

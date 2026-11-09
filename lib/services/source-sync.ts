@@ -1,5 +1,7 @@
 import { refuseInProduction } from "@/lib/env";
 import "server-only";
+import { buildPn, getPnFormat, parsePn } from "@/lib/pn";
+import { branchLabel, resolveLoanBranch } from "./branches";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
@@ -362,10 +364,17 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
       orcrStatus: p.classificationNext === "FINANCING" ? (d.orcrStatus ?? loan.orcrStatus) : null,
     };
     if (next.releaseDate && next.releaseDate !== businessDate(loan.releasedAt)) data.releasedAt = startOfBusinessDay(next.releaseDate);
-    if (next.branchName) {
-      const br = await tx.branch.findFirst({ where: { name: { equals: next.branchName, mode: "insensitive" } } });
-      if (!br) throw new UserError(`MyLoans moved the loan to "${next.branchName}", which is not a branch here. Add it in Settings first, or keep current.`);
-      if (br.id !== loan.branchId) data.branch = { connect: { id: br.id } };
+    // The loan's CURRENT branch comes from the MyLoans branch field (code first, then name); it changes
+    // only here, when Admin applies the change. The PN's branch code stays: it says where it was opened.
+    let moved: { from: string; to: string } | null = null;
+    if (next.branchName || next.branchCode) {
+      const br = await resolveLoanBranch(tx, { branchCode: next.branchCode ?? null, branchName: next.branchName });
+      if (!br) throw new UserError(`MyLoans moved the loan to ${next.branchName ?? "a branch"}${next.branchCode ? ` (${next.branchCode})` : ""}, which is not a branch here. Accept it in Settings, Branches (Branch review) first, or keep current.`);
+      if (br.id !== loan.branchId) {
+        data.branch = { connect: { id: br.id } };
+        const was = await tx.branch.findUniqueOrThrow({ where: { id: loan.branchId }, select: { name: true, code: true } });
+        moved = { from: branchLabel(was), to: branchLabel(br) };
+      }
     }
     await tx.loan.update({ where: { id: loan.id }, data });
 
@@ -389,8 +398,8 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
     await tx.sourceChange.update({ where: { id: item.id }, data: { state: "APPLIED", decidedById: u.id, decidedByLabel: u.name, decidedAt: now, note, proposed: p as unknown as Prisma.InputJsonValue } });
     await writeAudit(tx, {
       actor: actorOf(u), mode: "MANUAL", action: "source_change_applied", entityType: "SourceChange", entityId: item.id, loanId: loan.id, pn: loan.pn,
-      summary: `MyLoans changed ${words(item.changes as unknown as FieldChange[])}. Admin ${u.name} applied it: ${p.sentences.join(" ")} Note: ${note}`,
-      before: { classification: loan.classification, mortgage: loan.mortgageResult }, after: { classification: p.classificationNext, mortgage: p.mortgageNext, added: p.added, removed: p.removed },
+      summary: `MyLoans changed ${words(item.changes as unknown as FieldChange[])}. Admin ${u.name} applied it: ${moved ? `the loan's branch is now ${moved.to} (was ${moved.from}). ` : ""}${p.sentences.join(" ")} Note: ${note}`,
+      before: { classification: loan.classification, mortgage: loan.mortgageResult, ...(moved ? { branch: moved.from } : {}) }, after: { classification: p.classificationNext, mortgage: p.mortgageNext, added: p.added, removed: p.removed, ...(moved ? { branch: moved.to } : {}) },
     });
     await recomputeStage(tx, loan.id);
     await tellLoanPeople(tx, loan, `${loan.pn}: MyLoans change applied`, `${u.name} applied it. ${p.sentences.join(" ")}`);
@@ -931,7 +940,7 @@ export async function syncStatus() {
 // Simulator (TEST_MODE only, mock MyLoans): "Simulate a MyLoans change"
 // ---------------------------------------------------------------------------
 
-export const SIM_SOURCE_KINDS = ["amount", "name", "product", "cancel", "replace"] as const;
+export const SIM_SOURCE_KINDS = ["amount", "name", "product", "cancel", "replace", "branch"] as const;
 export type SimSourceKind = (typeof SIM_SOURCE_KINDS)[number];
 
 export async function simulateSourceChange(u: CurrentUser, loanId: string, kind: SimSourceKind): Promise<string> {
@@ -955,7 +964,7 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
     message = `MyLoans now says the amount is ₱${Number(over.totalReleasedAmount).toLocaleString("en-PH")}.`;
   } else if (kind === "name") {
     over.borrowerName = /Jr\.$/.test(rec.borrowerName) ? rec.borrowerName.replace(/ Jr\.$/, "") : `${rec.borrowerName} Jr.`;
-    over.address = `${Math.floor(Math.random() * 900) + 100} Rizal Ave, ${rec.branchName ?? "Quezon City"}`;
+    over.address = `${Math.floor(Math.random() * 900) + 100} Rizal Ave, ${rec.branchName ?? "Antipolo"}`;
     message = "MyLoans now spells the borrower's name differently and has a new address.";
   } else if (kind === "product") {
     over.productName = /refinancing/i.test(rec.productName ?? "") ? "Auto Financing" : "Auto Refinancing";
@@ -963,12 +972,26 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
   } else if (kind === "cancel") {
     over.status = "CANCELLED";
     message = "MyLoans now says the loan is cancelled.";
+  } else if (kind === "branch") {
+    // Moved to another active branch of the same area (or any other active one).
+    const cur = await prisma.branch.findUniqueOrThrow({ where: { id: loan.branchId } });
+    const to = await prisma.branch.findFirst({ where: { active: true, hidden: false, code: { not: null }, id: { not: cur.id }, ...(cur.areaId ? { areaId: cur.areaId } : {}) }, orderBy: { code: "asc" } })
+      ?? await prisma.branch.findFirst({ where: { active: true, hidden: false, code: { not: null }, id: { not: cur.id } }, orderBy: { code: "asc" } });
+    if (!to) throw new UserError("There is no other active branch to move it to.");
+    over.branchName = to.name;
+    over.branchCode = to.code;
+    message = `MyLoans now says the loan is at ${to.name} (${to.code}).`;
   } else {
     const extra = [...(await getSetting("myloans.mockExtra"))];
     let n = 9100;
     const taken = new Set([...extra.map((r) => r.pn), ...(await prisma.loan.findMany({ select: { pn: true } })).map((l) => l.pn)]);
-    while (taken.has(`PN-000${n}`)) n++;
-    const newPn = `PN-000${n}`;
+    // The same branch code and year as the old PN, the first free running number from 09100.
+    const fmt = await getPnFormat();
+    const old = parsePn(loan.pn, fmt);
+    const code = old.ok && old.parts ? old.parts.branchCode : rec.branchCode ?? "101";
+    const year = old.ok && old.parts ? old.parts.year : "2026";
+    while (taken.has(buildPn(code, year, n, fmt))) n++;
+    const newPn = buildPn(code, year, n, fmt);
     extra.push({ ...rec, pn: newPn, sourceLoanId: `ML-SIM-${n}`, releaseDate: businessDate(new Date()), status: "RELEASED", previousPn: loan.pn });
     await setSetting("myloans.mockExtra", extra);
     over.status = "REPLACED";

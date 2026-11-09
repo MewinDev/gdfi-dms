@@ -15,6 +15,7 @@ import { JOURNEY_STEP_COUNT, dayText, deadlineChip, liveAssignment, peso, plainM
 import { Banner, ToneChip } from "@/components/ui/basics";
 import { AlertIcon, ChevronRightIcon, PauseIcon, PrinterIcon } from "@/components/ui/icons";
 import { PageTop } from "@/components/loan/page-top";
+import { openedAt } from "@/lib/pn/opened-at";
 import { Stepper } from "@/components/ui/stepper";
 import { FixProblem, ReportProblem, WorkCard, type Line, type SendOptions } from "@/components/loan/work";
 import { OverrideForm, RefreshButton } from "@/components/loan/forms";
@@ -70,7 +71,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
   if (!loan) notFound(); // includes loan files outside the LA's branches
   // Refreshed from MyLoans when the copy is older than the setting; an outage never blocks the page.
   if (await refreshOnOpen(loan)) loan = (await getLoanForUser(user, loan.pn)) ?? loan;
-  const [review, reusable, related] = await Promise.all([reviewFor(user, loan.id), reusableFor(user, loan.id), relatedPanel(user, loan)]);
+  const [review, reusable, related, opened] = await Promise.all([reviewFor(user, loan.id), reusableFor(user, loan.id), relatedPanel(user, loan), openedAt(loan.pn, loan.branch)]);
   const copySources = [...new Set(reusable.map((o) => o.fromPn))].map((pn) => ({ pn, options: reusable.filter((o) => o.fromPn === pn) }));
   if (OLD_HISTORY.includes(sp.tab ?? "")) redirect(`/loans/${loan.pn}?tab=journey`);
   const ctx = await getLoanContext(loan);
@@ -113,8 +114,9 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
         back={workTxn ? { label: "Loan File", href: `${base}?tab=todo` } : { label: la ? "My loans" : "Loans", href: "/loans" }}
         title={workTxn ? "Check documents" : "Loan File"}
         subtitle={workTxn
-          ? `${txnName(workTxn.type.code, workTxn.type.name)} · ${loan.borrowerName} · ${loan.pn}`
-          : `${loan.borrowerName} · ${loan.pn} · ${loan.branch.name} · ${peso(Number(loan.totalReleasedAmount))} · ${loan.loanType}`}
+          ? <>{txnName(workTxn.type.code, workTxn.type.name)} · {loan.borrowerName} · <span className="mono" data-pn>{loan.pn}</span></>
+          : <>{loan.borrowerName} · <span className="mono" data-pn>{loan.pn}</span> · {loan.branch.name}{loan.branch.code ? ` (${loan.branch.code})` : ""} · {peso(Number(loan.totalReleasedAmount))} · {loan.loanType}</>}
+        note={!workTxn && opened ? <span className={opened.differs ? "font-semibold text-navy" : undefined}>{opened.text}</span> : undefined}
         right={workTxn
           ? (can(user, PERMISSIONS.LABELS_PRINT) && loan.documents.some((d) => d.documentId)
               ? <Link href={`${base}/labels`} className="btn-ghost btn-sm hidden sm:inline-flex">Print all labels</Link>
@@ -429,7 +431,7 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
 
 async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOptions> {
   const [branches, dps, ltoOffices, openCounts, ltoWarnings] = await Promise.all([
-    prisma.branch.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
+    prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" } }),
     processors(),
     prisma.ltoOffice.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     // Open jobs = assigned + in process + on hold (the same count as the Monitoring page).

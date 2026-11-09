@@ -35,10 +35,10 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-/** Opens PN-0001003 (Undertaking, OR/CR transferred) and sends one transaction to the test DP. */
+/** Opens GD1652026901003 (Undertaking, OR/CR transferred) and sends one transaction to the test DP. */
 async function send(code: string, funds: { needed: "YES" | "NO"; kinds?: string[] }) {
-  await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
-  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+  await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
+  const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
   const txn = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code } }, include: { checks: true } });
   await saveChecklist(la, { transactionId: txn.id, checkedIds: txn.checks.map((c) => c.id), newOthers: [] });
   // Every type that needs LTO processing (Notary, Entry of PPSR, Mortgage) is sent with an office.

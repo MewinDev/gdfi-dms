@@ -84,41 +84,41 @@ beforeAll(async () => {
   cebOffice = (await prisma.ltoOffice.findUniqueOrThrow({ where: { code: "LTO-CEB" } })).id;
   await prisma.ltoOffice.update({ where: { id: qcOffice }, data: { suggestedTransportCents: 50_000, distanceKm: 8 } });
 
-  await openLoanFile(la, { pn: "PN-0001001" }); // Quezon City, 4 transactions
-  await openLoanFile(la, { pn: "PN-0001006" }); // Quezon City, 4 transactions
-  await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }); // Cebu
+  await openLoanFile(la, { pn: "GD1012026901001" }); // Antipolo, 4 transactions
+  await openLoanFile(la, { pn: "GD1012026901006" }); // Antipolo, 4 transactions
+  await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }); // Angono
 
-  // PN-0001001: two jobs finished by the test DP in the period, and one in June (outside it).
-  ids.aNotary = (await send("PN-0001001", "NOTARY", dp, qcOffice)).id;
+  // GD1012026901001: two jobs finished by the test DP in the period, and one in June (outside it).
+  ids.aNotary = (await send("GD1012026901001", "NOTARY", dp, qcOffice)).id;
   await finish(ids.aNotary, dp);
   await move(ids.aNotary, ago(6, "09:00"), ago(5, "09:30"), { OWN: ago(5, "11:00"), LTO_DROP: ago(4, "11:00"), LTO_PICKUP: ago(2, "14:00"), VERIFY: ago(1, "16:00") });
-  ids.aPpsr = (await send("PN-0001001", "PPSR", dp, qcOffice)).id;
+  ids.aPpsr = (await send("GD1012026901001", "PPSR", dp, qcOffice)).id;
   await finish(ids.aPpsr, dp);
   await move(ids.aPpsr, ago(3, "09:00"), ago(3, "09:30"), { OWN: ago(3, "11:00"), LTO_DROP: ago(2, "11:00"), LTO_PICKUP: ago(1, "14:00"), VERIFY: ago(0) });
   // June: Thursday 11 Jun, accepted Monday 15 Jun (Friday 12 Jun is Independence Day), finished Wednesday 17 Jun.
-  ids.aMortgage = (await send("PN-0001001", "MORTGAGE", dp, qcOffice)).id;
+  ids.aMortgage = (await send("GD1012026901001", "MORTGAGE", dp, qcOffice)).id;
   await finish(ids.aMortgage, dp);
   await move(ids.aMortgage, at("2026-06-11", "09:00"), at("2026-06-15", "09:00"), { LTO_DROP: at("2026-06-15", "11:00"), LTO_PICKUP: at("2026-06-16", "14:00"), VERIFY: at("2026-06-17", "16:00") });
 
-  // PN-0001006: open jobs of the test DP: assigned 2 business days ago (overdue), on hold, at the LTO now.
-  ids.bNotary = (await send("PN-0001006", "NOTARY", dp, qcOffice)).id;
+  // GD1012026901006: open jobs of the test DP: assigned 2 business days ago (overdue), on hold, at the LTO now.
+  ids.bNotary = (await send("GD1012026901006", "NOTARY", dp, qcOffice)).id;
   await move(ids.bNotary, ago(2, "09:00"), null);
-  ids.bPpsr = (await send("PN-0001006", "PPSR", dp, qcOffice)).id;
+  ids.bPpsr = (await send("GD1012026901006", "PPSR", dp, qcOffice)).id;
   await acceptJob(dp, ids.bPpsr, true);
   await raiseHold(dp, { transactionId: (await prisma.dpAssignment.findUniqueOrThrow({ where: { id: ids.bPpsr } })).transactionId, reasonId: (await prisma.holdReason.findUniqueOrThrow({ where: { code: "CLIENT-PAPERS" } })).id, note: "Waiting for the borrower's signature." });
-  ids.bMortgage = (await send("PN-0001006", "MORTGAGE", dp, qcOffice)).id;
+  ids.bMortgage = (await send("GD1012026901006", "MORTGAGE", dp, qcOffice)).id;
   await acceptJob(dp, ids.bMortgage, true);
   await workStagesUpTo(ids.bMortgage, dp, 1); // LTO drop off done: at the LTO now
   await move(ids.bMortgage, ago(1, "09:00"), ago(1, "09:30"), { LTO_DROP: ago(1, "11:00") });
 
-  // PN-0001003 (Cebu): Paolo declines one, returns one, has one waiting.
-  ids.cNotary = (await send("PN-0001003", "NOTARY", paolo, cebOffice)).id;
+  // GD1652026901003 (Angono): Paolo declines one, returns one, has one waiting.
+  ids.cNotary = (await send("GD1652026901003", "NOTARY", paolo, cebOffice)).id;
   await declineJob(paolo, ids.cNotary, { reasons: ["No capacity"], remarks: "Too many jobs this week." });
-  ids.cPpsr = (await send("PN-0001003", "PPSR", paolo, cebOffice)).id;
+  ids.cPpsr = (await send("GD1652026901003", "PPSR", paolo, cebOffice)).id;
   await acceptJob(paolo, ids.cPpsr, true);
   const cPpsr = await prisma.dpAssignment.findUniqueOrThrow({ where: { id: ids.cPpsr } });
   await returnToLa(paolo, ids.cPpsr, { reasonId: (await prisma.returnReason.findUniqueOrThrow({ where: { code: "OTHER" } })).id, note: "The ID copy is unreadable.", handedOver: await allPapers(cPpsr.transactionId) });
-  ids.cMortgage = (await send("PN-0001003", "MORTGAGE", paolo, cebOffice)).id;
+  ids.cMortgage = (await send("GD1652026901003", "MORTGAGE", paolo, cebOffice)).id;
 }, 300_000);
 
 /** Works `count` stages of a job (Start, evidence, Finish). */
@@ -175,20 +175,53 @@ describe("DP monitor", () => {
   });
 
   it("follows the branch and transaction type filters", async () => {
-    const qc = (await prisma.branch.findUniqueOrThrow({ where: { code: "QC" } })).id;
+    const qc = (await prisma.branch.findUniqueOrThrow({ where: { code: "101" } })).id;
     const m = await dpMonitor(monitor, q30(monitor, { branch: qc }));
-    expect(m.rows.find((r) => r.id === paolo.id)?.declined ?? 0).toBe(0); // Paolo's work is in Cebu
+    expect(m.rows.find((r) => r.id === paolo.id)?.declined ?? 0).toBe(0); // Paolo's work is in Angono
     const notary = (await dpMonitor(monitor, q30(monitor, { type: "NOTARY" }))).rows.find((r) => r.id === dp.id)!;
     expect(notary).toMatchObject({ assigned: 1, inProcess: 0, onHold: 0, finished: 1 });
   });
 
+  it("groups by Area, then Branch, with subtotals; a processor of two areas is under Several areas, counted once", async () => {
+    const role = await prisma.role.findUniqueOrThrow({ where: { key: "DP" } });
+    const [ant, ala] = await Promise.all(["101", "390"].map((code) => prisma.branch.findUniqueOrThrow({ where: { code } })));
+    const two = await prisma.user.create({ data: { email: "zz.mon.two.areas@gdfi.ph", name: "Zz Two Areas DP", roleId: role.id, isTestUser: true, branches: { create: [{ branchId: ant.id }, { branchId: ala.id }] } } });
+    try {
+      const m = await dpMonitor(monitor, q30(monitor));
+      const l1 = m.groups.find((g) => g.label === "LUZON 1 (NGMA + RIZAL)")!;
+      expect(l1.branches.map((b) => b.label)).toEqual(expect.arrayContaining(["Antipolo (101)", "Angono (165) · Antipolo (101)", "Angono (165)"]));
+      const mine = m.rows.find((r) => r.id === dp.id)!;
+      expect(mine).toMatchObject({ group: "LUZON 1 (NGMA + RIZAL)", branchGroup: "Angono (165) · Antipolo (101)", branches: ["Angono (165)", "Antipolo (101)"] });
+      expect(m.groups.find((g) => g.label === "LUZON 3 NORTH")!.rows.map((r) => r.name)).toContain("Ben Ocampo");
+      // Several areas: last, once.
+      expect(m.groups.at(-1)!.label).toBe("Several areas");
+      expect(m.groups.at(-1)!.rows.map((r) => r.id)).toEqual([two.id]);
+      expect(m.rows.filter((r) => r.id === two.id)).toHaveLength(1);
+      expect(m.groups.flatMap((g) => g.rows).length).toBe(m.rows.length);
+      // Subtotals at both levels add up to the totals; nobody counted twice.
+      expect(m.groups.reduce((n, g) => n + g.sub.open, 0)).toBe(m.tiles.assigned + m.tiles.inProcess + m.tiles.onHold);
+      for (const g of m.groups) expect(g.branches.reduce((n, b) => n + b.sub.open, 0)).toBe(g.sub.open);
+      // The Area filter matches a processor when ANY of their branches is in it.
+      const l3 = (await prisma.area.findFirstOrThrow({ where: { name: "LUZON 3 NORTH" } })).id;
+      const f = await dpMonitor(monitor, q30(monitor, { area: l3 }));
+      expect(f.rows.map((r) => r.id)).toEqual(expect.arrayContaining([two.id]));
+      expect(f.rows.find((r) => r.id === dp.id)).toBeUndefined();
+      expect(f.tiles.assigned).toBe(0); // no job of a LUZON 3 NORTH loan
+      // ... and the Branch filter likewise (Antipolo: the two-area processor and the test DP).
+      const b = await dpMonitor(monitor, q30(monitor, { branch: ant.id }));
+      expect(b.rows.map((r) => r.id)).toEqual(expect.arrayContaining([two.id, dp.id]));
+    } finally {
+      await prisma.user.delete({ where: { id: two.id } });
+    }
+  });
+
   it("respects a person's branch scope", async () => {
     const supRole = await prisma.role.upsert({ where: { key: "IT-MON-QC" }, create: { key: "IT-MON-QC", name: "IT Monitor QC", permissions: [PERMISSIONS.MONITOR_DP], branchAccess: "ASSIGNED", canSignIn: true }, update: {} });
-    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "QC" } });
+    const qc = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
     const u = await prisma.user.upsert({ where: { email: "it.monitor.qc@gdfi.ph" }, create: { email: "it.monitor.qc@gdfi.ph", name: "IT QC Monitor", roleId: supRole.id, isTestUser: true, branches: { create: [{ branchId: qc.id }] } }, update: {} });
     const scoped = await asUser(u.email);
     const m = await dpMonitor(scoped, q30(scoped));
-    expect(m.rows.find((r) => r.id === paolo.id)).toBeUndefined(); // Cebu only
+    expect(m.rows.find((r) => r.id === paolo.id)).toBeUndefined(); // Angono only
     expect(m.rows.find((r) => r.id === dp.id)).toMatchObject({ assigned: 1, open: 3 });
     await prisma.user.delete({ where: { id: u.id } });
     await prisma.role.delete({ where: { id: supRole.id } });
@@ -198,14 +231,14 @@ describe("DP monitor", () => {
     const asMonitor = (await dpDrill(monitor, q30(monitor), dp.id))!;
     expect(asMonitor.open.map((j) => j.status).sort()).toEqual(["Assigned", "In process", "On hold"]);
     const overdue = asMonitor.open.find((j) => j.overdue)!;
-    expect(overdue).toMatchObject({ pn: "PN-0001006", status: "Assigned", age: "2 business days", href: null });
+    expect(overdue).toMatchObject({ pn: "GD1012026901006", status: "Assigned", age: "2 business days", href: null });
     expect(asMonitor.open.every((j) => j.href === null)).toBe(true);
     const asAdmin = (await dpDrill(admin, q30(admin), dp.id))!;
-    expect(asAdmin.open.every((j) => j.href === "/loans/PN-0001006")).toBe(true);
+    expect(asAdmin.open.every((j) => j.href === "/loans/GD1012026901006")).toBe(true);
     const p = (await dpDrill(monitor, q30(monitor), paolo.id))!;
     expect(p.declined).toHaveLength(1);
-    expect(p.declined[0]).toMatchObject({ pn: "PN-0001003", status: "Declined" });
-    expect(p.returned[0]).toMatchObject({ pn: "PN-0001003", status: "Returned to LA" });
+    expect(p.declined[0]).toMatchObject({ pn: "GD1652026901003", status: "Declined" });
+    expect(p.returned[0]).toMatchObject({ pn: "GD1652026901003", status: "Returned to LA" });
   });
 
   it("by day: assigned, accepted, finished, declined and returned on the day they happened", async () => {
@@ -252,10 +285,10 @@ describe("Availability, capacity and leave", () => {
     expect(p.leaveUntil).toBe(until);
     const others = m.rows.filter((r) => r.avail.status !== "ON_LEAVE");
     expect(m.tiles.avgAvailability).toBe(Math.round(others.reduce((s, r) => s + r.avail.pct, 0) / others.length));
-    const ceb = await prisma.branch.findUniqueOrThrow({ where: { code: "CEB" } });
+    const ceb = await prisma.branch.findUniqueOrThrow({ where: { code: "165" } });
     expect((await recommendDp(ceb.id))?.id).not.toBe(paolo.id);
     // Send to a processor on leave is refused (the Send panel shows them disabled).
-    const l3 = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+    const l3 = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
     const t = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: l3.id, type: { code: "NOTARY" } } });
     await expect(assignToDp(la, { transactionId: t.id, dpBranchId: ceb.id, dpUserId: paolo.id, ltoOfficeId: cebOffice, fundsNeeded: "NO", fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null }))
       .rejects.toThrow(/on leave until/);
@@ -274,7 +307,7 @@ describe("LTO monitor", () => {
     expect(qc.avgAt).toEqual({ days: 1.5, n: 2 }); // 2 and 1 business days
     expect(m.rows.find((r) => r.id === cebOffice)).toMatchObject({ used: 0, atNow: 0 });
     expect(m.tiles).toMatchObject({ atNow: 1, busiest: { name: qc.name, used: 3 } });
-    expect(m.groups.map((g) => g.label)).toContain("Quezon City");
+    expect(m.groups.map((g) => g.label)).toContain("Quezon City"); // LTO offices: grouped by the office's city
   });
 
   it("amounts only with the amounts permission", async () => {
@@ -287,7 +320,7 @@ describe("LTO monitor", () => {
 
   it("drill-down: at the LTO now and picked up in the period", async () => {
     const d = (await ltoDrill(monitor, parseMonitorQuery({ tab: "lto" }, monitor, today), qcOffice))!;
-    expect(d.atNow.map((j) => j.pn)).toEqual(["PN-0001006"]);
+    expect(d.atNow.map((j) => j.pn)).toEqual(["GD1012026901006"]);
     expect(d.atNow[0]).toMatchObject({ href: null, pickText: "Not yet" });
     expect(d.finished).toHaveLength(2);
     expect(d.finished.map((j) => j.days).sort()).toEqual(["1 business day", "2 business days"]);
@@ -372,9 +405,9 @@ describe("Permissions", () => {
     expect((await as(fin, "tab=lto")).status).toBe(403);
     const totals = await (await as(monitor, "tab=dp&type=NOTARY")).text();
     expect(totals).toContain("Includes time on hold");
-    expect(totals.split("\r\n")[1]).toMatch(/^Branch group,Processor,Assigned \(now\)/);
+    expect(totals.split("\r\n")[1]).toMatch(/^Area,Branch,Processor,Branch codes,Assigned \(now\)/);
     const mine = totals.split("\r\n").find((l) => l.includes("Test Document Processor"))!;
-    expect(mine.split(",").slice(2, 4)).toEqual(["1", "0"]); // assigned 1, in process 0 for Notary only
+    expect(mine).toMatch(/^"?LUZON 1 \(NGMA \+ RIZAL\)"?,Angono \(165\) · Antipolo \(101\),Test Document Processor,165 101,1,0,/); // assigned 1, in process 0 for Notary only
     const day = await (await as(monitor, "tab=dp&view=day&range=today")).text();
     expect(day.split("\r\n")[1]).toBe("Group,Day,Assigned,Accepted,Finished,Declined,Returned");
     const lto = await (await as(monitor, "tab=lto")).text();

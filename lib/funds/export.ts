@@ -9,14 +9,14 @@ export const FUNDS_TAB_STATUS: Record<string, string[]> = {
 };
 
 export interface FundsCsvRow {
-  number: string; typeCode: string; typeName: string; status: string; processor: string; branch: string;
+  number: string; typeCode: string; typeName: string; status: string; processor: string; branch: string; branchCode: string; area: string;
   requestedCents: number; approvedCents: number | null; releasedCents: number; receiptCents: number; returnedCents: number;
   releasedOn: string; releaseRef: string; transferDate: string; accountProvider: string; accountName: string; accountLast4: string;
   liquidateBy: string; cashToSettle: boolean; lines: string;
 }
 
 export const FUNDS_CSV_HEADER = [
-  "Number", "Type", "Type name", "Status", "Processor", "Branch", "Requested", "Approved", "Released", "Receipts", "Returned", "Balance",
+  "Number", "Type", "Type name", "Status", "Processor", "Branch", "Branch code", "Area", "Requested", "Approved", "Released", "Receipts", "Returned", "Balance",
   "Released on", "Reference", "Transfer date", "Receiving account", "Liquidate by", "Cash to settle", "For",
 ];
 
@@ -33,7 +33,7 @@ export function fundsCsv(rows: FundsCsvRow[]): string {
   for (const r of rows) {
     const balance = r.releasedCents - r.receiptCents - r.returnedCents;
     out.push([
-      r.number, r.typeCode, r.typeName, r.status, r.processor, r.branch, peso(r.requestedCents), r.approvedCents === null ? "" : peso(r.approvedCents), peso(r.releasedCents),
+      r.number, r.typeCode, r.typeName, r.status, r.processor, r.branch, r.branchCode, r.area, peso(r.requestedCents), r.approvedCents === null ? "" : peso(r.approvedCents), peso(r.releasedCents),
       peso(r.receiptCents), peso(r.returnedCents), peso(balance), r.releasedOn, r.releaseRef, r.transferDate,
       r.accountLast4 ? `${r.accountProvider}, ${r.accountName}, ending ${r.accountLast4}` : "", r.liquidateBy, r.cashToSettle ? "Yes" : "", r.lines,
     ].map(csvCell).join(","));

@@ -24,7 +24,7 @@ import { setSetting } from "@/lib/settings";
 import { allPapers, asUser, cleanLoans } from "./helpers";
 
 let la: CurrentUser, dp: CurrentUser, admin: CurrentUser, fin: CurrentUser, la2: CurrentUser, sup: CurrentUser, laGone: CurrentUser;
-const PN = "PN-0001003";
+const PN = "GD1652026901003";
 const today = () => businessDate(new Date());
 const REMARKS = "Waiting for the client to sign page 2";
 
@@ -37,8 +37,8 @@ beforeAll(async () => {
   await prisma.user.deleteMany({ where: { email: { startsWith: "zz." } } });
   await prisma.role.deleteMany({ where: { key: "ZSUP" } });
   const laRole = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
-  const loanBranch = (await prisma.branch.findFirstOrThrow({ where: { name: "Cebu" } })).id;
-  const otherBranch = (await prisma.branch.findFirstOrThrow({ where: { name: "Quezon City" } })).id;
+  const loanBranch = (await prisma.branch.findFirstOrThrow({ where: { name: "Angono" } })).id;
+  const otherBranch = (await prisma.branch.findFirstOrThrow({ where: { name: "Antipolo" } })).id;
   // A second LA of the loan's branch, an LA who will be inactive, and a supervisor of another branch.
   await prisma.user.create({ data: { email: "zz.la2@gdfi.ph", name: "Second Loan Associate", roleId: laRole.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });
   await prisma.user.create({ data: { email: "zz.lagone@gdfi.ph", name: "Leaving Loan Associate", roleId: laRole.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });

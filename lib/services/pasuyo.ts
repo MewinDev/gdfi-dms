@@ -48,7 +48,7 @@ export async function passJob(u: CurrentUser, assignmentId: string, raw: unknown
     if (a.status !== "ACCEPTED" || a.transaction.status !== "IN_PROCESS" || a.processing) {
       throw new UserError("A job can be passed on only while it is accepted and in process, before it is completed or forwarded.");
     }
-    const to = await tx.user.findFirst({ where: { id: d.toUserId, active: true, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } }, select: { id: true, name: true, branches: { select: { branchId: true } } } });
+    const to = await tx.user.findFirst({ where: { id: d.toUserId, active: true, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } }, select: { id: true, name: true, homeBranchId: true, branches: { select: { branchId: true } } } });
     if (!to) throw new UserError("Pick an active processor.", "toUserId");
     if (to.id === u.id || to.id === a.dpUserId || to.id === a.secondaryDpUserId) throw new UserError("Pick a processor other than the current one.", "toUserId");
 
@@ -67,7 +67,8 @@ export async function passJob(u: CurrentUser, assignmentId: string, raw: unknown
       } else {
         // The balance moves to the second processor on a new advance (released, same due date); the old line shows it as handed over.
         const number = await nextNumber(tx, now);
-        const branchId = to.branches[0]?.branchId ?? a.dpBranchId;
+        // The second processor's home branch (else their first branch, else the job's).
+        const branchId = to.homeBranchId ?? to.branches[0]?.branchId ?? a.dpBranchId;
         // The handed-over balance keeps the funds type of the record it came from.
         const parent = await tx.cashAdvance.findUniqueOrThrow({ where: { id: h.advanceId }, select: { fundsTypeId: true, fundsTypeCode: true, fundsTypeName: true } });
         const adv = await tx.cashAdvance.create({

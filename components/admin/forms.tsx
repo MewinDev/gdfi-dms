@@ -6,6 +6,8 @@ import { SAVED_EVENT } from "./settings-modal";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { mockOverrideAction, saveFundsSettingsAction, saveSettingsAction, saveUserAction, toggleAction } from "@/app/actions/admin";
 import { FormMessage, SubmitButton } from "@/components/form-status";
+import { BranchAccessField, type AccessOtherUser, type AccessTreeDivision, type AccessValue } from "./branch-access/branch-access-field";
+import type { BranchPlace } from "@/lib/branches/access";
 
 /**
  * Submits a form to its action without React's automatic form reset, so a refused save keeps what
@@ -127,7 +129,7 @@ export function MockOverrideForm({ current }: { current: [string, { totalRelease
       <p className="font-semibold">Simulate a source change (mock MyLoans only)</p>
       <p className="text-xs text-ink-2">Changes the amount MyLoans returns for a PN. Refreshing an open Loan File then flags the change for the LA and Supervisor; transactions are never changed.</p>
       <form action={action} className="mt-3 flex flex-wrap items-end gap-3">
-        <div className="w-44"><label htmlFor="mo-pn" className="label">PN</label><input id="mo-pn" name="pn" required className="input" placeholder="PN-0001001" /></div>
+        <div className="w-44"><label htmlFor="mo-pn" className="label">PN</label><input id="mo-pn" name="pn" required className="input" placeholder="GD1012026901001" /></div>
         <div className="w-44"><label htmlFor="mo-amt" className="label">New amount (PHP)</label><input id="mo-amt" name="amount" inputMode="decimal" className="input" placeholder="550000" /></div>
         <SubmitButton>Apply</SubmitButton>
         <SubmitButton className="btn-secondary" name="$clear" value="1">Clear for this PN</SubmitButton>
@@ -147,11 +149,12 @@ export function MockOverrideForm({ current }: { current: [string, { totalRelease
  * Plain errors beside the fields. Never sets passwords or sign-in.
  */
 export function UserEditForm({
-  user, roles, branches, formId, listHref, effect,
+  user, roles, access, formId, listHref, effect,
 }: {
-  user: { id: string; name: string; email: string; roleId: string; active: boolean; branchIds: string[] } | null;
-  roles: { id: string; name: string; canSignIn: boolean; builtIn: boolean; active: boolean; permissions: string[] }[];
-  branches: { id: string; name: string; active: boolean }[];
+  user: { id: string; name: string; email: string; roleId: string; active: boolean } | null;
+  roles: { id: string; name: string; canSignIn: boolean; builtIn: boolean; active: boolean; permissions: string[]; admin?: boolean; allByDefault?: boolean }[];
+  /** Branch access: the tree, this user's access, other users to copy from. */
+  access: { tree: AccessTreeDivision[]; hiddenPlaces: BranchPlace[]; initial: AccessValue; others: AccessOtherUser[] };
   formId: string;
   listHref: string;
   /** What making this user inactive does (asked before saving). */
@@ -172,7 +175,7 @@ export function UserEditForm({
   }, null);
   const uid = user?.id ?? "new";
   const err = (name: string) => (state && !state.ok && state.field === name ? state.error : undefined);
-  const general = state && !state.ok && !["name", "email", "roleId", "branchIds", "active"].includes(state.field ?? "") ? state.error : undefined;
+  const general = state && !state.ok && !["name", "email", "roleId", "branchIds", "access", "homeBranchId", "active"].includes(state.field ?? "") ? state.error : undefined;
   const fieldErr = (name: string) => err(name) && <p id={`u-${name}-${uid}-err`} className="mt-1.5 text-sm text-bad-fg">{err(name)}</p>;
   return (
     <form
@@ -241,18 +244,14 @@ export function UserEditForm({
           <p className="help">Built-in roles that may sign in: Admin and Loan Associate. Custom roles: test users in test mode only.</p>
           {fieldErr("roleId")}
         </div>
-        <fieldset className="sm:col-span-2">
-          <legend className="label">Branches</legend>
-          <div className="flex flex-wrap gap-x-5 gap-y-1">
-            {branches.filter((b) => b.active || user?.branchIds.includes(b.id)).map((b) => (
-              <label key={b.id} className="inline-flex min-h-11 items-center gap-2.5 text-[15px]">
-                <input type="checkbox" name="branchIds" value={b.id} defaultChecked={user?.branchIds.includes(b.id)} className="h-5 w-5 accent-[var(--navy)]" />
-                {b.name}{!b.active && <span className="chip c-mute h-6 text-xs">Inactive</span>}
-              </label>
-            ))}
-          </div>
-          {fieldErr("branchIds")}
-        </fieldset>
+        <div className="sm:col-span-2">
+          <BranchAccessField
+            tree={access.tree} hiddenPlaces={access.hiddenPlaces} initial={access.initial} others={access.others.filter((o) => o.id !== user?.id)}
+            adminRoleIds={roles.filter((r) => r.admin).map((r) => r.id)} roleSelectId={`u-role-${uid}`}
+            allByDefaultRoleIds={user ? undefined : roles.filter((r) => r.allByDefault).map((r) => r.id)}
+            error={err("access") ?? err("branchIds")} homeError={err("homeBranchId")}
+          />
+        </div>
         <div className="sm:col-span-2">
           <label htmlFor={`u-active-${uid}`} className="inline-flex min-h-11 cursor-pointer items-center gap-3 text-[15px] font-medium">
             <input id={`u-active-${uid}`} type="checkbox" role="switch" name="active" defaultChecked={user?.active ?? true} className="h-5 w-5 accent-[var(--navy)]" />

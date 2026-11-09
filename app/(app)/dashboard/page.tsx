@@ -18,6 +18,7 @@ import { DpHome } from "@/components/jobs/dp-home";
 import { FinanceHome } from "@/components/funds/finance-home";
 import { TatProblemsCard } from "@/components/jobs/tat-report";
 import { SourceChangesCard } from "@/components/loan/source-changes-card";
+import { BranchReviewCard } from "@/components/admin/branches/review-card";
 import { PackagesToReceive } from "@/components/jobs/packages-to-receive";
 import { SentBackToYou } from "@/components/loan/sent-back-to-you";
 
@@ -83,6 +84,7 @@ export default async function HomePage() {
           <PackagesToReceive user={user} />
           <SentBackToYou user={user} />
           {can(user, PERMISSIONS.SOURCE_REVIEW) && <SourceChangesCard />}
+          {can(user, PERMISSIONS.SOURCE_MANAGE) && <BranchReviewCard />}
           {can(user, PERMISSIONS.REPORTS_TAT) && <TatProblemsCard />}
           <section aria-labelledby="next-title" className="card overflow-hidden">
             <div className="flex items-baseline justify-between gap-3 px-4 pb-3 pt-4 sm:px-6 sm:pt-[22px]">

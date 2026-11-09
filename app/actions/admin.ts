@@ -31,7 +31,8 @@ export async function saveUserAction(_prev: ActionState, fd: FormData): Promise<
       email: str(fd, "email"),
       roleId: str(fd, "roleId"),
       active: fd.get("active") === "on",
-      branchIds: fd.getAll("branchIds").map(String),
+      // Branch access from the tree (JSON); older forms send branch ids.
+      ...(fd.has("access") ? { access: str(fd, "access") } : { branchIds: fd.getAll("branchIds").map(String) }),
     });
     revalidatePath("/admin/users");
     return "User saved.";

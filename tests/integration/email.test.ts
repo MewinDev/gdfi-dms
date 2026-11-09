@@ -28,7 +28,7 @@ const okSender = () => { const calls: Msg[] = []; return { calls, send: async (m
 
 const emailRows = () => prisma.emailOutbox.findMany({ orderBy: { createdAt: "asc" } });
 const note = (event: keyof typeof EMAIL_EVENTS, userIds: string[], extra: Record<string, unknown> = {}) =>
-  prisma.$transaction((tx) => notify(tx, { userIds, title: "t", body: "b", link: "/jobs/x", email: { event, vars: { pn: "PN-0001003", transaction: "Notary", who: "Ana" }, ...extra } }));
+  prisma.$transaction((tx) => notify(tx, { userIds, title: "t", body: "b", link: "/jobs/x", email: { event, vars: { pn: "GD1652026901003", transaction: "Notary", who: "Ana" }, ...extra } }));
 
 beforeAll(async () => {
   la = await asUser("test.la@gdfi.ph");
@@ -63,7 +63,7 @@ describe("Switch Not active (the default)", () => {
     await note("job_sent", [joy.id]);
     const [r] = await emailRows();
     expect(r).toMatchObject({ event: "job_sent", status: "SKIPPED", lastError: "Emails are off", userId: joy.id });
-    expect(r.html).toContain("PN-0001003: Notary sent to you");
+    expect(r.html).toContain("GD1652026901003: Notary sent to you");
     const s = okSender();
     expect(await drainOutbox({ send: s.send })).toMatchObject({ sent: 0 });
     expect(s.calls).toHaveLength(0);
@@ -92,8 +92,8 @@ describe("Switch Active", () => {
   it("a real action (Send to a processor) queues the processor's email in the same transaction; test mode redirects and prefixes", async () => {
     expect(await prisma.auditLog.count({ where: { action: "email_switch_changed" } })).toBeGreaterThan(0);
     await cleanLoans();
-    await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+    await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
+    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
     const txn = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code: "EDST" } }, include: { checks: true } });
     const notary = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code: "NOTARY" } }, include: { checks: true } });
     void txn;
@@ -102,7 +102,7 @@ describe("Switch Active", () => {
     await assignToDp(la, { transactionId: notary.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: office.id, fundsNeeded: "NO", fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null });
     const r = await prisma.emailOutbox.findFirstOrThrow({ where: { event: "job_sent" } });
     expect(r).toMatchObject({ status: "QUEUED", userId: dp.id, toAddress: "qa.inbox@gdfi.ph", intendedAddress: "test.dp@gdfi.ph", transactionId: notary.id, urgent: true });
-    expect(r.subject).toBe("[TEST] PN-0001003: Notary sent to you");
+    expect(r.subject).toBe("[TEST] GD1652026901003: Notary sent to you");
     expect(r.html).toContain("Would have gone to: Test Document Processor (DP)");
     expect(r.link).toMatch(/^http:\/\/localhost:3001\/jobs\//);
     expect(r.text).toContain(`Process at: ${office.name}.`);
@@ -117,7 +117,7 @@ describe("Switch Active", () => {
     await note("job_sent", [joy.id, dp.id]);
     const rows = await emailRows();
     expect(rows.find((r) => r.userId === dp.id)).toMatchObject({ status: "SKIPPED", lastError: "Sample user: never emailed" });
-    expect(rows.find((r) => r.userId === joy.id)).toMatchObject({ status: "QUEUED", toAddress: joy.email, subject: "PN-0001003: Notary sent to you" });
+    expect(rows.find((r) => r.userId === joy.id)).toMatchObject({ status: "QUEUED", toAddress: joy.email, subject: "GD1652026901003: Notary sent to you" });
   });
 
   it("per-event switch, per-person non-urgent switch, inactive people", async () => {
@@ -166,15 +166,15 @@ describe("The sender worker", () => {
 
   it("two of the same event for the same person within a minute: one email listing both", async () => {
     await note("job_sent", [joy.id]);
-    await prisma.$transaction((tx) => notify(tx, { userIds: [joy.id], title: "t", body: "b", email: { event: "job_sent", vars: { pn: "PN-0001004", transaction: "Entry of PPSR", who: "Ana" } } }));
+    await prisma.$transaction((tx) => notify(tx, { userIds: [joy.id], title: "t", body: "b", email: { event: "job_sent", vars: { pn: "GD1652026901004", transaction: "Entry of PPSR", who: "Ana" } } }));
     const s = okSender();
     expect(await drainOutbox({ send: s.send })).toMatchObject({ sent: 0 }); // waits up to a minute for more
     const later = new Date(Date.now() + 62_000);
     expect(await drainOutbox({ now: later, send: s.send })).toMatchObject({ sent: 2 });
     expect(s.calls).toHaveLength(1);
     expect(s.calls[0]).toMatchObject({ to: joy.email, subject: "2 updates: Job sent to a processor" });
-    expect(s.calls[0].html).toContain("PN-0001003: Notary sent to you");
-    expect(s.calls[0].html).toContain("PN-0001004: Entry of PPSR sent to you");
+    expect(s.calls[0].html).toContain("GD1652026901003: Notary sent to you");
+    expect(s.calls[0].html).toContain("GD1652026901004: Entry of PPSR sent to you");
     const rows = await emailRows();
     expect(rows.map((r) => r.status)).toEqual(["SENT", "SENT"]);
     expect(rows[1].batchedIntoId).toBe(rows[0].id);
@@ -235,7 +235,7 @@ describe("Messages (templates)", () => {
     expect(await prisma.auditLog.count({ where: { action: "email_template_changed" } })).toBeGreaterThan(0);
     await setEmailActive(admin, true);
     await note("job_sent", [joy.id]);
-    expect((await emailRows())[0].subject).toBe("[TEST] New job: PN-0001003");
+    expect((await emailRows())[0].subject).toBe("[TEST] New job: GD1652026901003");
     await resetEmailTemplate(admin, "job_sent");
     expect((await getSetting("email.templates")).job_sent).toBeUndefined();
     expect(await prisma.auditLog.count({ where: { action: "email_template_reset" } })).toBeGreaterThan(0);
@@ -249,8 +249,8 @@ describe("Reminders", () => {
   it("weekends and holidays: no reminders; approval waiting more than a business day: once a day, to the approvers", async () => {
     await setEmailActive(admin, true);
     await cleanLoans();
-    await openLoanFile(la, { pn: "PN-0001003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+    await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
+    const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
     const notary = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code: "NOTARY" } }, include: { checks: true } });
     await saveChecklist(la, { transactionId: notary.id, checkedIds: notary.checks.map((c) => c.id), newOthers: [] });
     const office = await prisma.ltoOffice.findFirstOrThrow({ where: { active: true }, orderBy: { code: "asc" } });

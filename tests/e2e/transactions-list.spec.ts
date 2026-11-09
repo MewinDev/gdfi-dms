@@ -26,15 +26,15 @@ async function noSideways(page: Page) {
   expect(over, `page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
 }
 async function openPn3(page: Page) {
-  await page.goto("/loans?fill=PN-0001003");
+  await page.goto("/loans?fill=GD1652026901003");
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
-  await expect(page).toHaveURL(/\/loans\/PN-0001003/);
+  await expect(page).toHaveURL(/\/loans\/GD1652026901003/);
 }
-const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "PN-0001003" }, type: { code } }, include: { checks: true } });
+const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code } }, include: { checks: true } });
 /** The Check documents list at this width (side list at 1100+, strip below). */
 const checkList = (page: Page) => (wide(page) ? page.getByRole("region", { name: /^Transactions \(\d+\)$/ }) : page.getByRole("region", { name: "Transactions", exact: true }));
 /** The one status pill, the short line and the day count (plain text) of one row (null when the row has none). */
@@ -52,10 +52,10 @@ async function texts(_page: Page, row: ReturnType<Page["locator"]>) {
 
 /** For each transaction: the Loan File row and the Check documents row say the same thing. */
 async function sameWording(page: Page, selected = "NOTARY") {
-  await page.goto("/loans/PN-0001003?tab=todo");
+  await page.goto("/loans/GD1652026901003?tab=todo");
   const todo: Record<string, Awaited<ReturnType<typeof texts>>> = {};
   for (const c of ORDER) todo[c] = await texts(page, page.locator(`[data-txn-row=${c}]`));
-  await page.goto(`/loans/PN-0001003?tab=todo&tx=${selected}`);
+  await page.goto(`/loans/GD1652026901003?tab=todo&tx=${selected}`);
   for (const c of ORDER) {
     const check = await texts(page, checkList(page).locator(`[data-txn=${c}]`));
     expect.soft(check.chip, `${c} pill`).toBe(todo[c].chip);
@@ -72,7 +72,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   await openPn3(page);
 
   // Loan File: "All transactions (4)", in order, the Next step one tagged once.
-  await page.goto("/loans/PN-0001003?tab=todo");
+  await page.goto("/loans/GD1652026901003?tab=todo");
   const all = page.locator("[data-all-txns]");
   await expect(all.getByRole("heading")).toHaveText("All transactions (4)");
   expect(await all.locator("[data-txn-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-txn-row")))).toEqual(ORDER);
@@ -81,7 +81,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
 
   // States: Notary sent, EDST being checked, PPSR ready, Mortgage not started.
   const notary = await txnOf("NOTARY");
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const group = page.getByRole("group", { name: /papers$/ }).first();
   for (const box of await group.getByRole("checkbox").all()) if (!(await box.isChecked())) await box.check();
   await expect(page.locator('[id^="send-why-"]')).toHaveText(/funds question/);
@@ -93,9 +93,9 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   await page.getByRole("button", { name: /^Send to (?!processor)/ }).click();
   await page.getByRole("dialog", { name: "Send it now?" }).getByRole("button", { name: "Send", exact: true }).click();
   await expect.poll(async () => (await txnOf("NOTARY")).status).toBe("ASSIGNED");
-  await page.goto("/loans/PN-0001003?tab=todo&tx=EDST");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=EDST");
   await page.getByRole("group", { name: /papers$/ }).first().getByRole("checkbox").first().check();
-  await page.goto("/loans/PN-0001003?tab=todo&tx=PPSR");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=PPSR");
   for (const box of await page.getByRole("group", { name: /papers$/ }).first().getByRole("checkbox").all()) if (!(await box.isChecked())) await box.check();
   await expect.poll(async () => (await txnOf("PPSR")).status).toBe("READY");
 
@@ -103,7 +103,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   // Sent: one short line in the list; who it went to and the LTO office are in the detail only.
   expect(todo.NOTARY.chip).toBe("Sent");
   expect(todo.NOTARY.line).toBe("Waiting for the DP to accept");
-  await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+  await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   await expect(page.locator(`section[id^="job-"]`)).toContainText("Sent to Test Document Processor");
   await expect(page.locator("[data-lto-chip]").filter({ visible: true })).toHaveCount(1);
   expect(todo.MORTGAGE.line ?? "Not started").toBe("Not started");
@@ -132,7 +132,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
 
   // Selecting rows moves the highlight; the order never changes; the strip keeps the open card in view.
   for (const c of ORDER) {
-    await page.goto(`/loans/PN-0001003?tab=todo&tx=${c}`);
+    await page.goto(`/loans/GD1652026901003?tab=todo&tx=${c}`);
     const list = checkList(page);
     expect(await list.locator("[data-txn]").evaluateAll((els) => els.map((e) => e.getAttribute("data-txn")))).toEqual(ORDER);
     await expect(list.locator(`[data-txn=${c}]`)).toHaveAttribute("aria-current", "true");
@@ -148,7 +148,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/tx=PPSR/);
 
-  await page.goto("/loans/PN-0001003?tab=todo");
+  await page.goto("/loans/GD1652026901003?tab=todo");
   await shot(page, "loan-file-todo");
   await noSideways(page);
   // Pressing a row opens Check documents for it.
@@ -159,14 +159,14 @@ test("4 transactions: every one, in order, in both places; one wording for each 
 test("Counts: 1, 2 and 5 transactions (with a custom type)", async ({ page }) => {
   await signIn(page, "la");
   await openPn3(page);
-  const loan = await db.loan.findUniqueOrThrow({ where: { pn: "PN-0001003" } });
+  const loan = await db.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
   const custom = await db.transactionType.create({ data: { code: "ZCOURIER", name: "Z Courier pickup", requiresDp: false, ownerRole: "LA", sortOrder: 90 } });
   const extra = await db.loanTransaction.create({ data: { loanId: loan.id, typeId: custom.id } });
   const counts = async (n: number) => {
-    await page.goto("/loans/PN-0001003?tab=todo");
+    await page.goto("/loans/GD1652026901003?tab=todo");
     if (n > 1) await expect(page.locator("[data-all-txns]").getByRole("heading")).toHaveText(`All transactions (${n})`);
     else await expect(page.locator("[data-all-txns]")).toHaveCount(0);
-    await page.goto("/loans/PN-0001003?tab=todo&tx=NOTARY");
+    await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
     const list = checkList(page);
     if (wide(page)) await expect(list.getByRole("heading", { name: `Transactions (${n})` })).toBeVisible();
     await expect(list.locator("[data-txn]")).toHaveCount(n);

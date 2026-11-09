@@ -96,16 +96,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     ? await Promise.all(t.advanceLines.filter((l) => !l.denied && l.releasedCents > 0).map(async (l) => ({ lineId: l.id, label: `${l.advance.number} · ${EXPENSE_LABEL[l.kind as ExpenseKindKey]}`, balanceCents: (await lineTotals(prisma, l.id)).balance })))
     : [];
   const las = working && a.processing
-    ? await prisma.user.findMany({ where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.RETURNS_ACCEPT } }, branches: { some: { branchId: a.loan.branchId } } }, orderBy: { name: "asc" }, select: { id: true, name: true } })
+    ? await prisma.user.findMany({ where: receiverWhere(a.loan.branchId), orderBy: { name: "asc" }, select: { id: true, name: true } })
     : [];
   const canPass = working && !a.processing && can(user, PERMISSIONS.JOBS_PASUYO);
   const [pasuyoEvents, passBranches, passProcessors, held] = await Promise.all([
     prisma.pasuyoEvent.findMany({ where: { assignmentId: a.id }, orderBy: { createdAt: "asc" } }),
-    canPass ? prisma.branch.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
+    canPass ? prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
     canPass
       ? prisma.user.findMany({
           where: { active: true, id: { notIn: [user.id, a.dpUserId, ...(a.secondaryDpUserId ? [a.secondaryDpUserId] : [])] }, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } },
-          orderBy: { name: "asc" }, select: { id: true, name: true, branches: { select: { branchId: true } } },
+          orderBy: { name: "asc" }, select: { id: true, name: true, allBranches: true, role: { select: { key: true } }, branches: { select: { branchId: true } } },
         })
       : [],
     canPass ? heldFor(prisma, a, user.id) : [],
@@ -155,10 +155,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const forwardBranches: ForwardBranch[] = working && a.processing
     ? await (async () => {
         const [branches, receivers] = await Promise.all([
-          prisma.branch.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-          prisma.user.findMany({ where: { active: true, role: receiverWhere("").role }, orderBy: { name: "asc" }, select: { id: true, name: true, branches: { select: { branchId: true } } } }),
+          prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+          prisma.user.findMany({ where: { active: true, role: receiverWhere("").role }, orderBy: { name: "asc" }, select: { id: true, name: true, allBranches: true, branches: { select: { branchId: true } } } }),
         ]);
-        return branches.map((b) => ({ ...b, las: receivers.filter((r) => r.branches.some((x) => x.branchId === b.id)).map((r) => ({ id: r.id, name: r.name })) })).filter((b) => b.las.length > 0);
+        // Any branch (forwarding is not limited by the DP's own access), then an LA who works there.
+        return branches.map((b) => ({ ...b, las: receivers.filter((r) => r.allBranches || r.branches.some((x) => x.branchId === b.id)).map((r) => ({ id: r.id, name: r.name })) })).filter((b) => b.las.length > 0);
       })()
     : [];
   const withDpCount = t.documents.filter((d) => d.stage === "WITH_DP").length;
@@ -348,7 +349,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 {canPass && (
                   <PasuyoForm
                     assignmentId={a.id} branches={passBranches} defaultBranchId={a.dpBranchId}
-                    processors={passProcessors.map((p) => ({ id: p.id, name: p.name, branchIds: p.branches.map((b) => b.branchId) }))}
+                    processors={passProcessors.map((p) => ({ id: p.id, name: p.name, branchIds: p.allBranches || p.role.key === "ADMIN" ? passBranches.map((b) => b.id) : p.branches.map((b) => b.branchId) }))}
                     heldText={heldCents > 0 ? peso(heldCents) : null}
                   />
                 )}

@@ -9,7 +9,7 @@ describe("sample loans", () => {
 
   it("are exactly the three hand-picked PNs in test mode, with their MyLoans records", () => {
     const s = sampleLoans(true);
-    expect(s.map((x) => x.pn)).toEqual(["PN-0001001", "PN-0001003", "PN-0001004"]);
+    expect(s.map((x) => x.pn)).toEqual(["GD1012026901001", "GD1652026901003", "GD1652026901004"]);
     for (const x of s) {
       expect(x.record?.pn).toBe(x.pn);
       expect(x.tests.length).toBeGreaterThan(10);
@@ -21,9 +21,9 @@ describe("sample loans", () => {
   it("data-check PNs need both test mode and the Admin setting", () => {
     expect(dataCheckSamples(true, false)).toEqual([]);
     const d = dataCheckSamples(true, true).map((x) => x.pn);
-    expect(d).toContain("PN-9999999");
-    expect(d).toContain("PN-0001007");
-    expect(d).toContain("PN-0001011");
+    expect(d).toContain("GD1012026999999");
+    expect(d).toContain("GD3902026901007");
+    expect(d).toContain("GD1652026901011");
   });
 
   it("the two groups do not overlap", () => {
