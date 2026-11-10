@@ -20,8 +20,9 @@ import { Stepper } from "@/components/ui/stepper";
 import { FixProblem, ReportProblem, WorkCard, type Line, type SendOptions } from "@/components/loan/work";
 import { OverrideForm, RefreshButton } from "@/components/loan/forms";
 import { JourneyTab } from "@/components/loan/journey/journey-tab";
+import { DocCard, type PaperCard } from "@/components/loan/documents-tab";
+import { PAPERS_FILTERS, countText, custodyLine, emptyText, filterCounts, filterPapers, papersFilterOf, shortCode, whereOf } from "@/lib/ui/documents-tab";
 import { AddTransaction, MarkDone } from "@/components/loan/add-transaction";
-import { DOC_STAGE_LABEL } from "@/components/loan/document-card";
 import { TxnJobPanel } from "@/components/jobs/txn-job-panel";
 import { flagKindChoices } from "@/lib/services/expense-kinds";
 import { SelectionFocus, StoredToast, TxnSideList, TxnStrip, type TxnItem } from "@/components/loan/txn-switcher";
@@ -64,7 +65,7 @@ const TAB_ALIASES: Record<string, string> = { overview: "todo", transactions: "t
 /** Old addresses of the History tab: they open the Journey tab. */
 const OLD_HISTORY = ["history", "activity"];
 
-export default async function LoanFilePage({ params, searchParams }: { params: Promise<{ pn: string }>; searchParams: Promise<{ tab?: string; notice?: string; work?: string; tx?: string; scope?: string; journey?: string; show?: string; txn?: string; flag?: string; order?: string; log?: string; sys?: string; na?: string }> }) {
+export default async function LoanFilePage({ params, searchParams }: { params: Promise<{ pn: string }>; searchParams: Promise<{ tab?: string; notice?: string; work?: string; tx?: string; papers?: string; scope?: string; journey?: string; show?: string; txn?: string; flag?: string; order?: string; log?: string; sys?: string; na?: string }> }) {
   const user = await requirePagePermission(PERMISSIONS.LOANS_VIEW);
   const { pn } = await params;
   const sp = await searchParams;
@@ -148,7 +149,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
           <TodoTab loan={loan} ctx={ctx} user={user} labelsPending={labelsPending.length} step={step} related={<RelatedLoansCard loanId={loan.id} rows={related.rows} hidden={related.hidden} />} />
         </>
       )}
-      {tab === "documents" && <DocumentsTab loan={loan} la={can(user, PERMISSIONS.LABELS_PRINT)} />}
+      {tab === "documents" && <DocumentsTab loan={loan} la={can(user, PERMISSIONS.LABELS_PRINT)} papers={sp.papers} />}
       {tab === "journey" && <JourneyTab loan={loan} user={user} params={{ journey: sp.journey, show: sp.show, txn: sp.txn, flag: sp.flag, order: sp.order, log: sp.log, sys: sp.sys, na: sp.na, scope: sp.scope }} />}
     </div>
   );
@@ -682,57 +683,48 @@ async function LaHoldStrip({ txn, user }: { txn: Txn; user: CurrentUser }) {
 // Documents
 // ===========================================================================
 
-function DocumentsTab({ loan, la }: { loan: LoanDetail; la: boolean }) {
+function DocumentsTab({ loan, la, papers }: { loan: LoanDetail; la: boolean; papers?: string }) {
   const labelled = loan.documents.filter((d) => d.documentId);
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
   const base = `/loans/${loan.pn}`;
+  const filter = papersFilterOf(papers);
+  const counts = filterCounts(loan.documents);
+  const cards: PaperCard[] = live.flatMap((t) => {
+    const all = loan.documents.filter((d) => d.transactionId === t.id);
+    const shown = filterPapers(all, filter);
+    if (!all.length || !shown.length) return [];
+    const ids = all.filter((d) => d.documentId).map((d) => d.id);
+    return [{
+      id: t.id, code: t.type.code, name: txnName(t.type.code, t.type.name), count: countText(all),
+      print: la && ids.length ? { href: `${base}/labels?ids=${ids.join(",")}`, n: ids.length } : null,
+      openOnPhone: all.some((d) => d.stage === "AT_BRANCH"),
+      rows: shown.map((d) => ({
+        id: d.id, label: d.label, original: d.originality === "ORIGINAL",
+        code: d.documentId, short: d.documentId ? shortCode(d.documentId, loan.pn) : null,
+        where: whereOf(d), custody: custodyLine(d),
+        printHref: d.documentId && la ? `${base}/labels?ids=${d.id}` : null,
+      })),
+    }];
+  });
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-[15px] text-ink-2">{labelled.length} of {loan.documents.length} papers are in your hands and have a label code.</p>
+    <div className="@container flex min-w-0 flex-col gap-3" data-documents-tab data-papers={filter}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-ink-2">{labelled.length} of {loan.documents.length} papers are in your hands and have a label code.</p>
         {la && labelled.length > 0 && (
-          <Link href={`${base}/labels`} className="btn-gold w-full sm:w-auto"><PrinterIcon size={20} /> Print all labels</Link>
+          <Link href={`${base}/labels`} className="btn-gold w-full sm:w-auto" data-print-all><PrinterIcon size={20} /> Print all labels</Link>
         )}
       </div>
-      {live.map((t) => {
-        const docs = loan.documents.filter((d) => d.transactionId === t.id);
-        if (docs.length === 0) return null;
-        return (
-          <section key={t.id} aria-labelledby={`d-${t.id}`} className="card overflow-hidden">
-            <h2 id={`d-${t.id}`} className="border-b border-line px-5 py-3.5 text-lg font-bold text-navy">{txnName(t.type.code, t.type.name)}</h2>
-            <ul>
-              {docs.map((d) => (
-                <li key={d.id} className="flex flex-col gap-2 border-b border-line px-5 py-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold">
-                      {d.label} <span className="tag">{d.originality === "ORIGINAL" ? "Original" : "Copy"}</span>
-                    </p>
-                    {d.documentId && <p className="mono text-xs text-ink-2">{d.documentId}</p>}
-                  </div>
-                  <div className="text-sm sm:w-64">
-                    {d.stage === "EXPECTED" ? (
-                      <span className="text-ink-2">Not with you yet</span>
-                    ) : (
-                      <>
-                        <span className="block font-medium text-ink">{d.stage === "AT_BRANCH" ? `At the ${d.location || "branch"}` : d.location || DOC_STAGE_LABEL[d.stage] || d.stage}</span>
-                        <span className="block text-ink-2">{d.custodianLabel}, since {timeAgo(d.since).toLowerCase()}</span>
-                      </>
-                    )}
-                  </div>
-                  <div className="sm:w-36 sm:text-right">
-                    {d.documentId && la ? (
-                      <Link href={`${base}/labels?ids=${d.id}`} className="btn-ghost btn-sm w-full sm:w-auto">Print label</Link>
-                    ) : d.documentId ? (
-                      <span className="text-xs text-ink-2">{d.labelPrintedAt ? "Label printed" : "Label not printed"}</span>
-                    ) : null}
-                    {d.labelPrintedAt && la && <span className="mt-1 block text-xs text-ok-fg">Printed {timeAgo(d.labelPrintedAt).toLowerCase()}</span>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+      <div role="group" aria-label="Show papers" className="inline-flex self-start overflow-hidden rounded-lg border border-line-strong" data-papers-filter>
+        {PAPERS_FILTERS.map((f) => (
+          <Link key={f.key} href={`${base}?tab=documents${f.key === "all" ? "" : `&papers=${f.key}`}`} scroll={false} aria-current={filter === f.key ? "true" : undefined}
+            className={`inline-flex min-h-11 items-center gap-1.5 px-3 text-sm font-semibold no-underline sm:min-h-8 ${filter === f.key ? "bg-navy text-white" : "bg-white text-navy hover:bg-fill"}`} data-papers-filter-option={f.key}>
+            {f.label}<span className={`tabular-nums text-xs ${filter === f.key ? "text-white/80" : "text-ink-2"}`}>{counts[f.key]}</span>
+          </Link>
+        ))}
+      </div>
+      {cards.length === 0
+        ? <p className="card p-4 text-sm text-ink-2" data-papers-empty>{emptyText(filter)}</p>
+        : <div className="grid min-w-0 grid-cols-1 items-start gap-3 @min-[960px]:grid-cols-2" data-doc-grid>{cards.map((c) => <DocCard key={c.id} c={c} />)}</div>}
     </div>
   );
 }

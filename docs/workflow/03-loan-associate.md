@@ -78,6 +78,20 @@ The card is soft amber for a returned transaction, soft red for a problem, soft 
 
 ![After All received: fix and send again, the findings shown once](../screenshots/loan-file-next-step/returned-fix-step-1440.png)
 
+## Documents tab
+
+The Documents tab lists every paper of the loan file, one compact card per transaction, in the usual order. It only shows; ticking papers stays on Check documents, and printing works as before.
+
+- At the top: "8 of 23 papers are in your hands and have a label code", **Print all labels**, and the filter **All · With you · Not yet** with its counts. The filter is kept in the address (`?papers=with-you`), so a refresh keeps it; "Not yet" with nothing left says "All papers are with you."
+- Each card: the transaction, "7 of 7 with you", and **Print labels (N)** for that card's papers (the same label page, with only those papers; hidden when none has a label).
+- One line per paper: Paper, Type (Original or Copy), Label (the short code, for example `CHM-01`; the full code is in the tooltip and the details), Where (**With you** with a green dot, **Not yet** in grey, or a short phrase such as "At DP 1" or "On the way"), and **Print** when the paper has a label. "Not yet" lines are dimmed but keep their word.
+- Press a line (or Enter) to open its details: who has it, where and since when, in Philippine time ("Test Loan Associate (LA, Angono) at the Angono branch, since Nov 10, 9:29 AM"), whether the label was printed, and the full label code. The same sentence is the line's tooltip.
+- Two cards per row when the page is wide enough (1440), one column on a tablet, and on a phone collapsible cards (the ones with papers in hand open) with each paper on two lines and a full-size Print button.
+
+![Documents tab: two cards per row, one line per paper](../screenshots/documents-tab/all-1440.png)
+
+![Documents tab: a paper's details line, in Philippine time](../screenshots/documents-tab/row-details-open-1440.png)
+
 ## How to read the Journey
 
 The Journey tab of the Loan File reads the same record three ways. Nothing is changed by reading it; the TAT clock never pauses.
