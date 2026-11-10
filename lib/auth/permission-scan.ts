@@ -7,7 +7,7 @@ import path from "node:path";
  * or is on this short allow-list with the reason and the check it uses instead. Buttons only hide for
  * convenience; the server is the real check. docs/workflow/12-permissions.md prints this list.
  */
-export const CHECK_CALLS = ["requirePermission(", "requireAnyPermission(", "requirePagePermission(", "requirePageAny(", "can("];
+export const CHECK_CALLS = ["requirePermission(", "requireAnyPermission(", "requirePagePermission(", "requirePageAny(", "can(", "canFunds(", "canFundsAny("];
 
 export interface AllowEntry {
   file: string;

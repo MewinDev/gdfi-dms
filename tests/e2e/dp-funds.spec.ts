@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
+import { approveWithConfirm } from "./approve";
 import { completeAndForwardUi, workStagesUi } from "./helpers";
 
 /**
@@ -106,6 +107,8 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   await noSideways(page);
   await page.getByRole("button", { name: "Send to Finance" }).click();
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
+  // A new Cash advance is numbered CA-<year>-<4 digits> (its own running number).
+  expect((await db.cashAdvance.findFirstOrThrow()).number).toMatch(/^CA-\d{4}-\d{4}$/);
 
   // Finance: approve, release.
   await signInAs(page, "fin");
@@ -113,7 +116,7 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   await expect(page.locator("[data-advance] [data-amount]")).toHaveText("₱1,500.00");
   await shot(page, "finance-to-approve");
   await noSideways(page);
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await approveWithConfirm(page);
   // The card leaves the tab once it is decided, so check the saved status.
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
   await page.goto("/funds?tab=release");

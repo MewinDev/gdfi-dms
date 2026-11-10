@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { roleCheckAction, roleCommandAction, saveRoleAction } from "@/app/actions/admin";
 import { PERMISSION_GROUPS, permissionLabel, plainWords, type PermissionDef } from "@/lib/auth/permissions";
 import { tick, tickMany } from "@/lib/roles/impact";
@@ -270,11 +270,19 @@ export function RoleEditor({
                 </div>
                 {open && (
                   <ul id={`grp-${g.key}`} className="divide-y divide-[rgb(12_35_64/0.08)] border-t border-line">
-                    {rows.map((r) => (
-                      <li key={r.kind === "one" ? r.item.key : r.change.key} className={`px-4 py-3 ${r.kind === "pair" ? "flex flex-col gap-3 sm:flex-row sm:gap-6" : "flex"}`} data-pair={r.kind === "pair" ? `${r.view.key}|${r.change.key}` : undefined}>
-                        {r.kind === "one" ? tickBox(r.item) : <>{tickBox(r.view, "View")}{tickBox(r.change, "Change")}</>}
-                      </li>
-                    ))}
+                    {rows.map((r, i) => {
+                      // A sub-heading where a block starts (Funds: Cash advance, Fund transfer).
+                      const sub = r.kind === "one" ? r.item.subgroup : r.view.subgroup;
+                      const prev = i > 0 ? (rows[i - 1].kind === "one" ? (rows[i - 1] as { item: PermissionDef }).item.subgroup : (rows[i - 1] as { view: PermissionDef }).view.subgroup) : undefined;
+                      return (
+                        <Fragment key={r.kind === "one" ? r.item.key : r.change.key}>
+                          {sub && sub !== prev && <li className="bg-fill/60 px-4 py-2 text-sm font-bold text-navy" data-subgroup={sub}>{sub}</li>}
+                          <li className={`px-4 py-3 ${r.kind === "pair" ? "flex flex-col gap-3 sm:flex-row sm:gap-6" : "flex"}`} data-pair={r.kind === "pair" ? `${r.view.key}|${r.change.key}` : undefined}>
+                            {r.kind === "one" ? tickBox(r.item) : <>{tickBox(r.view, "View")}{tickBox(r.change, "Change")}</>}
+                          </li>
+                        </Fragment>
+                      );
+                    })}
                   </ul>
                 )}
               </section>

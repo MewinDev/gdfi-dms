@@ -66,24 +66,31 @@ When a planned item is built, change its status to Built only after checking it 
   - whether Notary and Entry of PPSR should run the LTO stages (they have "Needs LTO processing" on today);
   - whether Check and verify applies to every transaction type or only the LTO ones;
   - whether starting LTO drop off should stay blocked until the job is funded (today it follows the "At the LTO" funds block).
-- Finance: carry-over days, overnight cash, who approves top-ups, block or only warn at "At the LTO" when unfunded, and who confirms liquidation.
+- Finance: overnight cash, who approves top-ups, block or only warn at "At the LTO" when unfunded, and who confirms liquidation.
+  - **Not confirmed. Current values are placeholders** (10 November 2026: kept as they are for now): the approval bands (the ₱5,000 split between the small and the large approver), the carry-over days, the fund-transfer limit, who may change a type, and the cash-advance voucher reference.
+  - **Answered (confirmed by the users on 10 November 2026):** cash advances and fund transfers are handled by different people. Each Finance step is a tick per type, and the approval bands are per type (copied from the old bands, so nothing changed).
+  - **Not confirmed:** the approval limit for each type (the bands of both types still hold the placeholder values).
 - Holds: the hold reasons list ("Proposed, to be confirmed with the team").
 - Funds types (Finance):
   - confirm the names and codes, Cash advance (CA) and Fund transfer (FT) ("Proposed, to be confirmed with Finance");
-  - whether a Fund transfer needs a different approval limit (today both use the same approval bands);
-  - who may change a type (today Finance, with `funds:release`, before release only);
+  - whether a Fund transfer needs a different approval limit (each type now has its own bands; both still hold the same placeholder values). *Not confirmed. Current values are placeholders.*
+  - who may change a type (today Finance, with `funds:release`, before release only). *Not confirmed. Current values are placeholders.*
   - whether other types are needed (for example a check);
-  - whether a Fund transfer should get its own number series (today every record is numbered CA-year-number).
+  - **Answered (10 November 2026):** a Fund transfer has its own number series, FT-year-number; a Cash advance keeps CA-year-number.
 - Monitoring (Operations):
   - confirm the availability thresholds (Available from 40%, Busy 1% to 39%, Full 0%) and the default capacity of 10 open jobs;
   - whether LTO advisories should end by themselves after some time (today they stay active until someone resolves them; after 24 hours people who can resolve them see "Still active? Please confirm");
   - whether DPs belong to one home branch (today a processor of two branches is grouped under both names together);
-  - whether Finance or branch supervisors should get the monitor permissions (today only Admin and the Operations Monitor have them).
-- PN and branches (MyLoans team and the business):
-  - can a loan move to another branch after release, and does its PN stay the same (the DMS handles both: the PN code is only "opened at")?
-  - does the MyLoans API list branches, and does it give a stable branch id that stays when a code changes (see [Systems](08-systems.md#questions-for-the-myloans-team))?
-  - do the other companies in the MyLoans Company dropdown use another PN prefix than GD, and should the DMS store the Company?
-  - what is the unknown 8-digit column in the branch export (it is not stored)?
+  - **Answered (10 November 2026):** the built-in Branch Supervisor sees the Monitoring pages for DPs and LTO offices (their branches); Finance does not.
+- PN and branches (answered by the business on 10 November 2026; details in [Systems](08-systems.md#answered-by-the-business-10-november-2026)):
+  - **Answered:** MyLoans has no API for branches, areas and divisions; the DMS uses Import and Export (CSV) and never connects to the MyLoans database. The API questions (stable ids, "updated since") are **waiting for the DB admin**, not blockers.
+  - **Answered:** a released loan cannot be edited in MyLoans, so it does not move branch and its PN stays the same. The branch can change before release, but the DMS only captures released loans, so the branch it reads is the branch at release and final. The DMS always uses MyLoans' branch field (never the code inside the PN) for access, notifications and Monitoring; "Opened at X, now at Y" and the branch-change review stay as a safety net, lower priority.
+  - **Answered:** the company uses only the GD prefix (the company name); the PN format setting stays with GD.
+  - **Answered:** MyLoans has two databases, MYLOSDB (LOS: borrower, loan process, branch, area and division tables) and MYLMSDB (LMS: the released computation and status). Risk: if they are out of step, the DMS check "valid PN, branch, RELEASED" could refuse a loan that is really released.
+  - Open (DB admin): can a released loan be cancelled, voided or reversed in MyLoans (this decides whether Refresh and the sync can ever find a change on a released loan)?
+  - Open (DB admin): is there a delay between a loan being released in LOS and showing as released in LMS? Does the PN lookup API read both databases, and which one decides RELEASED? Which tables hold the data we need? What the "Sync" and "LMS Sync Status" screens do is not yet confirmed.
+  - Open (DB admin): the unknown 8-digit column in the branch export (ignored, never stored).
+- Holds: **Answered (10 November 2026):** moving a hold to another person is the tick "Move a hold to another person" (`holds:transfer`) plus the branch rule (only in the person's branches, only to someone with access there). Finance no longer has it; the built-in Branch Supervisor and Admin do.
 - MyLoans team: lookup by PN, search, a changed-since feed, a field linking a replacement PN, status values, a payments field, plate, chassis and engine numbers, rate limit, response time, and a test environment.
 
 [Back to the workflow index](README.md)

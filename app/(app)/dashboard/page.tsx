@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { anyStepKeys, canFundsAny } from "@/lib/funds/access";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { can, requirePageAny, requireUser } from "@/lib/auth/current-user";
@@ -27,12 +28,12 @@ export const metadata: Metadata = { title: "Home" };
 export default async function HomePage() {
   // A monitor-only role (Operations Monitor) has no loan files: their home is the Monitoring page.
   const me = await requireUser();
-  if (![PERMISSIONS.LOANS_VIEW, PERMISSIONS.JOBS_WORK, PERMISSIONS.FUNDS_VIEW_ALL].some((p) => can(me, p)) && (can(me, PERMISSIONS.MONITOR_DP) || can(me, PERMISSIONS.MONITOR_LTO))) redirect("/monitoring");
-  const user = await requirePageAny([PERMISSIONS.LOANS_VIEW, PERMISSIONS.JOBS_WORK, PERMISSIONS.FUNDS_VIEW_ALL]);
+  if (![PERMISSIONS.LOANS_VIEW, PERMISSIONS.JOBS_WORK].some((p) => can(me, p)) && !canFundsAny(me) && (can(me, PERMISSIONS.MONITOR_DP) || can(me, PERMISSIONS.MONITOR_LTO))) redirect("/monitoring");
+  const user = await requirePageAny([PERMISSIONS.LOANS_VIEW, PERMISSIONS.JOBS_WORK, ...anyStepKeys("view")]);
   // The processor and Finance have their own Home (their work is jobs and funds, not loan files).
   const la = can(user, PERMISSIONS.CHECKLIST_TICK);
   if (!la && can(user, PERMISSIONS.JOBS_WORK)) return <DpHome user={user} />;
-  if (!la && (can(user, PERMISSIONS.FUNDS_APPROVE) || can(user, PERMISSIONS.FUNDS_RELEASE))) return <FinanceHome user={user} />;
+  if (!la && (canFundsAny(user, "approve") || canFundsAny(user, "release"))) return <FinanceHome user={user} />;
   const [rows, holidays, updates, samples] = await Promise.all([
     listLoans(user, { tab: "all" }),
     getHolidaySet(),

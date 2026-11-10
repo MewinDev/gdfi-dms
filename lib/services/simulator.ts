@@ -15,7 +15,7 @@ import { moveDocs } from "./custody";
 import { acceptCore, completeCore, declineCore, forwardCore, loadAssignment, receiveCore, receiverWhere, type Who } from "./jobs";
 import { finishStageCore, materialize, startStageCore, verifiablePapers, verifyPaperCore } from "./job-stages";
 import type { EvidenceField } from "@/lib/stages/rules";
-import { refreshAdvance } from "./funds";
+import { nextNumber, refreshAdvance } from "./funds";
 import { decimalToCents, liquidationDue, peso } from "@/lib/funds/rules";
 import { businessDate } from "@/lib/time";
 
@@ -100,9 +100,7 @@ async function simulateInner(user: CurrentUser, input: { loanId: string; action:
         const kinds = a.transaction.fundsKinds.length ? a.transaction.fundsKinds : ["OTHER" as const];
         const lines = kinds.map((k) => ({ transactionId: a.transactionId, kind: k, otherDescription: k === "OTHER" ? "Simulator test" : "", requestedCents: decimalToCents(rules.find((r) => r.kind === k)?.suggestedAmount ?? null) ?? 100000 }));
         const total = lines.reduce((x, l) => x + l.requestedCents, 0);
-        const year = businessDate(now).slice(0, 4);
-        const count = await tx.cashAdvance.count({ where: { number: { startsWith: `CA-${year}-` } } });
-        const adv = await tx.cashAdvance.create({ data: { number: `CA-${year}-${String(count + 1).padStart(4, "0")}`, requestedById: a.dpUserId, branchId: a.dpBranchId, requestedCents: total, lines: { create: lines } } });
+        const adv = await tx.cashAdvance.create({ data: { number: await nextNumber(tx, now), requestedById: a.dpUserId, branchId: a.dpBranchId, requestedCents: total, lines: { create: lines } } });
         await audit(sim(a.dpUser.name), "advance_requested", "CashAdvance", adv.id, "3.4", `${adv.number} requested by ${a.dpUser.name}: ${peso(total)} for ${a.transaction.type.name}`);
         break;
       }

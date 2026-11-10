@@ -109,3 +109,20 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 | PN | What it is and what it is good for |
 |---|---|
 | GD7182026903040 | At Alicia-Inactive (718), a branch MyLoans closed: opening it is refused ("Alicia-Inactive (718) is inactive in Settings, so no new loan files can be opened for it."). |
+
+## Things to check (10 November 2026)
+
+1. **Approve asks first.** Approve opens "Approve this request?" with the amount in bold and one grey line (number · processor · kind · borrower). Focus is on Cancel; Cancel and Esc change nothing. Approve (gold) says "Approving..." and approves once, even on a double tap: one history line and one notice. After a lowered amount, the window shows the changed total. On a phone it is a bottom sheet.
+2. **Request numbers.** The cash advance is CA-2026-0001 (or the next CA number) and the fund transfer FT-2026-0001 (its own series). After Change type the request has the next number of the new type and "Formerly CA-..." under it and in its history; searching the old number finds it.
+3. **Print liquidation report.** Without the tick there is no Print button, and the report link says "Ask an Admin to turn on 'Print liquidation report' for your role." Finance and Admin print as before.
+4. **Moving a hold.** Finance has no Transfer hold any more. The Branch Supervisor (Antipolo and Angono) and the Area Supervisor (Luzon 1 plus Alaminos) have Transfer hold on loans of their branches and can give the hold only to someone who also has access to that branch. Neither can resume it.
+5. **Who can move holds.** With Admin's tick on, no line shows (Admin has All branches). With it off, "N active branches have nobody who can move a hold." shows with **Show branches**; the supervisors' branches are not in the list.
+6. **Journey filters.** All · Needs attention and the transaction pills. There is no "Mine".
+
+### Funds handled by different people
+
+7. **Finance Cash** sees only cash advances: no fund transfer in any tab, count, total, search result or CSV, no Type filter, and "Cash advances" under the Funds title. A fund transfer's report link says it is not found.
+8. **Finance Transfer** sees only fund transfers, with "Fund transfers" under the title.
+9. **Approver Cash** sees cash advances only and has Approve on them (its role shares both Cash advance bands); **Approver Transfer** the same for fund transfers. Neither sees the other type. Settings, Approval bands lists the shared bands per type (two roles on each amount).
+10. With **Release fund transfers** on no role, Settings, Funds types shows "Nobody can release fund transfers." in soft amber under Fund transfer (and Release: Nobody); Settings, Roles and the top of Funds (Admin) show the same line. Fund transfers wait at To release and the Admin is told. Tick it again and the line goes.
+

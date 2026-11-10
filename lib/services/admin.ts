@@ -1,4 +1,5 @@
 import { FIELD_TYPES, fieldKey, type EvidenceField } from "@/lib/stages/rules";
+import { STEP_KEY, TYPE_ID, TYPE_NOUN } from "@/lib/funds/access";
 import { refuseInProduction } from "@/lib/env";
 import "server-only";
 import { checkPn } from "@/lib/pn";
@@ -194,9 +195,9 @@ export const SETTINGS_SCHEMAS = {
     suggestedAmount: z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), money("Suggested amount").nullable()),
     maxAmount: money("Maximum amount"),
   }).refine((r) => r.suggestedAmount === null || r.suggestedAmount <= r.maxAmount, { message: "Suggested amount cannot be above the maximum.", path: ["suggestedAmount"] }),
-  /** Who approves cash advances, by amount (the band with the highest "from" at or below the amount). */
-  approvalBand: z.object({ fromAmount: z.coerce.number({ message: "Amount from must be a number." }).min(0, "Amount from cannot be below 0."), roleId: text("Approving role") })
-    .transform((b) => ({ fromCents: Math.round(b.fromAmount * 100), roleId: b.roleId })),
+  /** Who approves a funds type, by amount (the band of that type with the highest "from" at or below the amount). */
+  approvalBand: z.object({ fromAmount: z.coerce.number({ message: "Amount from must be a number." }).min(0, "Amount from cannot be below 0."), roleId: text("Approving role"), fundsTypeId: z.string().trim().default("fundstype_ca") })
+    .transform((b) => ({ fromCents: Math.round(b.fromAmount * 100), roleId: b.roleId, fundsTypeId: b.fundsTypeId })),
   /** Problem reasons (also the result of an attempt that was not processed). */
   problemReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
   /** Hold reasons (waiting on something that is not a fault). */
@@ -280,9 +281,12 @@ export async function checkSettingsRow(kind: SettingsKind, id: string | null, da
   }
   if (kind === "branch") await checkBranchRow(id, data, db);
   if (kind === "approvalBand") {
+    // Each type has its own bands; the approving role needs that type's Approve tick.
+    const typeKey = data.fundsTypeId === TYPE_ID.FT ? "FT" : "CA";
+    data.fundsTypeId = TYPE_ID[typeKey];
     const role = await db.role.findUnique({ where: { id: String(data.roleId) } });
     if (!role || !role.active) throw new UserError("Pick an active role.", "roleId");
-    if (!effectivePermissions(role).has(PERMISSIONS.FUNDS_APPROVE)) throw new UserError(`${role.name} cannot approve cash advances (Settings > Roles and access).`, "roleId");
+    if (!effectivePermissions(role).has(STEP_KEY[typeKey].approve)) throw new UserError(`${role.name} cannot approve ${TYPE_NOUN[typeKey]} (Settings > Roles and access).`, "roleId");
   }
   if (kind === "caRule") {
     const tt = await db.transactionType.findUnique({ where: { id: String(data.transactionTypeId) } });

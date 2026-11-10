@@ -268,7 +268,7 @@ describe("Reminders", () => {
     expect(await approvalWaiting(monday, holidays)).toBe(0); // once a day
     const r = await prisma.emailOutbox.findFirstOrThrow({ where: { event: "approval_waiting" } });
     expect(r.subject).toMatch(/still waiting for approval/);
-    const approvers = await prisma.user.findMany({ where: { role: { permissions: { has: "funds:approve" } } }, select: { id: true } });
+    const approvers = await prisma.user.findMany({ where: { role: { permissions: { hasSome: ["funds:ca_approve", "funds:ft_approve"] } } }, select: { id: true } });
     expect(approvers.map((a) => a.id)).toContain(r.userId);
   });
 });

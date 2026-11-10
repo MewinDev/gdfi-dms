@@ -8,8 +8,10 @@ import type { MyLoansRecord } from "@/lib/myloans/types";
 import { saveRole } from "@/lib/services/roles";
 import { writeUserAccess } from "@/lib/services/access";
 import { writeAudit } from "@/lib/audit";
-import { NO_REFRESH_ROLE_NAME, SUPERVISOR_ROLE_NAME } from "./catalog";
+import { NO_REFRESH_ROLE_NAME, SUPERVISOR_ROLE_KEY, SUPERVISOR_ROLE_NAME } from "./catalog";
 import { APPROVER_ROLES, CLEAN_ACCOUNTS, CLEAN_POOL, POOL_BRANCHES, type CleanRole } from "./clean";
+import { BOTH_TYPES_APPROVER, TYPE_ROLES } from "./funds-roles";
+import { TYPE_ID } from "@/lib/funds/access";
 import { importKitBranches, kitAccess } from "./build";
 import { kitRefusal } from "./guard";
 import { shiftBusinessDays } from "./rebase";
@@ -70,24 +72,28 @@ export async function buildClean(log: Log = console.log): Promise<void> {
     return roleIdOf(name);
   };
   const ids: Partial<Record<CleanRole, string>> = {
-    SUPERVISOR: await kitRole(SUPERVISOR_ROLE_NAME, "Sample role (Manual Test Kit): sees the loans of the assigned branches, refreshes them from MyLoans and may transfer holds.",
-      [PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER, PERMISSIONS.MYLOANS_VIEW, PERMISSIONS.LOANS_REFRESH]),
+    // The built-in Branch Supervisor role (or one of that name made by hand before).
+    SUPERVISOR: (await prisma.role.findUnique({ where: { key: SUPERVISOR_ROLE_KEY } }))?.id ?? await roleIdOf(SUPERVISOR_ROLE_NAME),
     LA_NO_REFRESH: await kitRole(NO_REFRESH_ROLE_NAME, "Sample role (Manual Test Kit): a Loan Associate without \"Refresh a loan from MyLoans\". Tick it in Settings, Roles to try it.",
       ROLE_DEFAULTS.LA.permissions.filter((k) => k !== PERMISSIONS.LOANS_REFRESH)),
-    APPROVER_SMALL: await kitRole(APPROVER_ROLES.small.name, "Sample role (Manual Test Kit): approves cash advances in the lowest approval band.",
-      [PERMISSIONS.LOANS_VIEW, PERMISSIONS.FUNDS_VIEW_ALL, PERMISSIONS.FUNDS_APPROVE, PERMISSIONS.FUNDS_KINDS_VIEW]),
-    APPROVER_LARGE: await kitRole(APPROVER_ROLES.large.name, "Sample role (Manual Test Kit): approves cash advances in the higher approval band.",
-      [PERMISSIONS.LOANS_VIEW, PERMISSIONS.FUNDS_VIEW_ALL, PERMISSIONS.FUNDS_APPROVE, PERMISSIONS.FUNDS_KINDS_VIEW]),
+    APPROVER_SMALL: await kitRole(APPROVER_ROLES.small.name, "Sample role (Manual Test Kit): approves cash advances and fund transfers in the lowest approval band.", BOTH_TYPES_APPROVER),
+    APPROVER_LARGE: await kitRole(APPROVER_ROLES.large.name, "Sample role (Manual Test Kit): approves cash advances and fund transfers in the higher approval band.", BOTH_TYPES_APPROVER),
+    // Funds handled by different people: one Finance and one approver role per type.
+    ...Object.fromEntries(await Promise.all(Object.entries(TYPE_ROLES).map(async ([k, r]) => [k, await kitRole(r.name, r.description, r.permissions)]))),
   };
   for (const a of CLEAN_ACCOUNTS) {
     if (a.key === "admin") continue;
     await create(a, ids[a.role] ?? (await builtIn(a.role)));
   }
-  // Approval bands: the lowest band to Approver Small, ₱5,000.00 and up to Approver Large.
+  // Approval bands, the same amounts for both types: the lowest band to Approver Small, ₱5,000.00 and up to
+  // Approver Large; each type's own approver shares both bands of its type, so it approves without a manual step.
   await prisma.approvalBand.deleteMany({});
-  await prisma.approvalBand.create({ data: { fromCents: APPROVER_ROLES.small.fromCents, roleId: ids.APPROVER_SMALL! } });
-  await prisma.approvalBand.create({ data: { fromCents: APPROVER_ROLES.large.fromCents, roleId: ids.APPROVER_LARGE! } });
-  log(`Created ${CLEAN_ACCOUNTS.length} sign-in accounts (1 inactive) and the roles ${SUPERVISOR_ROLE_NAME}, ${NO_REFRESH_ROLE_NAME}, ${APPROVER_ROLES.small.name} and ${APPROVER_ROLES.large.name}; approval bands: from ₱0 ${APPROVER_ROLES.small.name}, from ₱5,000 ${APPROVER_ROLES.large.name}.`);
+  for (const [fundsTypeId, own] of [[TYPE_ID.CA, ids.APPR_CA!], [TYPE_ID.FT, ids.APPR_FT!]] as const) {
+    for (const [fromCents, roleId] of [[APPROVER_ROLES.small.fromCents, ids.APPROVER_SMALL!], [APPROVER_ROLES.small.fromCents, own], [APPROVER_ROLES.large.fromCents, ids.APPROVER_LARGE!], [APPROVER_ROLES.large.fromCents, own]] as const) {
+      await prisma.approvalBand.create({ data: { fundsTypeId, fromCents, roleId } });
+    }
+  }
+  log(`Created ${CLEAN_ACCOUNTS.length} sign-in accounts (1 inactive; the supervisors on the built-in ${SUPERVISOR_ROLE_NAME} role) and the roles ${NO_REFRESH_ROLE_NAME}, ${APPROVER_ROLES.small.name} and ${APPROVER_ROLES.large.name}; approval bands: from ₱0 ${APPROVER_ROLES.small.name}, from ₱5,000 ${APPROVER_ROLES.large.name}.`);
 
   // The PN pool: only in the sample MyLoans. Nothing opened.
   await setSetting("myloans.mockExtra", poolRecords(today, holidays));

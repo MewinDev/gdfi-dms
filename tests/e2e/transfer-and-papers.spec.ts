@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { cleanSettingsTestRows, db, resetLoans } from "./db";
+import { approveWithConfirm } from "./approve";
 
 /**
  * Transfer hold, the inactive sending LA, papers and cash on a Return to LA, and Finance on a held
@@ -99,6 +100,9 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   const role = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Angono" } });
   await db.user.create({ data: { email: "zz.la2@gdfi.ph", name: "Second Loan Associate", roleId: role.id, isTestUser: true, branches: { create: [{ branchId: loanBranch.id }] } } });
+  // The built-in Branch Supervisor of the loan's branch (Finance no longer moves holds).
+  const supRole = await db.role.findUniqueOrThrow({ where: { key: "SUP" } });
+  await db.user.create({ data: { email: "zz.angono.sup@gdfi.ph", name: "Zz Angono Supervisor", roleId: supRole.id, isTestUser: true, branches: { create: [{ branchId: loanBranch.id }] } } });
 
   await signInAs(page, "la");
   await openPn3(page);
@@ -119,8 +123,17 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   await expect(summary.locator("[data-resume-disabled]")).toBeDisabled();
   await shot(page, "hold-summary-plain-user");
 
-  // Finance (the role that approves cash advances, holds:transfer): Transfer hold, never Resume.
+  // Finance no longer moves holds (decision 10 November 2026): no Transfer hold.
   await signInAs(page, "fin");
+  await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
+  await expect(summary.locator("[data-transfer-hold]")).toHaveCount(0);
+
+  // The Branch Supervisor of the loan's branch ("Move a hold to another person"): Transfer hold, never Resume.
+  await page.context().clearCookies();
+  await page.goto("/login");
+  await page.getByLabel("Other test user").selectOption({ label: "Zz Angono Supervisor (Branch Supervisor)" });
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(summary.locator("[data-only-holder]")).toHaveText("Only Test Loan Associate can resume this.");
   await expect(summary.locator("[data-resume]")).toHaveCount(0);
@@ -151,9 +164,9 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   await expect(summary.locator("[data-resume-disabled]")).toBeDisabled();
   // The Journey records the transfer (Story and Full log).
   await page.goto(`/loans/${PN}?tab=journey`);
-  await expect(page.locator("[data-story]")).toContainText("Test Finance moved the hold on");
+  await expect(page.locator("[data-story]")).toContainText("Zz Angono Supervisor moved the hold on");
   await page.goto(`/loans/${PN}?tab=journey&journey=log&log=open`);
-  await expect(page.locator("[data-hold-transferred]").filter({ visible: true }).first()).toHaveText(/^Hold transferred from Test Loan Associate to Second Loan Associate by Test Finance · Ana is on leave until Friday · .+ PHT$/);
+  await expect(page.locator("[data-hold-transferred]").filter({ visible: true }).first()).toHaveText(/^Hold transferred from Test Loan Associate to Second Loan Associate by Zz Angono Supervisor · Ana is on leave until Friday · .+ PHT$/);
 });
 
 test("Inactive sender: the branch LAs see it on Home and in the Do this now card, with the note", async ({ page }) => {
@@ -265,9 +278,7 @@ test("Finance on a held transaction: approving is refused with the lock message"
   await signInAs(page, "fin");
   await page.goto("/funds?tab=approve");
   const card = page.locator(`[data-advance="${adv.number}"]`);
-  await card.getByRole("button", { name: /^Approve/ }).first().click();
-  const confirm = page.getByRole("dialog").filter({ hasText: /approve/i });
-  if (await confirm.count()) await confirm.getByRole("button", { name: /^Approve/ }).last().click();
+  await approveWithConfirm(page, card);
   await expect(page.getByText(/^Locked: on hold by Test Document Processor since .+ PHT\.$/).filter({ visible: true }).first()).toBeVisible();
   expect((await db.cashAdvance.findUniqueOrThrow({ where: { id: adv.id } })).status).toBe("REQUESTED");
   await shot(page, "finance-refusal-locked", false);

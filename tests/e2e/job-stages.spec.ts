@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
+import { approveWithConfirm } from "./approve";
 import { completeAndForwardUi, finishCurrentStage, workStagesUi } from "./helpers";
 
 /**
@@ -106,7 +107,7 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
   await signInAs(page, "fin");
   await page.goto("/funds?tab=approve");
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await approveWithConfirm(page);
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
   await page.goto("/funds?tab=release");
   await page.getByRole("button", { name: "Release", exact: true }).click();

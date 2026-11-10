@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { inScope, requirePagePermission } from "@/lib/auth/current-user";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { inScope, requirePageAny } from "@/lib/auth/current-user";
+import { anyStepKeys, stepKeys } from "@/lib/funds/access";
+import { liquidationReportAccess } from "@/lib/services/funds";
+import { permissionLabel } from "@/lib/auth/permissions";
 import { peso } from "@/lib/funds/rules";
 import { allKinds, lineKindText } from "@/lib/services/expense-kinds";
 import { releaseLine } from "@/lib/funds/types";
 import { dayText } from "@/lib/ui/plain";
 import { APP_TIMEZONE } from "@/lib/time";
-import { DASH, PRINTABLE_STATUSES } from "@/lib/funds/list-view";
+import { DASH } from "@/lib/funds/list-view";
 import { PrintButton } from "@/components/funds/print-button";
 
 /** The title names the request, so a saved PDF says which one it is. */
@@ -28,10 +30,15 @@ const STATUS: Record<string, string> = { LIQUIDATED: "Liquidated", CLOSED: "Clos
  * Funds: the liquidation report of one request, in the GDFI print format (A4 portrait): header with the
  * logo, the request, the expenses with what was released and liquidated, the receipts, the returned cash,
  * the totals and three signature lines. Read only; printing changes nothing.
+ * Needs "Print liquidation report" (funds:print) and the request's usual visibility (the Funds page's
+ * "See all advances" and the person's branches). A number the request had before (CA- for a fund
+ * transfer, or before a type change) opens the request under its number now.
  */
 export default async function LiquidationPrintPage({ params }: { params: Promise<{ number: string }> }) {
-  const user = await requirePagePermission(PERMISSIONS.FUNDS_VIEW_ALL);
+  const user = await requirePageAny(anyStepKeys("view"));
   const number = decodeURIComponent((await params).number);
+  const renamed = await prisma.cashAdvance.findFirst({ where: { formerNumbers: { has: number } }, select: { number: true, branchId: true } });
+  if (renamed && inScope(user, renamed.branchId)) redirect(`/funds/${encodeURIComponent(renamed.number)}/print`);
   const a = await prisma.cashAdvance.findUnique({
     where: { number },
     include: {
@@ -41,7 +48,10 @@ export default async function LiquidationPrintPage({ params }: { params: Promise
       returns: { orderBy: { date: "asc" } },
     },
   });
-  if (!a || !inScope(user, a.branchId) || !PRINTABLE_STATUSES.includes(a.status)) notFound();
+  const access = liquidationReportAccess(user, a);
+  if (!a || access === "not-found") notFound();
+  // The tick for this request's own type ("Print liquidation report for fund transfers").
+  if (access === "refused") return <PrintRefused label={permissionLabel(stepKeys("print", a)[0])} />;
   const people = await prisma.user.findMany({ where: { id: { in: [a.approvedById, a.releasedById, a.closedById, ...a.returns.map((r) => r.confirmedById)].filter((x): x is string => !!x) } }, select: { id: true, name: true } });
   const who = (id: string | null) => people.find((p) => p.id === id)?.name ?? null;
   const names = new Map((await allKinds()).map((k) => [k.code, k.name]));
@@ -169,6 +179,20 @@ export default async function LiquidationPrintPage({ params }: { params: Promise
           <span>{a.number}</span>
         </footer>
       </article>
+    </div>
+  );
+}
+
+/** The normal refusal: the role does not have "Print liquidation report". Nothing about the request is shown. */
+function PrintRefused({ label }: { label: string }) {
+  return (
+    <div className="w-full pt-1" data-print-refused>
+      <h1 className="page-title">Liquidation report</h1>
+      <div role="alert" className="mt-3 rounded-xl border border-line bg-white px-4 py-3 text-[15px] text-ink">
+        <p className="font-semibold text-navy">You can&rsquo;t open this report.</p>
+        <p className="mt-1 text-ink-2">Ask an Admin to turn on &lsquo;{label}&rsquo; for your role.</p>
+      </div>
+      <Link href="/funds" className="btn-ghost mt-4">Back to Funds</Link>
     </div>
   );
 }

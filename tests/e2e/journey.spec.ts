@@ -188,12 +188,15 @@ test("Journey v2: the strip groups, Story is the default and says the reason onc
   await page.locator('[data-story-count="return"]').click();
   await expect(page).toHaveURL(/flag=return/);
   await expect(page.locator("[data-story-line]")).toHaveCount(1);
-  // A transaction pill and Mine.
+  // A transaction pill. No "Mine": the filter row is All · Needs attention; an old ?show=mine shows All.
   await page.goto(`/loans/${PN}?tab=journey&journey=story&txn=EDST`);
   await expect(page.locator("[data-story-line] [data-txn-pill]").filter({ hasNotText: "EDST" })).toHaveCount(0);
+  await page.goto(`/loans/${PN}?tab=journey&journey=story`);
+  const allLines = await page.locator("[data-story-line]").count();
   await page.goto(`/loans/${PN}?tab=journey&journey=story&show=mine`);
-  await expect(page.locator("[data-story-line]").first()).toContainText("Test Loan Associate");
-  await expect(page.locator("[data-story-line]").filter({ hasText: /^.{0,12}Test Document Processor/ })).toHaveCount(0);
+  await expect(page.locator("[data-story-line]")).toHaveCount(allLines);
+  await expect(page.locator("[data-story]").getByRole("link", { name: "Mine", exact: true })).toHaveCount(0);
+  await expect(page.locator("[data-story]").getByText("Mine", { exact: true })).toHaveCount(0);
 
   // The switch: arrow keys move between the views; the choice is in the address and survives a reload.
   await page.goto(`/loans/${PN}?tab=journey`);

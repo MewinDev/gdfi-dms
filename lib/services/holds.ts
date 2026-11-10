@@ -137,7 +137,10 @@ async function holdKind(h: { raisedById: string | null; transactionId: string })
   return { kind: job ? "DP" : "LA", roleId: null };
 }
 
-/** May this person transfer this hold? With holds:transfer: holds in their branches (All branches: any hold). */
+/**
+ * May this person move this hold to another person? With holds:transfer ("Move a hold to another
+ * person"): only holds in the branches of their own access (All branches: any hold).
+ */
 export function mayTransferHold(u: CurrentUser, loanBranchId: string): boolean {
   if (!can(u, PERMISSIONS.HOLDS_TRANSFER)) return false;
   return inScope(u, loanBranchId);
@@ -145,8 +148,8 @@ export function mayTransferHold(u: CurrentUser, loanBranchId: string): boolean {
 
 /**
  * Who can receive a hold: active people with the same work role as the original holder (the same
- * role; an LA hold stays in the loan's branch, a DP hold goes to a DP). Never the person transferring
- * and never the current owner.
+ * role; an LA hold goes to an LA, a DP hold to a DP) who also have access to the loan's branch (or All
+ * branches). Never the person moving it and never the current owner.
  */
 export async function transferCandidates(u: CurrentUser, holdId: string): Promise<{ id: string; name: string }[]> {
   const h = await prisma.hold.findUnique({ where: { id: holdId }, include: { loan: { select: { branchId: true } } } });
@@ -156,7 +159,7 @@ export async function transferCandidates(u: CurrentUser, holdId: string): Promis
     where: {
       active: true, id: { notIn: [u.id, ...(h.ownerId ? [h.ownerId] : [])] },
       role: { active: true, ...(roleId ? { id: roleId } : {}), permissions: { has: kind === "DP" ? PERMISSIONS.JOBS_WORK : PERMISSIONS.CHECKLIST_TICK } },
-      ...(kind === "LA" ? worksAtWhere(h.loan.branchId) : {}),
+      ...worksAtWhere(h.loan.branchId),
     },
     orderBy: { name: "asc" }, select: { id: true, name: true },
   });
@@ -175,7 +178,7 @@ export async function transferHold(u: CurrentUser, holdId: string, toUserId: str
   const p = remarksSchema.safeParse(note);
   if (!p.success) throw new UserError(p.error.issues[0].message, "note");
   const to = (await transferCandidates(u, holdId)).find((c) => c.id === toUserId);
-  if (!to) throw new UserError("Choose an active person with the same work role as the holder (same branch for a Loan Associate).", "toUserId");
+  if (!to) throw new UserError("Choose an active person with the same work role as the holder who also has access to this branch.", "toUserId");
   const t = h.transaction;
   const from = { id: h.ownerId, label: h.ownerLabel ?? "Nobody (no owner)" };
   return withLoanLock(t.loanId, async (tx) => {
@@ -211,4 +214,26 @@ export async function endHoldsOnCompletion(tx: Tx, t: { id: string; loanId: stri
       summary: `${simulated ? "Simulated: " : ""}${t.name} hold (${h.reasonName || h.reason.name}) ended when the transaction was completed`,
     });
   }
+}
+
+/**
+ * Settings, Roles: the active branches where nobody can move a hold. From the derived branch access
+ * (user_branch_access, or All branches) of the active people whose active role has "Move a hold to
+ * another person". Hidden branches are left out (no new work there). Read only.
+ */
+export async function branchesWithoutHoldMover(): Promise<{ id: string; name: string; code: string | null }[]> {
+  const movers = await prisma.user.findMany({
+    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.HOLDS_TRANSFER } } },
+    select: { allBranches: true, branches: { select: { branchId: true } } },
+  });
+  if (movers.some((m) => m.allBranches)) return [];
+  const covered = new Set(movers.flatMap((m) => m.branches.map((b) => b.branchId)));
+  const branches = await prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } });
+  return branches.filter((b) => !covered.has(b.id));
+}
+
+/** "3 active branches have nobody who can move a hold." (empty at 0: the line is hidden). */
+export function holdMoverHealthText(n: number): string {
+  if (n <= 0) return "";
+  return `${n} active branch${n === 1 ? " has" : "es have"} nobody who can move a hold.`;
 }

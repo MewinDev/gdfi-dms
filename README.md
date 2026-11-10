@@ -44,6 +44,7 @@ If port 5432 is already used on your PC (for example a native PostgreSQL service
 | `npm run test:kit-screens` | Screenshots of the kit (sign-in list, two sample loans, Settings > Test kit) against your own server; run `npm run kit:reset` after |
 | `npm test` | Unit tests (rules, Data Check, stage, business days) |
 | `npm run test:e2e` | Playwright happy path (see below) |
+| `npm run e2e:groups` | Every e2e spec in small groups, one width at a time, 1 worker, production build; summary in `test-results/e2e-groups-summary.md` |
 | `npm run typecheck`, `npm run lint` | TypeScript and ESLint |
 
 ### Testing by hand: the Manual Test Kit
@@ -82,7 +83,9 @@ Never set in live. When on:
 ```powershell
 npm run db:create-test           # once, and after every new migration
 npm test                         # unit + integration, on gdfi_dms_test
-npm run test:e2e                 # Playwright at 1440, 820 and 390 px; starts its own next dev on port 3100 with gdfi_dms_test
+npm run test:e2e                 # Playwright at 1440, 820 and 390 px; builds and starts its own production server (next build, next start) on port 3100 with gdfi_dms_test (E2E_SERVER=dev for next dev)
+npm run e2e:groups               # the same specs in groups of 4, 1440 then 820 then 390, 1 worker, the port cleared between groups; summary in test-results/e2e-groups-summary.md
+npm run e2e:groups -- --widths=390 --only=funds --size=2 --no-build   # one width, specs whose name has "funds", groups of 2, the last build
 # Your own gdfi_dms is never used by a test run (see docs/ENVIRONMENT.md, "Two local databases").
 ```
 

@@ -73,7 +73,8 @@ describe("Manual Test Kit on the test database", () => {
     expect(users).toHaveLength(CLEAN_ACCOUNTS.length);
     const codesOf = async (email: string) => (await prisma.userBranch.findMany({ where: { user: { email } }, include: { branch: true } })).map((x) => x.branch.code).sort();
     const l1 = (await prisma.branch.findMany({ where: { area: { name: KIT_L1.area }, division: { name: KIT_L1.division } } })).map((b) => b.code!).sort();
-    const roleName: Record<string, string> = { SUPERVISOR: "Branch Supervisor", LA_NO_REFRESH: "LA (no refresh)", APPROVER_SMALL: APPROVER_ROLES.small.name, APPROVER_LARGE: APPROVER_ROLES.large.name };
+    const roleName: Record<string, string> = { SUPERVISOR: "Branch Supervisor", LA_NO_REFRESH: "LA (no refresh)", APPROVER_SMALL: APPROVER_ROLES.small.name, APPROVER_LARGE: APPROVER_ROLES.large.name,
+      FIN_CA: "Finance (cash advance)", FIN_FT: "Finance (fund transfer)", APPR_CA: "Approver (cash advance)", APPR_FT: "Approver (fund transfer)" };
     for (const a of CLEAN_ACCOUNTS) {
       const u = users.find((x) => x.email === a.email);
       expect(u, a.email).toBeTruthy();
@@ -88,9 +89,12 @@ describe("Manual Test Kit on the test database", () => {
     expect(await codesOf("kit.area.supervisor@example.test")).toEqual([...new Set([...l1, "390"])].sort());
     expect(await codesOf("kit.la.luzon1@example.test")).toEqual(l1.filter((c) => c !== "174"));
     expect(users.find((u) => u.email === "kit.la.luzon1@example.test")!.homeBranch?.code).toBe("165");
-    // The two approver bands.
-    const bands = await prisma.approvalBand.findMany({ include: { role: true }, orderBy: { fromCents: "asc" } });
-    expect(bands.map((b) => [b.fromCents, b.role.name])).toEqual([[0, APPROVER_ROLES.small.name], [APPROVER_ROLES.large.fromCents, APPROVER_ROLES.large.name]]);
+    // The two approver bands, the same amounts for each funds type; each type's own approver shares both.
+    const bands = await prisma.approvalBand.findMany({ include: { role: true } });
+    for (const [t, own] of [["fundstype_ca", "Approver (cash advance)"], ["fundstype_ft", "Approver (fund transfer)"]]) {
+      expect(bands.filter((b) => b.fundsTypeId === t).map((b) => `${b.fromCents} ${b.role.name}`).sort(), t).toEqual(
+        [`0 ${APPROVER_ROLES.small.name}`, `0 ${own}`, `${APPROVER_ROLES.large.fromCents} ${APPROVER_ROLES.large.name}`, `${APPROVER_ROLES.large.fromCents} ${own}`].sort());
+    }
     // Alicia-Inactive is inactive; the expense kinds and the funds types are there.
     expect((await prisma.branch.findUniqueOrThrow({ where: { code: "718" } })).active).toBe(false);
     expect(await prisma.expenseKind.count()).toBeGreaterThanOrEqual(5);
@@ -172,6 +176,9 @@ describe("Manual Test Kit on the test database", () => {
     expect(await prisma.userBranch.count({ where: { user: { email: "kit.la.roving@example.test" } } })).toBe(0);
     expect(users.every((u) => u.email.endsWith("@example.test"))).toBe(true);
     expect((await prisma.role.findFirstOrThrow({ where: { name: "Branch Supervisor" } })).permissions).toContain("holds:transfer");
+    // The supervisors use the built-in Branch Supervisor role (migration 20261119090006_decisions_batch), not a kit-made one.
+    expect((await prisma.role.findFirstOrThrow({ where: { name: "Branch Supervisor" } })).key).toBe("SUP");
+    expect(await prisma.role.count({ where: { name: "Branch Supervisor" } })).toBe(1);
     // The email switch stays Not active.
     expect(await getSetting("email.active")).toBe(false);
 
@@ -207,6 +214,10 @@ describe("Manual Test Kit on the test database", () => {
     expect((await ft("GD1012026902057")).overdueNotifiedAt).not.toBeNull();
     expect(await prisma.auditLog.count({ where: { action: "funds_type_changed", entityId: (await ft("GD1012026902052")).id } })).toBe(1);
     expect((await prisma.cashAdvance.findMany()).filter((a) => a.fundsTypeCode === "CA").length).toBeGreaterThan(0);
+    // Numbers follow the type: FT- for every fund transfer, CA- for every cash advance; the one changed to a
+    // fund transfer keeps its CA- number as "Formerly".
+    for (const a of await prisma.cashAdvance.findMany()) expect(a.number, a.number).toMatch(new RegExp(`^${a.fundsTypeCode}-[0-9]{4}-[0-9]{4}$`));
+    expect((await ft("GD1012026902052")).formerNumbers).toEqual([expect.stringMatching(/^CA-\d{4}-\d{4}$/)]);
     // Expense kinds: two "Other: Courier" expenses (the suggestion block shows once a third is typed).
     expect((await prisma.cashAdvanceLine.findMany({ where: { kind: "OTHER" } })).map((l) => l.otherDescription)).toEqual(KIT_OTHER_SAMPLES.map((o) => o.description));
     expect((await prisma.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1012026902028" }, type: { code: "NOTARY" } } })).status).toBe("COMPLETED");

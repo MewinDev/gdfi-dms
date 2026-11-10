@@ -13,7 +13,7 @@ export const END = "<!-- generated:permissions:end -->";
 
 /** Short role names for the defaults column (the seeded built-in roles). */
 const ROLE_SHORT: Record<string, string> = {
-  LA: "LA", ADMIN: "Admin", DP: "DP", FIN: "Finance", VAULT: "Vault", DIG: "Digital Records", QA: "QA", APPR: "Approvers", MONITOR: "Operations Monitor",
+  LA: "LA", ADMIN: "Admin", DP: "DP", FIN: "Finance", VAULT: "Vault", DIG: "Digital Records", QA: "QA", APPR: "Approvers", MONITOR: "Operations Monitor", SUP: "Branch Supervisor",
 };
 
 const cell = (s: string) => s.replace(/\|/g, "\\|");

@@ -9,7 +9,9 @@ import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getHolidaySet, getSetting } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
-import { bandFor, carryOverDecision, fundsStatus, lineBalance, liquidationDue } from "@/lib/funds/rules";
+import { carryOverDecision, fundsStatus, lineBalance, liquidationDue } from "@/lib/funds/rules";
+import type { TypeRef } from "@/lib/funds/access";
+import { typeBandApprovers } from "./funds-handlers";
 import { recomputeStage } from "./stage";
 import { moveDocs, noteDocs } from "./custody";
 import { NotInScopeError, UserError } from "./errors";
@@ -233,7 +235,8 @@ export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: At
         // Each carry-over decision restarts the liquidation due date.
         await tx.cashAdvance.update({ where: { id: l.advanceId }, data: { overdueNotifiedAt: null, liquidationDueAt: liquidationDue(now, dueDays, holidays) } });
       } else {
-        await notify(tx, { email: { event: "advance_requested", to: await bandApprovers(tx, balance), amountCents: balance, vars: { number: l.advance.number, kind: l.advance.fundsTypeName, who: a.dpUser.name, reason: `Carry-over: keep the balance for ${a.transaction.type.name} beyond the carry-over limit.` } }, userIds: await fundsApprovers(tx), loanId: a.loanId, title: `${l.advance.number}: carry-over needs approval`, body: `${a.dpUser.name} wants to keep ${(balance / 100).toFixed(2)} for ${a.transaction.type.name} beyond the carry-over limit.`, link: "/funds?tab=approve" });
+        const approvers = await bandApprovers(tx, balance, l.advance);
+        await notify(tx, { email: { event: "advance_requested", to: approvers, amountCents: balance, vars: { number: l.advance.number, kind: l.advance.fundsTypeName, who: a.dpUser.name, reason: `Carry-over: keep the balance for ${a.transaction.type.name} beyond the carry-over limit.` } }, userIds: approvers, loanId: a.loanId, title: `${l.advance.number}: carry-over needs approval`, body: `${a.dpUser.name} wants to keep ${(balance / 100).toFixed(2)} for ${a.transaction.type.name} beyond the carry-over limit.`, link: "/funds?tab=approve" });
       }
     }
   }
@@ -243,16 +246,12 @@ export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: At
   return attempt;
 }
 
-/** People who approve funds (for notifications). */
-export async function fundsApprovers(db: Tx | typeof prisma): Promise<string[]> {
-  const rows = await db.user.findMany({ where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.FUNDS_APPROVE } } }, select: { id: true } });
-  return rows.map((r) => r.id);
-}
-/** Approvers for an amount (approval bands): the band's role, with Approve. Everyone who approves when no band matches. */
-export async function bandApprovers(db: Tx | typeof prisma, amountCents: number): Promise<string[]> {
-  const band = bandFor(amountCents, await db.approvalBand.findMany());
-  const rows = await db.user.findMany({ where: { active: true, ...(band ? { roleId: band.roleId } : {}), role: { active: true, permissions: { has: PERMISSIONS.FUNDS_APPROVE } } }, select: { id: true } });
-  return rows.length ? rows.map((r) => r.id) : fundsApprovers(db);
+/**
+ * Approvers for an amount of a request's type: people with that type's Approve tick in the role of that
+ * type's approval band. Nobody: the Admins (people who can manage roles). See lib/services/funds-handlers.ts.
+ */
+export async function bandApprovers(db: Tx | typeof prisma, amountCents: number, type: TypeRef | null): Promise<string[]> {
+  return typeBandApprovers(db, amountCents, type);
 }
 
 /**

@@ -34,7 +34,7 @@ export interface StoryLine {
   at: Date;
   /** One plain sentence in the active voice, no full stop ("DP 1 returned Notary: ... (Round 1)"). */
   sentence: string;
-  /** Who did it (for "Mine"); empty for things nobody did by hand. */
+  /** Who did it; empty for things nobody did by hand. */
   who: string;
   txns: TxnTag[];
   flag: Flag | null;
@@ -492,3 +492,9 @@ export function buildJourneyStory(input: JourneyInput, j: Journey): JourneyStory
   for (const l of lines) if (l.flag) counts[l.flag] += 1;
   return { where: whereLines(j), lines, columns: docColumns(input, j), counts };
 }
+
+/** The Story's filter row: All · Needs attention (plus the transaction pills). There is no "Mine". */
+export const STORY_FILTERS: [StoryShow, string][] = [["all", "All"], ["attention", "Needs attention"]];
+export type StoryShow = "all" | "attention";
+/** The filter from the address; anything else (an old ?show=mine) is All, without an error. */
+export const storyShowOf = (raw: string | undefined): StoryShow => (raw === "attention" ? "attention" : "all");

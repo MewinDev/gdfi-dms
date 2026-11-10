@@ -8,14 +8,14 @@ import { buildPn } from "@/lib/pn/format";
 export const KIT_EMAIL_DOMAIN = "@example.test";
 
 export type KitAccountKey = "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
-  | "areaSupervisor" | "laAreaExcept" | "laRoving" | "laAlicia" | "laNoRefresh";
+  | "areaSupervisor" | "laAreaExcept" | "laRoving" | "laAlicia" | "laNoRefresh" | "financeCash" | "financeTransfer" | "approverCash" | "approverTransfer";
 
 export interface KitAccount {
   key: KitAccountKey;
   email: string;
   name: string;
   /** Built-in role key, or SUPERVISOR / LA_NO_REFRESH for the kit's own sample roles. */
-  role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR" | "LA_NO_REFRESH";
+  role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR" | "LA_NO_REFRESH" | "FIN_CA" | "FIN_FT" | "APPR_CA" | "APPR_FT";
   /** "ALL": All branches. Otherwise single-branch grants (the first is the home branch). */
   branches: KitBranch[] | "ALL";
   /** Extra grants: whole areas (Division, Area), and exceptions (branches unticked inside them). */
@@ -29,6 +29,11 @@ export const KIT_L1 = { division: "Branch Division", area: "LUZON 1 (NGMA + RIZA
 export const KIT_ACCOUNTS: KitAccount[] = [
   { key: "admin", email: `kit.admin${KIT_EMAIL_DOMAIN}`, name: "Admin", role: "ADMIN", branches: "ALL" },
   { key: "finance", email: `kit.finance${KIT_EMAIL_DOMAIN}`, name: "Finance", role: "FIN", branches: "ALL" },
+  // Funds handled by different people: Finance and an approver for each type (only that type's ticks).
+  { key: "financeCash", email: `kit.finance.cash${KIT_EMAIL_DOMAIN}`, name: "Finance Cash", role: "FIN_CA", branches: "ALL" },
+  { key: "financeTransfer", email: `kit.finance.transfer${KIT_EMAIL_DOMAIN}`, name: "Finance Transfer", role: "FIN_FT", branches: "ALL" },
+  { key: "approverCash", email: `kit.approver.cash${KIT_EMAIL_DOMAIN}`, name: "Approver Cash", role: "APPR_CA", branches: "ALL" },
+  { key: "approverTransfer", email: `kit.approver.transfer${KIT_EMAIL_DOMAIN}`, name: "Approver Transfer", role: "APPR_FT", branches: "ALL" },
   { key: "supervisor", email: `kit.supervisor${KIT_EMAIL_DOMAIN}`, name: "Branch Supervisor", role: "SUPERVISOR", branches: ["101", "165"] },
   { key: "la1", email: `kit.la1${KIT_EMAIL_DOMAIN}`, name: "LA 1", role: "LA", branches: ["101", "165"] },
   { key: "la2", email: `kit.la2${KIT_EMAIL_DOMAIN}`, name: "LA 2", role: "LA", branches: ["101", "165"] },
@@ -51,8 +56,12 @@ export const KIT_ACCOUNTS: KitAccount[] = [
   { key: "laNoRefresh", email: `kit.la.norefresh${KIT_EMAIL_DOMAIN}`, name: "LA No Refresh", role: "LA_NO_REFRESH", branches: ["101", "165"] },
 ];
 
-/** The kit's own role for the hold transfer: no built-in Branch Supervisor role exists. */
+/**
+ * The Branch Supervisor accounts use the built-in Branch Supervisor role (key SUP, made by migration
+ * 20261119090006_decisions_batch). Where a role of that name was made by hand before, that one is used.
+ */
 export const SUPERVISOR_ROLE_NAME = "Branch Supervisor";
+export const SUPERVISOR_ROLE_KEY = "SUP";
 /** The kit's sample role for the Refresh tick: the Loan Associate's ticks without "Refresh a loan from MyLoans". */
 export const NO_REFRESH_ROLE_NAME = "LA (no refresh)";
 

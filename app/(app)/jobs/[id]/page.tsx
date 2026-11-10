@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { anyStepKeys } from "@/lib/funds/access";
 import { activeAdvisories, advisoryWarnings } from "@/lib/services/lto-advisories";
 import { ReportLtoProblemButton, ResolveAdvisoryButton } from "@/components/monitoring/advisory-forms";
 import Link from "next/link";
@@ -46,7 +47,7 @@ import {
 export const metadata: Metadata = { title: "Job" };
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requirePageAny([PERMISSIONS.JOBS_WORK, PERMISSIONS.FUNDS_VIEW_ALL, PERMISSIONS.REPORTS_TAT]);
+  const user = await requirePageAny([PERMISSIONS.JOBS_WORK, ...anyStepKeys("view"), PERMISSIONS.REPORTS_TAT]);
   const { id } = await params;
   const names = await kindNames();
   const a = await loadAssignment(prisma, id).catch(() => null);

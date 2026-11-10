@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { can, getCurrentUser } from "@/lib/auth/current-user";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { canFundsAny, typeWhere } from "@/lib/funds/access";
 import { cashToSettleIds } from "@/lib/services/funds";
 import { OPEN_ADVANCE } from "@/lib/funds/rules";
 import { kindNames, lineKindText } from "@/lib/services/expense-kinds";
@@ -11,12 +11,13 @@ import { fundsCsv, FUNDS_TAB_STATUS } from "@/lib/funds/export";
 
 /**
  * CSV of the Finance funds lists (Funds page, Download CSV): the tab and the type filter (?ftype=CA)
- * the person picked, with a Type column. Needs "See all funds" (Finance). Branch scope as on the page.
+ * the person picked, with a Type column. Only the types the person may see (See cash advances, See fund
+ * transfers). Branch scope as on the page.
  */
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  if (!can(user, PERMISSIONS.FUNDS_VIEW_ALL)) return NextResponse.json({ error: "You do not have permission to export funds." }, { status: 403 });
+  if (!canFundsAny(user, "view")) return NextResponse.json({ error: "You do not have permission to export funds." }, { status: 403 });
   const sp = req.nextUrl.searchParams;
   const tab = sp.get("tab") && sp.get("tab")! in FUNDS_TAB_STATUS ? sp.get("tab")! : "all";
   const types = await prisma.fundsType.findMany({ select: { code: true } });
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
   const rows = await prisma.cashAdvance.findMany({
     where: {
       ...(user.scopeBranchIds === null ? {} : { branchId: { in: user.scopeBranchIds } }),
+      ...typeWhere(user),
       ...(ftype ? { fundsTypeCode: ftype } : {}),
       ...(tab === "all" ? {} : { status: { in: FUNDS_TAB_STATUS[tab] as never } }),
     },

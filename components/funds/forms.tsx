@@ -13,6 +13,8 @@ import { FundsTypePill } from "./funds-type-pill";
 import { AmountInput, KindSelect, OtherDescriptionField, centsText } from "./kind-field";
 import { OTHER, kindOptions, otherDescriptionProblem, startingAmount, type AmountSource } from "@/lib/funds/kinds";
 import type { KindOption } from "@/lib/funds/kind-option";
+import { approveConfirmText, approvedTotal, type ApproveConfirmInput } from "@/lib/funds/approve-confirm";
+import { ApproveConfirm, useOneSubmit } from "./approve-confirm";
 
 /** A funds type as the forms need it (Settings > Funds types). */
 export interface FundsTypeOption { id: string; code: string; name: string; needsReference: boolean; needsAccount: boolean }
@@ -237,15 +239,22 @@ export function ReturnCashForm({ advanceId, balanceCents, today }: { advanceId: 
 // Finance
 // ---------------------------------------------------------------------------
 
-export function DecideAdvanceForm({ advanceId, lines }: { advanceId: string; lines: { id: string; label: string; requestedCents: number; overMaxReason: string }[] }) {
-  const [state, action] = useActionState(decideAdvanceAction, null);
+/** What the "Approve this request?" window says about a request (all but the amount, which the form knows). */
+export type ApproveAbout = Omit<ApproveConfirmInput, "cents">;
+
+export function DecideAdvanceForm({ advanceId, lines, about }: { advanceId: string; lines: { id: string; label: string; requestedCents: number; overMaxReason: string }[]; about: ApproveAbout }) {
+  const [state, action, pending] = useActionState(decideAdvanceAction, null);
   const [amounts, setAmounts] = useState<Record<string, string>>(() => Object.fromEntries(lines.map((l) => [l.id, (l.requestedCents / 100).toFixed(2)])));
   const uid = useId();
+  const oneSubmit = useOneSubmit(state);
   const requested = lines.reduce((s, l) => s + l.requestedCents, 0);
-  const approved = lines.reduce((s, l) => s + (toC(amounts[l.id]) ?? 0), 0);
+  // The window shows the changed total when the amounts were changed here.
+  const approved = approvedTotal(lines, amounts);
   const lower = approved < requested;
   return (
-    <form action={action} className="flex flex-col gap-2">
+    <form id={`${uid}-form`} action={action} onSubmit={oneSubmit} className="flex flex-col gap-2">
+      {/* Enter in a field submits nothing: Approve asks first, Deny is pressed on purpose. */}
+      <button type="submit" disabled hidden aria-hidden="true" tabIndex={-1} />
       <Hidden v={{ advanceId }} />
       {lines.map((l) => (
         <div key={l.id} className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center">
@@ -264,7 +273,7 @@ export function DecideAdvanceForm({ advanceId, lines }: { advanceId: string; lin
       <p className="text-[15px] font-semibold">Approve {peso(approved)} of {peso(requested)}</p>
       <FormMessage state={state} />
       <div className="flex flex-wrap gap-2">
-        <SubmitButton name="decision" value="approve">Approve</SubmitButton>
+        <ApproveConfirm formId={`${uid}-form`} text={approveConfirmText({ ...about, cents: approved })} state={state} pending={pending} className="btn-primary" />
         <SubmitButton name="decision" value="deny" className="btn-ghost">Deny</SubmitButton>
       </div>
     </form>
@@ -373,19 +382,27 @@ export function TopUpReleaseForm({ topUpId, currentTypeId, types, today }: { top
   );
 }
 
-export function SmallAction({ kind, id, label, cls = "btn-ghost btn-sm", extra }: { kind: "topup-approve" | "topup-deny" | "topup-release" | "carry-approve" | "carry-deny" | "confirm-return" | "close"; id: string; label: string; cls?: string; extra?: boolean }) {
+export function SmallAction({ kind, id, label, cls = "btn-ghost btn-sm", extra, confirm }: {
+  kind: "topup-approve" | "topup-deny" | "topup-release" | "carry-approve" | "carry-deny" | "confirm-return" | "close"; id: string; label: string; cls?: string; extra?: boolean;
+  /** Approving money asks first ("Approve this request?"): what the window says. */
+  confirm?: ApproveConfirmInput;
+}) {
   const act = {
     "topup-approve": decideTopUpAction, "topup-deny": decideTopUpAction, "topup-release": releaseTopUpAction,
     "carry-approve": decideCarryOverAction, "carry-deny": decideCarryOverAction, "confirm-return": confirmReturnAction, close: closeAdvanceAction,
   }[kind];
-  const [state, action] = useActionState(act, null);
+  const [state, action, pending] = useActionState(act, null);
+  const formId = useId();
+  const oneSubmit = useOneSubmit(state);
   const field = kind.startsWith("topup") ? "topUpId" : kind.startsWith("carry") ? "carryId" : kind === "confirm-return" ? "returnId" : "advanceId";
   const decision = kind.endsWith("approve") ? "approve" : kind.endsWith("deny") ? "deny" : "";
   return (
-    <form action={action} className="inline-flex flex-wrap items-center gap-2">
+    <form id={formId} action={action} onSubmit={oneSubmit} className="inline-flex flex-wrap items-center gap-2">
       <Hidden v={{ [field]: id, decision }} />
       {extra && <input name="note" placeholder="Note" aria-label="Note" className="input h-9 w-40" />}
-      <SubmitButton className={cls}>{label}</SubmitButton>
+      {confirm
+        ? <ApproveConfirm formId={formId} text={approveConfirmText(confirm)} state={state} pending={pending} label={label} className={cls} />
+        : <SubmitButton className={cls}>{label}</SubmitButton>}
       {state && !state.ok && <FormMessage state={state} />}
     </form>
   );
@@ -408,11 +425,17 @@ export function GrantExceptionForm({ dpUserId, name }: { dpUserId: string; name:
 // open in a Sheet so the row stays one line.
 // ---------------------------------------------------------------------------
 
-/** Approve as asked, in one click: exactly what the full form sends when no amount is changed. */
-export function QuickApproveForm({ advanceId, lines }: { advanceId: string; lines: { id: string; requestedCents: number }[] }) {
-  const [state, action] = useActionState(decideAdvanceAction, null);
+/**
+ * Approve as asked: exactly what the full form sends when no amount is changed. The button asks first
+ * ("Approve this request?" with the amount and the request), then the window's Approve sends it.
+ */
+export function QuickApproveForm({ advanceId, lines, about }: { advanceId: string; lines: { id: string; requestedCents: number }[]; about: ApproveAbout }) {
+  const [state, action, pending] = useActionState(decideAdvanceAction, null);
+  const formId = useId();
+  const oneSubmit = useOneSubmit(state);
+  const total = lines.reduce((s, l) => s + l.requestedCents, 0);
   return (
-    <form action={action} className="contents" data-quick-approve>
+    <form id={formId} action={action} onSubmit={oneSubmit} className="contents" data-quick-approve>
       <Hidden v={{ advanceId, note: "" }} />
       {lines.map((l) => (
         <span key={l.id} hidden>
@@ -420,14 +443,14 @@ export function QuickApproveForm({ advanceId, lines }: { advanceId: string; line
           <input type="hidden" name={`amount-${l.id}`} value={(l.requestedCents / 100).toFixed(2)} />
         </span>
       ))}
-      <SubmitButton name="decision" value="approve" className="btn-gold btn-sm fl-btn">Approve</SubmitButton>
+      <ApproveConfirm formId={formId} text={approveConfirmText({ ...about, cents: total })} state={state} pending={pending} />
       {state && !state.ok && <div className="fl-msg"><FormMessage state={state} /></div>}
     </form>
   );
 }
 
 /** Opens the full approve-or-deny form (amounts per line, the note) in a Sheet. */
-export function DecideSheetButton({ number, label, cls = "btn-secondary btn-sm fl-btn", ...form }: { number: string; label: string; cls?: string; advanceId: string; lines: { id: string; label: string; requestedCents: number; overMaxReason: string }[] }) {
+export function DecideSheetButton({ number, label, cls = "btn-secondary btn-sm fl-btn", ...form }: { number: string; label: string; cls?: string; advanceId: string; lines: { id: string; label: string; requestedCents: number; overMaxReason: string }[]; about: ApproveAbout }) {
   const [open, setOpen] = useState(false);
   return (
     <>
