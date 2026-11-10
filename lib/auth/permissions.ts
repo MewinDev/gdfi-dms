@@ -25,12 +25,25 @@ export const PERMISSIONS = {
   RETURNS_ACCEPT: "processing:accept_returns", // be the receiving LA for returned papers; branch updates
   // Funds (cash advance)
   FUNDS_FLAG: "funds:flag", // LA: say whether a transaction needs funds (no amount)
-  FUNDS_VIEW: "funds:view", // see the funds status of transactions in scope
   FUNDS_REQUEST: "funds:request", // DP: request a cash advance, top-ups, carry-overs
   FUNDS_LIQUIDATE: "funds:liquidate", // DP: receipts, returns
-  FUNDS_APPROVE: "funds:approve", // approve within the approval bands
-  FUNDS_RELEASE: "funds:release", // Finance: release money, confirm returns, close
-  FUNDS_VIEW_ALL: "funds:view_all", // see every advance in scope (Funds page)
+  // Per funds type (handled by different people): Cash advance (CA) and Fund transfer (FT). Each step
+  // is two ticks; there is no "any type" key. Was funds:view_all, funds:approve, funds:release,
+  // funds:print (migration 20261119090007_funds_per_type).
+  FUNDS_CA_VIEW: "funds:ca_view", // the Funds page, lists, counts, CSV, receipts: cash advances
+  FUNDS_CA_APPROVE: "funds:ca_approve", // approve or deny cash advances (and their top-ups, carry-overs) within the CA bands
+  FUNDS_CA_RELEASE: "funds:ca_release", // release cash advances (and their top-ups)
+  FUNDS_CA_SETTLE: "funds:ca_settle", // confirm returned cash and close cash advances
+  FUNDS_CA_EDIT_LINES: "funds:ca_edit_lines", // change or add a line of a cash advance before it is decided
+  FUNDS_CA_CHANGE_TYPE: "funds:ca_change_type", // change the type of a cash advance before release (changing into a type needs that type's tick too)
+  FUNDS_CA_PRINT: "funds:ca_print", // the liquidation report of a cash advance
+  FUNDS_FT_VIEW: "funds:ft_view",
+  FUNDS_FT_APPROVE: "funds:ft_approve",
+  FUNDS_FT_RELEASE: "funds:ft_release",
+  FUNDS_FT_SETTLE: "funds:ft_settle",
+  FUNDS_FT_EDIT_LINES: "funds:ft_edit_lines",
+  FUNDS_FT_CHANGE_TYPE: "funds:ft_change_type",
+  FUNDS_FT_PRINT: "funds:ft_print",
   FUNDS_EXCEPTION: "funds:exception", // let an overdue DP submit one more request
   FUNDS_KINDS_VIEW: "funds:kinds_view", // see Settings, Expense kinds
   FUNDS_KINDS_MANAGE: "funds:kinds_manage", // add, edit, reorder, switch off expense kinds; "+ Add new kind"; change a fixed amount for one request
@@ -46,7 +59,7 @@ export const PERMISSIONS = {
   // Holds (waiting on something that is not a fault)
   HOLDS_RAISE: "holds:raise", // put own work on hold (LA: transactions in the LA's hands; DP: own jobs)
   HOLDS_RESOLVE: "holds:resolve", // resume own holds, add the remarks to an older hold
-  HOLDS_TRANSFER: "holds:transfer", // give a hold to another owner (in the person's branches). Never resume.
+  HOLDS_TRANSFER: "holds:transfer", // move a hold to another person (in the person's branches, to someone with access there). Never resume.
   // Journey
   JOURNEY_VIEW_AMOUNTS: "journey:view_amounts", // see cash amounts in the Journey (otherwise funds status only)
   // Reports
@@ -101,6 +114,20 @@ export const PERMISSIONS = {
   TESTDATA_RESET: "testdata:reset",
 } as const;
 
+/**
+ * The keys split per funds type (migration 20261119090007_funds_per_type): a role that had the old key
+ * has both new keys. Edit lines was part of Approve and Release; Change type was part of Release only.
+ */
+export const SPLIT_PERMISSIONS: Record<string, Permission[]> = {
+  "funds:view_all": [PERMISSIONS.FUNDS_CA_VIEW, PERMISSIONS.FUNDS_FT_VIEW],
+  "funds:approve": [PERMISSIONS.FUNDS_CA_APPROVE, PERMISSIONS.FUNDS_FT_APPROVE, PERMISSIONS.FUNDS_CA_EDIT_LINES, PERMISSIONS.FUNDS_FT_EDIT_LINES],
+  "funds:release": [PERMISSIONS.FUNDS_CA_RELEASE, PERMISSIONS.FUNDS_FT_RELEASE, PERMISSIONS.FUNDS_CA_SETTLE, PERMISSIONS.FUNDS_FT_SETTLE, PERMISSIONS.FUNDS_CA_EDIT_LINES, PERMISSIONS.FUNDS_FT_EDIT_LINES, PERMISSIONS.FUNDS_CA_CHANGE_TYPE, PERMISSIONS.FUNDS_FT_CHANGE_TYPE],
+  // The single Edit tick of 20261119090007 (split in 20261119090008_funds_edit_split).
+  "funds:ca_edit": [PERMISSIONS.FUNDS_CA_EDIT_LINES],
+  "funds:ft_edit": [PERMISSIONS.FUNDS_FT_EDIT_LINES],
+  "funds:print": [PERMISSIONS.FUNDS_CA_PRINT, PERMISSIONS.FUNDS_FT_PRINT],
+};
+
 /** The old name of a key the permissions pass renamed (migration 20261119090004_permissions_pass). */
 export const RENAMED_PERMISSIONS: Record<string, Permission> = {
   "source:review": PERMISSIONS.SOURCE_REVIEW,
@@ -127,6 +154,8 @@ export interface PermissionDef {
   where: string;
   /** What decided it before the permissions pass ("none" = no check; a key = that key). */
   was: string;
+  /** A sub-heading inside the group (Funds: "Cash advance", "Fund transfer"). */
+  subgroup?: string;
 }
 export interface PermissionGroup {
   key: string;
@@ -158,7 +187,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.PROBLEMS_OUTSIDE, label: "Mark outside our control", help: "Tag a problem for reports. It does not stop the clock.", requires: [P.LOANS_VIEW], can: "mark problems outside our control", where: "Job, Problem", was: "problems:mark_outside_control" },
       { key: P.HOLDS_RAISE, label: "Put work on hold", help: "Put a transaction on hold while it waits on something that is not a fault. Only on work the person does. The clock keeps counting.", requires: [P.LOANS_VIEW], can: "put their work on hold", where: "Loan File, Job", was: "holds:raise" },
       { key: P.HOLDS_RESOLVE, label: "Resume own holds", help: "Resume a hold the person owns, or add the remarks to an older hold of theirs.", requires: [P.HOLDS_RAISE], can: "resume their holds", where: "Loan File, Job, Open items", was: "none (resume and add details checked only the hold owner)" },
-      { key: P.HOLDS_TRANSFER, label: "Transfer a hold", help: "Give a hold to another person of the same work (for example when the owner is on leave), in the person's branches. It never resumes the hold.", requires: [P.LOANS_VIEW], can: "transfer holds", where: "Loan File, Open items", was: "holds:transfer (Admin: any branch, by role name)" },
+      { key: P.HOLDS_TRANSFER, label: "Move a hold to another person", help: "Give a hold to another person of the same work (for example when the owner is on leave). Only in the person's branches, and only to someone who also has access to that branch. It never resumes the hold.", requires: [P.LOANS_VIEW], can: "move holds to another person", where: "Loan File, Open items", was: "holds:transfer (Admin: any branch, by role name)" },
     ],
   },
   {
@@ -179,16 +208,26 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   },
   {
     key: "funds", label: "Funds", items: [
-      { key: P.FUNDS_VIEW, label: "See funds status", help: "See whether transactions need funds, are funded or settled.", requires: [P.LOANS_VIEW], can: "see funds status", where: "Loan File", was: "funds:view" },
-      { key: P.FUNDS_VIEW_ALL, label: "See all advances", help: "The Funds page: every advance in the person's branches, and the receipts.", requires: [P.LOANS_VIEW], can: "see all advances", where: "Funds, Funds export, Receipts", was: "funds:view_all" },
       { key: P.FUNDS_REQUEST, label: "Request a cash advance", help: "Ask for one advance covering several jobs, top-ups and carry-overs.", requires: [P.JOBS_WORK], can: "request cash advances", where: "My funds, Job", was: "funds:request" },
       { key: P.FUNDS_LIQUIDATE, label: "Liquidate", help: "Record receipts and return cash.", requires: [P.FUNDS_REQUEST], can: "liquidate cash advances", where: "My funds", was: "funds:liquidate" },
-      { key: P.FUNDS_APPROVE, label: "Approve cash advances", help: "Approve or deny requests within the approval bands.", requires: [P.FUNDS_VIEW_ALL], can: "approve cash advances", where: "Funds", was: "funds:approve" },
-      { key: P.FUNDS_RELEASE, label: "Release funds", help: "Release money, confirm returned cash, close advances.", requires: [P.FUNDS_VIEW_ALL], can: "release funds", where: "Funds", was: "funds:release" },
-      { key: P.FUNDS_EXCEPTION, label: "Grant a funds exception", help: "Let a processor with an overdue advance submit one more request.", requires: [P.FUNDS_VIEW_ALL], can: "grant funds exceptions", where: "Funds", was: "funds:exception" },
+      { key: P.FUNDS_EXCEPTION, label: "Grant a funds exception", help: "Let a processor with an overdue advance submit one more request (both types).", can: "grant funds exceptions", where: "Funds", was: "funds:exception" },
       { key: P.FUNDS_KINDS_VIEW, label: "See expense kinds", help: "See Settings, Expense kinds: what a cash advance or fund transfer can be for, and each kind's amount.", can: "see expense kinds", where: "Settings, Expense kinds", was: "none (the kinds were fixed in code)" },
       { key: P.FUNDS_KINDS_MANAGE, label: "Add and manage expense kinds", help: "Add, rename, reorder or switch off expense kinds and set their amount; \"+ Add new kind\" on the funds screens; change a fixed amount on one request.", requires: [P.FUNDS_KINDS_VIEW], view: P.FUNDS_KINDS_VIEW, can: "add and manage expense kinds", where: "Settings, Expense kinds; Funds, To approve; My funds", was: "none (the kinds were fixed in code)" },
       { key: P.JOURNEY_VIEW_AMOUNTS, label: "See cash amounts in the Journey", help: "Show peso amounts in a loan's Journey. Without it, the Journey shows the funds status only.", requires: [P.LOANS_VIEW], can: "see cash amounts in the Journey", where: "Loan File, Journey; LTO monitor amounts", was: "journey:view_amounts" },
+      { key: P.FUNDS_CA_VIEW, label: "See cash advances", help: "The Funds page for cash advances: every request in the person's branches, the counts, the CSV and the receipts.", requires: [P.LOANS_VIEW], can: "see cash advances", where: "Funds, Funds export, Receipts", was: "funds:view_all", subgroup: "Cash advance" },
+      { key: P.FUNDS_CA_APPROVE, label: "Approve cash advances", help: "Approve or deny cash advances (and their top-ups and carry-overs) within the approval bands of this type.", requires: [P.FUNDS_CA_VIEW], can: "approve cash advances", where: "Funds, To approve", was: "funds:approve", subgroup: "Cash advance" },
+      { key: P.FUNDS_CA_RELEASE, label: "Release cash advances", help: "Release the approved money (and approved top-ups) of cash advances.", requires: [P.FUNDS_CA_VIEW], can: "release cash advances", where: "Funds, To release", was: "funds:release", subgroup: "Cash advance" },
+      { key: P.FUNDS_CA_SETTLE, label: "Settle and close cash advances", help: "Confirm returned cash and close cash advances. Told when liquidation is submitted or overdue.", requires: [P.FUNDS_CA_VIEW], can: "settle and close cash advances", where: "Funds, Outstanding", was: "funds:release", subgroup: "Cash advance" },
+      { key: P.FUNDS_CA_EDIT_LINES, label: "Edit lines of cash advances", help: "Change or add a line before the request is decided.", requires: [P.FUNDS_CA_VIEW], can: "edit the lines of cash advances", where: "Funds, To approve", was: "funds:approve or funds:release", subgroup: "Cash advance" },
+      { key: P.FUNDS_CA_CHANGE_TYPE, label: "Change type of cash advances", help: "Change the type before release, with remarks. Changing into the other type needs that type's Change type tick too.", requires: [P.FUNDS_CA_VIEW], can: "change the type of cash advances", where: "Funds, To approve and To release", was: "funds:release", subgroup: "Cash advance" },
+      { key: P.FUNDS_CA_PRINT, label: "Print liquidation report for cash advances", help: "Open and print the liquidation report of cash advances.", requires: [P.FUNDS_CA_VIEW], can: "print liquidation reports for cash advances", where: "Funds, Outstanding and History, Print; the liquidation report page", was: "funds:print", subgroup: "Cash advance" },
+      { key: P.FUNDS_FT_VIEW, label: "See fund transfers", help: "The Funds page for fund transfers: every request in the person's branches, the counts, the CSV and the receipts.", requires: [P.LOANS_VIEW], can: "see fund transfers", where: "Funds, Funds export, Receipts", was: "funds:view_all", subgroup: "Fund transfer" },
+      { key: P.FUNDS_FT_APPROVE, label: "Approve fund transfers", help: "Approve or deny fund transfers (and their top-ups and carry-overs) within the approval bands of this type.", requires: [P.FUNDS_FT_VIEW], can: "approve fund transfers", where: "Funds, To approve", was: "funds:approve", subgroup: "Fund transfer" },
+      { key: P.FUNDS_FT_RELEASE, label: "Release fund transfers", help: "Release the approved money (and approved top-ups) of fund transfers.", requires: [P.FUNDS_FT_VIEW], can: "release fund transfers", where: "Funds, To release", was: "funds:release", subgroup: "Fund transfer" },
+      { key: P.FUNDS_FT_SETTLE, label: "Settle and close fund transfers", help: "Confirm returned cash and close fund transfers. Told when liquidation is submitted or overdue.", requires: [P.FUNDS_FT_VIEW], can: "settle and close fund transfers", where: "Funds, Outstanding", was: "funds:release", subgroup: "Fund transfer" },
+      { key: P.FUNDS_FT_EDIT_LINES, label: "Edit lines of fund transfers", help: "Change or add a line before the request is decided.", requires: [P.FUNDS_FT_VIEW], can: "edit the lines of fund transfers", where: "Funds, To approve", was: "funds:approve or funds:release", subgroup: "Fund transfer" },
+      { key: P.FUNDS_FT_CHANGE_TYPE, label: "Change type of fund transfers", help: "Change the type before release, with remarks. Changing into the other type needs that type's Change type tick too.", requires: [P.FUNDS_FT_VIEW], can: "change the type of fund transfers", where: "Funds, To approve and To release", was: "funds:release", subgroup: "Fund transfer" },
+      { key: P.FUNDS_FT_PRINT, label: "Print liquidation report for fund transfers", help: "Open and print the liquidation report of fund transfers.", requires: [P.FUNDS_FT_VIEW], can: "print liquidation reports for fund transfers", where: "Funds, Outstanding and History, Print; the liquidation report page", was: "funds:print", subgroup: "Fund transfer" },
     ],
   },
   {
@@ -277,7 +316,9 @@ export const SETTINGS_PERMISSIONS: Permission[] = [
  */
 export const WORKFLOW_PERMISSIONS: Permission[] = [
   P.LOANS_OPEN, P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.DP_RECEIVE, P.RETURNS_ACCEPT,
-  P.FUNDS_FLAG, P.FUNDS_VIEW, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.FUNDS_EXCEPTION,
+  P.FUNDS_FLAG, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_EXCEPTION,
+  P.FUNDS_CA_APPROVE, P.FUNDS_CA_RELEASE, P.FUNDS_CA_SETTLE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_CHANGE_TYPE,
+  P.FUNDS_FT_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_FT_SETTLE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_CHANGE_TYPE,
   P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE,
 ];
 /** Not work steps, and not in the default Admin role either: who is told about LTO advisories. */
@@ -311,7 +352,7 @@ export function dependentsOf(key: string): Permission[] {
 
 /** Keeps known keys only (old names become their new names), adds requirements, in catalogue order. */
 export function normalizePermissions(keys: Iterable<string>): Permission[] {
-  const set = withRequirements([...keys].map((k) => RENAMED_PERMISSIONS[k] ?? k).filter((k) => permissionDef(k)));
+  const set = withRequirements([...keys].flatMap((k) => SPLIT_PERMISSIONS[k] ?? [RENAMED_PERMISSIONS[k] ?? k]).filter((k) => permissionDef(k)));
   return ALL_PERMISSIONS.filter((k) => set.has(k));
 }
 
@@ -339,12 +380,18 @@ export function plainWords(keys: Iterable<string>, branchAccess: "ASSIGNED" | "A
 /** What every role that saw the loan file before the permissions pass keeps: the MyLoans strip and Refresh. */
 const SOURCE_STRIP: Permission[] = [P.MYLOANS_VIEW, P.LOANS_REFRESH];
 
+/** Every per-type funds tick, both types (Finance's default, and what a role with the old funds keys has). */
+export const FUNDS_BOTH_TYPES: Permission[] = [
+  P.FUNDS_CA_VIEW, P.FUNDS_CA_APPROVE, P.FUNDS_CA_RELEASE, P.FUNDS_CA_SETTLE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_CHANGE_TYPE, P.FUNDS_CA_PRINT,
+  P.FUNDS_FT_VIEW, P.FUNDS_FT_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_FT_SETTLE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_CHANGE_TYPE, P.FUNDS_FT_PRINT,
+];
+
 /** Seeded built-in roles: the defaults that "Reset to default" restores. */
 export const ROLE_DEFAULTS: Record<string, { name: string; description: string; canSignIn: boolean; sortOrder: number; branchAccess: "ASSIGNED" | "ALL"; permissions: Permission[] }> = {
   LA: {
     name: "Loan Associate", canSignIn: true, sortOrder: 1, branchAccess: "ASSIGNED",
     description: "Finds and opens loan files, checks papers, prints labels, sends to processors.",
-    permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_VIEW, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP],
+    permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP],
   },
   ADMIN: {
     name: "Admin", canSignIn: true, sortOrder: 2, branchAccess: "ALL",
@@ -352,14 +399,29 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
     permissions: ADMIN_PERMISSIONS,
   },
   DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: false, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, P.LTO_REPORTS_CREATE, ...SOURCE_STRIP] },
-  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; may transfer holds.", permissions: [P.LOANS_VIEW, P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.FUNDS_VIEW_ALL, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.HOLDS_TRANSFER, P.MYLOANS_VIEW] },
+  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; prints liquidation reports.", permissions: [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW] },
   VAULT: { name: "Vault Custodian", canSignIn: false, sortOrder: 5, branchAccess: "ASSIGNED", description: "Phases 6 and 8.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   DIG: { name: "Digital Records", canSignIn: false, sortOrder: 6, branchAccess: "ASSIGNED", description: "Phase 7 DigiCur.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   QA: { name: "QA", canSignIn: false, sortOrder: 7, branchAccess: "ASSIGNED", description: "Phase 9 QA review.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   APPR: { name: "Approvers, Records, Compliance", canSignIn: false, sortOrder: 8, branchAccess: "ASSIGNED", description: "Phase 8 and 10 approvals.", permissions: [P.LOANS_VIEW, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE] },
   /** Read-only, all branches: the Monitoring page and LTO advisories. No loan files, no amounts. */
   MONITOR: { name: "Operations Monitor", canSignIn: true, sortOrder: 9, branchAccess: "ALL", description: "Watches processors and LTO offices (Monitoring page) and resolves LTO advisories. Read-only.", permissions: [P.MONITOR_DP, P.MONITOR_LTO, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY] },
+  /**
+   * Branch Supervisor (also the Area Supervisor: the same role with Area access on the person). Sees the
+   * loans of their branches, moves holds there, resolves any problem there, the Monitoring pages and the
+   * TAT report. Never money, Settings, users, roles or branch imports. Created by migration
+   * 20261119090006_decisions_batch only when no role of this name exists (the seed does the same).
+   */
+  SUP: { name: "Branch Supervisor", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Sees the loans of their branches, moves holds to another person, resolves any problem there, the Monitoring pages and the TAT report. No money, Settings, users or roles.", permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, ...SOURCE_STRIP] },
 };
+/** The plain ticks of the Branch Supervisor role and their keys (the report and the role's docs). */
+export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
+  { plain: "See loans and open loan files (within their branches)", keys: [P.LOANS_VIEW, P.LOANS_SEARCH, P.MYLOANS_VIEW, P.LOANS_REFRESH] },
+  { plain: "Move a hold to another person", keys: [P.HOLDS_TRANSFER] },
+  { plain: "Resolve any problem (at their branches)", keys: [P.PROBLEMS_RESOLVE_ANY] },
+  { plain: "See the Monitoring pages for DPs and LTO offices (their branches)", keys: [P.MONITOR_DP, P.MONITOR_LTO] },
+  { plain: "See the TAT report", keys: [P.REPORTS_TAT] },
+];
 
 /** Role chips used everywhere (role key -> label and CSS token). */
 export const ROLE_CHIPS: Record<string, { label: string; token: string }> = {

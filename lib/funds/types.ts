@@ -23,6 +23,15 @@ export const SEEDED_FUNDS_TYPES = [
 ] as const;
 export const DEFAULT_FUNDS_TYPE_CODE = "CA";
 
+/**
+ * The request number's prefix: the type's code in capitals, letters and digits only ("CA", "FT"). Each
+ * prefix has its own running number per year: CA-2026-0001, FT-2026-0001.
+ */
+export const numberPrefix = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, "") || DEFAULT_FUNDS_TYPE_CODE;
+
+/** "Formerly CA-2026-0008" (a request renumbered when its type changed); empty when it never had another number. */
+export const formerlyText = (formerNumbers: readonly string[] | null | undefined) => (formerNumbers?.length ? `Formerly ${formerNumbers.join(", ")}` : "");
+
 /** "CA · Cash advance": the pill and the lists. */
 export const fundsTypeLabel = (t: { code: string; name: string }) => `${t.code} · ${t.name}`;
 

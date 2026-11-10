@@ -1,8 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_PERMISSIONS, ALL_PERMISSIONS, PERMISSIONS as P, PERMISSION_DEFS, PERMISSION_GROUPS, RENAMED_PERMISSIONS, ROLE_DEFAULTS, WORKFLOW_PERMISSIONS,
-  changesOf, dependentsOf, normalizePermissions, plainWords, viewOf, withRequirements,
+  SUPERVISOR_TICKS, changesOf, dependentsOf, normalizePermissions, permissionLabel, plainWords, viewOf, withRequirements,
 } from "./permissions";
+
+describe("Decisions batch (10 November 2026): Print liquidation report, Branch Supervisor", () => {
+  it("Print liquidation report, per type: a Funds tick that needs that type's See tick; Finance and Admin have both", () => {
+    for (const [print, view, noun] of [[P.FUNDS_CA_PRINT, P.FUNDS_CA_VIEW, "cash advances"], [P.FUNDS_FT_PRINT, P.FUNDS_FT_VIEW, "fund transfers"]] as const) {
+      expect(PERMISSION_DEFS.find((d) => d.key === print)).toMatchObject({ label: `Print liquidation report for ${noun}`, requires: [view] });
+      expect(PERMISSION_GROUPS.find((g) => g.items.some((i) => i.key === print))!.label).toBe("Funds");
+      expect(ROLE_DEFAULTS.FIN.permissions).toContain(print);
+      expect(ADMIN_PERMISSIONS).toContain(print);
+    }
+  });
+
+  it("Branch Supervisor: the plain ticks map to these keys, and never money, Settings, users, roles or branch imports", () => {
+    const sup = ROLE_DEFAULTS.SUP;
+    expect(sup.name).toBe("Branch Supervisor");
+    expect(sup.branchAccess).toBe("ASSIGNED");
+    expect([...sup.permissions].sort()).toEqual([...new Set(SUPERVISOR_TICKS.flatMap((t) => t.keys))].sort());
+    expect(normalizePermissions(sup.permissions).sort()).toEqual([...sup.permissions].sort());
+    for (const k of [P.FUNDS_CA_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_CA_VIEW, P.FUNDS_FT_VIEW, P.ROLES_MANAGE, P.USERS_EDIT, P.USERS_VIEW, P.BRANCHES_IMPORT, P.SETTINGS_SYSTEM, P.LOANS_OPEN]) {
+      expect(sup.permissions, k).not.toContain(k);
+    }
+    expect(SUPERVISOR_TICKS.map((t) => t.plain)).toEqual([
+      "See loans and open loan files (within their branches)", "Move a hold to another person", "Resolve any problem (at their branches)",
+      "See the Monitoring pages for DPs and LTO offices (their branches)", "See the TAT report",
+    ]);
+  });
+});
 import { effectivePermissions, maySignIn } from "./access";
 
 /** The seeded roles before this change (old coarse keys), copied from the previous seed. */
@@ -113,18 +139,18 @@ describe("Sign-in rule", () => {
 describe("Funds, jobs and problems permissions", () => {
   it("Admin is locked out of LA, DP and Finance work steps but sees funds, resolves any problem and owns the TAT report", () => {
     const p = new Set(ADMIN_PERMISSIONS);
-    for (const k of [P.FUNDS_FLAG, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.JOBS_WORK, P.PROBLEMS_RAISE]) {
+    for (const k of [P.FUNDS_FLAG, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_CA_APPROVE, P.FUNDS_FT_APPROVE, P.FUNDS_CA_RELEASE, P.FUNDS_FT_RELEASE, P.JOBS_WORK, P.PROBLEMS_RAISE]) {
       expect(p.has(k)).toBe(false);
     }
-    for (const k of [P.FUNDS_VIEW_ALL, P.PROBLEMS_RESOLVE_ANY, P.PROBLEMS_OUTSIDE, P.REPORTS_TAT, P.SETTINGS_PROBLEM_REASONS]) {
+    for (const k of [P.FUNDS_CA_VIEW, P.FUNDS_FT_VIEW, P.PROBLEMS_RESOLVE_ANY, P.PROBLEMS_OUTSIDE, P.REPORTS_TAT, P.SETTINGS_PROBLEM_REASONS]) {
       expect(p.has(k)).toBe(true);
     }
   });
   it("defaults: the LA flags, the DP works and requests, Finance approves and releases", () => {
     expect(ROLE_DEFAULTS.LA.permissions).toEqual(expect.arrayContaining([P.FUNDS_FLAG, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE]));
     expect(ROLE_DEFAULTS.DP.permissions).toEqual(expect.arrayContaining([P.JOBS_WORK, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE]));
-    expect(ROLE_DEFAULTS.DP.permissions).not.toContain(P.FUNDS_APPROVE);
-    expect(ROLE_DEFAULTS.FIN.permissions).toEqual(expect.arrayContaining([P.FUNDS_APPROVE, P.FUNDS_RELEASE, P.FUNDS_EXCEPTION]));
+    expect(ROLE_DEFAULTS.DP.permissions).not.toContain(P.FUNDS_CA_APPROVE);
+    expect(ROLE_DEFAULTS.FIN.permissions).toEqual(expect.arrayContaining([P.FUNDS_CA_APPROVE, P.FUNDS_FT_APPROVE, P.FUNDS_CA_RELEASE, P.FUNDS_FT_RELEASE, P.FUNDS_EXCEPTION]));
     expect(ROLE_DEFAULTS.FIN.permissions).not.toContain(P.FUNDS_REQUEST);
   });
 });
@@ -146,7 +172,10 @@ describe("Holds and Journey amounts permissions", () => {
     expect(WORKFLOW_PERMISSIONS).toEqual(expect.arrayContaining([P.HOLDS_RAISE, P.HOLDS_RESOLVE]));
     expect(ADMIN_PERMISSIONS).not.toContain(P.HOLDS_RAISE);
     expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_TRANSFER);
-    expect(ROLE_DEFAULTS.FIN.permissions).toContain(P.HOLDS_TRANSFER);
+    // Decision 10 November 2026: Finance no longer moves holds; the Branch Supervisor does (and Admin).
+    expect(ROLE_DEFAULTS.FIN.permissions).not.toContain(P.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.SUP.permissions).toContain(P.HOLDS_TRANSFER);
+    expect(permissionLabel(P.HOLDS_TRANSFER)).toBe("Move a hold to another person");
     expect(ALL_PERMISSIONS as readonly string[]).not.toContain("holds:resolve_any");
     expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_MANAGE);
   });

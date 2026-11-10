@@ -1,18 +1,18 @@
 import { prisma } from "@/lib/db";
-import { can, getCurrentUser } from "@/lib/auth/current-user";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { canFunds } from "@/lib/funds/access";
 import { receiptStore } from "@/lib/storage/receipts";
 
 /**
- * A receipt file. Only the processor who owns the advance, and people who may see all funds
- * (Finance, Admin), can open it. Served inline with its checked content type, never as HTML.
+ * A receipt file. Only the processor who owns the advance, and people who may see that request's type
+ * (See cash advances or See fund transfers), can open it. Served inline with its checked content type, never as HTML.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return new Response("Sign in first.", { status: 401 });
   const { id } = await ctx.params;
-  const r = await prisma.receipt.findUnique({ where: { id }, include: { line: { include: { advance: { select: { requestedById: true } } } } } });
-  const allowed = r && (r.line.advance.requestedById === user.id || can(user, PERMISSIONS.FUNDS_VIEW_ALL));
+  const r = await prisma.receipt.findUnique({ where: { id }, include: { line: { include: { advance: { select: { requestedById: true, fundsTypeId: true } } } } } });
+  const allowed = r && (r.line.advance.requestedById === user.id || canFunds(user, "view", r.line.advance));
   if (!r || !allowed || !r.fileKey) return new Response("Not found.", { status: 404 });
   let bytes: Uint8Array;
   try {

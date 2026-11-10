@@ -56,7 +56,7 @@ describe("the migration gives every role the new ticks for what it could already
       expect([...effectivePermissions(r)].sort(), key).toEqual([...d.permissions].sort());
     }
     const refresh = Object.entries(ROLE_DEFAULTS).filter(([, d]) => d.permissions.includes(P.LOANS_REFRESH)).map(([k]) => k).sort();
-    expect(refresh).toEqual(["ADMIN", "DIG", "DP", "LA", "QA", "VAULT"]);
+    expect(refresh).toEqual(["ADMIN", "DIG", "DP", "LA", "QA", "SUP", "VAULT"]);
   });
 
   it("backfills a custom role that still has the old keys (re-running the data steps is harmless)", async () => {
@@ -72,8 +72,11 @@ describe("the migration gives every role the new ticks for what it could already
     expect(sql).not.toMatch(/^\s*DROP INDEX/im);
     for (const s of statements) await prisma.$executeRawUnsafe(s);
     // Later migrations' role steps run after it, as on a real database (20261119090005_expense_kinds adds the expense-kind ticks).
-    const later = readFileSync(path.join("prisma", "migrations", "20261119090005_expense_kinds", "migration.sql"), "utf8");
-    for (const s of later.split(/;\s*\n/).map((x) => x.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim()).filter((x) => x.startsWith('UPDATE "Role"'))) await prisma.$executeRawUnsafe(s);
+    // (20261119090006_decisions_batch adds "Print liquidation report" and takes "Move a hold" from Finance.)
+    for (const later of ["20261119090005_expense_kinds", "20261119090006_decisions_batch", "20261119090007_funds_per_type", "20261119090008_funds_edit_split"]) {
+      const sqlLater = readFileSync(path.join("prisma", "migrations", later, "migration.sql"), "utf8");
+      for (const s of sqlLater.split(/;\s*\n/).map((x) => x.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim()).filter((x) => x.startsWith('UPDATE "Role"'))) await prisma.$executeRawUnsafe(s);
+    }
     const after = new Set((await prisma.role.findUniqueOrThrow({ where: { id: legacy.id } })).permissions);
     for (const k of ["myloans:review", "myloans:manage", "branches:manage", "myloans:view", "loans:refresh", "myloans:sync", "branches:view", "branches:import", "branches:review", "access:manage", "settings:pn_format", "reports:tat_export", "email:view"]) expect(after.has(k), k).toBe(true);
     for (const k of ["source:review", "source:manage", "settings:branches"]) expect(after.has(k), k).toBe(false);
@@ -187,11 +190,13 @@ describe("roles are just ticks", () => {
     for (const d of ["app", "components", "lib"]) walk(d);
     const code = files.filter((f) => !f.endsWith(path.join("auth", "permissions.ts"))).map((f) => readFileSync(f, "utf8")).join("\n");
     const names = Object.entries(P);
+    // An exact name: "See funds status" (funds:view) only looked enforced because "PERMISSIONS.FUNDS_VIEW" is
+    // the start of "PERMISSIONS.FUNDS_VIEW_ALL"; it was removed (20261119090008_funds_edit_split).
     for (const k of ALL_PERMISSIONS) {
       const constName = names.find(([, v]) => v === k)![0];
       // Settings lists and areas are checked through LIST_PERMISSION / KIND_PERMISSION / AREA_PERMISSIONS.
       const viaList = Object.values(LIST_PERMISSION).includes(k) || Object.values(KIND_PERMISSION).includes(k) || Object.values(AREA_PERMISSIONS).flat().includes(k);
-      expect(viaList || code.includes(`PERMISSIONS.${constName}`) || code.includes(`P.${constName}`), k).toBe(true);
+      expect(viaList || new RegExp(`(PERMISSIONS|P)[.]${constName}(?![A-Z_])`).test(code), k).toBe(true);
     }
   });
 

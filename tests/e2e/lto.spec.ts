@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
+import { approveWithConfirm } from "./approve";
 
 /**
  * "Needs LTO processing" per transaction type and the LTO office everywhere it is needed:
@@ -216,7 +217,7 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await expect(page.getByText("Office changed from Z LTO Mandaue to Z LTO Cebu City").first()).toBeVisible();
   await shot(page, "approve-lto-line");
   await noSideways(page);
-  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await approveWithConfirm(page);
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
   await page.goto("/funds?tab=release");
   if ((page.viewportSize()?.width ?? 0) === 820) await page.getByRole("button", { name: /^Show details of / }).first().click();

@@ -2,7 +2,7 @@
 
 MyLoans sync, the branch list from MyLoans, email and the environment settings.
 
-Last updated: 9 November 2026 (PHT)
+Last updated: 10 November 2026 (PHT)
 
 - **MyLoans sync.** Find loan is a live lookup by PN; the DMS stores only loans that someone opened. Refresh on open when the copy is older than 15 minutes (default). Background refresh of active loans in tiers: work in progress hourly, not yet sent every 4 hours, finished but not closed daily, closed or cancelled never; business hours; a per-run cap; an hourly call ceiling. Replacement PN (same details, old PN ended, no payment) is linked by Admin; an additional unit (new application, same borrower) is shown in Related loans with no link.
 - **The PN check.** Find loan, the search box, imports and every MyLoans call go through one parser (`parsePn`, lib/pn/format.ts) with the rules in Settings, System, PN format. A wrong PN never reaches MyLoans.
@@ -13,13 +13,25 @@ Last updated: 9 November 2026 (PHT)
 - **Email.** Another channel of the in-app notifications, through Microsoft Graph. One master switch in Settings, System, **Not active** by default. Test mode redirects every email to a test address.
 - **Environment.** `.env` for non-secret defaults, `.env.local` for this PC's secrets, hosting settings for production. `APP_ENV` is local, staging or production; production refuses to start with test mode on or mock MyLoans. Details: [Environment variables](../ENVIRONMENT.md).
 
-## Questions for the MyLoans team
+## Answered by the business (10 November 2026)
 
-- A branches endpoint: id, code, name, area (id and name), division (id and name), status (active or inactive), address and updatedAt, paged, ideally with an "updated since" filter.
-- Is the branch id stable when a branch's code changes?
-- Does the loan record carry its current branch (code and name), and a branch-changed time?
-- Can a loan move to another branch after release, and does its PN stay the same?
-- Do PNs of the other companies in the MyLoans Company dropdown use another prefix than GD?
-- What is the unknown 8-digit column of the branch export (it is not stored)?
+1. **Branch, area and division data.** MyLoans has **no API** for these today. The data sits in a MyLoans table (the one the branch export came from). The DB admin may later give a read-only view or an API. **For now the DMS uses Import and Export (CSV)** (Settings, Branches). The DMS still never connects to the MyLoans database directly. The API questions (a stable branch id, an "updated since" filter) are **waiting for the DB admin**; they are not blockers.
+2. **Branch after release.** Once a loan is **released**, MyLoans cannot edit it, so a released loan **does not move branch and its PN stays the same**. The DMS only works with released loans. A branch **can** be edited **before** release, but the DMS only captures released loans, so the branch the DMS reads is the **branch at release, and it is final**. The branch code inside the PN is only where the application was opened, so it can differ from the branch at release: that is a fixed difference seen when the loan is first opened, not a later change. The DMS always uses the **branch field from MyLoans** (never the code inside the PN) for access, notifications and Monitoring; the PN code is shown only in the "Opened at X, now at Y" line. The "Opened at X, now at Y" display and the branch-change review stay as they are, but they are **not expected to happen for released loans** and are lower priority; the kit's branch-change samples stay as a test of that safety net.
+3. **MyLoans databases.** MyLoans uses **two databases**. **MYLOSDB (LOS)** holds the borrower details and the loan process, and the branch, area and division tables. **MYLMSDB (LMS)** holds the **released computation and the released status**. What the "Sync" and "LMS Sync Status" screens do between them is **not yet confirmed** (it probably moves released loans from LOS to LMS).
+   - **Risk:** if the two databases are out of step, a loan can look released in one and not in the other, and the DMS check "valid PN, branch, RELEASED" could refuse a loan that is really released.
+4. **The 8-digit column** in the branch export: still **unknown**; it is ignored and never stored.
+5. **PN prefix.** The company uses only **GD**, which stands for the company name. The PN format setting stays, with GD as the value.
+6. **Finance rules.** Kept as they are for now. The approval bands (the ₱5,000 split between the small and the large approver is a **placeholder**), the carry-over days, the fund-transfer limit, who may change a type and the cash-advance voucher reference are **"Not confirmed. Current values are placeholders."**
+7. **Hold transfer.** "Move a hold to another person" is a tick on a role (`holds:transfer`) plus the branch rule: a person with the tick moves a hold only in the branches of their own access, and only to someone who also has access to that branch. **Finance no longer has it**; the built-in **Branch Supervisor** role and Admin have it. Settings, Roles warns when an active branch has nobody with the tick.
+
+## Open questions for the DB admin (MyLoans)
+
+- A read-only view or an API for branches, areas and divisions: id, code, name, area (id and name), division (id and name), status, address and updatedAt, paged, with an "updated since" filter. *Waiting for the DB admin; not a blocker.*
+- Is the branch id stable when a branch's code changes? *Waiting for the DB admin.*
+- Can a released loan be cancelled, voided or reversed in MyLoans? (This decides whether Refresh and the sync can ever find a change on a released loan.)
+- Is there a delay between a loan being released in LOS and showing as released in LMS?
+- Does the PN lookup API read both databases, and which one decides RELEASED?
+- Which tables hold the data we need?
+- What is the unknown 8-digit column of the branch export?
 
 [Back to the workflow index](README.md)

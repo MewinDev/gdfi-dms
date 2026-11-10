@@ -1,5 +1,6 @@
 "use server";
 
+import { anyStepKeys } from "@/lib/funds/access";
 import { revalidatePath } from "next/cache";
 import { requireAnyPermission, requirePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -54,7 +55,7 @@ export async function addSuggestionAction(_p: ActionState, fd: FormData): Promis
 /** Finance or an approver: change a line, or add one, on a request that is not yet decided. */
 export async function saveAdvanceLineAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requireAnyPermission([PERMISSIONS.FUNDS_APPROVE, PERMISSIONS.FUNDS_RELEASE]);
+    const u = await requireAnyPermission(anyStepKeys("editLines"));
     const c = toCents(str(fd, "amount"));
     if (c === null) throw new UserError("Enter the amount in pesos, for example 500 or 1,250.50.", "cents");
     const lineId = str(fd, "lineId");

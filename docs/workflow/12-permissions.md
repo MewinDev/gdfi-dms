@@ -62,8 +62,8 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See loan files | Open and read loan files, Home and Updates. Which branches depends on the person's Branch access. | Loans, Loan File, Home, Updates | - | `loans:view` | LA, Admin, DP, Finance, Vault, Digital Records, QA, Approvers |
-| Find a loan | Search MyLoans by PN, CIN or CIF and see the preview. | Find loan, Search | See loan files | `loans:search` | LA, Admin |
+| See loan files | Open and read loan files, Home and Updates. Which branches depends on the person's Branch access. | Loans, Loan File, Home, Updates | - | `loans:view` | LA, Admin, DP, Finance, Vault, Digital Records, QA, Approvers, Branch Supervisor |
+| Find a loan | Search MyLoans by PN, CIN or CIF and see the preview. | Find loan, Search | See loan files | `loans:search` | LA, Admin, Branch Supervisor |
 | Open a loan file | Start a new loan file from a MyLoans loan. | Search, Open loan file | Find a loan | `loans:open` | LA |
 | Export loans (CSV) | Download the loan list as a spreadsheet file. | Loans, Export | See loan files | `loans:export` | Admin |
 | Change an automatic result | Supervisor override of the classification and transactions, with a reason. | Loan File, Change an automatic result | See loan files | `rules:override` | Admin |
@@ -78,11 +78,11 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Mark as done | Record the EDST reference, and mark custom transactions done. | Loan File, EDST and Mark as done | Tick papers | `transactions:complete` | LA |
 | Raise a problem | Open a problem on a transaction the person works on. | Loan File, Job | See loan files | `problems:raise` | LA, DP |
 | Resolve own problems | Resolve problems on transactions the person works on. | Loan File, Job | Raise a problem | `problems:resolve` | LA, DP |
-| Resolve any problem | Resolve a problem on any transaction in the person's branches. People with this are also told about problems, holds and overdue work there. | Loan File, Job; notifications | See loan files | `problems:resolve_any` | Admin |
+| Resolve any problem | Resolve a problem on any transaction in the person's branches. People with this are also told about problems, holds and overdue work there. | Loan File, Job; notifications | See loan files | `problems:resolve_any` | Admin, Branch Supervisor |
 | Mark outside our control | Tag a problem for reports. It does not stop the clock. | Job, Problem | See loan files | `problems:mark_outside_control` | Admin |
 | Put work on hold | Put a transaction on hold while it waits on something that is not a fault. Only on work the person does. The clock keeps counting. | Loan File, Job | See loan files | `holds:raise` | LA, DP |
 | Resume own holds | Resume a hold the person owns, or add the remarks to an older hold of theirs. | Loan File, Job, Open items | Put work on hold | `holds:resolve` | LA, DP |
-| Transfer a hold | Give a hold to another person of the same work (for example when the owner is on leave), in the person's branches. It never resumes the hold. | Loan File, Open items | See loan files | `holds:transfer` | Admin, Finance |
+| Move a hold to another person | Give a hold to another person of the same work (for example when the owner is on leave). Only in the person's branches, and only to someone who also has access to that branch. It never resumes the hold. | Loan File, Open items | See loan files | `holds:transfer` | Admin, Branch Supervisor |
 
 ### Send to DP and returns
 
@@ -106,23 +106,33 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See funds status | See whether transactions need funds, are funded or settled. | Loan File | See loan files | `funds:view` | LA |
-| See all advances | The Funds page: every advance in the person's branches, and the receipts. | Funds, Funds export, Receipts | See loan files | `funds:view_all` | Admin, Finance |
 | Request a cash advance | Ask for one advance covering several jobs, top-ups and carry-overs. | My funds, Job | Work on jobs | `funds:request` | DP |
 | Liquidate | Record receipts and return cash. | My funds | Request a cash advance | `funds:liquidate` | DP |
-| Approve cash advances | Approve or deny requests within the approval bands. | Funds | See all advances | `funds:approve` | Finance |
-| Release funds | Release money, confirm returned cash, close advances. | Funds | See all advances | `funds:release` | Finance |
-| Grant a funds exception | Let a processor with an overdue advance submit one more request. | Funds | See all advances | `funds:exception` | Finance |
+| Grant a funds exception | Let a processor with an overdue advance submit one more request (both types). | Funds | - | `funds:exception` | Finance |
 | See expense kinds | See Settings, Expense kinds: what a cash advance or fund transfer can be for, and each kind's amount. | Settings, Expense kinds | - | `funds:kinds_view` | LA, Admin, DP, Finance, Approvers |
 | Add and manage expense kinds (Change; View is See expense kinds) | Add, rename, reorder or switch off expense kinds and set their amount; "+ Add new kind" on the funds screens; change a fixed amount on one request. | Settings, Expense kinds; Funds, To approve; My funds | See expense kinds | `funds:kinds_manage` | Admin, Finance, Approvers |
 | See cash amounts in the Journey | Show peso amounts in a loan's Journey. Without it, the Journey shows the funds status only. | Loan File, Journey; LTO monitor amounts | See loan files | `journey:view_amounts` | Admin, Finance, Approvers |
+| See cash advances | The Funds page for cash advances: every request in the person's branches, the counts, the CSV and the receipts. | Funds, Funds export, Receipts | See loan files | `funds:ca_view` | Admin, Finance |
+| Approve cash advances | Approve or deny cash advances (and their top-ups and carry-overs) within the approval bands of this type. | Funds, To approve | See cash advances | `funds:ca_approve` | Finance |
+| Release cash advances | Release the approved money (and approved top-ups) of cash advances. | Funds, To release | See cash advances | `funds:ca_release` | Finance |
+| Settle and close cash advances | Confirm returned cash and close cash advances. Told when liquidation is submitted or overdue. | Funds, Outstanding | See cash advances | `funds:ca_settle` | Finance |
+| Edit lines of cash advances | Change or add a line before the request is decided. | Funds, To approve | See cash advances | `funds:ca_edit_lines` | Finance |
+| Change type of cash advances | Change the type before release, with remarks. Changing into the other type needs that type's Change type tick too. | Funds, To approve and To release | See cash advances | `funds:ca_change_type` | Finance |
+| Print liquidation report for cash advances | Open and print the liquidation report of cash advances. | Funds, Outstanding and History, Print; the liquidation report page | See cash advances | `funds:ca_print` | Admin, Finance |
+| See fund transfers | The Funds page for fund transfers: every request in the person's branches, the counts, the CSV and the receipts. | Funds, Funds export, Receipts | See loan files | `funds:ft_view` | Admin, Finance |
+| Approve fund transfers | Approve or deny fund transfers (and their top-ups and carry-overs) within the approval bands of this type. | Funds, To approve | See fund transfers | `funds:ft_approve` | Finance |
+| Release fund transfers | Release the approved money (and approved top-ups) of fund transfers. | Funds, To release | See fund transfers | `funds:ft_release` | Finance |
+| Settle and close fund transfers | Confirm returned cash and close fund transfers. Told when liquidation is submitted or overdue. | Funds, Outstanding | See fund transfers | `funds:ft_settle` | Finance |
+| Edit lines of fund transfers | Change or add a line before the request is decided. | Funds, To approve | See fund transfers | `funds:ft_edit_lines` | Finance |
+| Change type of fund transfers | Change the type before release, with remarks. Changing into the other type needs that type's Change type tick too. | Funds, To approve and To release | See fund transfers | `funds:ft_change_type` | Finance |
+| Print liquidation report for fund transfers | Open and print the liquidation report of fund transfers. | Funds, Outstanding and History, Print; the liquidation report page | See fund transfers | `funds:ft_print` | Admin, Finance |
 
 ### Monitoring
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See the DP monitor | Each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only. | Monitoring, DPs; its CSV | - | `monitor:dp` | Admin, Operations Monitor |
-| See the LTO monitor | Jobs at each LTO office, time at the LTO and advisories. | Monitoring, LTO offices; its CSV | - | `monitor:lto` | Admin, Operations Monitor |
+| See the DP monitor | Each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only. | Monitoring, DPs; its CSV | - | `monitor:dp` | Admin, Operations Monitor, Branch Supervisor |
+| See the LTO monitor | Jobs at each LTO office, time at the LTO and advisories. | Monitoring, LTO offices; its CSV | - | `monitor:lto` | Admin, Operations Monitor, Branch Supervisor |
 | Manage LTO advisories (Change; View is See the LTO monitor) | Resolve or edit any LTO advisory, and file one from the Monitoring page. People with this are told when an advisory is filed. | Monitoring, LTO offices | See the LTO monitor | `ltoreports:manage` | Admin, Operations Monitor |
 | Be told about LTO advisories | Get a notification (and an email when emails are on) when an LTO advisory is filed or resolved. Processors are never told. | Notifications | See the LTO monitor | `ltoreports:notify` | Operations Monitor |
 | Set processor capacity and leave | The default number of open jobs, a processor's own capacity, and On leave. | Settings, Processor capacity | - | `dpcapacity:manage` | Admin |
@@ -131,7 +141,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | Admin |
+| See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | Admin, Branch Supervisor |
 | Download the TAT report (CSV) (Change; View is See the TAT and problems report) | Download the TAT and problems report as a spreadsheet file. | Reports, TAT, Download CSV | See the TAT and problems report | `reports:tat_export` | Admin |
 | See the audit log | Every automatic decision and user action (the technical log). | Audit log | - | `audit:view` | Admin |
 
@@ -139,8 +149,8 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See when MyLoans was last checked | Show "MyLoans · Last checked" on a loan file. | Loan File, top strip | See loan files | `myloans:view` | LA, Admin, DP, Finance, Vault, Digital Records, QA, Approvers |
-| Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | LA, Admin, DP, Vault, Digital Records, QA |
+| See when MyLoans was last checked | Show "MyLoans · Last checked" on a loan file. | Loan File, top strip | See loan files | `myloans:view` | LA, Admin, DP, Finance, Vault, Digital Records, QA, Approvers, Branch Supervisor |
+| Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | LA, Admin, DP, Vault, Digital Records, QA, Branch Supervisor |
 | Review MyLoans changes | Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin |
 | Change MyLoans sync settings | How often loans are checked against MyLoans and the business hours. | Settings, MyLoans sync | - | `myloans:manage` | Admin |
 | Run the MyLoans sync now | The Run now button: check every open loan against MyLoans at once. | Settings, MyLoans sync, Run now | - | `myloans:sync` | Admin |
@@ -209,7 +219,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Mark outside our control | Job, Problem | problems:mark_outside_control | `problems:mark_outside_control` |  |
 | Put work on hold | Loan File, Job | holds:raise | `holds:raise` |  |
 | Resume own holds | Loan File, Job, Open items | none (resume and add details checked only the hold owner) | `holds:resolve` | **Gap, closed** |
-| Transfer a hold | Loan File, Open items | holds:transfer (Admin: any branch, by role name) | `holds:transfer` | **Gap, closed** |
+| Move a hold to another person | Loan File, Open items | holds:transfer (Admin: any branch, by role name) | `holds:transfer` | **Gap, closed** |
 | Send to a processor | Loan File, Send | processing:send | `processing:send` |  |
 | Flag funds | Loan File, Send | funds:flag | `funds:flag` |  |
 | Accept returned papers | Receive package | processing:accept_returns | `processing:accept_returns` |  |
@@ -218,16 +228,26 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Pass a job to a second processor | Job, Pasuyo | jobs:pasuyo | `jobs:pasuyo` |  |
 | Return a job to the LA for missing papers | Job, Return to LA | jobs:return_to_la | `jobs:return_to_la` |  |
 | File an LTO advisory | Job at an LTO stage | ltoreports:create | `ltoreports:create` |  |
-| See funds status | Loan File | funds:view | `funds:view` |  |
-| See all advances | Funds, Funds export, Receipts | funds:view_all | `funds:view_all` |  |
 | Request a cash advance | My funds, Job | funds:request | `funds:request` |  |
 | Liquidate | My funds | funds:liquidate | `funds:liquidate` |  |
-| Approve cash advances | Funds | funds:approve | `funds:approve` |  |
-| Release funds | Funds | funds:release | `funds:release` |  |
 | Grant a funds exception | Funds | funds:exception | `funds:exception` |  |
 | See expense kinds | Settings, Expense kinds | none (the kinds were fixed in code) | `funds:kinds_view` | **Gap, closed** |
 | Add and manage expense kinds | Settings, Expense kinds; Funds, To approve; My funds | none (the kinds were fixed in code) | `funds:kinds_manage` | **Gap, closed** |
 | See cash amounts in the Journey | Loan File, Journey; LTO monitor amounts | journey:view_amounts | `journey:view_amounts` |  |
+| See cash advances | Funds, Funds export, Receipts | funds:view_all | `funds:ca_view` | Split or renamed |
+| Approve cash advances | Funds, To approve | funds:approve | `funds:ca_approve` | Split or renamed |
+| Release cash advances | Funds, To release | funds:release | `funds:ca_release` | Split or renamed |
+| Settle and close cash advances | Funds, Outstanding | funds:release | `funds:ca_settle` | Split or renamed |
+| Edit lines of cash advances | Funds, To approve | funds:approve or funds:release | `funds:ca_edit_lines` | Split or renamed |
+| Change type of cash advances | Funds, To approve and To release | funds:release | `funds:ca_change_type` | Split or renamed |
+| Print liquidation report for cash advances | Funds, Outstanding and History, Print; the liquidation report page | funds:print | `funds:ca_print` | Split or renamed |
+| See fund transfers | Funds, Funds export, Receipts | funds:view_all | `funds:ft_view` | Split or renamed |
+| Approve fund transfers | Funds, To approve | funds:approve | `funds:ft_approve` | Split or renamed |
+| Release fund transfers | Funds, To release | funds:release | `funds:ft_release` | Split or renamed |
+| Settle and close fund transfers | Funds, Outstanding | funds:release | `funds:ft_settle` | Split or renamed |
+| Edit lines of fund transfers | Funds, To approve | funds:approve or funds:release | `funds:ft_edit_lines` | Split or renamed |
+| Change type of fund transfers | Funds, To approve and To release | funds:release | `funds:ft_change_type` | Split or renamed |
+| Print liquidation report for fund transfers | Funds, Outstanding and History, Print; the liquidation report page | funds:print | `funds:ft_print` | Split or renamed |
 | See the DP monitor | Monitoring, DPs; its CSV | monitor:dp | `monitor:dp` |  |
 | See the LTO monitor | Monitoring, LTO offices; its CSV | monitor:lto | `monitor:lto` |  |
 | Manage LTO advisories | Monitoring, LTO offices | ltoreports:manage | `ltoreports:manage` |  |

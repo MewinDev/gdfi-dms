@@ -65,5 +65,7 @@ export async function cleanSettingsTestRows() {
 /** Removes custom roles the e2e tests add (names starting with Z or "Copy of") and their zz.* users. Test clean-up only. */
 export async function cleanTestRoles() {
   await db.user.deleteMany({ where: { email: { startsWith: "zz." } } });
+  // Approval bands of those roles go first (a role on a band cannot be deleted).
+  await db.approvalBand.deleteMany({ where: { role: { builtIn: false, OR: [{ name: { startsWith: "Z" } }, { name: { startsWith: "Copy of" } }] } } });
   await db.role.deleteMany({ where: { builtIn: false, OR: [{ name: { startsWith: "Z" } }, { name: { startsWith: "Copy of" } }] } });
 }

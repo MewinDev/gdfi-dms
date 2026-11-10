@@ -433,7 +433,7 @@ export async function outstandingCash(db: Tx | typeof prisma, loanId: string) {
     const released = l.releasedCents;
     const notReleased = ["REQUESTED", "APPROVED"].includes(l.advance.status);
     const balance = notReleased ? l.approvedCents ?? l.requestedCents : advanceBalance({ releasedCents: released, receiptCents: spent, returnedCents: returned });
-    return { lineId: l.id, advanceId: l.advanceId, number: l.advance.number, status: l.advance.status, notReleased, kind: l.kind, cents: balance, dp: l.advance.requestedBy, txnName: l.transaction?.type.name ?? "", txnCode: l.transaction?.type.code ?? "" };
+    return { lineId: l.id, advanceId: l.advanceId, number: l.advance.number, fundsTypeId: l.advance.fundsTypeId, status: l.advance.status, notReleased, kind: l.kind, cents: balance, dp: l.advance.requestedBy, txnName: l.transaction?.type.name ?? "", txnCode: l.transaction?.type.code ?? "" };
   }).filter((x) => x.cents > 0);
 }
 
@@ -482,7 +482,7 @@ export async function askCashBack(u: CurrentUser, id: string) {
     if (!cash.length) throw new UserError("No cash is out on this loan.");
     for (const c of cash) {
       await notify(tx, {
-        userIds: [c.dp.id, ...(await financeIds(tx))], loanId: item.loanId, title: `${c.number}: return the cash for ${item.loan.pn}`,
+        userIds: [c.dp.id, ...(await financeIds(tx, c, c.notReleased ? "approve" : "settle"))], loanId: item.loanId, title: `${c.number}: return the cash for ${item.loan.pn}`,
         body: `${item.loan.pn} is cancelled in MyLoans. ${c.notReleased ? "This request is not released yet: Finance, deny it." : `Return the balance for ${c.txnName} (My funds > Return cash); Finance confirms it.`}`,
         link: c.notReleased ? "/funds?tab=approve" : "/my-funds?tab=liquidation",
         email: { event: "cash_returned", amountCents: c.cents, vars: { number: c.number, who: u.name, status: "cash back asked", reason: `${item.loan.pn} is cancelled in MyLoans. Return {amount}`.replace("{amount}", "the balance") } },
@@ -569,9 +569,9 @@ export async function moveCashToNewPn(u: CurrentUser, id: string, lineId: string
     if (await tx.cashAdvance.findFirst({ where: { movedFromLineId: lineId, status: "REQUESTED" } })) throw new UserError("A move for this cash is already waiting for approval.");
     const target = nw.transactions.find((t) => t.type.code === cash.txnCode && t.status !== "CANCELLED") ?? nw.transactions.find((t) => t.status !== "CANCELLED");
     if (!target) throw new UserError(`${nw.pn} has no open transaction to move the cash to.`);
-    const number = await nextNumber(tx, new Date());
-    // The moved balance keeps the funds type of the record it came from.
+    // The moved balance keeps the funds type of the record it came from (and its number prefix).
     const parent = (await tx.cashAdvanceLine.findUniqueOrThrow({ where: { id: lineId }, select: { advance: { select: { fundsTypeId: true, fundsTypeCode: true, fundsTypeName: true } } } })).advance;
+    const number = await nextNumber(tx, new Date(), parent.fundsTypeCode);
     const adv = await tx.cashAdvance.create({
       data: {
         ...parent, number, requestedById: cash.dp.id, branchId: nw.branchId, status: "REQUESTED", requestedCents: cash.cents, movedFromLineId: lineId,
@@ -583,7 +583,7 @@ export async function moveCashToNewPn(u: CurrentUser, id: string, lineId: string
       await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "cash_move_requested", entityType: "CashAdvance", entityId: adv.id, loanId: l.id, pn: l.pn, summary: `Admin ${u.name} asked to move the cash on ${cash.number} (${old.pn}) to ${nw.pn} as ${number}; it waits for approval` });
     }
     await notify(tx, {
-      userIds: await bandApprovers(tx, cash.cents), loanId: nw.id, title: `${number}: move cash to ${nw.pn}`, body: `${old.pn} was replaced by ${nw.pn}. Approve moving the balance of ${cash.number}.`, link: "/funds?tab=approve",
+      userIds: await bandApprovers(tx, cash.cents, parent), loanId: nw.id, title: `${number}: move cash to ${nw.pn}`, body: `${old.pn} was replaced by ${nw.pn}. Approve moving the balance of ${cash.number}.`, link: "/funds?tab=approve",
       email: { event: "advance_requested", amountCents: cash.cents, vars: { number, who: u.name, kind: parent.fundsTypeName, reason: `Move the cash from ${cash.number} (${old.pn}) to ${nw.pn}.` } },
     });
     return { number };

@@ -1,4 +1,5 @@
 import { requireUser, can } from "@/lib/auth/current-user";
+import { canFundsAny } from "@/lib/funds/access";
 import { PERMISSIONS, SETTINGS_PERMISSIONS } from "@/lib/auth/permissions";
 import { unreadNotificationCount } from "@/lib/services/queries";
 import { AppShell, type ShellNavItem } from "@/components/ui/app-shell";
@@ -14,11 +15,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const monitoring = can(user, PERMISSIONS.MONITOR_DP) || can(user, PERMISSIONS.MONITOR_LTO);
   const admin = [can(user, PERMISSIONS.USERS_VIEW), settings, can(user, PERMISSIONS.AUDIT_VIEW)];
   const items: ShellNavItem[] = [
-    ...([PERMISSIONS.LOANS_VIEW, PERMISSIONS.JOBS_WORK, PERMISSIONS.FUNDS_VIEW_ALL].some((p) => can(user, p)) ? [{ href: "/dashboard", label: "Home", icon: "home" as const }] : []),
+    ...(([PERMISSIONS.LOANS_VIEW, PERMISSIONS.JOBS_WORK].some((p) => can(user, p)) || canFundsAny(user)) ? [{ href: "/dashboard", label: "Home", icon: "home" as const }] : []),
     // The processor works from Jobs (and sees each loan file from there), so Loans is not in their nav.
     ...(can(user, PERMISSIONS.JOBS_WORK) ? [{ href: "/jobs", label: "Jobs", icon: "jobs" as const }] : []),
     ...(can(user, PERMISSIONS.FUNDS_REQUEST) ? [{ href: "/my-funds", label: "My funds", short: "Funds", icon: "funds" as const }] : []),
-    ...(can(user, PERMISSIONS.FUNDS_VIEW_ALL) ? [{ href: "/funds", label: "Funds", icon: "funds" as const }] : []),
+    ...(canFundsAny(user) ? [{ href: "/funds", label: "Funds", icon: "funds" as const }] : []),
     ...(can(user, PERMISSIONS.LOANS_VIEW) && !(can(user, PERMISSIONS.JOBS_WORK) && !worksLoans) ? [worksLoans ? { href: "/loans", label: "My loans", short: "Loans", icon: "loans" as const } : { href: "/loans", label: "Loans", icon: "loans" as const }] : []),
     ...(monitoring ? [{ href: "/monitoring", label: "Monitoring", short: "Monitor", icon: "monitor" as const }] : []),
     // Updates sits in the nav when there are no admin items (otherwise the bell in the top bar is enough).

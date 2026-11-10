@@ -1304,7 +1304,9 @@ model CashAdvance {
   id                String            @id @default(cuid())
   /// Move to the new PN: the line whose balance this request moves (the cash is already with the DP).
   movedFromLineId   String?
-  number            String            @unique // CA-2026-0001
+  number            String            @unique // CA-2026-0001 (Cash advance), FT-2026-0001 (Fund transfer): the type's code, the year, its own running number
+  /// The numbers it had before (a fund transfer once numbered CA-, or a type change): "Formerly CA-2026-0008"; search finds them.
+  formerNumbers     String[]          @default([])
   requestedById     String
   requestedBy       User              @relation("CaRequestedBy", fields: [requestedById], references: [id])
   branchId          String
@@ -1352,39 +1354,39 @@ model CashAdvance {
 }
 
 model CashAdvanceLine {
-  id             String             @id @default(cuid())
-  advanceId      String
-  advance        CashAdvance        @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  id               String             @id @default(cuid())
+  advanceId        String
+  advance          CashAdvance        @relation(fields: [advanceId], references: [id], onDelete: Cascade)
   /// Null for a general expense (e.g. transport).
-  transactionId  String?
-  transaction    LoanTransaction?   @relation(fields: [transactionId], references: [id])
+  transactionId    String?
+  transaction      LoanTransaction?   @relation(fields: [transactionId], references: [id])
   /// The expense kind's code (Settings > Expense kinds).
-  kind           String
-  kindRef        ExpenseKind        @relation(fields: [kind], references: [code], onUpdate: Cascade)
+  kind             String
+  kindRef          ExpenseKind        @relation(fields: [kind], references: [code], onUpdate: Cascade)
   /// Kind Other: what the expense is ("Courier"). Blank on old rows ("Other (not described)").
-  otherDescription String           @default("")
+  otherDescription String             @default("")
   /// Where the amount came from: RULE (rule's suggested), PRESET (the kind's amount), OFFICE (LTO office transport), TYPED.
-  amountSource   String             @default("TYPED")
+  amountSource     String             @default("TYPED")
   /// The starting value offered (rule, kind or office); kept so "Preset was ₱500" shows when it was changed.
-  presetCents    Int?
+  presetCents      Int?
   /// The kind's amount was Fixed when the line was made (the processor could not change it).
-  locked         Boolean            @default(false)
-  note           String             @default("")
+  locked           Boolean            @default(false)
+  note             String             @default("")
   /// Typed reason when the amount is above the maximum per transaction.
-  overMaxReason  String             @default("")
+  overMaxReason    String             @default("")
   /// The job's LTO office when the cash was requested (to show "Office changed from X to Y").
-  ltoOfficeId    String?
-  ltoOffice      LtoOffice?         @relation(fields: [ltoOfficeId], references: [id])
-  requestedCents Int
-  approvedCents  Int?
-  releasedCents  Int                @default(0)
-  denied         Boolean            @default(false)
-  topUps         CashAdvanceTopUp[]
-  spends         AttemptSpend[]
-  receipts       Receipt[]
-  returns        CashReturn[]
-  carryOvers     CarryOver[]
-  createdAt      DateTime           @default(now())
+  ltoOfficeId      String?
+  ltoOffice        LtoOffice?         @relation(fields: [ltoOfficeId], references: [id])
+  requestedCents   Int
+  approvedCents    Int?
+  releasedCents    Int                @default(0)
+  denied           Boolean            @default(false)
+  topUps           CashAdvanceTopUp[]
+  spends           AttemptSpend[]
+  receipts         Receipt[]
+  returns          CashReturn[]
+  carryOvers       CarryOver[]
+  createdAt        DateTime           @default(now())
 }
 
 model CashAdvanceTopUp {
@@ -1434,6 +1436,7 @@ model FundsType {
   deactivatedById String?
   advances        CashAdvance[]
   topUps          CashAdvanceTopUp[]
+  approvalBands   ApprovalBand[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 }
@@ -1559,7 +1562,10 @@ model FundsException {
 /// Who approves an advance, by amount (Settings). The band with the highest "from" at or below the amount applies.
 model ApprovalBand {
   id              String    @id @default(cuid())
-  fromCents       Int       @unique
+  /// Each funds type has its own bands (Cash advance, Fund transfer); a type added later uses the Cash advance bands.
+  fundsTypeId     String    @default("fundstype_ca")
+  fundsType       FundsType @relation(fields: [fundsTypeId], references: [id])
+  fromCents       Int
   roleId          String
   role            Role      @relation(fields: [roleId], references: [id])
   active          Boolean   @default(true)
@@ -1567,6 +1573,9 @@ model ApprovalBand {
   deactivatedById String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  /// Several roles can share one band (the same type and amount): each of them approves it.
+  @@unique([fundsTypeId, fromCents, roleId])
 }
 
 /// Reasons for a problem (also the result of an attempt that was not processed). Settings list.

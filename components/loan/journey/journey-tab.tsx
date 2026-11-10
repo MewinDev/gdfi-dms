@@ -13,7 +13,7 @@ import { txnStatus, type TxnStatus } from "@/lib/ui/txn-status";
 import { holdDays, problemDays } from "@/lib/workflow/tat";
 import { STEP_STATE_LABEL, undoubleRole, type JPhase, type JStep, type Journey, type StepState } from "@/lib/workflow/build-journey";
 import {
-  FLAG_WORD, WHERE_WORD, spanText, storyDays, timeText,
+  FLAG_WORD, STORY_FILTERS, WHERE_WORD, spanText, storyDays, storyShowOf, timeText,
   type DocColumn, type Flag, type JourneyStory, type Milestone, type StoryLine, type WhereKind, type WhereLine,
 } from "@/lib/workflow/journey-story";
 import { RoleChip } from "@/components/chips";
@@ -71,7 +71,7 @@ export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; use
       <WhereNow lines={story.where} />
       <JourneySwitch current={view} items={views.map(([k, l]) => ({ key: k, label: l, href: href({ journey: k }) }))} />
       <div id="journey-panel" role="tabpanel" aria-labelledby={`journey-tab-${view}`} className="min-w-0">
-        {view === "story" && <StoryView story={story} now={j.now} userName={user.name} txns={txns} params={params} href={href} />}
+        {view === "story" && <StoryView story={story} now={j.now} txns={txns} params={params} href={href} />}
         {view === "docs" && <DocsBoard columns={story.columns} words={words} attentionFirst={params.order === "attention"} href={href} />}
         {view === "log" && <FullLog j={j} open={params.log === "open"} papersOpen={params.scope === "DOCS"} sys={params.sys === "1"} na={params.na === "1"} codes={live.map((t) => t.type.code)} />}
       </div>
@@ -144,13 +144,14 @@ function WhereNow({ lines }: { lines: WhereLine[] }) {
 // 2. Story
 // ---------------------------------------------------------------------------
 
-const FILTERS: [string, string][] = [["all", "All"], ["attention", "Needs attention"], ["mine", "Mine"]];
+/** All · Needs attention (lib/workflow/journey-story.ts; an old ?show=mine in the address shows All). */
+const FILTERS = STORY_FILTERS;
 
-function StoryView({ story, now, userName, txns, params, href }: {
-  story: JourneyStory; now: Date; userName: string; txns: { code: string; name: string }[]; params: JourneyParams;
+function StoryView({ story, now, txns, params, href }: {
+  story: JourneyStory; now: Date; txns: { code: string; name: string }[]; params: JourneyParams;
   href: (p: Record<string, string | undefined>) => string;
 }) {
-  const show = FILTERS.some(([k]) => k === params.show) ? params.show! : "all";
+  const show = storyShowOf(params.show);
   const txn = txns.some((t) => t.code === params.txn) ? params.txn! : "";
   const flag = (["return", "problem", "hold", "missing"] as const).find((f) => f === params.flag) ?? "";
   const keep = { journey: "story", show: show === "all" ? undefined : show, txn: txn || undefined, flag: flag || undefined };
@@ -158,7 +159,6 @@ function StoryView({ story, now, userName, txns, params, href }: {
   let lines = story.lines;
   if (txn) lines = lines.filter((l) => l.txns.some((t) => t.code === txn));
   if (show === "attention") lines = lines.filter((l) => l.flag);
-  if (show === "mine") lines = lines.filter((l) => l.who === userName);
   if (flag) lines = lines.filter((l) => (flag === "return" ? l.flag === "return" || l.flag === "decline" : l.flag === flag));
   const days = storyDays(lines, now);
 

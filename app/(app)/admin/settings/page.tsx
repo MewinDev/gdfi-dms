@@ -9,6 +9,9 @@ import { effectivePermissions } from "@/lib/auth/access";
 import { RolesList } from "@/components/admin/roles-list";
 import { RoleEditor } from "@/components/admin/role-editor";
 import { lastRoleChanges } from "@/lib/services/roles";
+import { branchesWithoutHoldMover, holdMoverHealthText } from "@/lib/services/holds";
+import { STEP_KEY, TYPE_ID, TYPE_KEYS, TYPE_TITLE, type TypeKey } from "@/lib/funds/access";
+import { STEP_TITLE, fundsGaps, fundsHandlers } from "@/lib/services/funds-handlers";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getSetting } from "@/lib/settings";
 import { decimalToCents, peso } from "@/lib/funds/rules";
@@ -83,7 +86,7 @@ const listHref = (key: string) => `${BASE}?open=${key}`;
 const editHref = (key: string, id: string) => `${BASE}?open=${key}&edit=${id}`;
 const importHref = (key: string) => `${BASE}?open=${key}&step=import`;
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string; btype?: string }> }) {
   // Settings opens for anyone who may change at least one area; each card shows only if allowed.
   const user = await requirePageAny(SETTINGS_PERMISSIONS);
   const sp = await searchParams;
@@ -145,7 +148,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </section>
         ))}
       </div>
-      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show }} />}
+      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show }} btype={sp.btype === "FT" ? "FT" : "CA"} />}
     </div>
   );
 }
@@ -208,7 +211,7 @@ interface ListArea {
   filterLabel?: string;
 }
 
-async function AreaModal({ area, edit, step, testMode, user, filter, branchFilter }: { area: (typeof AREAS)[number]; edit?: string; step?: string; testMode: boolean; user: CurrentUser; filter: OutboxFilter; branchFilter: BranchFilter }) {
+async function AreaModal({ area, edit, step, testMode, user, filter, branchFilter, btype = "CA" }: { area: (typeof AREAS)[number]; edit?: string; step?: string; testMode: boolean; user: CurrentUser; filter: OutboxFilter; branchFilter: BranchFilter; btype?: TypeKey }) {
   const common = { id: "settings-modal", title: area.title, help: area.help, closeHref: BASE, returnFocusId: `card-${area.key}` };
 
   // Settings, Branches: its own list, edit, Import from MyLoans, Branch review and sync steps.
@@ -274,7 +277,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
     );
   }
 
-  const list = await loadListArea(area.key);
+  const list = await loadListArea(area.key, { btype });
   if (!list) return null;
   const fields = edit ? list.fieldsFor(edit === "new" ? null : edit) : null;
   if (edit && fields) {
@@ -307,7 +310,16 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
           blockLtoUntilFunded={await getSetting("funds.blockLtoUntilFunded")}
         />
       )}
-      <SettingsList rows={list.rows} addHref={list.addLabel ? editHref(area.key, "new") : undefined} addLabel={list.addLabel} filterLabel={list.filterLabel ?? "Find"} statusKind={list.statusKind} />
+      {area.key === "approval-bands" && (
+        // Each funds type has its own bands (Cash advance | Fund transfer).
+        <nav aria-label="Type" className="seg mb-3" data-band-type-switch>
+          {TYPE_KEYS.map((k) => (
+            <Link key={k} href={`${BASE}?open=approval-bands&btype=${k}`} aria-current={btype === k ? "page" : undefined} className="seg-item" data-band-type={k}>{k === "CA" ? "Cash advance" : "Fund transfer"}</Link>
+          ))}
+        </nav>
+      )}
+      {area.key === "funds-types" && <WhoHandles />}
+      <SettingsList rows={list.rows} addHref={list.addLabel ? `${editHref(area.key, "new")}${area.key === "approval-bands" ? `&btype=${btype}` : ""}` : undefined} addLabel={list.addLabel} filterLabel={list.filterLabel ?? "Find"} statusKind={list.statusKind} />
     </SettingsModal>
   );
 }
@@ -375,7 +387,7 @@ async function CapacityArea() {
 
 const ORIG_TEXT = { ORIGINAL: "Original", COPY: "Copy", EITHER: "Either" } as const;
 
-async function loadListArea(key: AreaKey): Promise<ListArea | null> {
+async function loadListArea(key: AreaKey, opts: { btype?: TypeKey } = {}): Promise<ListArea | null> {
   switch (key) {
     case "transaction-types": {
       const rows = await prisma.transactionType.findMany({ orderBy: { sortOrder: "asc" }, include: { _count: { select: { rules: { where: { active: true } } } } } });
@@ -541,25 +553,34 @@ async function loadListArea(key: AreaKey): Promise<ListArea | null> {
       };
     }
     case "approval-bands": {
-      const [rows, roles] = await Promise.all([
+      // The bands of one type (the Type switch); an edited band keeps its own type.
+      const btype: TypeKey = opts.btype ?? "CA";
+      const [all, roles] = await Promise.all([
         prisma.approvalBand.findMany({ include: { role: true }, orderBy: { fromCents: "asc" } }),
         prisma.role.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
       ]);
-      const approvers = roles.filter((r) => effectivePermissions(r).has(PERMISSIONS.FUNDS_APPROVE));
-      const f = (r?: (typeof rows)[number]): FieldDef[] => [
-        { name: "fromAmount", label: "Amount from (PHP)", type: "number", value: r ? r.fromCents / 100 : "", help: "0 means any amount." },
-        { name: "roleId", label: "Approving role", type: "select", value: r?.roleId ?? approvers[0]?.id, options: [...approvers, ...(r && !approvers.some((x) => x.id === r.roleId) ? [r.role] : [])].map((x) => [x.id, x.name]) },
-      ];
+      const rows = all.filter((r) => r.fundsTypeId === TYPE_ID[btype]);
+      const approversOf = (k: TypeKey) => roles.filter((r) => effectivePermissions(r).has(STEP_KEY[k].approve));
+      const f = (r?: (typeof all)[number]): FieldDef[] => {
+        const k: TypeKey = r ? (r.fundsTypeId === TYPE_ID.FT ? "FT" : "CA") : btype;
+        const approvers = approversOf(k);
+        return [
+          { name: "fundsTypeId", label: "Type", type: "select", value: TYPE_ID[k], options: TYPE_KEYS.map((x) => [TYPE_ID[x], x === "CA" ? "Cash advance" : "Fund transfer"]), help: "Each type has its own bands." },
+          { name: "fromAmount", label: "Amount from (PHP)", type: "number", value: r ? r.fromCents / 100 : "", help: "0 means any amount." },
+          { name: "roleId", label: "Approving role", type: "select", value: r?.roleId ?? approvers[0]?.id, options: [...approvers, ...(r && !approvers.some((x) => x.id === r.roleId) ? [r.role] : [])].map((x) => [x.id, x.name]), help: `The role needs "${k === "CA" ? "Approve cash advances" : "Approve fund transfers"}".` },
+        ];
+      };
       return {
         kind: "approvalBand", statusKind: "approvalBand", noun: "approval band", addLabel: "Add band", filterLabel: "Find a band",
         rows: rows.map((r, i) => {
-          const next = rows.slice(i + 1).find((x) => x.active);
+          // The next band up (several roles can share one amount).
+          const next = rows.slice(i + 1).find((x) => x.active && x.fromCents > r.fromCents);
           return {
             id: r.id, title: r.fromCents === 0 && !next ? "Any amount" : `From ${peso(r.fromCents)}${next ? ` to below ${peso(next.fromCents)}` : " and up"}`,
             sub: `Approved by ${r.role.name}`, inactive: !r.active, href: editHref(key, r.id),
           };
         }),
-        fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
+        fieldsFor: (id) => (id === null ? f() : all.find((r) => r.id === id) ? f(all.find((r) => r.id === id)) : null),
       };
     }
     case "problem-reasons": {
@@ -690,9 +711,22 @@ async function RolesArea({ edit, common }: { edit?: string; common: { id: string
   const editBase = `${BASE}?open=roles&edit=`;
   const roles = await prisma.role.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { _count: { select: { users: true } } } });
   if (!edit) {
-    const last = await lastRoleChanges(roles.map((r) => r.id));
+    const [last, noMover, gaps] = await Promise.all([lastRoleChanges(roles.map((r) => r.id)), branchesWithoutHoldMover(), fundsGaps()]);
     return (
       <SettingsModal {...common} footer={{ kind: "done" }}>
+        {gaps.length > 0 && <p role="status" className="mb-4 rounded-xl border border-act-line bg-act-bg px-4 py-2.5 text-sm font-semibold text-ink" data-funds-health>{gaps.join(" ")}</p>}
+        {noMover.length > 0 && (
+          // Who handles hold transfers, at a glance (read only; the Roles area needs "Manage roles").
+          <div role="status" className="mb-4 rounded-xl border border-act-line bg-act-bg px-4 py-2.5 text-sm text-ink" data-hold-mover-health={noMover.length}>
+            <p className="font-semibold">{holdMoverHealthText(noMover.length)}</p>
+            <details className="mt-1">
+              <summary className="link cursor-pointer text-sm">Show branches</summary>
+              <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-ink-2" data-hold-mover-branches>
+                {noMover.map((b) => <li key={b.id}>{b.name}{b.code ? ` (${b.code})` : ""}</li>)}
+              </ul>
+            </details>
+          </div>
+        )}
         <RolesList
           addHref={`${editBase}new`} editHrefBase={editBase}
           rows={roles.map((r) => ({
@@ -880,5 +914,46 @@ async function TestDataArea() {
       <ToggleForm settingKey="samples.showDataCheck" label="Show data-check test PNs" on={showDataCheck}
         description="Adds a second group, Data-check samples, under the sample loans on Find a loan: the PNs that test refusals (not released, missing field, other branch, and so on)." />
     </div>
+  );
+}
+
+/**
+ * Settings, Funds types: "Who handles it" for Cash advance and Fund transfer (read only, live from the
+ * active people and the ticks on their roles), a soft amber line for what nobody can do, and a link to
+ * the Funds group in Roles, where it is changed.
+ */
+async function WhoHandles() {
+  const all = await fundsHandlers();
+  return (
+    <section aria-label="Who handles each type" className="mb-4 grid gap-3 lg:grid-cols-2" data-who-handles>
+      {all.map((h) => (
+        <div key={h.type} className="rounded-xl border border-line p-3" data-who-handles-type={h.type}>
+          <h3 className="text-[15px] font-bold text-navy">{TYPE_TITLE[h.type]}: who handles it</h3>
+          {h.gaps.length > 0 && <p role="status" className="mt-2 rounded-lg border border-act-line bg-act-bg px-3 py-1.5 text-sm text-ink" data-funds-gap>{h.gaps.join(" ")}</p>}
+          <table className="mt-2 w-full text-sm">
+            <thead className="sr-only"><tr><th scope="col">Step</th><th scope="col">Who can do it</th></tr></thead>
+            <tbody>
+              {h.steps.map((s) => (
+                <tr key={s.step} className="border-t border-line first:border-t-0" data-handler-step={s.step}>
+                  <th scope="row" className="w-28 py-1.5 pr-2 text-left align-top font-semibold text-ink">{STEP_TITLE[s.step]}</th>
+                  <td className="py-1.5 align-top" data-handler-names>
+                    {s.people.length === 0 ? <span className="text-ink-2">Nobody</span> : (
+                      <>
+                        {s.people.slice(0, 5).map((p, i) => (
+                          <span key={`${p.name}-${i}`}>{i > 0 && ", "}{p.name} <span className="text-ink-2">({p.role})</span></span>
+                        ))}
+                        {s.people.length > 5 && <span className="text-ink-2"> +{s.people.length - 5} more</span>}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-xs text-ink-2">If nobody can handle a step, requests of this type wait at that step and the Admin is notified.</p>
+          <Link href={`${BASE}?open=roles`} className="link mt-1 inline-flex min-h-11 items-center text-sm" data-change-in-roles>Change in Roles</Link>
+        </div>
+      ))}
+    </section>
   );
 }

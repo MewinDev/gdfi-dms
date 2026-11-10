@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
+import { approveWithConfirm } from "./approve";
 
 /**
  * Funds types (Cash advance CA, Fund transfer FT) on the same funds flow: Settings > Funds types, the
@@ -99,6 +100,8 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, gets the
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
   const ft = await db.cashAdvance.findFirstOrThrow({ where: { lines: { some: { transactionId: mortgage } } } });
   expect(ft).toMatchObject({ fundsTypeCode: "FT", fundsTypeName: "Fund transfer" });
+  // A new Fund transfer is numbered FT-<year>-<4 digits> (its own running number, not CA-).
+  expect(ft.number).toMatch(/^FT-\d{4}-\d{4}$/);
 
   // A Cash advance from the same processor (general expense), so the list has both types.
   const dp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
@@ -130,7 +133,7 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, gets the
 
   // Approve both.
   for (const n of [ft.number, "CA-E2E-0001"]) {
-    await page.locator(`[data-advance="${n}"]`).getByRole("button", { name: "Approve", exact: true }).click();
+    await approveWithConfirm(page, page.locator(`[data-advance="${n}"]`));
     await expect.poll(async () => (await db.cashAdvance.findUniqueOrThrow({ where: { number: n } })).status).toBe("APPROVED");
   }
 

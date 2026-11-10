@@ -31,6 +31,10 @@ Sign in at `/login`, under **Test sign-in**. The accounts are grouped by role, w
 | Finance | Finance | All branches |
 | Approver Small | Approver (lowest band) | All branches |
 | Approver Large | Approver (higher band) | All branches |
+| Finance Cash | Finance (cash advance) | All branches |
+| Finance Transfer | Finance (fund transfer) | All branches |
+| Approver Cash | Approver (cash advance) | All branches |
+| Approver Transfer | Approver (fund transfer) | All branches |
 | Operations Monitor | Operations Monitor | All branches |
 | Branch Supervisor | Branch Supervisor | Antipolo and Angono |
 | Area Supervisor Luzon 1 | Supervisor (Branch Supervisor role) | Whole Luzon 1 area plus Alaminos |
@@ -131,6 +135,24 @@ Sign in at `/login`, under **Test sign-in**. The accounts are grouped by role, w
 - GD7182026903040
 
 Answers, only if you get stuck: [what each PN is](MANUAL-TEST-KIT-ANSWERS.md).
+
+## Things to check (10 November 2026)
+
+Use any opened loan with a job sent to a processor. What you should see is in the [answers](MANUAL-TEST-KIT-ANSWERS.md#things-to-check-10-november-2026).
+
+1. **Approve asks first.** As a processor, request a cash advance; as the approver, press **Approve** on Funds, To approve. Try **Cancel**, **Esc**, then **Approve** (also a quick double tap). Then open **Change amounts** on another request, lower an amount and press Approve.
+2. **Request numbers.** Request one **Cash advance** and one **Fund transfer**. As Finance, **Change type** on one of them before release, then search Funds for its old number.
+3. **Print liquidation report.** As Admin, untick **Print liquidation report** on the Approver Small role. Sign in as Approver Small and look for Print on Outstanding and History, then open a liquidation report link. Tick it back afterwards.
+4. **Moving a hold.** Put a transaction of an Angono or Antipolo loan on hold as its LA. Sign in as **Finance**, then as **Branch Supervisor**, then as **Area Supervisor Luzon 1**, and look for **Transfer hold**.
+5. **Who can move holds.** As Admin, open Settings, Roles and read the top of the list. Untick **Move a hold to another person** on Admin and look again; tick it back afterwards.
+6. **Journey filters.** On any loan's Journey, Story, look at the filter row.
+
+### Funds handled by different people
+
+7. **Finance Cash.** Sign in as Finance Cash (after a processor has asked for one cash advance and one fund transfer): look through Funds (every tab, the counts, the search, Download CSV) and Home.
+8. **Finance Transfer.** Do the same as Finance Transfer.
+9. **Approver Cash and Approver Transfer.** Sign in as each one and open Funds, To approve. Each role shares its own type's approval bands (with Approver Small and Approver Large), so nothing needs setting up.
+10. **Nobody can release fund transfers.** As Admin, untick **Release fund transfers** on every role that has it (Settings, Roles). Look at Settings, Funds types, at Settings, Roles and at Funds. Tick it again on Finance and look once more.
 
 ## If the sign-in page keeps coming back
 

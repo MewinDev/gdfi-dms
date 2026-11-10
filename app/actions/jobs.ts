@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireAnyPermission, requirePermission } from "@/lib/auth/current-user";
+import { anyStepKeys } from "@/lib/funds/access";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, type ActionState } from "@/lib/action";
 import { toCents } from "@/lib/funds/rules";
@@ -352,7 +353,7 @@ export async function recordReturnAction(_p: ActionState, fd: FormData): Promise
 
 export async function decideAdvanceAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.FUNDS_APPROVE);
+    const u = await requireAnyPermission(anyStepKeys("approve"));
     const approve = str(fd, "decision") === "approve";
     const lines = fd.getAll("lineId").map(String).map((lineId) => {
       const c = toCents(str(fd, `amount-${lineId}`));
@@ -367,7 +368,7 @@ export async function decideAdvanceAction(_p: ActionState, fd: FormData): Promis
 
 export async function releaseAdvanceAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.FUNDS_RELEASE);
+    const u = await requireAnyPermission(anyStepKeys("release"));
     await releaseAdvance(u, str(fd, "advanceId"), releaseFields(fd));
     await refresh();
     return "Done. The jobs are Funded.";
@@ -376,7 +377,7 @@ export async function releaseAdvanceAction(_p: ActionState, fd: FormData): Promi
 
 export async function decideTopUpAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.FUNDS_APPROVE);
+    const u = await requireAnyPermission(anyStepKeys("approve"));
     const approve = str(fd, "decision") === "approve";
     await decideTopUp(u, str(fd, "topUpId"), approve, approve && str(fd, "amount") ? cents(fd, "amount") : null, str(fd, "note"));
     await refresh();
@@ -386,7 +387,7 @@ export async function decideTopUpAction(_p: ActionState, fd: FormData): Promise<
 
 export async function releaseTopUpAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.FUNDS_RELEASE);
+    const u = await requireAnyPermission(anyStepKeys("release"));
     await releaseTopUp(u, str(fd, "topUpId"), { ...releaseFields(fd), fundsTypeId: str(fd, "fundsTypeId") || undefined, remarks: str(fd, "remarks") });
     await refresh();
     return "Top-up done.";
@@ -401,7 +402,7 @@ function releaseFields(fd: FormData) {
 /** Finance changes the funds type before the release (remarks 5 to 500 characters). */
 export async function changeFundsTypeAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.FUNDS_RELEASE);
+    const u = await requireAnyPermission(anyStepKeys("changeType"));
     await changeFundsType(u, str(fd, "advanceId"), { fundsTypeId: str(fd, "fundsTypeId"), remarks: str(fd, "remarks") });
     await refresh();
     return "Type changed. It is in the history.";
@@ -410,7 +411,7 @@ export async function changeFundsTypeAction(_p: ActionState, fd: FormData): Prom
 
 export async function decideCarryOverAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.FUNDS_APPROVE);
+    const u = await requireAnyPermission(anyStepKeys("approve"));
     const approve = str(fd, "decision") === "approve";
     await decideCarryOver(u, str(fd, "carryId"), approve);
     await refresh();
@@ -420,7 +421,7 @@ export async function decideCarryOverAction(_p: ActionState, fd: FormData): Prom
 
 export async function confirmReturnAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.FUNDS_RELEASE);
+    const u = await requireAnyPermission(anyStepKeys("settle"));
     await confirmReturn(u, str(fd, "returnId"));
     await refresh();
     return "Returned cash confirmed.";
@@ -429,7 +430,7 @@ export async function confirmReturnAction(_p: ActionState, fd: FormData): Promis
 
 export async function closeAdvanceAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const u = await requirePermission(PERMISSIONS.FUNDS_RELEASE);
+    const u = await requireAnyPermission(anyStepKeys("settle"));
     await closeAdvance(u, str(fd, "advanceId"));
     await refresh();
     return "Advance closed.";

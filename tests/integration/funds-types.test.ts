@@ -123,11 +123,23 @@ describe("Choosing and changing the type", () => {
     const ft = await type("FT");
     await expect(changeFundsType(fin, r.id, { fundsTypeId: ft.id, remarks: "abc" })).rejects.toThrow("Write 5 to 500 characters.");
     await expect(changeFundsType(dp, r.id, { fundsTypeId: ft.id, remarks: "Bank transfer instead" })).rejects.toThrow(/does not allow/);
-    await changeFundsType(fin, r.id, { fundsTypeId: ft.id, remarks: "Bank transfer instead" });
-    expect(await prisma.cashAdvance.findUniqueOrThrow({ where: { id: r.id } })).toMatchObject({ fundsTypeCode: "FT", fundsTypeName: "Fund transfer" });
+    expect(r.number).toMatch(/^CA-\d{4}-\d{4}$/);
+    const changed = await changeFundsType(fin, r.id, { fundsTypeId: ft.id, remarks: "Bank transfer instead" });
+    // The number follows the type: a new FT- number of the same year; the old one is kept as "Formerly ...".
+    const after = await prisma.cashAdvance.findUniqueOrThrow({ where: { id: r.id } });
+    expect(after).toMatchObject({ fundsTypeCode: "FT", fundsTypeName: "Fund transfer", formerNumbers: [r.number] });
+    expect(after.number).toMatch(new RegExp(`^FT-${r.number.slice(3, 7)}-\\d{4}$`));
+    expect(changed).toEqual({ number: after.number, formerNumber: r.number });
     const h = await advanceHistory(r.id);
-    expect(h.map((x) => x.summary)).toContain(`${r.number}: Test Finance changed the type from Cash advance to Fund transfer: Bank transfer instead`);
-    expect(await prisma.notification.count({ where: { userId: dp.id, title: `${r.number}: now a Fund transfer` } })).toBe(1);
+    expect(h.map((x) => x.summary)).toContain(`${after.number}: Test Finance changed the type from Cash advance to Fund transfer (formerly ${r.number}): Bank transfer instead`);
+    expect(await prisma.notification.count({ where: { userId: dp.id, title: `${after.number}: now a Fund transfer` } })).toBe(1);
+    // Back to Cash advance: a new CA- number (the old CA- number is never given again); both former numbers are kept.
+    await changeFundsType(fin, r.id, { fundsTypeId: (await type("CA")).id, remarks: "Cash after all, sorry" });
+    const back = await prisma.cashAdvance.findUniqueOrThrow({ where: { id: r.id } });
+    expect(back.number).toMatch(/^CA-/);
+    expect(back.number).not.toBe(r.number);
+    expect(back.formerNumbers).toEqual([r.number, after.number]);
+    await changeFundsType(fin, r.id, { fundsTypeId: ft.id, remarks: "Bank transfer, final" });
     await decideAdvance(fin, r.id, { approve: true });
     await releaseAdvance(fin, r.id, FT_RELEASE);
     await expect(changeFundsType(fin, r.id, { fundsTypeId: (await type("CA")).id, remarks: "Back to cash please" })).rejects.toThrow("The type can be changed only before the release.");

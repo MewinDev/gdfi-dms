@@ -19,11 +19,13 @@ import { BUILTIN_BRANCHES, BUILTIN_USUAL_LTO, KIT_BRANCH_FILE } from "@/lib/bran
 import { looksLikeTestBranch } from "@/lib/branches/file";
 import { readKitBranchFile } from "@/lib/branches/kit-file";
 import { saveRole } from "@/lib/services/roles";
+import { TYPE_ROLES } from "./funds-roles";
+import { TYPE_ID } from "@/lib/funds/access";
 import { saveDpCapacity } from "@/lib/services/dp-capacity";
 import { fileAdvisory, resolveAdvisory } from "@/lib/services/lto-advisories";
 import { saveSettingsRow } from "@/lib/services/admin";
 import { setRowActive } from "@/lib/services/settings-status";
-import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, KIT_OTHER_SAMPLES, SUPERVISOR_ROLE_NAME, NO_REFRESH_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
+import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, KIT_OTHER_SAMPLES, SUPERVISOR_ROLE_KEY, SUPERVISOR_ROLE_NAME, NO_REFRESH_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
 import { kitRefusal } from "./guard";
 import { branchGrants, writeUserAccess, type AccessInput } from "@/lib/services/access";
 import type { GrantLike } from "@/lib/branches/access";
@@ -65,30 +67,33 @@ async function createAccounts(log: Log): Promise<Users> {
     await prisma.$transaction(async (tx) => writeUserAccess(tx, made.id, await kitAccess(a, branchId)));
   };
   const roleId = async (key: string) => (await prisma.role.findUniqueOrThrow({ where: { key } })).id;
-  // The Admin first: it makes the kit's Branch Supervisor role through the Roles screen's own code.
+  // The Admin first: it makes the kit's own sample role through the Roles screen's own code.
   const adminAcc = KIT_ACCOUNTS.find((a) => a.key === "admin")!;
   await create(adminAcc, await roleId("ADMIN"));
   const admin = await asUser(adminAcc.email);
-  const sup = await saveRole(admin, null, {
-    name: SUPERVISOR_ROLE_NAME, branchAccess: "ASSIGNED",
-    description: "Sample role (Manual Test Kit): sees the loans of the assigned branches, refreshes them from MyLoans and may transfer holds.",
-    permissions: [PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER, PERMISSIONS.MYLOANS_VIEW, PERMISSIONS.LOANS_REFRESH],
-  });
-  const supId = typeof sup === "object" && sup && "id" in sup ? String((sup as { id: string }).id) : (await prisma.role.findFirstOrThrow({ where: { name: SUPERVISOR_ROLE_NAME } })).id;
+  // The Branch Supervisors use the built-in Branch Supervisor role (or one of that name made by hand before).
+  const supId = (await prisma.role.findUnique({ where: { key: SUPERVISOR_ROLE_KEY } }))?.id ?? (await prisma.role.findFirstOrThrow({ where: { name: SUPERVISOR_ROLE_NAME } })).id;
   // "LA (no refresh)": every Loan Associate tick except Refresh, so Admin can tick it and see the button appear.
   const noRefreshId = await saveRole(admin, null, {
     name: NO_REFRESH_ROLE_NAME, branchAccess: "ASSIGNED",
     description: "Sample role (Manual Test Kit): a Loan Associate without \"Refresh a loan from MyLoans\". Tick it in Settings, Roles to try it.",
     permissions: ROLE_DEFAULTS.LA.permissions.filter((k) => k !== PERMISSIONS.LOANS_REFRESH),
   });
-  const kitRole = async (r: (typeof KIT_ACCOUNTS)[number]["role"]) => (r === "SUPERVISOR" ? supId : r === "LA_NO_REFRESH" ? noRefreshId : roleId(r));
+  // Funds handled by different people: one Finance and one approver role per type.
+  const typeRoleIds = Object.fromEntries(await Promise.all(Object.entries(TYPE_ROLES).map(async ([k, r]) => [k, String(await saveRole(admin, null, { name: r.name, branchAccess: "ALL", description: r.description, permissions: r.permissions }))])));
+  const kitRole = async (r: (typeof KIT_ACCOUNTS)[number]["role"]) => (r === "SUPERVISOR" ? supId : r === "LA_NO_REFRESH" ? noRefreshId : typeRoleIds[r] ?? roleId(r));
+  // Each type's own approver shares that type's approval bands (Finance keeps them too), so it approves without a manual step.
+  for (const band of await prisma.approvalBand.findMany()) {
+    const own = band.fundsTypeId === TYPE_ID.FT ? typeRoleIds.APPR_FT : typeRoleIds.APPR_CA;
+    await prisma.approvalBand.upsert({ where: { fundsTypeId_fromCents_roleId: { fundsTypeId: band.fundsTypeId, fromCents: band.fromCents, roleId: own } }, create: { fundsTypeId: band.fundsTypeId, fromCents: band.fromCents, roleId: own }, update: {} });
+  }
   for (const a of KIT_ACCOUNTS) {
     if (a.key === "admin") continue;
     await create(a, await kitRole(a.role));
   }
   const users = {} as Users;
   for (const a of KIT_ACCOUNTS) users[a.key] = await asUser(a.email);
-  log(`Created ${KIT_ACCOUNTS.length} sample accounts (and the ${SUPERVISOR_ROLE_NAME} and ${NO_REFRESH_ROLE_NAME} roles).`);
+  log(`Created ${KIT_ACCOUNTS.length} sample accounts (the supervisors on the built-in ${SUPERVISOR_ROLE_NAME} role; the ${NO_REFRESH_ROLE_NAME} role).`);
   return users;
 }
 

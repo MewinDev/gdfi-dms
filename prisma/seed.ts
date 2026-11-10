@@ -143,6 +143,10 @@ const HOLIDAYS_2026 = [
 async function main() {
   // Roles
   for (const r of ROLES) {
+    // A role of the same name made by hand (another key) is kept as it is: the built-in one is not added
+    // next to it (the Branch Supervisor: migration 20261119090006_decisions_batch does the same).
+    const sameName = await prisma.role.findFirst({ where: { name: { equals: r.name, mode: "insensitive" }, key: { not: r.key } } });
+    if (sameName && !(await prisma.role.findUnique({ where: { key: r.key } }))) continue;
     // Existing roles keep their switches and branch access (changed in Settings); only the fixed parts are refreshed.
     await prisma.role.upsert({ where: { key: r.key }, create: r, update: { name: r.name, canSignIn: r.canSignIn, builtIn: true } });
   }
@@ -195,10 +199,11 @@ async function main() {
   for (const t of SEEDED_FUNDS_TYPES) await prisma.fundsType.upsert({ where: { code: t.code }, create: { ...t, proposed: true }, update: {} });
   // Return reasons
   for (const [i, [code, name]] of RETURN_REASONS.entries()) await prisma.returnReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
-  // Approval bands: one default band, any amount, Finance.
-  if ((await prisma.approvalBand.count()) === 0) {
+  // Approval bands, per funds type: one default band each, any amount, Finance (placeholders, not confirmed).
+  for (const t of SEEDED_FUNDS_TYPES) {
+    if ((await prisma.approvalBand.count({ where: { fundsTypeId: t.id } })) > 0) continue;
     const fin = await prisma.role.findUniqueOrThrow({ where: { key: "FIN" } });
-    await prisma.approvalBand.create({ data: { fromCents: 0, roleId: fin.id } });
+    await prisma.approvalBand.create({ data: { fundsTypeId: t.id, fromCents: 0, roleId: fin.id } });
   }
   // Holidays
   for (const [date, name] of HOLIDAYS_2026) await prisma.holidayCalendar.upsert({ where: { date }, create: { date, name }, update: { name } });

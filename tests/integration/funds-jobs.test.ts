@@ -150,7 +150,7 @@ describe("Cash advances", () => {
     const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 200000 }] });
     expect(r.number).toMatch(/^CA-\d{4}-\d{4}$/);
     expect(await funds(txn.id)).toBe("REQUESTED");
-    await expect(decideAdvance(dp, r.id, { approve: true })).rejects.toThrow(/does not allow approving/);
+    await expect(decideAdvance(dp, r.id, { approve: true })).rejects.toThrow("Request not found."); // the DP cannot see the Funds list: the normal refusal
     await expect(decideAdvance(admin, r.id, { approve: true })).rejects.toThrow(/does not allow approving/);
     const line = await prisma.cashAdvanceLine.findFirstOrThrow({ where: { advanceId: r.id } });
     await expect(decideAdvance(fin, r.id, { approve: true, lines: [{ lineId: line.id, cents: 150000 }] })).rejects.toThrow(/needs a short note/);

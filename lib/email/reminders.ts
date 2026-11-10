@@ -28,7 +28,7 @@ export async function liquidationDueSoon(now: Date, holidays: ReadonlySet<string
     if (await seen(key)) continue;
     await prisma.$transaction(async (tx) => {
       await notify(tx, {
-        userIds: [a.requestedById, ...(await financeIds(tx))], title: `${a.number}: liquidation due ${due === today ? "today" : "soon"}`,
+        userIds: [a.requestedById, ...(await financeIds(tx, a))], title: `${a.number}: liquidation due ${due === today ? "today" : "soon"}`,
         body: "Liquidate with receipts or return the cash.", link: "/my-funds?tab=liquidation",
         email: { event: "liquidation_due", dedupeKey: key, vars: { number: a.number, status: due === today ? "due today" : "due on the next business day", reason: "Liquidate with receipts or return the cash." } },
       });
@@ -49,7 +49,7 @@ export async function approvalWaiting(now: Date, holidays: ReadonlySet<string>) 
     if (await seen(key)) continue;
     const total = a.lines.reduce((s, l) => s + l.requestedCents, 0);
     await prisma.$transaction(async (tx) => {
-      const to = await bandApprovers(tx, total);
+      const to = await bandApprovers(tx, total, a);
       await notify(tx, {
         userIds: to, title: `${a.number}: still waiting for approval`, body: `${a.requestedBy.name}'s request has waited more than a business day.`, link: "/funds?tab=approve",
         email: { event: "approval_waiting", dedupeKey: key, amountCents: total, vars: { number: a.number, who: a.requestedBy.name } },

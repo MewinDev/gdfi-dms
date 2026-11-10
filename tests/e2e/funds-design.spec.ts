@@ -90,11 +90,11 @@ async function fixtures() {
     { transactionId: l1.transactions[0].id, kind: "LTO_FEE", requestedCents: 350_000, ltoOfficeId: office.id },
     { transactionId: l1.transactions[0].id, kind: "TRANSPORT", requestedCents: 40_000, presetCents: 40_000, amountSource: "OFFICE", ltoOfficeId: office.id },
   ] } } });
-  await db.cashAdvance.create({ data: { ...base, ...asFt, number: "CA-2026-7002", requestedCents: 25_000, lines: { create: [{ kind: "OTHER", otherDescription: "Courier", requestedCents: 25_000 }] } } });
+  await db.cashAdvance.create({ data: { ...base, ...asFt, number: "FT-2026-7002", requestedCents: 25_000, lines: { create: [{ kind: "OTHER", otherDescription: "Courier", requestedCents: 25_000 }] } } });
   // To release: approved by Test Finance.
   await db.cashAdvance.create({ data: { ...base, number: "CA-2026-7003", status: "APPROVED", requestedCents: 300_000, approvedCents: 300_000, approvedById: fin.id, approvedAt: new Date(), lines: { create: [{ transactionId: l2.transactions[0].id, kind: "LTO_FEE", requestedCents: 300_000, approvedCents: 300_000 }] } } });
   // Outstanding: a transfer sent 5 days ago, liquidation overdue, one receipt.
-  const sent = await db.cashAdvance.create({ data: { ...base, ...asFt, number: "CA-2026-7004", status: "RELEASED", requestedCents: 250_000, approvedCents: 250_000, releasedCents: 250_000, approvedById: fin.id, approvedAt: new Date(Date.now() - 6 * day), releasedById: fin.id, releasedAt: new Date(Date.now() - 5 * day), liquidationDueAt: new Date(Date.now() - day), releaseRef: "FT-887004", transferDate: "2026-11-02", accountProvider: "BPI", accountName: "Test Document Processor", accountLast4: "4821", overdueNotifiedAt: new Date(), lines: { create: [{ transactionId: l3.transactions[0].id, kind: "LTO_FEE", requestedCents: 250_000, approvedCents: 250_000, releasedCents: 250_000 }] } }, include: { lines: true } });
+  const sent = await db.cashAdvance.create({ data: { ...base, ...asFt, number: "FT-2026-7004", status: "RELEASED", requestedCents: 250_000, approvedCents: 250_000, releasedCents: 250_000, approvedById: fin.id, approvedAt: new Date(Date.now() - 6 * day), releasedById: fin.id, releasedAt: new Date(Date.now() - 5 * day), liquidationDueAt: new Date(Date.now() - day), releaseRef: "FT-887004", transferDate: "2026-11-02", accountProvider: "BPI", accountName: "Test Document Processor", accountLast4: "4821", overdueNotifiedAt: new Date(), lines: { create: [{ transactionId: l3.transactions[0].id, kind: "LTO_FEE", requestedCents: 250_000, approvedCents: 250_000, releasedCents: 250_000 }] } }, include: { lines: true } });
   await db.receipt.create({ data: { lineId: sent.lines[0].id, date: "2026-11-03", cents: 100_000, number: "OR-5521", uploadedById: dp.id } });
   // History: one closed, one denied.
   await db.cashAdvance.create({ data: { ...base, number: "CA-2026-7005", status: "CLOSED", requestedCents: 150_000, approvedCents: 150_000, releasedCents: 150_000, releasedAt: new Date(Date.now() - 9 * day), closedAt: new Date(Date.now() - day), lines: { create: [{ kind: "TRANSPORT", requestedCents: 150_000, note: "Tricycle to the LTO" }] } } });
@@ -134,7 +134,7 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
   await expect(ca.locator(".fl-status")).toContainText("Waiting since today");
   await expect(ca.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   await expect(ca.getByRole("button", { name: "Deny", exact: true })).toBeVisible();
-  const fty = row(page, "CA-2026-7002");
+  const fty = row(page, "FT-2026-7002");
   await expect(fty.locator('[data-funds-type="FT"]')).toBeVisible();
   await expect(fty.locator("[data-amount]")).toHaveText("₱250.00");
   await expect(fty.locator(".fl-loan")).toHaveText(/—/); // a general expense: no loan, a grey dash
@@ -215,12 +215,12 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
   const search = page.locator("[data-funds-search]");
   await search.fill("elsa");
   await expect(row(page, "CA-2026-7001")).toBeVisible();
-  await expect(row(page, "CA-2026-7002")).toBeHidden();
+  await expect(row(page, "FT-2026-7002")).toBeHidden();
   await expect(page.locator("[data-funds-summary]")).toContainText("1 request · ₱3,900.00 total");
   await search.fill(PN1.slice(-6));
   await expect(page.locator("[data-funds-summary]")).toContainText("1 request");
-  await search.fill("ca-2026-7002");
-  await expect(row(page, "CA-2026-7002")).toBeVisible();
+  await search.fill("ft-2026-7002");
+  await expect(row(page, "FT-2026-7002")).toBeVisible();
   await expect(row(page, "CA-2026-7001")).toBeHidden();
   await search.fill("nobody at all");
   await expect(page.getByText("No request matches “nobody at all”.")).toBeVisible();
@@ -239,10 +239,10 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
 
   // Outstanding: the money trail, the balance in amber, the aging dot with words.
   await page.goto("/funds?tab=outstanding");
-  const out = row(page, "CA-2026-7004");
+  const out = row(page, "FT-2026-7004");
   await expect(out.locator("[data-amount]")).toHaveText("₱1,500.00");
   await expect(page.locator("[data-funds-summary]")).toHaveText("1 request · ₱1,500.00 total");
-  if (width(page) === 820) await out.getByRole("button", { name: "Show details of CA-2026-7004" }).click();
+  if (width(page) === 820) await out.getByRole("button", { name: "Show details of FT-2026-7004" }).click();
   await expect(out.locator("[data-released]")).toHaveText("₱2,500.00");
   await expect(out.locator("[data-liquidated]")).toHaveText("₱1,000.00");
   await expect(out.locator("[data-balance]")).toHaveText("₱1,500.00");
@@ -251,7 +251,7 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
   await expect(out.locator(".fl-status")).toContainText("Liquidation overdue");
   await noSideways(page);
   if (width(page) === 390) {
-    await out.getByRole("button", { name: "Show details of CA-2026-7004" }).click();
+    await out.getByRole("button", { name: "Show details of FT-2026-7004" }).click();
     await expect(out.getByText("OR-5521", { exact: false })).toBeVisible();
     await shot(page, "card-more", out);
   }
@@ -286,7 +286,7 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
 });
 
 test("A view-only role sees one calm line, not a line per row; empty tabs say so", async ({ page }) => {
-  const role = await db.role.create({ data: { key: "C_Z_FUNDS_VIEW", name: "Z Funds viewer", builtIn: false, permissions: ["loans:view", "funds:view_all"] } });
+  const role = await db.role.create({ data: { key: "C_Z_FUNDS_VIEW", name: "Z Funds viewer", builtIn: false, permissions: ["loans:view", "funds:ca_view", "funds:ft_view"] } });
   await db.user.create({ data: { email: "zz.fundsviewer@gdfi.ph", name: "Zz Funds Viewer", roleId: role.id, isTestUser: true, allBranches: true } });
   await page.context().clearCookies();
   await page.goto("/login");
@@ -301,7 +301,7 @@ test("A view-only role sees one calm line, not a line per row; empty tabs say so
     await expect(page.getByText("You can view only.")).toHaveCount(0);
     await noSideways(page);
     if (tab === "approve") {
-      await expect(page.locator("[data-view-only]")).toHaveText("You can view these requests. Approving needs the 'Approve cash advances' tick on your role.");
+      await expect(page.locator("[data-view-only]")).toHaveText("You can view these requests. Approving cash advances needs the 'Approve cash advances' tick on your role. Approving fund transfers needs the 'Approve fund transfers' tick on your role.");
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0);
       await shot(page, "view-only");
     }
@@ -322,24 +322,24 @@ test("A view-only role sees one calm line, not a line per row; empty tabs say so
 });
 
 test("A liquidated request has Print: the liquidation report in the GDFI print format", async ({ page }) => {
-  // CA-2026-7004 fully liquidated: a second receipt covers the balance.
-  const adv = await db.cashAdvance.update({ where: { number: "CA-2026-7004" }, data: { status: "LIQUIDATED" }, include: { lines: true, requestedBy: true } });
+  // FT-2026-7004 fully liquidated: a second receipt covers the balance.
+  const adv = await db.cashAdvance.update({ where: { number: "FT-2026-7004" }, data: { status: "LIQUIDATED" }, include: { lines: true, requestedBy: true } });
   await db.receipt.create({ data: { lineId: adv.lines[0].id, date: "2026-11-05", cents: 150_000, number: "OR-5522", uploadedById: adv.requestedById } });
   await signInFinance(page);
   await page.goto("/funds?tab=outstanding");
-  const out = row(page, "CA-2026-7004");
+  const out = row(page, "FT-2026-7004");
   await expect(out.getByRole("button", { name: "Close advance" })).toBeVisible();
   await expect(out.getByRole("link", { name: "Print" })).toBeVisible();
   await noSideways(page);
   await out.getByRole("link", { name: "Print" }).click();
-  await expect(page).toHaveURL(/\/funds\/CA-2026-7004\/print$/);
+  await expect(page).toHaveURL(/\/funds\/FT-2026-7004\/print$/);
   // The title is fully visible under the top bar when the page opens.
   const title = page.getByRole("heading", { name: "Liquidation report", level: 1 });
   await expect(title).toBeVisible();
   const bar = (await page.getByRole("banner").filter({ visible: true }).first().boundingBox())!;
   expect((await title.boundingBox())!.y).toBeGreaterThanOrEqual(bar.y + bar.height - 1);
 
-  const report = page.locator('[data-liquidation-report="CA-2026-7004"]');
+  const report = page.locator('[data-liquidation-report="FT-2026-7004"]');
   await expect(report).toContainText("Liquidation report");
   await expect(report).toContainText("Global Dominion Financing, Inc.");
   await expect(report).toContainText("FT · Fund transfer · Liquidated");
@@ -394,8 +394,8 @@ test("A liquidated request has Print: the liquidation report in the GDFI print f
   writeFileSync(`test-results/liquidation-report-${width(page)}.pdf`, pdfBytes);
   const pdf = pdfBytes.toString("latin1");
   expect(pdf.match(/\/Type\s*\/Page(?!s)/g)?.length).toBe(1);
-  const hex = Buffer.from("CA-2026-7004", "utf16le").swap16().toString("hex").toUpperCase();
-  expect(pdf.includes("CA-2026-7004") || pdf.toUpperCase().includes(hex)).toBe(true);
+  const hex = Buffer.from("FT-2026-7004", "utf16le").swap16().toString("hex").toUpperCase();
+  expect(pdf.includes("FT-2026-7004") || pdf.toUpperCase().includes(hex)).toBe(true);
   await page.emulateMedia({ media: "screen" });
 
   // A request that is not liquidated has no report.

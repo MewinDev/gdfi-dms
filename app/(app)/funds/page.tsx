@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { can, requirePagePermission } from "@/lib/auth/current-user";
+import { can, requirePageAny } from "@/lib/auth/current-user";
+import { TYPE_ID, TYPE_NOUN, TYPE_TITLE, anyStepKeys, canFunds, canFundsAny, stepKeys, stepVerb, typeKeyOf, typeWhere, typesFor, type FundsStep, type TypeRef } from "@/lib/funds/access";
+import { bandTypeId, fundsGaps } from "@/lib/services/funds-handlers";
 import { PERMISSIONS, PERMISSION_GROUPS } from "@/lib/auth/permissions";
 import { cashToSettleIds, notifyOverdue } from "@/lib/services/funds";
-import { OPEN_ADVANCE, ageBucket, bandFor, decimalToCents, isOverdue, peso } from "@/lib/funds/rules";
+import { OPEN_ADVANCE, ageBucket, bandRolesFor, decimalToCents, isOverdue, peso } from "@/lib/funds/rules";
 import { allKinds, kindOption, lineKindText } from "@/lib/services/expense-kinds";
 import { presetWas } from "@/lib/funds/kinds";
 import { LineEditButton } from "@/components/funds/line-edit";
@@ -20,8 +22,8 @@ import {
 import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { RecordHistory } from "@/components/funds/record-history";
 import { FundsList, FundsRow, FundsSearch, FundsSummary, KeepTabInView, LockNote, MoreMenu, NoMatch } from "@/components/funds/funds-list";
-import { releaseLine } from "@/lib/funds/types";
-import { DASH, PRINTABLE_STATUSES, agingTone, daysText, type ListItem } from "@/lib/funds/list-view";
+import { formerlyText, releaseLine } from "@/lib/funds/types";
+import { searchTerms, DASH, PRINTABLE_STATUSES, agingTone, daysText, type ListItem } from "@/lib/funds/list-view";
 import { DownloadIcon, PrinterIcon } from "@/components/ui/icons";
 
 export const metadata: Metadata = { title: "Funds" };
@@ -57,6 +59,11 @@ const include = {
 
 /** The label of a permission as the role editor shows it ("Approve cash advances"). */
 const permLabel = (key: string) => PERMISSION_GROUPS.flatMap((g) => g.items).find((i) => i.key === key)?.label ?? key;
+/** "Approving fund transfers needs the 'Approve fund transfers' tick on your role." (the real label of the tick). */
+const stepNeeds = (step: Exclude<FundsStep, "view">, t: TypeRef) => {
+  const k = typeKeyOf(t);
+  return `${stepVerb[step]} ${k ? TYPE_NOUN[k] : "these requests"} ${step === "settle" ? "need" : "needs"} the '${permLabel(stepKeys(step, t)[0])}' tick on your role.`;
+};
 
 const Dash = () => <span className="text-ink-2" aria-label="None">{DASH}</span>;
 const Grey = ({ children }: { children: React.ReactNode }) => <span className="block text-[12px] text-ink-2">{children}</span>;
@@ -83,7 +90,10 @@ function Aging({ tone, children }: { tone: "bad" | "act" | "mute"; children: Rea
 }
 
 export default async function FundsPage({ searchParams }: { searchParams: Promise<{ tab?: string; ftype?: string }> }) {
-  const user = await requirePagePermission(PERMISSIONS.FUNDS_VIEW_ALL);
+  // Either type's See tick opens the page; every list, count, total and the CSV hold only the types the
+  // person may see (cash advances and fund transfers are handled by different people).
+  const user = await requirePageAny(anyStepKeys("view"));
+  const seen = typesFor(user, "view");
   await notifyOverdue();
   const sp = await searchParams;
   const tab: TabKey = TABS.find(([k]) => k === sp.tab)?.[0] ?? "approve";
@@ -92,14 +102,14 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   // Filter by funds type (?ftype=CA): every list, the counts and the CSV follow it.
   const fundsTypes = await prisma.fundsType.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
   const ftype = fundsTypes.find((t) => t.code === sp.ftype)?.code;
-  const scope = { ...branchScope, ...(ftype ? { fundsTypeCode: ftype } : {}) };
-  const sideLine = { include: { transaction: lineTxn, advance: { select: { number: true, fundsTypeCode: true, fundsTypeName: true, requestedBy: { select: { name: true } }, branch: { select: { name: true } } } } } } as const;
+  const scope = { ...branchScope, ...typeWhere(user), ...(ftype ? { fundsTypeCode: ftype } : {}) };
+  const sideLine = { include: { transaction: lineTxn, advance: { select: { number: true, fundsTypeId: true, fundsTypeCode: true, fundsTypeName: true, requestedBy: { select: { name: true } }, branch: { select: { name: true } } } } } } as const;
   const [requested, approved, open, history, topUps, carries, bands, me, holidays] = await Promise.all([
     prisma.cashAdvance.findMany({ where: { ...scope, status: "REQUESTED" }, include, orderBy: { createdAt: "asc" } }),
     prisma.cashAdvance.findMany({ where: { ...scope, status: "APPROVED" }, include, orderBy: { approvedAt: "asc" } }),
     prisma.cashAdvance.findMany({ where: { ...scope, status: { in: [...OPEN_ADVANCE, "LIQUIDATED"] as never } }, include, orderBy: { releasedAt: "asc" } }),
     prisma.cashAdvance.findMany({ where: { ...scope, status: { in: ["CLOSED", "DENIED", "CANCELLED"] } }, include, orderBy: { updatedAt: "desc" }, take: 100 }),
-    prisma.cashAdvanceTopUp.findMany({ where: { releasedAt: null, status: { in: ["REQUESTED", "APPROVED"] }, line: { advance: branchScope }, ...(ftype ? { fundsTypeCode: ftype } : {}) }, include: { line: sideLine } }),
+    prisma.cashAdvanceTopUp.findMany({ where: { releasedAt: null, status: { in: ["REQUESTED", "APPROVED"] }, line: { advance: { ...branchScope, ...typeWhere(user) } }, ...(ftype ? { fundsTypeCode: ftype } : {}) }, include: { line: sideLine } }),
     prisma.carryOver.findMany({ where: { status: "PENDING", line: { advance: scope } }, include: { line: sideLine } }),
     prisma.approvalBand.findMany(),
     prisma.user.findUnique({ where: { id: user.id }, select: { roleId: true } }),
@@ -108,9 +118,11 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   type Adv = (typeof requested)[number];
   type Line = Adv["lines"][number];
   const toSettle = await cashToSettleIds(open.map((a) => ({ id: a.id, status: a.status, requestedById: a.requestedBy.id, lines: a.lines })));
-  const mayApprove = can(user, PERMISSIONS.FUNDS_APPROVE);
-  const mayRelease = can(user, PERMISSIONS.FUNDS_RELEASE);
-  const myBand = (cents: number) => bandFor(cents, bands)?.roleId === me?.roleId;
+  // Each step for the row's own type (Approve fund transfers, Release cash advances...).
+  const may = (step: FundsStep, t: TypeRef) => canFunds(user, step, t);
+  const mayApprove = canFundsAny(user, "approve");
+  // The bands of the request's own type.
+  const myBand = (cents: number, t: TypeRef) => !!me && bandRolesFor(cents, bands.filter((b) => b.fundsTypeId === bandTypeId(t))).includes(me.roleId);
   const kindRows = await allKinds();
   const names = new Map(kindRows.map((k) => [k.code, k.name]));
   const kindOpts = kindRows.map(kindOption);
@@ -134,11 +146,14 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   const counts = { approve: requested.length + topUps.filter((t) => t.status === "REQUESTED").length + carries.length, release: approved.length + topUps.filter((t) => t.status === "APPROVED").length, outstanding: open.length, history: history.length };
   // Counts by type for the filter (same branch scope, every open or recent record of the tab).
   const tabStatus: Record<string, string[]> = { approve: ["REQUESTED"], release: ["APPROVED"], outstanding: [...OPEN_ADVANCE, "LIQUIDATED"], history: ["CLOSED", "DENIED", "CANCELLED"] };
-  const byType = await prisma.cashAdvance.groupBy({ by: ["fundsTypeCode"], where: { ...branchScope, status: { in: tabStatus[tab] as never } }, _count: { _all: true } });
+  const byType = await prisma.cashAdvance.groupBy({ by: ["fundsTypeCode"], where: { ...branchScope, ...typeWhere(user), status: { in: tabStatus[tab] as never } }, _count: { _all: true } });
   const typeCount = (code: string) => byType.find((b) => b.fundsTypeCode === code)?._count._all ?? 0;
   const allCount = byType.reduce((s, b) => s + b._count._all, 0);
   const activeTypes = fundsTypes.filter((t) => t.active);
   const typeOptions = activeTypes.map((t) => ({ id: t.id, code: t.code, name: t.name, needsReference: t.needsReference, needsAccount: t.needsAccount }));
+  // Change type offers only the types the person may edit; a top-up's release only the types they may release.
+  const editTypes = typeOptions.filter((o) => may("changeType", { fundsTypeId: o.id }));
+  const releaseTypes = typeOptions.filter((o) => may("release", { fundsTypeId: o.id }));
   const today = businessDate(now);
   const href = (o: { tab?: string; ftype?: string | null }) => {
     const p = new URLSearchParams({ tab: o.tab ?? tab });
@@ -157,10 +172,13 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
 
   // ---- the cells shared by every tab ----------------------------------------------------------
   const txnsOf = (lines: Line[]) => lines.filter((l) => l.transaction).map((l) => ({ pn: l.transaction!.loan.pn, borrower: l.transaction!.loan.borrowerName, type: l.transaction!.type.name }));
-  const searchOf = (number: string, txns: { pn: string; borrower: string }[]) => [number, ...txns.flatMap((t) => [t.pn, t.borrower])];
+  // The search finds a request by its number and by any number it had before ("Formerly CA-2026-0008").
+  const formerOf = new Map([...requested, ...approved, ...open, ...history].map((a) => [a.number, a.formerNumbers]));
+  const searchOf = (number: string, txns: { pn: string; borrower: string }[]) => searchTerms(number, formerOf.get(number), txns);
   const reqCell = (number: string, code: string, typeName: string, extra?: React.ReactNode) => (
     <div className="flex flex-col items-start gap-1">
       <a href={`#${number}`} className="text-[15px] font-bold text-navy hover:underline" data-request-number>{number}</a>
+      {formerlyText(formerOf.get(number)) && <span className="text-[12px] text-ink-2" data-formerly>{formerlyText(formerOf.get(number))}</span>}
       <FundsTypePill code={code} name={typeName} />
       {extra}
     </div>
@@ -216,8 +234,8 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
     );
   };
 
-  /** The liquidation report (Funds, Print) of a liquidated or closed request. */
-  const printLink = (number: string) => (
+  /** The liquidation report (Funds, Print) of a liquidated or closed request; only with "Print liquidation report". */
+  const printLink = (number: string, t: TypeRef) => !may("print", t) ? null : (
     <Link key="print" href={`/funds/${encodeURIComponent(number)}/print`} className="btn-secondary btn-sm fl-btn" data-print-link={number}><PrinterIcon size={14} /> Print</Link>
   );
 
@@ -228,19 +246,20 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   if (tab === "approve") {
     for (const a of requested) {
       const own = a.requestedBy.id === user.id;
-      const inBand = myBand(a.requestedCents);
-      const canDecide = mayApprove && !own && inBand;
-      const editors = (mayApprove || mayRelease) && !own;
+      const inBand = myBand(a.requestedCents, a);
+      const canDecide = may("approve", a) && !own && inBand;
+      const editors = may("editLines", a) && !own;
       const txns = txnsOf(a.lines);
       const formLines = a.lines.map((l) => ({ id: l.id, label: lineLabel(l), requestedCents: l.requestedCents, overMaxReason: l.overMaxReason }));
-      const lock = canDecide ? undefined : own ? "Your own request: someone else approves it." : !mayApprove ? `You can't approve this one. Approving needs the '${permLabel(PERMISSIONS.FUNDS_APPROVE)}' tick on your role.` : "You can't approve this one. Another role approves this amount (approval bands).";
+      const about = { number: a.number, requester: a.requestedBy.name, kinds: a.lines.map((l) => lineKindText(names, l)), borrowers: txns.map((t) => t.borrower) };
+      const lock = canDecide ? undefined : own ? "Your own request: someone else approves it." : !may("approve", a) ? (mayApprove ? `You can't approve this one. ${stepNeeds("approve", a)}` : undefined) : "You can't approve this one. Another role approves this amount (approval bands).";
       const more = [
-        [canDecide && <DecideSheetButton key="amounts" number={a.number} label="Change amounts" cls="btn-ghost btn-sm" advanceId={a.id} lines={formLines} />],
+        [canDecide && <DecideSheetButton key="amounts" number={a.number} label="Change amounts" cls="btn-ghost btn-sm" advanceId={a.id} lines={formLines} about={about} />],
         [...(editors ? a.lines.map((l) => <LineEditButton key={l.id} advanceId={a.id} line={{ id: l.id, kind: l.kind, otherDescription: l.otherDescription, requestedCents: l.requestedCents, overMaxReason: l.overMaxReason }} kinds={kindOpts} rules={rulesOf(l)} canAddKind={canAddKind} canOverrideFixed={canAddKind} label={`Change ${lineKindText(names, l)}`} />) : []),
         editors && <LineEditButton key="add" advanceId={a.id} kinds={kindOpts} rules={{}} canAddKind={canAddKind} canOverrideFixed={canAddKind} />],
-        [mayRelease && <ChangeTypeForm key="type" advanceId={a.id} current={a.fundsTypeId} types={typeOptions} />],
+        [may("changeType", a) && <ChangeTypeForm key="type" advanceId={a.id} current={a.fundsTypeId} types={editTypes} />],
       ];
-      const actionable = canDecide || editors || mayRelease;
+      const actionable = canDecide || editors;
       const suggested = suggestedOf(a);
       rows.push({
         actionable,
@@ -253,15 +272,15 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             asked: askedCell(a.requestedBy.name, a.branch.name, `Asked ${dayText(a.createdAt)}`, a.exceptionId ? <Grey>With a one-time exception</Grey> : null),
             amount: amountCell(a.requestedCents, suggested !== null ? <Grey>Suggested {peso(suggested)}</Grey> : null),
             status: <><AdvanceStatusChip status={a.status} /><Aging tone="mute">{daysText(daysSince(a.createdAt), "waiting")}</Aging></>,
-            action: !mayApprove && !mayRelease ? null : actions(a.number, [canDecide && <QuickApproveForm key="ok" advanceId={a.id} lines={a.lines.map((l) => ({ id: l.id, requestedCents: l.requestedCents }))} />, canDecide && <DecideSheetButton key="deny" number={a.number} label="Deny" advanceId={a.id} lines={formLines} />], more, lock),
+            action: !may("approve", a) && !may("editLines", a) && !may("changeType", a) ? null : actions(a.number, [canDecide && <QuickApproveForm key="ok" advanceId={a.id} lines={a.lines.map((l) => ({ id: l.id, requestedCents: l.requestedCents }))} about={about} />, canDecide && <DecideSheetButton key="deny" number={a.number} label="Deny" advanceId={a.id} lines={formLines} about={about} />], more, lock),
           }} />
         ),
       });
     }
     for (const t of topUps.filter((x) => x.status === "REQUESTED")) {
-      const ok = mayApprove && t.requestedById !== user.id && myBand(t.extraCents);
+      const ok = may("approve", t.line.advance) && t.requestedById !== user.id && myBand(t.extraCents, t.line.advance);
       const txns = t.line.transaction ? [{ pn: t.line.transaction.loan.pn, borrower: t.line.transaction.loan.borrowerName, type: t.line.transaction.type.name }] : [];
-      const lock = ok ? undefined : t.requestedById === user.id ? "Your own request: someone else approves it." : mayApprove ? "You can't approve this one. Another role approves this amount (approval bands)." : undefined;
+      const lock = ok ? undefined : t.requestedById === user.id ? "Your own request: someone else approves it." : may("approve", t.line.advance) ? "You can't approve this one. Another role approves this amount (approval bands)." : undefined;
       rows.push({
         actionable: ok,
         item: { key: t.id, typeCode: t.fundsTypeCode, cents: t.extraCents, search: searchOf(t.line.advance.number, txns) },
@@ -273,7 +292,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             asked: askedCell(t.line.advance.requestedBy.name, t.line.advance.branch.name, `Asked ${dayText(t.createdAt)}`),
             amount: amountCell(t.extraCents, <Grey>Extra asked</Grey>),
             status: <><AdvanceStatusChip status="REQUESTED" /><Aging tone="mute">{daysText(daysSince(t.createdAt), "waiting")}</Aging></>,
-            action: !mayApprove ? null : actions(`${t.line.advance.number} top-up`, [ok && <SmallAction key="ok" kind="topup-approve" id={t.id} label="Approve the extra" cls="btn-gold btn-sm fl-btn" />], [[ok && <SmallAction key="no" kind="topup-deny" id={t.id} label="Deny" extra />]], lock),
+            action: !may("approve", t.line.advance) ? null : actions(`${t.line.advance.number} top-up`, [ok && <SmallAction key="ok" kind="topup-approve" id={t.id} label="Approve the extra" cls="btn-gold btn-sm fl-btn" confirm={{ number: `${t.line.advance.number} top-up`, requester: t.line.advance.requestedBy.name, kinds: [lineKindText(names, t.line)], borrowers: txns.map((x) => x.borrower), cents: t.extraCents }} />], [[ok && <SmallAction key="no" kind="topup-deny" id={t.id} label="Deny" extra />]], lock),
           }} />
         ),
       });
@@ -281,7 +300,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
     for (const c of carries) {
       const txns = c.line.transaction ? [{ pn: c.line.transaction.loan.pn, borrower: c.line.transaction.loan.borrowerName, type: c.line.transaction.type.name }] : [];
       rows.push({
-        actionable: mayApprove,
+        actionable: may("approve", c.line.advance),
         item: { key: c.id, typeCode: c.line.advance.fundsTypeCode, cents: c.cents, search: searchOf(c.line.advance.number, txns) },
         node: (
           <FundsRow key={c.id} rowKey={c.id} label={`${c.line.advance.number} carry-over`} attrs={{ "data-carry": c.id }} cells={{
@@ -291,7 +310,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             asked: askedCell(c.line.advance.requestedBy.name, c.line.advance.branch.name, `Asked ${dayText(c.createdAt)}`),
             amount: amountCell(c.cents, <Grey>Balance kept</Grey>),
             status: <><AdvanceStatusChip status="REQUESTED" /><Aging tone="mute">{daysText(daysSince(c.createdAt), "waiting")}</Aging></>,
-            action: mayApprove ? actions(`${c.line.advance.number} carry-over`, [<SmallAction key="ok" kind="carry-approve" id={c.id} label="Approve carry-over" cls="btn-gold btn-sm fl-btn" />, <SmallAction key="no" kind="carry-deny" id={c.id} label="Deny (return the cash)" cls="btn-secondary btn-sm fl-btn" />]) : null,
+            action: may("approve", c.line.advance) ? actions(`${c.line.advance.number} carry-over`, [<SmallAction key="ok" kind="carry-approve" id={c.id} label="Approve carry-over" cls="btn-gold btn-sm fl-btn" confirm={{ number: `${c.line.advance.number} carry-over`, requester: c.line.advance.requestedBy.name, kinds: [lineKindText(names, c.line)], borrowers: txns.map((x) => x.borrower), cents: c.cents }} />, <SmallAction key="no" kind="carry-deny" id={c.id} label="Deny (return the cash)" cls="btn-secondary btn-sm fl-btn" />]) : null,
           }} />
         ),
       });
@@ -301,10 +320,10 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   if (tab === "release") {
     for (const a of approved) {
       const own = a.requestedBy.id === user.id;
-      const ok = mayRelease && !own;
+      const ok = may("release", a) && !own;
       const txns = txnsOf(a.lines);
       const by = approverName(a.approvedById);
-      const lock = mayRelease && own ? "Your own request: someone else releases it." : undefined;
+      const lock = may("release", a) && own ? "Your own request: someone else releases it." : undefined;
       rows.push({
         actionable: ok,
         item: { key: a.number, typeCode: a.fundsTypeCode, cents: a.approvedCents ?? 0, search: searchOf(a.number, txns) },
@@ -316,7 +335,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             asked: askedCell(a.requestedBy.name, a.branch.name, `Asked ${dayText(a.createdAt)}`),
             amount: amountCell(a.approvedCents ?? 0, <><Grey>Approved by {by ?? DASH}</Grey><Grey>{dayText(a.approvedAt)}</Grey>{(a.approvedCents ?? 0) !== a.requestedCents && <Grey>Asked {peso(a.requestedCents)}</Grey>}</>),
             status: <><AdvanceStatusChip status={a.status} /><Aging tone="mute">{daysText(daysSince(a.approvedAt), "waiting")}</Aging></>,
-            action: mayRelease ? actions(a.number, [ok && <ReleaseSheetButton key="rel" number={a.number} advanceId={a.id} type={a.fundsType} today={today} />], [[<ChangeTypeForm key="type" advanceId={a.id} current={a.fundsTypeId} types={typeOptions} />]], lock) : null,
+            action: may("release", a) || may("changeType", a) ? actions(a.number, [ok && <ReleaseSheetButton key="rel" number={a.number} advanceId={a.id} type={a.fundsType} today={today} />], [[may("changeType", a) && <ChangeTypeForm key="type" advanceId={a.id} current={a.fundsTypeId} types={editTypes} />]], lock) : null,
             details: historyOf(a.id).length ? <RecordHistory rows={historyOf(a.id)} /> : undefined,
           }} />
         ),
@@ -324,9 +343,9 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
     }
     for (const t of topUps.filter((x) => x.status === "APPROVED")) {
       const txns = t.line.transaction ? [{ pn: t.line.transaction.loan.pn, borrower: t.line.transaction.loan.borrowerName, type: t.line.transaction.type.name }] : [];
-      const types = typeOptions.some((o) => o.id === t.fundsTypeId) ? typeOptions : [...typeOptions, { id: t.fundsTypeId, code: t.fundsTypeCode, name: t.fundsTypeName, needsReference: false, needsAccount: false }];
+      const types = releaseTypes.some((o) => o.id === t.fundsTypeId) ? releaseTypes : [...releaseTypes, { id: t.fundsTypeId, code: t.fundsTypeCode, name: t.fundsTypeName, needsReference: false, needsAccount: false }];
       rows.push({
-        actionable: mayRelease,
+        actionable: may("release", t.line.advance),
         item: { key: t.id, typeCode: t.fundsTypeCode, cents: t.approvedCents ?? 0, search: searchOf(t.line.advance.number, txns) },
         node: (
           <FundsRow key={t.id} rowKey={t.id} label={`${t.line.advance.number} top-up`} attrs={{ "data-topup": t.id }} cells={{
@@ -336,7 +355,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             asked: askedCell(t.line.advance.requestedBy.name, t.line.advance.branch.name, `Asked ${dayText(t.createdAt)}`),
             amount: amountCell(t.approvedCents ?? 0, <Grey>Top-up approved</Grey>),
             status: <AdvanceStatusChip status="APPROVED" />,
-            action: mayRelease ? actions(`${t.line.advance.number} top-up`, [<TopUpReleaseSheetButton key="rel" number={t.line.advance.number} topUpId={t.id} currentTypeId={t.fundsTypeId} types={types} today={today} />]) : null,
+            action: may("release", t.line.advance) ? actions(`${t.line.advance.number} top-up`, [<TopUpReleaseSheetButton key="rel" number={t.line.advance.number} topUpId={t.id} currentTypeId={t.fundsTypeId} types={types} today={today} />]) : null,
           }} />
         ),
       });
@@ -355,13 +374,13 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
       const receipts = a.lines.flatMap((l) => l.receipts.map((r) => ({ r, l })));
       const verb = a.fundsType.needsReference || a.fundsType.needsAccount ? "Sent" : "Released";
       const main = [
-        ...unconfirmed.map((r) => mayRelease && <SmallAction key={r.id} kind="confirm-return" id={r.id} label={unconfirmed.length > 1 ? `Confirm ${peso(r.cents)} received` : "Confirm received"} cls="btn-secondary btn-sm fl-btn" />),
-        a.status === "LIQUIDATED" && mayRelease && unconfirmed.length === 0 && <SmallAction key="close" kind="close" id={a.id} label="Close advance" cls="btn-gold btn-sm fl-btn" />,
-        a.status === "LIQUIDATED" && printLink(a.number),
+        ...unconfirmed.map((r) => may("settle", a) && <SmallAction key={r.id} kind="confirm-return" id={r.id} label={unconfirmed.length > 1 ? `Confirm ${peso(r.cents)} received` : "Confirm received"} cls="btn-secondary btn-sm fl-btn" />),
+        a.status === "LIQUIDATED" && may("settle", a) && unconfirmed.length === 0 && <SmallAction key="close" kind="close" id={a.id} label="Close advance" cls="btn-gold btn-sm fl-btn" />,
+        a.status === "LIQUIDATED" && printLink(a.number, a),
       ].filter(Boolean);
       const hist = historyOf(a.id);
       rows.push({
-        actionable: mayRelease && main.length > (a.status === "LIQUIDATED" ? 1 : 0), // Print is not acting on the request
+        actionable: may("settle", a) && main.length > (a.status === "LIQUIDATED" && may("print", a) ? 1 : 0), // Print is not acting on the request
         item: { key: a.number, typeCode: a.fundsTypeCode, cents: bal, search: searchOf(a.number, txns) },
         node: (
           <FundsRow key={a.id} rowKey={a.number} label={a.number} attrs={{ "data-advance": a.number, "data-cash-to-settle": toSettle.has(a.id) ? "true" : undefined }} cells={{
@@ -389,7 +408,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
                 {toSettle.has(a.id) && <ToneChip tone="act" title="The job went back to the Loan Associate; the processor settles the cash.">Cash to settle</ToneChip>}
               </div>
             ),
-            action: mayRelease || a.status === "LIQUIDATED" ? (main.length ? actions(a.number, main) : <span className="text-[12px] text-ink-2">{a.status === "LIQUIDATED" ? "Waiting for the returned cash" : "Waiting for the processor's receipts"}</span>) : null,
+            action: may("settle", a) || a.status === "LIQUIDATED" ? (main.length ? actions(a.number, main) : <span className="text-[12px] text-ink-2">{a.status === "LIQUIDATED" ? "Waiting for the returned cash" : "Waiting for the processor's receipts"}</span>) : null,
             details: receipts.length || hist.length ? (
               <div className="flex flex-col gap-2">
                 {receipts.length > 0 && (
@@ -426,30 +445,35 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             asked: askedCell(a.requestedBy.name, a.branch.name, `Asked ${dayText(a.createdAt)}`),
             amount: amountCell(a.requestedCents, a.releasedCents ? <Grey>Released {peso(a.releasedCents)}</Grey> : <Grey>Asked</Grey>),
             status: <div className="flex flex-col items-end gap-1"><AdvanceStatusChip status={a.status} /><Grey>{when}</Grey></div>,
-            action: PRINTABLE_STATUSES.includes(a.status) ? printLink(a.number) : null,
+            action: PRINTABLE_STATUSES.includes(a.status) ? printLink(a.number, a) : null,
           }} />
         ),
       });
     }
   }
 
-  const viewOnly = rows.length > 0 && !rows.some((r) => r.actionable) && (
-    tab === "approve" ? !mayApprove && !mayRelease : tab === "release" || tab === "outstanding" ? !mayRelease : false
-  );
-  const viewOnlyText = tab === "approve"
-    ? `You can view these requests. Approving needs the '${permLabel(PERMISSIONS.FUNDS_APPROVE)}' tick on your role.`
-    : tab === "release"
-      ? `You can view these requests. Releasing needs the '${permLabel(PERMISSIONS.FUNDS_RELEASE)}' tick on your role.`
-      : `You can view these requests. Confirming returned cash and closing need the '${permLabel(PERMISSIONS.FUNDS_RELEASE)}' tick on your role.`;
+  // The tab's step; the types seen on this tab whose step tick the person lacks get one plain line each.
+  const tabStep: Exclude<FundsStep, "view"> | null = tab === "approve" ? "approve" : tab === "release" ? "release" : tab === "outstanding" ? "settle" : null;
+  const tabTypes = new Set(rows.map((r) => r.item.typeCode));
+  const lacking = tabStep ? seen.filter((k) => !canFunds(user, tabStep, { fundsTypeId: TYPE_ID[k] }) && fundsTypes.some((t) => t.id === TYPE_ID[k] && tabTypes.has(t.code))) : [];
+  const noneActionable = rows.length > 0 && !rows.some((r) => r.actionable);
+  const viewOnly = lacking.length > 0 && (noneActionable || lacking.length < seen.length);
+  const viewOnlyText = `${noneActionable ? "You can view these requests. " : ""}${lacking.map((k) => stepNeeds(tabStep!, { fundsTypeId: TYPE_ID[k] })).join(" ")}`;
   // A view-only tab still keeps the Action column when a row has a button (Print on a liquidated request).
-  const anyAction = tab === "history" ? history.some((a) => PRINTABLE_STATUSES.includes(a.status)) : !viewOnly || (tab === "outstanding" && open.some((a) => a.status === "LIQUIDATED"));
+  const anyAction = tab === "history" ? history.some((a) => PRINTABLE_STATUSES.includes(a.status)) : !noneActionable || (tab === "outstanding" && open.some((a) => a.status === "LIQUIDATED"));
   const head = { approve: "Amount", release: "Approved", outstanding: "Balance", history: "Amount" }[tab];
   const typeChoices = fundsTypes.filter((t) => t.active || typeCount(t.code) > 0);
+  // Admin (people who can manage roles): the one line when nobody can approve, release or settle a type.
+  const gaps = can(user, PERMISSIONS.ROLES_MANAGE) ? await fundsGaps() : [];
 
   return (
     <div className="dense funds-page funds-compact flex w-full min-w-0 flex-col gap-4">
       <div className="grid min-w-0 grid-cols-1 gap-y-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-4">
-        <PageHeader title="Funds" help="Approve and release cash advances, then follow liquidation until each is closed." />
+        <div className="min-w-0">
+          <PageHeader title="Funds" help="Approve and release cash advances, then follow liquidation until each is closed." />
+          {seen.length === 1 && <p className="mt-1 text-[15px] font-semibold text-navy" data-funds-types-line>{TYPE_TITLE[seen[0]]}</p>}
+          {gaps.length > 0 && <p role="status" className="mt-2 rounded-xl border border-act-line bg-act-bg px-3 py-2 text-sm text-ink" data-funds-health>{gaps.join(" ")} Requests of that type wait; the Admin is told. Change it in Settings, Roles.</p>}
+        </div>
         <a href={`/api/funds/export?tab=${tab}${ftype ? `&ftype=${ftype}` : ""}`} className="btn-secondary btn-sm fl-csv order-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 sm:order-none sm:col-start-2 sm:row-start-1 sm:w-auto sm:self-start" data-funds-csv><DownloadIcon size={16} /> Download CSV</a>
         <nav aria-label="Funds tabs" className="funds-tabs flex min-w-0 overflow-x-auto border-b border-line sm:col-span-2" data-funds-tabs>
           {TABS.map(([k, l]) => (
@@ -462,7 +486,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
       <FundsList items={rows.map((r) => r.item)}>
         <FundsSummary />
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="order-2 min-w-0 sm:order-none">
+          {seen.length === 2 && <div className="order-2 min-w-0 sm:order-none">
             <nav aria-label="Type" className="seg" data-funds-type-filter>
               <Link href={href({ ftype: null })} aria-current={!ftype ? "page" : undefined} className="seg-item">All <span className="seg-count">{allCount}</span></Link>
               {typeChoices.map((t) => (
@@ -471,7 +495,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
                 </Link>
               ))}
             </nav>
-          </div>
+          </div>}
           {tab === "outstanding" && settleCount > 0 && <span className="order-3 sm:order-none"><ToneChip tone="act">Cash to settle · {settleCount}</ToneChip></span>}
           <div className="order-1 sm:order-none sm:ml-auto"><FundsSearch /></div>
         </div>

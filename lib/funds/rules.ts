@@ -106,6 +106,15 @@ export function carryOverDecision(input: { balanceCents: number; firstCarryOver:
 
 export interface Band { fromCents: number; roleId: string; active: boolean }
 /** The band that applies to an amount: the active band with the highest "from" at or below it. */
+/**
+ * The roles that approve an amount: every active band at the highest "from" amount at or below it (one
+ * band can have several roles, for example Approver Small and Approver (cash advance) from ₱0).
+ */
+export function bandRolesFor(amountCents: number, bands: Band[]): string[] {
+  const top = bandFor(amountCents, bands);
+  return top ? bands.filter((b) => b.active && b.fromCents === top.fromCents).map((b) => b.roleId) : [];
+}
+
 export function bandFor(amountCents: number, bands: Band[]): Band | null {
   return [...bands].filter((b) => b.active && b.fromCents <= amountCents).sort((a, b) => b.fromCents - a.fromCents)[0] ?? null;
 }

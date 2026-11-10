@@ -15,6 +15,11 @@ export interface ListItem {
   search: string[];
 }
 
+/** What a row's search matches: the request number, any number it had before ("Formerly CA-2026-0008"), the PNs and borrowers. */
+export function searchTerms(number: string, formerNumbers: readonly string[] | null | undefined, txns: { pn: string; borrower: string }[]): string[] {
+  return [number, ...(formerNumbers ?? []), ...txns.flatMap((t) => [t.pn, t.borrower])];
+}
+
 /** The text a search matches against: lower case, spaces and dashes removed ("CA-2026-0001" = "ca20260001"). */
 const norm = (s: string) => s.toLowerCase().replace(/[\s\-·]+/g, "");
 

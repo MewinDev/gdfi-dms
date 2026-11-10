@@ -27,7 +27,7 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 |---|---|---|
 | Admin | Admin | All branches |
 | Finance | Finance | All branches |
-| Branch Supervisor | Branch Supervisor (a sample role: view loans, transfer holds) | Antipolo (101), Angono (165) |
+| Branch Supervisor | Branch Supervisor (the built-in role: loans of their branches, move a hold to another person, resolve any problem, Monitoring, TAT report) | Antipolo (101), Angono (165) |
 | LA 1 | Loan Associate | Antipolo (101), Angono (165) |
 | LA 2 | Loan Associate | Antipolo (101), Angono (165) |
 | LA Alaminos (was "LA Davao") | Loan Associate | Alaminos (390) |
@@ -99,8 +99,8 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 | GD1012026902034 | Funds: overdue notice | Finance, then DP 2 | Notifications: "liquidation overdue". DP 2: try a new cash request. | DP 2 and Finance have the overdue notice. DP 2's new requests are refused until it is liquidated or Finance grants an exception. |
 | GD1012026902035 | Funds: liquidated | Finance | Funds: close the advance. | Closed. |
 | GD1012026902036 | Funds: closed | Finance | Open the advance. | Closed, with the receipt and the history. |
-| GD1012026902051 | Fund transfer: requested | Finance | Funds > To approve: the FT · Fund transfer pill. Filter by type (FT), Download CSV, then approve it. | The list and the counts follow the type filter; the CSV has the Type column and only Fund transfers. |
-| GD1012026902052 | Fund transfer: approved (changed from Cash advance) | Finance | Funds > To release: open Details on the row, then History. Then Send: reference number, transfer date, bank or e-wallet, account name, last 4 digits, Send transfer. | History shows "changed the type from Cash advance to Fund transfer" with the remarks. More than 4 digits is refused; only the last 4 are stored. |
+| GD1012026902051 | Fund transfer: requested | Finance | Funds > To approve: the FT · Fund transfer pill and its FT- number. Filter by type (FT), Download CSV, then approve it (Approve asks first). | The number is FT-2026-.... The list and the counts follow the type filter; the CSV has the Type column and only Fund transfers. "Approve this request?" shows the amount and the request; it is approved once. |
+| GD1012026902052 | Fund transfer: approved (changed from Cash advance) | Finance | Funds > To release: open Details on the row, then History. Then Send: reference number, transfer date, bank or e-wallet, account name, last 4 digits, Send transfer. | Its number is FT-2026-... with "Formerly CA-2026-..." under it; History shows "changed the type from Cash advance to Fund transfer (formerly CA-...)" with the remarks; searching the CA- number finds it. More than 4 digits is refused; only the last 4 are stored. |
 | GD1012026902053 | Fund transfer: sent | DP 1 | My funds: the FT pill and "sent ... to BPI, DP 1, account ending 4821". Liquidate with a receipt. | Same liquidation as a cash advance. |
 | GD1012026902054 | Fund transfer: liquidated | Finance | Funds > Outstanding: close it. | Closed. |
 | GD1012026902055 | Fund transfer: closed | Finance | Funds > History. | Closed, with the FT pill. |

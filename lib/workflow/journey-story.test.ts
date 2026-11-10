@@ -267,3 +267,14 @@ describe("By document: milestones", () => {
     expect(story(input([txn("NOTARY", { status: "CANCELLED" })])).columns).toEqual([]);
   });
 });
+
+describe("Story filters: no Mine", () => {
+  it("All · Needs attention only; an old ?show=mine (or anything else) shows All without an error", async () => {
+    const { STORY_FILTERS, storyShowOf } = await import("./journey-story");
+    expect(STORY_FILTERS.map(([, l]) => l)).toEqual(["All", "Needs attention"]);
+    expect(storyShowOf("mine")).toBe("all");
+    expect(storyShowOf("attention")).toBe("attention");
+    expect(storyShowOf(undefined)).toBe("all");
+    expect(storyShowOf("nonsense")).toBe("all");
+  });
+});

@@ -10,7 +10,7 @@ import { openLoanFile } from "@/lib/services/loan-file";
 import { assignToDp, confirmPapersBack, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob, declineJob } from "@/lib/services/jobs";
 import { returnToLa } from "@/lib/services/return-to-la";
-import { mayTransferHold, raiseHold, resumeHold, transferCandidates, transferHold } from "@/lib/services/holds";
+import { branchesWithoutHoldMover, holdMoverHealthText, mayTransferHold, raiseHold, resumeHold, transferCandidates, transferHold } from "@/lib/services/holds";
 import {
   addReceipt, cashToSettleIds, closeAdvance, confirmReturn, decideAdvance, decideCarryOver, decideTopUp, grantException, recordReturn, releaseAdvance, releaseTopUp, requestAdvance, requestTopUp,
 } from "@/lib/services/funds";
@@ -23,7 +23,7 @@ import { businessDate, fmtDateTime } from "@/lib/time";
 import { setSetting } from "@/lib/settings";
 import { allPapers, asUser, cleanLoans } from "./helpers";
 
-let la: CurrentUser, dp: CurrentUser, admin: CurrentUser, fin: CurrentUser, la2: CurrentUser, sup: CurrentUser, laGone: CurrentUser;
+let la: CurrentUser, dp: CurrentUser, admin: CurrentUser, fin: CurrentUser, la2: CurrentUser, sup: CurrentUser, laGone: CurrentUser, branchSup: CurrentUser, laOther: CurrentUser;
 const PN = "GD1652026901003";
 const today = () => businessDate(new Date());
 const REMARKS = "Waiting for the client to sign page 2";
@@ -44,6 +44,12 @@ beforeAll(async () => {
   await prisma.user.create({ data: { email: "zz.lagone@gdfi.ph", name: "Leaving Loan Associate", roleId: laRole.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });
   const supRole = await prisma.role.create({ data: { key: "ZSUP", name: "Z Branch supervisor", builtIn: false, branchAccess: "ASSIGNED", permissions: [PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER] } });
   await prisma.user.create({ data: { email: "zz.sup@gdfi.ph", name: "Z Supervisor", roleId: supRole.id, isTestUser: true, branches: { create: [{ branchId: otherBranch }] } } });
+  // The built-in Branch Supervisor of the loan's branch, and an LA of another branch only.
+  const builtInSup = await prisma.role.findUniqueOrThrow({ where: { key: "SUP" } });
+  await prisma.user.create({ data: { email: "zz.branchsup@gdfi.ph", name: "Z Angono Supervisor", roleId: builtInSup.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });
+  await prisma.user.create({ data: { email: "zz.laother@gdfi.ph", name: "Antipolo Only LA", roleId: laRole.id, isTestUser: true, branches: { create: [{ branchId: otherBranch }] } } });
+  branchSup = await asUser("zz.branchsup@gdfi.ph");
+  laOther = await asUser("zz.laother@gdfi.ph");
   la2 = await asUser("zz.la2@gdfi.ph");
   laGone = await asUser("zz.lagone@gdfi.ph");
   sup = await asUser("zz.sup@gdfi.ph");
@@ -93,12 +99,19 @@ describe("1. Transfer hold: Admin anywhere, a supervisor in their branch; never 
     const notary = await ready("NOTARY");
     const id = await raiseHold(la, { transactionId: notary.id, reasonId: await reasonId(), note: REMARKS });
     const loan = await open();
-    // Who may transfer: Admin anywhere; Finance (all branches); a supervisor only in their own branch.
+    // Who may move it: Admin anywhere; the Branch Supervisor of the loan's branch; a supervisor only in
+    // their own branches; Finance no longer (decision 10 November 2026).
     expect(mayTransferHold(admin, loan.branchId)).toBe(true);
-    expect(mayTransferHold(fin, loan.branchId)).toBe(true);
+    expect(mayTransferHold(branchSup, loan.branchId)).toBe(true);
+    expect(mayTransferHold(fin, loan.branchId)).toBe(false);
     expect(mayTransferHold(sup, loan.branchId)).toBe(false);
     expect(mayTransferHold(la, loan.branchId)).toBe(false);
     await expect(transferHold(sup, id, la2.id, "Ana is on leave")).rejects.toThrow();
+    await expect(transferHold(fin, id, la2.id, "Ana is on leave")).rejects.toThrow("Your role does not allow transferring holds.");
+    // Only to someone who also has access to the loan's branch: an LA of Antipolo only is not offered.
+    expect((await transferCandidates(branchSup, id)).map((c) => c.name)).toContain("Second Loan Associate");
+    expect((await transferCandidates(branchSup, id)).map((c) => c.name)).not.toContain("Antipolo Only LA");
+    await expect(transferHold(branchSup, id, laOther.id, "Ana is on leave")).rejects.toThrow(/also has access to this branch/);
     await expect(transferHold(la, id, la2.id, "Ana is on leave")).rejects.toThrow("Your role does not allow transferring holds.");
     // Who may receive: an active LA of the loan's branch; not the holder, not the transferer, not a DP.
     const names = (await transferCandidates(admin, id)).map((c) => c.name);
@@ -138,8 +151,47 @@ describe("1. Transfer hold: Admin anywhere, a supervisor in their branch; never 
     const notary = await ready("NOTARY");
     const h = await prisma.hold.create({ data: { loanId: notary.loanId, transactionId: notary.id, reasonId: await reasonId(), reasonName: "Waiting for the client's papers", note: "Old hold", raisedByLabel: "Someone" } });
     await expect(resumeHold(la, h.id, "Signed")).rejects.toThrow("Nobody can resume it until a supervisor or Admin transfers the hold.");
-    await transferHold(fin, h.id, la.id, "No owner was recorded");
+    await transferHold(admin, h.id, la.id, "No owner was recorded");
     await resumeHold(la, h.id, "Signed now");
+  });
+});
+
+describe("1b. The Branch Supervisor moves holds inside their branches only; who handles transfers", () => {
+  it("moves a hold in their branch; refused outside it; the new owner alone resumes", async () => {
+    const notary = await ready("NOTARY");
+    const id = await raiseHold(la, { transactionId: notary.id, reasonId: await reasonId(), note: REMARKS });
+    await transferHold(branchSup, id, la2.id, "Ana is on leave this week");
+    expect(await prisma.hold.findUniqueOrThrow({ where: { id } })).toMatchObject({ ownerId: la2.id, resumedAt: null });
+    await expect(resumeHold(branchSup, id, "Client signed today")).rejects.toThrow("Only Second Loan Associate can resume this.");
+    // Outside their branches: the same supervisor on a loan of Antipolo is refused (not in scope).
+    const other = { ...branchSup, scopeBranchIds: [(await prisma.branch.findFirstOrThrow({ where: { name: "Antipolo" } })).id] };
+    expect(mayTransferHold(other, notary.loanId ? (await prisma.loan.findUniqueOrThrow({ where: { id: notary.loanId } })).branchId : "")).toBe(false);
+    await expect(transferHold(other, id, la.id, "Moving it back please")).rejects.toThrow();
+  });
+
+  it("counts the active branches where nobody can move a hold (Admin with All branches covers every branch)", async () => {
+    expect(await branchesWithoutHoldMover()).toEqual([]);
+    expect(holdMoverHealthText(0)).toBe("");
+    expect(holdMoverHealthText(1)).toBe("1 active branch has nobody who can move a hold.");
+    expect(holdMoverHealthText(3)).toBe("3 active branches have nobody who can move a hold.");
+    const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
+    await prisma.role.update({ where: { id: adminRole.id }, data: { permissions: adminRole.permissions.filter((k) => k !== PERMISSIONS.HOLDS_TRANSFER) } });
+    try {
+      const missing = await branchesWithoutHoldMover();
+      const names = missing.map((b) => b.name);
+      // The supervisors cover Angono (Branch Supervisor) and Antipolo (the custom supervisor role); Alaminos has nobody.
+      expect(names).not.toContain("Angono");
+      expect(names).not.toContain("Antipolo");
+      expect(names).toContain("Alaminos");
+      const active = await prisma.branch.count({ where: { active: true, hidden: false } });
+      expect(missing.length).toBe(active - 2);
+      // An inactive supervisor does not count.
+      await prisma.user.update({ where: { id: branchSup.id }, data: { active: false } });
+      expect((await branchesWithoutHoldMover()).map((b) => b.name)).toContain("Angono");
+    } finally {
+      await prisma.role.update({ where: { id: adminRole.id }, data: { permissions: adminRole.permissions } });
+      await prisma.user.update({ where: { id: branchSup.id }, data: { active: true } });
+    }
   });
 });
 

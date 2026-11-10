@@ -29,11 +29,11 @@ export type PasuyoInput = z.infer<typeof pasuyoSchema>;
 
 /** Released, unliquidated cash the person holds for this job (per line, after spends and returns). */
 export async function heldFor(db: Tx | typeof prisma, a: Pick<AssignmentFull, "transaction">, userId: string) {
-  const out: { lineId: string; advanceId: string; number: string; kind: string; balance: number; dueAt: Date | null }[] = [];
+  const out: { lineId: string; advanceId: string; number: string; fundsTypeId: string; kind: string; balance: number; dueAt: Date | null }[] = [];
   for (const l of a.transaction.advanceLines) {
     if (l.denied || l.releasedCents <= 0 || l.advance.requestedById !== userId || !OPEN_ADVANCE.includes(l.advance.status)) continue;
     const { balance } = await lineTotals(db, l.id);
-    if (balance > 0) out.push({ lineId: l.id, advanceId: l.advanceId, number: l.advance.number, kind: l.kind, balance, dueAt: l.advance.liquidationDueAt });
+    if (balance > 0) out.push({ lineId: l.id, advanceId: l.advanceId, number: l.advance.number, fundsTypeId: l.advance.fundsTypeId, kind: l.kind, balance, dueAt: l.advance.liquidationDueAt });
   }
   return out;
 }
@@ -63,14 +63,14 @@ export async function passJob(u: CurrentUser, assignmentId: string, raw: unknown
         await tx.cashReturn.create({ data: { advanceId: h.advanceId, lineId: h.lineId, cents: h.balance, date, recordedById: u.id } });
         await refreshAdvance(tx, h.advanceId);
         await writeAudit(tx, { actor, mode: "MANUAL", action: "cash_returned", entityType: "CashAdvance", entityId: h.advanceId, loanId: a.loanId, pn: a.loan.pn, summary: `${h.number}: ${u.name} returned ${peso(h.balance)} cash before passing ${a.transaction.type.name} to ${to.name} (Pasuyo)` });
-        await notify(tx, { email: { event: "cash_returned", vars: { number: h.number, who: u.name, status: "cash returned before passing a job (Pasuyo)", reason: "Confirm receipt." } }, userIds: await financeIds(tx), title: `${h.number}: cash returned`, body: `${u.name} returned ${peso(h.balance)} before passing a job (Pasuyo). Confirm receipt.`, link: "/funds?tab=outstanding" });
+        await notify(tx, { email: { event: "cash_returned", vars: { number: h.number, who: u.name, status: "cash returned before passing a job (Pasuyo)", reason: "Confirm receipt." } }, userIds: await financeIds(tx, h), title: `${h.number}: cash returned`, body: `${u.name} returned ${peso(h.balance)} before passing a job (Pasuyo). Confirm receipt.`, link: "/funds?tab=outstanding" });
       } else {
         // The balance moves to the second processor on a new advance (released, same due date); the old line shows it as handed over.
-        const number = await nextNumber(tx, now);
         // The second processor's home branch (else their first branch, else the job's).
         const branchId = to.homeBranchId ?? to.branches[0]?.branchId ?? a.dpBranchId;
-        // The handed-over balance keeps the funds type of the record it came from.
+        // The handed-over balance keeps the funds type of the record it came from (and its number prefix).
         const parent = await tx.cashAdvance.findUniqueOrThrow({ where: { id: h.advanceId }, select: { fundsTypeId: true, fundsTypeCode: true, fundsTypeName: true } });
+        const number = await nextNumber(tx, now, parent.fundsTypeCode);
         const adv = await tx.cashAdvance.create({
           data: {
             ...parent, number, requestedById: to.id, branchId, status: "RELEASED", requestedCents: h.balance, approvedCents: h.balance, releasedCents: h.balance,
@@ -89,7 +89,7 @@ export async function passJob(u: CurrentUser, assignmentId: string, raw: unknown
           summary: `${h.number}: ${u.name} handed ${peso(h.balance)} for ${a.transaction.type.name} to ${to.name} (Pasuyo); now on ${number}`,
           after: { from: h.number, to: number, cents: h.balance, toUser: to.name },
         });
-        await notify(tx, { email: { event: "cash_returned", vars: { number: h.number, who: u.name, status: "balance handed over (Pasuyo)", reason: `Now on ${number}.` } }, userIds: await financeIds(tx), title: `${h.number}: balance handed over (Pasuyo)`, body: `${u.name} handed ${peso(h.balance)} to ${to.name}. It is now on ${number}.`, link: "/funds?tab=outstanding" });
+        await notify(tx, { email: { event: "cash_returned", vars: { number: h.number, who: u.name, status: "balance handed over (Pasuyo)", reason: `Now on ${number}.` } }, userIds: await financeIds(tx, h), title: `${h.number}: balance handed over (Pasuyo)`, body: `${u.name} handed ${peso(h.balance)} to ${to.name}. It is now on ${number}.`, link: "/funds?tab=outstanding" });
       }
     }
 
