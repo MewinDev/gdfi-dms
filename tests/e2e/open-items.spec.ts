@@ -182,7 +182,7 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   await expect(page.locator('[data-open-row="missing"]')).toHaveCount(0);
   await noSideways(page);
 
-  // The Journey: plain words, no "Pending".
+  // The Journey (Story): plain words, no "Pending".
   await page.goto("/loans/GD1652026901003?tab=journey");
   await expect(page.locator("[data-journey]")).toContainText("asked for a missing paper for Notary: Promissory Note");
   expect(await page.locator("main").innerText()).not.toMatch(/pending/i);

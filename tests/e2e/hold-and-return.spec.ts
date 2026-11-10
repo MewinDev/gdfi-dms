@@ -228,15 +228,23 @@ test("Decline and Return to LA go back to the LA who sent it; the DP no longer s
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
   await expect(page.locator("[data-round]").filter({ visible: true }).first()).toHaveText("Round 2");
 
-  // The Journey: both rounds, in order, with the findings, the DP and how long.
-  await page.goto(`/loans/${PN}?tab=journey`);
-  const rounds = page.locator('[data-rounds-txn="NOTARY"] [data-round-entry]');
-  await expect(rounds).toHaveCount(2);
-  await expect(rounds.nth(0)).toContainText("Round 1Sent to Test Document Processor by Test Loan Associate");
-  await expect(rounds.nth(0).locator("[data-round-outcome]")).toHaveText(/^Declined by DP · .+ PHT · took .+$/);
-  await expect(rounds.nth(0).locator("[data-round-findings]")).toHaveText("No capacity: Full this week. Please send it to Grace.");
-  await expect(rounds.nth(1)).toContainText("Round 2Sent again to Test Document Processor");
-  await page.locator("[data-rounds]").scrollIntoViewIfNeeded();
+  // The Journey (Story): both rounds, newest first, with the findings once and the Round.
+  await page.goto(`/loans/${PN}?tab=journey&txn=NOTARY`);
+  const lines = page.locator("[data-story-line] [data-story-sentence]");
+  const texts = await lines.allInnerTexts();
+  const sentAgain = texts.indexOf("Test Loan Associate sent Notary to Test Document Processor again (Round 2)");
+  const declined = texts.findIndex((t) => /^Test Document Processor declined Notary: .*Full this week\. Please send it to Grace.* \(Round 1\)$/.test(t));
+  // Notary and Entry of PPSR were sent together (same person, same minute): one line.
+  const sent = texts.findIndex((t) => /^Test Loan Associate sent (Notary and Entry of PPSR|Entry of PPSR and Notary|Notary) to Test Document Processor$/.test(t));
+  expect(sentAgain, texts.join(" | ")).toBeGreaterThanOrEqual(0);
+  expect(declined).toBeGreaterThan(sentAgain);
+  expect(sent).toBeGreaterThan(declined);
+  await expect(page.locator('[data-story-line][data-flag="decline"]')).toContainText("Declined");
+  // By document: the decline marks the processor milestone, with its Round.
+  await page.goto(`/loans/${PN}?tab=journey&journey=docs`);
+  const col = page.locator(page.viewportSize()!.width >= 768 ? '[data-doc-column="NOTARY"]' : '[data-doc-card="NOTARY"]');
+  await expect(col.locator('[data-marker="decline"]')).toContainText("(Round 1)");
+  await page.goto(`/loans/${PN}?tab=journey&txn=NOTARY`);
   await shot(page, "journey-two-rounds");
   await noSideways(page);
 });

@@ -206,8 +206,13 @@ test("On hold shows the reason and the remarks everywhere, with soft colours", a
   await go.click();
   await expect(page.locator("[data-holds-banner]")).toHaveCount(0);
 
-  // Journey: two entries for the hold.
+  // Journey, Story: the hold and the resume, each once.
   await page.goto(`/loans/${PN}?tab=journey`);
+  await expect(page.locator('[data-story-line][data-flag="hold"]')).toHaveCount(1);
+  await expect(page.locator('[data-story-line][data-flag="hold"]')).toContainText(`Test Loan Associate put Mortgage on hold: Other (${REMARKS})`);
+  await expect(page.locator("[data-story]")).toContainText("Test Loan Associate resumed Mortgage: A DP is free now");
+  // Full log: two entries for the hold.
+  await page.goto(`/loans/${PN}?tab=journey&journey=log&log=open`);
   const sub = page.locator('[data-sub="hold"]').filter({ visible: true }).first();
   await expect(sub.locator("[data-hold-started]")).toHaveText(new RegExp(`^Put on hold · Other · ${REMARKS} · by Test Loan Associate · .+ PHT$`));
   await expect(sub.locator("[data-hold-resumed]")).toHaveText(/^Resumed · A DP is free now · by Test Loan Associate · .+ PHT · was on hold for .+$/);

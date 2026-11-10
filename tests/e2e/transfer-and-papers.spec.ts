@@ -149,8 +149,10 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(summary.locator("[data-resume]")).toHaveCount(0);
   await expect(summary.locator("[data-resume-disabled]")).toBeDisabled();
-  // The Journey records the transfer.
+  // The Journey records the transfer (Story and Full log).
   await page.goto(`/loans/${PN}?tab=journey`);
+  await expect(page.locator("[data-story]")).toContainText("Test Finance moved the hold on");
+  await page.goto(`/loans/${PN}?tab=journey&journey=log&log=open`);
   await expect(page.locator("[data-hold-transferred]").filter({ visible: true }).first()).toHaveText(/^Hold transferred from Test Loan Associate to Second Loan Associate by Test Finance · Ana is on leave until Friday · .+ PHT$/);
 });
 

@@ -234,10 +234,17 @@ body {
     display: none; /* Chrome, Edge, Safari */
   }
   /* The "Do this now" card: a gold ring with a thin navy edge (seen on every tint of the card). */
-  .do-now :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  .do-now :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible,
+  [data-journey] :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
     outline: 3px solid var(--gold);
     outline-offset: 2px;
     box-shadow: 0 0 0 1px var(--navy);
+  }
+  /* Journey, Full log: automatic steps and "Not applicable" rows are hidden until their switch is on
+     (set on the log's root by the server, then by the switches). */
+  [data-log-root][data-sys-off] [data-log-sys],
+  [data-log-root][data-na-off] [data-log-na] {
+    display: none;
   }
 }
 

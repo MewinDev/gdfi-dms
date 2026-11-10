@@ -64,7 +64,7 @@ const TAB_ALIASES: Record<string, string> = { overview: "todo", transactions: "t
 /** Old addresses of the History tab: they open the Journey tab. */
 const OLD_HISTORY = ["history", "activity"];
 
-export default async function LoanFilePage({ params, searchParams }: { params: Promise<{ pn: string }>; searchParams: Promise<{ tab?: string; notice?: string; work?: string; tx?: string; scope?: string; filter?: string; view?: string }> }) {
+export default async function LoanFilePage({ params, searchParams }: { params: Promise<{ pn: string }>; searchParams: Promise<{ tab?: string; notice?: string; work?: string; tx?: string; scope?: string; journey?: string; show?: string; txn?: string; flag?: string; order?: string; log?: string; sys?: string; na?: string }> }) {
   const user = await requirePagePermission(PERMISSIONS.LOANS_VIEW);
   const { pn } = await params;
   const sp = await searchParams;
@@ -149,7 +149,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
         </>
       )}
       {tab === "documents" && <DocumentsTab loan={loan} la={can(user, PERMISSIONS.LABELS_PRINT)} />}
-      {tab === "journey" && <JourneyTab loan={loan} user={user} params={{ scope: sp.scope, filter: sp.filter, view: sp.view }} />}
+      {tab === "journey" && <JourneyTab loan={loan} user={user} params={{ journey: sp.journey, show: sp.show, txn: sp.txn, flag: sp.flag, order: sp.order, log: sp.log, sys: sp.sys, na: sp.na, scope: sp.scope }} />}
     </div>
   );
 }
