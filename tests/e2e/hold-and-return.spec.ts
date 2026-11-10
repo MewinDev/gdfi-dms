@@ -207,18 +207,22 @@ test("Decline and Return to LA go back to the LA who sent it; the DP no longer s
   await expect(home).toContainText("Declined by the DP");
   await expect(home).toContainText("Returned by the DP: fix and send again");
   await page.goto(`/loans/${PN}?tab=todo&tx=PPSR`);
-  const card = page.locator("[data-sent-back=returned]");
-  await expect(card.locator("[data-sent-back-title]")).toHaveText("Returned by the DP: fix and send again");
-  await expect(card.locator("[data-findings]")).toContainText("The PPSR form is not signed by the client.");
-  await expect(card.locator("[data-sent-back-by]")).toHaveText(/^By Test Document Processor \(DP\) · .+ PHT · Round 1$/);
+  // The "Do this now" card says it once (the old returned card is gone); Open items keeps only the other transaction.
+  const card = page.locator("[data-do-now]");
+  await expect(card).toHaveAttribute("data-tone", "returned");
+  await expect(card.locator("[data-do-now-context]")).toHaveText("Returned by Test Document Processor (DP) · Round 1 · The TAT clock keeps running");
+  await expect(page.getByText("The PPSR form is not signed by the client.").filter({ visible: true })).toHaveCount(1);
+  await expect(page.locator("[data-sent-back]")).toHaveCount(0);
   if (!wide(page)) await page.locator('[data-open-items="collapsible"] summary').click();
-  await expect(page.locator('[data-open-row="returned"]').filter({ visible: true })).toHaveCount(2);
+  await expect(page.locator('[data-open-row="returned"]').filter({ visible: true })).toHaveCount(1);
+  await expect(page.locator('[data-open-row="returned"][data-txn-code="NOTARY"]').filter({ visible: true })).toHaveCount(1);
   await shot(page, "la-returned-findings");
   await noSideways(page);
 
   // Send Notary again: round 2 (the processor is chosen again).
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
-  await expect(page.locator("[data-sent-back=declined] [data-findings]")).toContainText("No capacity: Full this week. Please send it to Grace.");
+  await expect(page.locator("[data-do-now] [data-do-now-context]")).toHaveText(/^Declined by Test Document Processor \(DP\) · Round 1/);
+  await expect(page.getByText("No capacity: Full this week. Please send it to Grace.", { exact: false }).filter({ visible: true })).toHaveCount(1);
   await expect(page.locator("label", { hasText: "Test Document Processor" }).locator("input")).not.toBeChecked();
   await send(page, "NOTARY");
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);

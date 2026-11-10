@@ -215,6 +215,30 @@ body {
   :where(.bg-navy) :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
     outline-color: var(--white);
   }
+  /* Everything that can be pressed shows the hand pointer; disabled controls show "not allowed".
+     (Zero specificity: a cursor-* class or the locked area still wins.) */
+  :where(a[href], button, [role="button"], [role="tab"], [role="option"], summary, select, label:has(input:not([type="hidden"])),
+    input[type="checkbox"], input[type="radio"], input[type="file"], input[type="submit"], input[type="button"]) {
+    cursor: pointer;
+  }
+  :where(button:disabled, select:disabled, input:disabled, label:has(input:disabled), [aria-disabled="true"]) {
+    cursor: not-allowed;
+  }
+  /* Scrollbars are hidden everywhere (page, side panels, strips, sheets, tables); scrolling still works by
+     wheel, trackpad, touch and keyboard. */
+  * {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* old Edge */
+  }
+  *::-webkit-scrollbar {
+    display: none; /* Chrome, Edge, Safari */
+  }
+  /* The "Do this now" card: a gold ring with a thin navy edge (seen on every tint of the card). */
+  .do-now :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 3px solid var(--gold);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 1px var(--navy);
+  }
 }
 
 @layer components {

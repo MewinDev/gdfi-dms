@@ -1,6 +1,6 @@
 import type { TxnStatus } from "@/lib/ui/txn-status";
 import type { Tone } from "@/lib/ui/plain";
-import { AlertIcon, CheckIcon, ClockIcon, FileTextIcon, MinusIcon, PauseIcon } from "@/components/ui/icons";
+import { AlertIcon, ArrowLeftIcon, CheckIcon, ClockIcon, FileTextIcon, MinusIcon, PauseIcon } from "@/components/ui/icons";
 
 const TONE: Record<Tone, string> = { act: "c-act", wait: "c-wait", ok: "c-ok", bad: "c-bad", mute: "c-mute", navy: "c-navy", hold: "c-hold" };
 
@@ -9,6 +9,7 @@ function PillIcon({ s }: { s: TxnStatus }) {
   if (s.pill.kind === "hold") return <PauseIcon {...p} />;
   if (s.pill.kind === "problem") return <AlertIcon {...p} />;
   if (s.pill.kind === "missing") return <FileTextIcon {...p} />;
+  if (s.pill.kind === "returned") return <ArrowLeftIcon {...p} />;
   if (s.pill.tone === "ok") return <CheckIcon {...p} />;
   if (s.pill.tone === "wait") return <ClockIcon {...p} />;
   if (s.pill.tone === "mute") return <MinusIcon {...p} />;

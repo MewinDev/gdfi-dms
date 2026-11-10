@@ -4,7 +4,7 @@ import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useEffect } from "react";
-import { AlertIcon, ArrowLeftIcon, ChevronDownIcon, FileTextIcon, PauseIcon } from "@/components/ui/icons";
+import { AlertIcon, ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, FileTextIcon, PauseIcon } from "@/components/ui/icons";
 import { Sheet } from "@/components/ui/sheet";
 import { OutsideControlToggle, ResolveProblemForm, ResumeHoldForm, type HoldBrief } from "@/components/jobs/forms";
 import { SourceReviewSheet } from "@/components/loan/source-review";
@@ -126,6 +126,29 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
             <ul>
               {items.map((r) => {
                 const k = KIND[r.kind];
+                // Sent back to you and Waiting for papers: the whole row is the button (Open / Show paper), stacked:
+                // badge, transaction, what was found or asked, then who and the date and time (PHT).
+                if (r.kind === "returned" || r.kind === "missing") {
+                  const action = r.kind === "missing" ? "Show paper" : "Open";
+                  return (
+                    <li key={r.id} data-open-row={r.kind} data-txn-code={r.txnCode} className="border-t border-line first:border-t-0">
+                      <button type="button" onClick={() => select(r, r.kind === "missing")} data-open-action={action}
+                        className="flex w-full items-center gap-2 py-2 pl-4 pr-3 text-left hover:bg-fill focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-navy">
+                        <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span className={`chip ${k.cls} h-6 px-2 text-xs`}><k.Icon size={13} strokeWidth={2.4} />{r.badge ?? k.word}</span>
+                            {r.funds && <FundsTypePill code={r.funds.code} name={r.funds.name} />}
+                          </span>
+                          <span className="text-[14px] font-semibold text-ink">{r.txnName}</span>
+                          <span className="break-words text-[13px] leading-snug text-ink" data-open-reason>{r.reason}</span>
+                          <span className="text-xs text-ink-2" data-open-who>{[r.who, r.since].filter(Boolean).join(" · ")}</span>
+                        </span>
+                        <span className="sr-only">. {action}</span>
+                        <span aria-hidden="true" className="shrink-0 text-ink-2"><ChevronRightIcon size={16} /></span>
+                      </button>
+                    </li>
+                  );
+                }
                 return (
                   // The whole row selects the transaction; its one button does the action.
                   <li key={r.id} onClick={() => select(r)} data-open-row={r.kind} data-txn-code={r.txnCode}
@@ -142,13 +165,9 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
                       <span className="text-xs text-ink-2">{[r.who, r.since].filter(Boolean).join(" · ")}</span>
                     </span>
                     <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                      {r.kind === "missing" && (
-                        <button type="button" onClick={() => select(r, true)} className="btn-ghost btn-sm min-h-9">Show paper</button>
-                      )}
                       {r.kind === "hold" && r.canResume && r.hold && <ResumeHoldForm hold={r.hold} buttonClass="btn-ghost btn-sm min-h-9" />}
                       {r.kind === "problem" && <button type="button" onClick={() => setProblem(r)} className="btn-ghost btn-sm min-h-9">Open</button>}
                       {r.kind === "source" && <button type="button" onClick={() => setReview(r)} className="btn-ghost btn-sm min-h-9">Review</button>}
-                      {r.kind === "returned" && <button type="button" onClick={() => select(r)} className="btn-ghost btn-sm min-h-9">Open</button>}
                     </span>
                   </li>
                 );
@@ -177,9 +196,9 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
       </Sheet>
     </div>
   );
-  // Calm frame: white card, thin light border, a soft stripe on the left (red only when a problem is listed).
+  // Calm frame: white card, thin light border only (the icon and each row's pill say how urgent it is).
   const urgent = rows.some((r) => r.kind === "problem" || r.kind === "source");
-  const frame = `overflow-hidden rounded-[14px] border border-line-soft bg-white ${urgent ? "shadow-[inset_4px_0_0_var(--bad-line)]" : "shadow-[inset_4px_0_0_var(--hold-stripe)]"}`;
+  const frame = "overflow-hidden rounded-[14px] border border-line-soft bg-white";
   const mark = <span className={urgent ? "text-bad-fg" : "text-hold-fg"}>{rows.every((r) => r.kind === "hold") ? <PauseIcon size={18} /> : <AlertIcon size={18} />}</span>;
   if (collapsible) {
     return (

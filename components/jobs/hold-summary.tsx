@@ -21,6 +21,8 @@ export interface HoldSummaryProps {
   clockNote?: boolean;
   resumeClass?: string;
   id?: string;
+  /** Inside the "Do this now" card: no card frame of its own. */
+  bare?: boolean;
 }
 
 /**
@@ -34,11 +36,11 @@ export interface HoldSummaryProps {
  * disabled with "Only {name} can resume this." The transaction is locked until then.
  * Older holds without remarks say "No details were written." with "Add details" for the holder only. A white card with a soft amber stripe on the left (no strong colour).
  */
-export function HoldSummary({ hold, now, txnName, canResume, canAddDetails, transfer = null, clockNote = false, resumeClass = "btn-ghost btn-sm", id }: HoldSummaryProps) {
+export function HoldSummary({ hold, now, txnName, canResume, canAddDetails, transfer = null, clockNote = false, resumeClass = "btn-ghost btn-sm", id, bare = false }: HoldSummaryProps) {
   const owner = hold.owner;
   const t = holdSummaryText({ reason: hold.reason, note: hold.note, raisedBy: hold.raisedBy, raisedAt: new Date(hold.raisedAt) }, new Date(now));
   return (
-    <section id={id} role="status" aria-label={txnName ? `${txnName}: on hold` : "On hold"} className="hold-card flex scroll-mt-28 flex-col gap-2 py-3 pl-5 pr-3 sm:flex-row sm:items-start sm:gap-4 sm:pr-4"
+    <section id={id} role="status" aria-label={txnName ? `${txnName}: on hold` : "On hold"} className={bare ? "flex scroll-mt-28 flex-col gap-2 sm:flex-row sm:items-start sm:gap-4" : "hold-card flex scroll-mt-28 flex-col gap-2 py-3 pl-5 pr-3 sm:flex-row sm:items-start sm:gap-4 sm:pr-4"}
       data-hold-summary data-hold-open data-open-item="hold">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         {txnName && <p className="text-[13px] font-semibold text-ink-2" data-hold-txn>{txnName}</p>}
@@ -46,10 +48,11 @@ export function HoldSummary({ hold, now, txnName, canResume, canAddDetails, tran
           <span className="text-hold-fg"><PauseIcon size={16} strokeWidth={2.4} /></span>{t.title}
         </h3>
         {t.remarks ? <Remarks text={t.remarks} /> : (
-          <p className="flex flex-wrap items-center gap-x-3 text-[15px] italic text-ink-2" data-remarks="none">
-            {NO_DETAILS}
-            {canAddDetails && <span className="not-italic"><AddHoldDetailsForm holdId={hold.holdId} reason={hold.reason} /></span>}
-          </p>
+          // A div, not a p: "Add details" renders a <dialog> with a form, which cannot sit inside a <p>.
+          <div className="flex flex-wrap items-center gap-x-3 text-[15px] italic text-ink-2" data-remarks="none">
+            <span>{NO_DETAILS}</span>
+            {canAddDetails && <div className="not-italic"><AddHoldDetailsForm holdId={hold.holdId} reason={hold.reason} /></div>}
+          </div>
         )}
         <p className="text-[13px] text-ink-2" data-hold-by>{t.byLine}</p>
         {owner && owner !== hold.raisedBy && <p className="text-[13px] text-ink-2" data-hold-owner>Hold owner now: <strong className="font-semibold text-ink">{owner}</strong></p>}

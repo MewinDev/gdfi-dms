@@ -60,8 +60,8 @@ async function sameWording(page: Page, selected = "NOTARY") {
     const check = await texts(page, checkList(page).locator(`[data-txn=${c}]`));
     expect.soft(check.chip, `${c} pill`).toBe(todo[c].chip);
     expect.soft(check.clock, `${c} day count`).toBe(todo[c].clock);
-    // The Next step row leaves its line out (the Next step card says it); every other line matches.
-    if (todo[c].line !== null) expect.soft(check.line, `${c} line`).toBe(todo[c].line);
+    // Check documents shows the word and the day count only: what to do is in the "Do this now" card.
+    expect.soft(check.line, `${c} line`).toBeNull();
   }
   return todo;
 }
@@ -101,7 +101,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
 
   let todo = await sameWording(page);
   // Sent: one short line in the list; who it went to and the LTO office are in the detail only.
-  expect(todo.NOTARY.chip).toBe("Sent");
+  expect(todo.NOTARY.chip).toBe("Sent to DP");
   expect(todo.NOTARY.line).toBe("Waiting for the DP to accept");
   await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   await expect(page.locator(`section[id^="job-"]`)).toContainText("Sent to Test Document Processor");
@@ -120,7 +120,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   const unticked = edst.checks.find((c) => !c.checked)!;
   await db.loanException.create({ data: { loanId: edst.loanId, transactionId: edst.id, type: "LEGAL_DOCS_COMPLETION", reason: "Missing", raisedByLabel: "E2E", details: { checkIds: [unticked.id], missing: ["x"] } } });
   todo = await sameWording(page, "MORTGAGE");
-  expect(todo.NOTARY.chip).toBe("Processing");
+  expect(todo.NOTARY.chip).toBe("In progress");
   expect(todo.NOTARY.line).toBe("The DP is working on it");
   expect(todo.PPSR.chip).toBe("Problem");
   expect(todo.MORTGAGE.chip).toBe("On hold");

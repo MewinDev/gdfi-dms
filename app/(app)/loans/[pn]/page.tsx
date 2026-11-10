@@ -13,7 +13,7 @@ import { advisoryWarnings } from "@/lib/services/lto-advisories";
 import { availability, leaveText } from "@/lib/monitoring/rules";
 import { JOURNEY_STEP_COUNT, dayText, deadlineChip, liveAssignment, peso, plainMessage, progressStep, stageWords, timeAgo, txnName } from "@/lib/ui/plain";
 import { Banner, ToneChip } from "@/components/ui/basics";
-import { AlertIcon, ChevronRightIcon, PauseIcon, PrinterIcon } from "@/components/ui/icons";
+import { AlertIcon, PauseIcon, PrinterIcon } from "@/components/ui/icons";
 import { PageTop } from "@/components/loan/page-top";
 import { openedAt } from "@/lib/pn/opened-at";
 import { Stepper } from "@/components/ui/stepper";
@@ -28,7 +28,7 @@ import { SelectionFocus, StoredToast, TxnSideList, TxnStrip, type TxnItem } from
 import { openHold, openProblem, txnTat } from "@/lib/jobs/view";
 import { FocusFromUrl, OpenItemsCard, type OpenRow } from "@/components/loan/open-items-client";
 import { LiveAnnouncer, LiveToast } from "@/components/ui/live-toast";
-import { focusTargetOf, openItemsOf, titleChipOf, type OpenItem } from "@/lib/ui/open-items";
+import { focusTargetOf, openItemsOf, type OpenItem } from "@/lib/ui/open-items";
 import { txnStatus, type TxnStatus } from "@/lib/ui/txn-status";
 import { TxnStatusChips } from "@/components/loan/txn-status-chips";
 import { requestedCheckIds, ASKED_FROM, type AskedFrom } from "@/lib/services/workflow";
@@ -36,8 +36,8 @@ import { PutOnHoldForm, type HoldBrief } from "@/components/jobs/forms";
 import { HoldSummary } from "@/components/jobs/hold-summary";
 import { mayTransferHold, transferCandidates } from "@/lib/services/holds";
 import { LockedArea } from "@/components/ui/locked-area";
-import { SentBackCard } from "@/components/loan/sent-back-card";
-import { PapersBackCard } from "@/components/loan/papers-back";
+import { DoThisNow, type DoThisNowProps } from "@/components/loan/do-this-now";
+import { coveredOpenKinds, getNextSteps, nextStepsInputOf } from "@/lib/workflow/next-steps";
 import { inactiveSenderNote, roundChip, sentBack, sentBackIsFor } from "@/lib/ui/rounds";
 import { CLOCK_NOTE, firstLine, lockedMessage, mayAddDetails, mayResumeHold, holdReasonName } from "@/lib/ui/holds";
 import { holdDays, problemDays } from "@/lib/workflow/tat";
@@ -261,23 +261,24 @@ async function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_352px] xl:items-start">
       <div className="flex min-w-0 flex-col gap-4">
         {problems.length > 0 && (
-          <section aria-labelledby="problems" className="rounded-[14px] border border-bad-line bg-bad-bg p-4 sm:p-5">
-            <h2 id="problems" className="text-lg font-bold text-bad-fg">{problems.length === 1 ? "There is a problem to fix" : `There are ${problems.length} problems to fix`}</h2>
-            <ul className="mt-3 flex flex-col gap-3">
+          <section aria-labelledby="problems" className="rounded-xl border border-bad-line bg-bad-bg px-3 py-2.5 sm:px-3.5" data-problems-card>
+            <h2 id="problems" className="flex items-center gap-1.5 text-sm font-bold text-bad-fg"><AlertIcon size={15} strokeWidth={2.4} />{problems.length === 1 ? "There is a problem to fix" : `There are ${problems.length} problems to fix`}</h2>
+            <ul className="mt-1.5 flex flex-col divide-y divide-line overflow-hidden rounded-lg border border-line-soft bg-white">
               {problems.map((e) => (
-                <li key={e.id} className="rounded-xl bg-white p-4">
-                  <p className="text-[15px] font-semibold">{problemTitle(e.type)}{e.transaction ? ` · ${txnName(e.transaction.type.code, e.transaction.type.name)}` : ""}</p>
-                  <p className="mt-1 text-[15px] text-ink">{plainMessage(e.reason)}</p>
+                <li key={e.id} className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-start sm:gap-3">
+                  <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{problemTitle(e.type)}{e.transaction ? ` · ${txnName(e.transaction.type.code, e.transaction.type.name)}` : ""}</p>
+                  <p className="text-sm text-ink">{plainMessage(e.reason)}</p>
                   {Array.isArray((e.details as { changes?: unknown[] } | null)?.changes) && (
-                    <ul className="mt-1 text-sm text-ink-2">
+                    <ul className="text-xs text-ink-2">
                       {(e.details as { changes: { field: string; before: unknown; after: unknown }[] }).changes.map((c) => (
                         <li key={c.field}>{c.field}: {String(c.before ?? "blank")} → {String(c.after ?? "blank")}</li>
                       ))}
                     </ul>
                   )}
-                  <p className="mt-1 text-sm text-ink-2">Reported by {e.raisedByLabel}, {timeAgo(e.raisedAt).toLowerCase()}</p>
-                  {la && e.type !== "LEGAL_DOCS_COMPLETION" && <div className="mt-3"><FixProblem exceptionId={e.id} /></div>}
-                  {e.type === "LEGAL_DOCS_COMPLETION" && <p className="mt-2 text-sm text-ink-2">This closes by itself when you tick the missing paper.</p>}
+                  <p className="text-xs text-ink-2">Reported by {e.raisedByLabel}, {timeAgo(e.raisedAt).toLowerCase()}{e.type === "LEGAL_DOCS_COMPLETION" ? " · closes by itself when you tick the missing paper" : ""}</p>
+                  </div>
+                  {la && e.type !== "LEGAL_DOCS_COMPLETION" && <div className="shrink-0 [&_button]:min-h-11 sm:[&_button]:min-h-9"><FixProblem exceptionId={e.id} /></div>}
                 </li>
               ))}
             </ul>
@@ -298,23 +299,23 @@ async function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan
           </section>
         )}
 
-        <section aria-labelledby="next" className={`card flex flex-col gap-3 p-5 shadow-[var(--shadow-soft)] sm:flex-row sm:items-center sm:gap-5 ${ns.waiting ? "" : "border-line-soft"}`} data-next-step={ns.waiting ? "waiting" : "go"}>
+        <section aria-labelledby="next" className={`card flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4 sm:px-3.5 ${ns.waiting ? "" : "border-line-soft"}`} data-next-step={ns.waiting ? "waiting" : "go"}>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2.5">
-              <p className="chip c-act">Next step</p>
-              {step <= JOURNEY_STEP_COUNT && <span className="text-[13px] text-ink-2">Step {step} of {JOURNEY_STEP_COUNT}</span>}
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-ink-2">Next step</p>
+              {step <= JOURNEY_STEP_COUNT && <span className="text-xs text-ink-2">· Step {step} of {JOURNEY_STEP_COUNT}</span>}
             </div>
-            <h2 id="next" className="mt-1.5 text-xl font-bold leading-snug text-navy">{ns.title}</h2>
-            <p className="mt-0.5 text-[15px] text-ink-2">{ns.help}</p>
+            <h2 id="next" className="text-[15px] font-bold leading-snug text-navy">{ns.title}</h2>
+            <p className="text-[13px] text-ink-2">{ns.help}</p>
           </div>
           {la && (ns.primary || ns.secondary) && (
-            <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+            <div className="flex shrink-0 flex-col gap-1 sm:items-end">
               {ns.primary && (
-                <Link href={ns.primary.href} className="btn-gold h-12 w-full sm:h-11 sm:w-auto">
+                <Link href={ns.primary.href} className="btn-gold min-h-11 w-full px-4 text-sm sm:min-h-9 sm:w-auto">
                   {ns.primary.print && <PrinterIcon size={18} />} {ns.primary.label}
                 </Link>
               )}
-              {ns.secondary && <Link href={ns.secondary.href} className={ns.waiting ? "btn-ghost btn-sm" : "link inline-flex min-h-11 items-center text-sm"}>{ns.secondary.label}</Link>}
+              {ns.secondary && <Link href={ns.secondary.href} className={ns.waiting ? "btn-ghost btn-sm sm:min-h-9" : "link inline-flex min-h-11 items-center text-sm sm:min-h-8"}>{ns.secondary.label}</Link>}
             </div>
           )}
         </section>
@@ -401,10 +402,9 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
           </div>
         ))}
       </dl>
-      <details className="group border-t border-line pt-1">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-navy">
-          <ChevronRightIcon size={18} className="transition-transform group-open:rotate-90" /> More loan details
-        </summary>
+      {/* Always shown (no collapse). */}
+      <div className="border-t border-line pt-2" data-more-loan-details>
+        <h3 className="text-sm font-semibold text-navy">More loan details</h3>
         <dl className="mt-2 flex flex-col gap-2 text-sm">
           {more.map(([k, v]) => (
             <div key={k} className="flex justify-between gap-3 border-b border-line/60 pb-1.5">
@@ -418,7 +418,7 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
           </div>
           <div className="pt-1 text-xs text-ink-2">MyLoans copy saved {fmtDateTime(snap?.retrievedAt)} ({snap?.adapter ?? "-"}).</div>
         </dl>
-      </details>
+      </div>
       {can(user, PERMISSIONS.RULES_OVERRIDE) && (
         <OverrideForm loanId={loan.id} current={{ classification: loan.classification, financingType: loan.financingType, orcrStatus: loan.orcrStatus, mortgage: loan.mortgageResult }} />
       )}
@@ -491,8 +491,49 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
   const opens = openItemsFor(loan, ctx.holidays);
   const mine = opens.filter((i) => i.txnId === selected.id);
   const missingItem = mine.find((i) => i.kind === "missing");
-  const requested = new Set(missingItem?.lineIds ?? []);
-  const requestedInfo = missingItem ? askedText(missingItem) : undefined;
+  const a = selected.dpAssignments.find((x) => liveAssignment(x.status));
+  // Declined or returned by the DP: the "Do this now" card says it, once.
+  const sb = sentBack(selected.status, selected.dpAssignments);
+  const forSender = !!sb && sentBackIsFor(sb, { id: user.id, isBranchLa: la && inScope(user, loan.branchId) });
+  const checklist = checklistStatusOf(selected.checks);
+  // The ordered next steps (lib/workflow/next-steps.ts): the card, the status word, the checklist markers
+  // and the Open items filter all come from here. The latest Return to LA and the papers it named too.
+  const facts = nextStepsInputOf(selected, loan, sb?.kind ?? null, { done: checklist.requiredDone, total: checklist.requiredTotal });
+  const steps = getNextSteps(facts.input);
+  const lastReturn = facts.lastReturn;
+  const named = selected.checks.filter((c) => facts.namedIds.includes(c.id));
+  // Returned with papers handed over by the processor: the LA confirms them before sending again.
+  const papersBack = selected.status === "RETURNED" ? loan.documents.filter((d) => d.transactionId === selected.id && d.stage === "IN_TRANSIT") : [];
+  const handedAt = selected.dpAssignments.find((x) => x.papersHandedAt)?.papersHandedAt ?? null;
+  const assignmentText = sb ? null :
+    selected.status === "ASSIGNED" && a ? `Sent to ${a.dpUser.name} on ${dayText(a.endorsedAt)}. Waiting for them to accept.`
+    : selected.status === "IN_PROCESS" && a ? `${a.dpUser.name} is working on it.`
+    : selected.status === "FORWARDED" && a ? `${a.dpUser.name} sent the package back to ${a.receivingLa?.name ?? "the branch"}.`
+    : selected.status === "COMPLETED" && selected.type.requiresDp ? "Done. The package came back complete." : null;
+  const send = can(user, PERMISSIONS.DP_SEND) && selected.type.requiresDp ? await sendOptions(loan, ctx, selected) : null;
+  // The Processor job card appears only once the transaction was sent.
+  const sent = selected.type.requiresDp && !PRE_SEND.includes(selected.status) && selected.status !== "CANCELLED";
+  const jobCard = sent;
+  const hold = openHold(selected.holds);
+  // On hold: the transaction is locked (readable, controls disabled) until the holder resumes it.
+  const locked = hold ? lockedMessage(hold.raisedByLabel, hold.raisedAt, hold.ownerLabel) : null;
+  // The round chip: the LA, and whoever may change an automatic result (a supervisor).
+  const round = la || can(user, PERMISSIONS.RULES_OVERRIDE) ? roundChip(selected.dpAssignments) : null;
+  // The missing-paper pop-up may also put it on hold (waiting on borrower) for the person who does the work.
+  const canHold = ownsTxn(user, loan, selected) && can(user, PERMISSIONS.HOLDS_RAISE) && !openHold(selected.holds);
+  const openMissing = loan.exceptions.some((e) => e.transactionId === selected.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN");
+  const problems = selected.problems.filter((x) => !x.resolvedAt);
+  // A custom transaction done by the LA (no processor) is finished with "Mark as done".
+  const laCustom = can(user, PERMISSIONS.TXN_COMPLETE) && !selected.type.builtIn && !selected.type.requiresDp && ["FOR_CHECKLIST", "READY", "RETURNED"].includes(selected.status);
+
+  const otherMissing = facts.input.missing && !!missingItem;
+  const hasPapersBack = !!facts.input.papersBack;
+  // The checklist marker on the paper the DP returned (only while that step is still to do).
+  const fixOpen = steps.some((x) => x.kind === "fix" && x.state !== "done");
+  const returnedIds = new Set(fixOpen ? named.map((c) => c.id) : []);
+  const returnedTag = `Returned: ${(facts.reason ?? "fix it").toLowerCase()}`;
+  const requested = new Set(otherMissing ? missingItem!.lineIds : []);
+  const requestedInfo = otherMissing ? askedText(missingItem!) : undefined;
   const lines: Line[] = selected.checks
     .filter((c) => !c.rule || c.rule.active || c.checked)
     .map((c) => ({
@@ -507,33 +548,48 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       active: c.rule ? c.rule.active : true,
       requested: requested.has(c.id),
       requestedInfo: requested.has(c.id) ? requestedInfo : undefined,
+      returned: returnedIds.has(c.id) ? returnedTag : undefined,
     }));
-  const a = selected.dpAssignments.find((x) => liveAssignment(x.status));
-  // Declined or returned by the DP: the findings card at the top says it (no second line here).
-  const sb = sentBack(selected.status, selected.dpAssignments);
-  // Returned with papers handed over by the processor: the LA confirms them before sending again.
-  const papersBack = selected.status === "RETURNED" ? loan.documents.filter((d) => d.transactionId === selected.id && d.stage === "IN_TRANSIT") : [];
-  const handedAt = selected.dpAssignments.find((x) => x.papersHandedAt)?.papersHandedAt ?? null;
-  const assignmentText = sb ? null :
-    selected.status === "ASSIGNED" && a ? `Sent to ${a.dpUser.name} on ${dayText(a.endorsedAt)}. Waiting for them to accept.`
-    : selected.status === "IN_PROCESS" && a ? `${a.dpUser.name} is working on it.`
-    : selected.status === "FORWARDED" && a ? `${a.dpUser.name} sent the package back to ${a.receivingLa?.name ?? "the branch"}.`
-    : selected.status === "COMPLETED" && selected.type.requiresDp ? "Done. The package came back complete." : null;
-  const send = can(user, PERMISSIONS.DP_SEND) && selected.type.requiresDp ? await sendOptions(loan, ctx, selected) : null;
-  // The Processor job card appears only once the transaction was sent.
-  const sent = selected.type.requiresDp && !PRE_SEND.includes(selected.status) && selected.status !== "CANCELLED";
-  const jobCard = sent;
-  const rows = [...(review ? [sourceRow(review)] : []), ...backRows(loan, user), ...openRows(loan, opens, user)];
-  // The hold is explained by the summary at the top, so the header carries no second On hold pill.
-  const titleChips = mine.filter((i) => i.kind !== "hold").map((i) => ({ id: i.id, ...titleChipOf(i) }));
-  const hold = openHold(selected.holds);
-  // On hold: the transaction is locked (readable, controls disabled) until the holder resumes it.
-  const locked = hold ? lockedMessage(hold.raisedByLabel, hold.raisedAt, hold.ownerLabel) : null;
-  // The round chip: the LA, and whoever may change an automatic result (a supervisor).
-  const round = la || can(user, PERMISSIONS.RULES_OVERRIDE) ? roundChip(selected.dpAssignments) : null;
-  // The missing-paper pop-up may also put it on hold (waiting on borrower) for the person who does the work.
-  const canHold = ownsTxn(user, loan, selected) && can(user, PERMISSIONS.HOLDS_RAISE) && !openHold(selected.holds);
-  const openMissing = loan.exceptions.some((e) => e.transactionId === selected.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN");
+
+  // Where the last step's button goes: the Send panel (or EDST) in the work card, or Mark as done.
+  const finishTarget = selected.type.requiresDp ? (send && la ? `act-${selected.id}` : null)
+    : laCustom ? `finish-${selected.id}` : selected.type.code === "EDST" && la ? `act-${selected.id}` : null;
+  const doNow: DoThisNowProps = {
+    txnId: selected.id,
+    txnName: txnName(selected.type.code, selected.type.name),
+    tone: hold ? "hold" : problems.length ? "problem" : sb ? "returned" : "normal",
+    context: sb ? `${sb.kind === "declined" ? "Declined" : "Returned"} by ${sb.dpName} (DP) · Round ${sb.round} · ${CLOCK_NOTE}` : null,
+    inactiveSender: sb && !sb.senderActive ? `Sender ${sb.senderName ?? "unknown"} is inactive. Any Loan Associate of the branch can fix it and send it again.` : null,
+    steps,
+    canAct: la,
+    hold: hold ? {
+      brief: holdBrief(hold), now: new Date().toISOString(), canResume: mayResume(user, loan, selected), canAddDetails: mayAddDetails(hold, user),
+      transfer: await transferFor(user, loan, hold.id), id: `open-${hold.id}`,
+    } : undefined,
+    problems: problems.map((x) => ({
+      id: x.id, reason: x.reason.name, raisedText: `Raised by ${x.raisedByLabel} on ${fmtShort(x.raisedAt)}`, note: x.note, outside: x.outsideControl,
+      canResolve: (ownsTxn(user, loan, selected) && can(user, PERMISSIONS.PROBLEMS_RESOLVE)) || can(user, PERMISSIONS.PROBLEMS_RESOLVE_ANY),
+      canOutside: can(user, PERMISSIONS.PROBLEMS_OUTSIDE),
+    })),
+    papersBack: hasPapersBack ? {
+      dpName: sb?.dpName ?? "The processor", handedAt: fmtDateTime(handedAt ?? new Date()),
+      papers: papersBack.map((d) => ({ id: d.id, label: d.label, code: d.documentId })),
+      confirmedText: lastReturn?.papersReceivedAt ? `Received by ${lastReturn.papersReceivedBy ?? "the Loan Associate"} · ${fmtDateTime(lastReturn.papersReceivedAt)}` : null,
+    } : undefined,
+    fix: sb ? {
+      dpName: sb.dpName, reason: named.length ? facts.reason : null,
+      papers: named.map((c) => ({ lineId: c.id, label: c.rule?.label ?? c.otherLabel ?? "Other paper" })),
+      note: facts.note, findings: sb.findings, forSender, senderName: sb.senderName,
+    } : undefined,
+    missing: otherMissing ? { papers: missingItem!.papers.length ? missingItem!.papers : [missingItem!.reason], lineIds: missingItem!.lineIds, who: askedText(missingItem!) } : undefined,
+    tick: { done: checklist.requiredDone, total: checklist.requiredTotal, lineIds: checklist.missing.flatMap((m) => m.lineIds) },
+    finish: finishTarget ? { targetId: finishTarget, edst: selected.type.code === "EDST", markDone: laCustom } : undefined,
+  };
+
+  // Open items: only what the card does not already say (other transactions, MyLoans changes).
+  const covered = coveredOpenKinds(steps);
+  const rows = [...(review ? [sourceRow(review)] : []), ...backRows(loan, user), ...openRows(loan, opens, user)]
+    .filter((r) => !(r.txnCode === selected.type.code && r.kind !== "source" && covered.has(r.kind)));
 
   const selectedIndex = live.findIndex((t) => t.id === selected.id) + 1;
   const items = txnItems(loan, ctx, opens);
@@ -549,8 +605,6 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
         include: { _count: { select: { rules: { where: { active: true } } } } },
       })).map((t) => ({ id: t.id, name: t.name, papers: t._count.rules, requiresDp: t.requiresDp, added: live.some((x) => x.typeId === t.id) }))
     : [];
-  // A custom transaction done by the LA (no processor) is finished with "Mark as done".
-  const laCustom = can(user, PERMISSIONS.TXN_COMPLETE) && !selected.type.builtIn && !selected.type.requiresDp && ["FOR_CHECKLIST", "READY", "RETURNED"].includes(selected.status);
 
   return (
     <div className="grid gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_310px] min-[1100px]:items-start">
@@ -558,23 +612,16 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       <LiveToast />
       <LiveAnnouncer />
       <FocusFromUrl />
-      <div className="flex min-w-0 flex-col gap-3 min-[1100px]:hidden">
-        <OpenItemsCard rows={rows} selected={selected.type.code} collapsible />
-        <TxnStrip items={items} selected={selected.type.code} summary={summary} />
-      </div>
       <div className="flex min-w-0 flex-col gap-4">
       <SelectionFocus key={`focus-${selected.id}`} headingId={`w-${selected.id}`} />
-      {hold && (
-        <HoldSummary id={`open-${hold.id}`} hold={holdBrief(hold)} now={new Date().toISOString()} canResume={mayResume(user, loan, selected)}
-          canAddDetails={mayAddDetails(hold, user)} transfer={await transferFor(user, loan, hold.id)} clockNote />
-      )}
-      {sb && <SentBackCard sb={sb} forSender={sentBackIsFor(sb, { id: user.id, isBranchLa: la && inScope(user, loan.branchId) })} />}
+      {steps.length > 0 && <DoThisNow key={`now-${selected.id}`} {...doNow} />}
+      {/* Tablet and phone: the transactions as a strip (only the strip scrolls sideways), then the checklist. */}
+      <div className="flex min-w-0 flex-col gap-3 min-[1100px]:hidden">
+        <TxnStrip items={items} selected={selected.type.code} summary={summary} />
+        <OpenItemsCard rows={rows} selected={selected.type.code} collapsible />
+      </div>
       <LockedArea locked={locked} id={`lock-${selected.id}`}>
       <div className="flex min-w-0 flex-col gap-4">
-      {la && papersBack.length > 0 && (
-        <PapersBackCard transactionId={selected.id} dpName={sb?.dpName ?? "The processor"} handedAt={fmtDateTime(handedAt ?? new Date())}
-          papers={papersBack.map((d) => ({ id: d.id, label: d.label, code: d.documentId }))} />
-      )}
       <WorkCard
         // Keyed on the transaction only: saving the last tick (For checklist → Ready) must not wipe the funds or processor choice.
         key={`work-${selected.id}`}
@@ -590,7 +637,6 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
         editable={la && (["FOR_CHECKLIST", "READY", "RETURNED"].includes(selected.status) || (selected.status === "ASSIGNED" && a?.status === "PENDING_ACCEPTANCE" && can(user, PERMISSIONS.DP_SEND)))}
         canAct={la}
         openMissingRequest={openMissing}
-        titleChips={titleChips}
         canHold={canHold}
         round={round}
         assignmentText={jobCard ? null : assignmentText}
@@ -599,14 +645,14 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       />
       {jobCard && <TxnJobPanel loan={loan} txn={selected} user={user} tats={ctx.tats} holidays={ctx.holidays} statusText={assignmentText} />}
       {!jobCard && <LaHoldStrip txn={selected} user={user} />}
-      {laCustom && <MarkDone transactionId={selected.id} name={selected.type.name} ready={checklistStatusOf(selected.checks).complete} />}
+      {laCustom && <div id={`finish-${selected.id}`} className="scroll-mt-28"><MarkDone transactionId={selected.id} name={selected.type.name} ready={checklist.complete} /></div>}
       </div>
       </LockedArea>
       {addable.length > 0 && <AddTransaction loanId={loan.id} types={addable} />}
       {/* Phone: room for the pinned Send bar, so everything below the panel can scroll above it. */}
       {send && la && PRE_SEND.includes(selected.status) && <div aria-hidden="true" className="h-36 sm:hidden" />}
       </div>
-      <aside aria-label="Transactions on this loan file" className="sticky top-[88px] hidden max-h-[calc(100dvh-104px)] flex-col gap-3 overflow-y-auto min-[1100px]:flex">
+      <aside aria-label="Transactions on this loan file" className="hidden min-w-0 flex-col gap-3 self-start min-[1100px]:flex" data-side-column>
         <OpenItemsCard rows={rows} selected={selected.type.code} />
         <TxnSideList items={items} selected={selected.type.code} summary={summary} />
       </aside>
@@ -748,9 +794,9 @@ function openItemsFor(loan: LoanDetail, holidays: ReadonlySet<string>): OpenItem
   }), holidays);
 }
 
-/** "Asked by Ana Cruz · 2 minutes ago · from Borrower". */
-function askedText(i: OpenItem, now: Date = new Date()): string {
-  return `Asked by ${i.by} · ${timeAgo(i.since, now).toLowerCase()}${i.askedFrom ? ` · from ${i.askedFrom}` : ""}`;
+/** "Asked by Ana Cruz · Nov 10, 2026, 9:05 AM PHT · from Borrower": the date and time, so the turnaround time can be read exactly. */
+function askedText(i: OpenItem): string {
+  return `Asked by ${i.by} · ${fmtDateTime(i.since)}${i.askedFrom ? ` · from ${i.askedFrom}` : ""}`;
 }
 
 /** The person who does the work on a transaction: the LA while it is in the LA's hands, the DP on an active job. */
@@ -826,7 +872,6 @@ function SourceStrip({ loan, view, refresh }: { loan: LoanDetail; view: boolean;
 
 /** Rows of the Open items card: words, since when, the one action, and where pressing it goes (?tx=). */
 function openRows(loan: LoanDetail, opens: OpenItem[], user: CurrentUser): OpenRow[] {
-  const now = new Date();
   return opens.map((i) => {
     const target = focusTargetOf(i);
     const t = loan.transactions.find((x) => x.id === i.txnId)!;
@@ -834,7 +879,7 @@ function openRows(loan: LoanDetail, opens: OpenItem[], user: CurrentUser): OpenR
     const h = i.kind === "hold" ? t.holds.find((x) => x.id === i.id) : undefined;
     return {
       id: i.id, kind: i.kind, txnCode: i.txnCode, txnName: i.txnName, reason: i.reason, target, days: i.days, funds: txnFundsType(t),
-      who: i.kind === "missing" ? askedText(i, now) : i.kind === "hold" ? `Put on hold by ${i.by}` : `Raised by ${i.by}`,
+      who: i.kind === "missing" ? askedText(i) : i.kind === "hold" ? `Put on hold by ${i.by}` : `Raised by ${i.by}`,
       since: i.kind === "missing" ? "" : `since ${i.days} day${i.days === 1 ? "" : "s"}`,
       href: `/loans/${loan.pn}?tab=todo&tx=${i.txnCode}&focus=${target}`,
       canResume: !!h && mayResumeHold(h, user),
