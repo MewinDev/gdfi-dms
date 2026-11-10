@@ -26,7 +26,6 @@ async function signInAs(page: Page, who: keyof typeof BUTTONS) {
   await page.getByRole("button", { name: BUTTONS[who] }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 }
-const wide = (page: Page) => page.viewportSize()!.width >= 1100;
 async function shot(page: Page, name: string, fullPage = true) {
   await page.waitForTimeout(300); // let colour transitions finish
   await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
@@ -150,12 +149,14 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(summary.locator("[data-resume]")).toHaveCount(0);
   await expect(summary.locator("[data-resume-disabled]")).toBeDisabled();
-  // The Journey records the transfer.
+  // The Journey records the transfer (Story and Full log).
   await page.goto(`/loans/${PN}?tab=journey`);
+  await expect(page.locator("[data-story]")).toContainText("Test Finance moved the hold on");
+  await page.goto(`/loans/${PN}?tab=journey&journey=log&log=open`);
   await expect(page.locator("[data-hold-transferred]").filter({ visible: true }).first()).toHaveText(/^Hold transferred from Test Loan Associate to Second Loan Associate by Test Finance · Ana is on leave until Friday · .+ PHT$/);
 });
 
-test("Inactive sender: the branch LAs see it in Open items and on Home, with the note", async ({ page }) => {
+test("Inactive sender: the branch LAs see it on Home and in the Do this now card, with the note", async ({ page }) => {
   test.setTimeout(240_000);
   const role = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Angono" } });
@@ -179,9 +180,9 @@ test("Inactive sender: the branch LAs see it in Open items and on Home, with the
   await signInAs(page, "la");
   await expect(page.locator("[data-sent-back-home] [data-inactive-sender]")).toHaveText("Sender Leaving Loan Associate is inactive");
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
-  if (!wide(page)) await page.locator('[data-open-items="collapsible"] summary').click();
-  await expect(page.locator('[data-open-row="returned"]').filter({ visible: true })).toContainText("Sender Leaving Loan Associate is inactive");
-  await expect(page.locator("[data-sent-back] [data-inactive-sender]")).toContainText("Sender Leaving Loan Associate is inactive.");
+  await expect(page.locator("[data-do-now] [data-inactive-sender]")).toContainText("Sender Leaving Loan Associate is inactive.");
+  await expect(page.locator("[data-do-now]")).toContainText("This is a Angono job, I am in Antipolo");
+  await expect(page.locator("[data-sent-back]")).toHaveCount(0);
   await shot(page, "open-items-sender-inactive");
   await noSideways(page);
 });
@@ -227,13 +228,15 @@ test("Return to LA with cash released and papers: liquidation notice, Cash to se
   await signInAs(page, "la");
   await page.goto(`/loans/${PN}?tab=todo&tx=PPSR`);
   const papers = page.locator("[data-papers-back]");
-  await expect(papers.locator("[data-paper-back]")).toHaveCount(n);
+  await expect(papers.getByRole("button", { name: n === 1 ? "Received" : `All ${n} received` })).toBeVisible();
   await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText("Confirm you received the papers the processor handed over first.");
   await expect(page.getByText("Papers back not confirmed").filter({ visible: true }).first()).toBeVisible();
   await page.locator('[id^="send-why-"]').filter({ visible: true }).first().scrollIntoViewIfNeeded();
   await shot(page, "send-blocked-until-confirmed");
   await papers.scrollIntoViewIfNeeded();
-  await papers.locator("[data-paper-back]").first().getByLabel("Not received").check();
+  await papers.getByRole("button", { name: "Check each paper" }).click();
+  await expect(papers.locator("[data-paper-back]")).toHaveCount(n);
+  await papers.locator("[data-paper-back]").first().getByRole("radio", { name: "Not received" }).check();
   await expect(papers.getByRole("button", { name: "Confirm (1 not received)" })).toBeVisible();
   await shot(page, "la-confirm-papers", false);
   await papers.getByRole("button", { name: "Confirm (1 not received)" }).click();

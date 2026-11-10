@@ -2,30 +2,384 @@ import Link from "next/link";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import type { LoanDetail } from "@/lib/services/queries";
 import { loadJourney } from "@/lib/services/journey";
-import { businessDate, fmtDate, fmtDateTime, fmtShort } from "@/lib/time";
-import { roundEntries } from "@/lib/ui/rounds";
+import { checklistStatusOf } from "@/lib/services/workflow";
+import { getTatMap } from "@/lib/settings";
+import { openHold, openProblem, txnTat } from "@/lib/jobs/view";
+import { businessDate, fmtDate, fmtShort } from "@/lib/time";
 import { txnName } from "@/lib/ui/plain";
-import { journeyHoldResumed, journeyHoldStarted, journeyHoldTransferred } from "@/lib/ui/holds";
+import { sentBack } from "@/lib/ui/rounds";
+import { holdReasonName, journeyHoldResumed, journeyHoldStarted, journeyHoldTransferred } from "@/lib/ui/holds";
+import { txnStatus, type TxnStatus } from "@/lib/ui/txn-status";
+import { holdDays, problemDays } from "@/lib/workflow/tat";
+import { STEP_STATE_LABEL, undoubleRole, type JPhase, type JStep, type Journey, type StepState } from "@/lib/workflow/build-journey";
 import {
-  dayCells, SEG_LABEL, STEP_STATE_LABEL, businessSpan,
-  type CellState, type JPhase, type JStep, type JTxn, type Journey, type SegState, type StepState,
-} from "@/lib/workflow/build-journey";
+  FLAG_WORD, WHERE_WORD, spanText, storyDays, timeText,
+  type DocColumn, type Flag, type JourneyStory, type Milestone, type StoryLine, type WhereKind, type WhereLine,
+} from "@/lib/workflow/journey-story";
 import { RoleChip } from "@/components/chips";
-import { TatChip } from "@/components/jobs/chips";
 import {
-  AlertIcon, CheckIcon, ChevronRightIcon, ClockIcon, HourglassIcon, ListIcon, MinusIcon, PauseIcon, WarningIcon,
+  AlertIcon, ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, ClockIcon, CoinsIcon, HourglassIcon, MinusIcon, PauseIcon, WarningIcon,
 } from "@/components/ui/icons";
 import { LiveSince } from "./live-since";
 import { DocsList, type DocItem } from "./docs-list";
 import { SimulatorBlock } from "./simulator-block";
+import { JourneySwitch, LogControls, MilestoneButton } from "./journey-client";
 
 /**
- * The one Journey of a loan: where it is now, who holds it, what happened, how long each part took
- * and where it was held up. Built from the stored records (lib/workflow/build-journey.ts). The
- * selection lives in the address: ?tab=journey&scope=NOTARY&filter=issues&view=bars.
+ * The Journey of a loan, read three ways from the same records (lib/workflow/journey-story.ts):
+ *   "Where it is now" (always on top), then Story (default), By document, or Full log.
+ * The choice and the filters live in the address (?tab=journey&journey=story&show=attention&txn=NOTARY),
+ * so a refresh keeps them. Reading only: nothing here records or changes anything.
  */
 
-export interface JourneyParams { scope?: string; filter?: string; view?: string }
+export interface JourneyParams {
+  journey?: string; show?: string; txn?: string; flag?: string; order?: string; log?: string; sys?: string; na?: string;
+  /** Older addresses (scope=DOCS opened the papers list): they open the Full log. */
+  scope?: string;
+}
+type View = "story" | "docs" | "log";
+
+export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; user: CurrentUser; params: JourneyParams }) {
+  const [{ journey: j, story, holidays }, tats] = await Promise.all([loadJourney(user, loan), getTatMap()]);
+  const view: View = params.journey === "docs" || params.journey === "log" ? params.journey : params.scope === "DOCS" ? "log" : "story";
+  const base = `/loans/${loan.pn}?tab=journey`;
+  const href = (p: Record<string, string | undefined>) => `${base}${Object.entries(p).filter(([, v]) => v).map(([k, v]) => `&${k}=${encodeURIComponent(v!)}`).join("")}`;
+  const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
+  const txns = live.map((t) => ({ code: t.type.code, name: txnName(t.type.code, t.type.name) }));
+
+  // The one status word of each transaction (the same words as the rest of the Loan File).
+  const words = new Map<string, TxnStatus>(live.map((t) => {
+    const c = checklistStatusOf(t.checks);
+    const p = openProblem(t.problems);
+    const h = openHold(t.holds);
+    const missing = loan.exceptions.filter((e) => e.transactionId === t.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN").length;
+    return [t.id, txnStatus({
+      code: t.type.code, requiresDp: t.type.requiresDp, status: t.status, requiredDone: c.requiredDone, requiredTotal: c.requiredTotal,
+      tickedAny: t.checks.some((x) => x.checked), edstReference: t.edstReference,
+      returnedForPapers: t.status === "RETURNED" && !!t.dpAssignments[0]?.returnReasonId ? (t.dpAssignments[0].returnReason?.name ?? "Papers needed") : null,
+      sentBack: sentBack(t.status, t.dpAssignments)?.kind ?? null,
+      tat: txnTat(t, tats, holidays),
+      problem: p ? { reason: p.reason.name, days: Math.max(1, problemDays([p], holidays)) } : null,
+      hold: h ? { reason: holdReasonName(h), days: Math.max(1, holdDays([h], holidays)) } : null,
+      missingPapers: missing,
+    })];
+  }));
+
+  const views: [View, string][] = [["story", "Story"], ["docs", "By document"], ["log", "Full log"]];
+  return (
+    <div className="flex min-w-0 flex-col gap-3" data-journey data-journey-view={view}>
+      <WhereNow lines={story.where} />
+      <JourneySwitch current={view} items={views.map(([k, l]) => ({ key: k, label: l, href: href({ journey: k }) }))} />
+      <div id="journey-panel" role="tabpanel" aria-labelledby={`journey-tab-${view}`} className="min-w-0">
+        {view === "story" && <StoryView story={story} now={j.now} userName={user.name} txns={txns} params={params} href={href} />}
+        {view === "docs" && <DocsBoard columns={story.columns} words={words} attentionFirst={params.order === "attention"} href={href} />}
+        {view === "log" && <FullLog j={j} open={params.log === "open"} papersOpen={params.scope === "DOCS"} sys={params.sys === "1"} na={params.na === "1"} codes={live.map((t) => t.type.code)} />}
+      </div>
+      <SimulatorBlock loan={loan} user={user} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pills and icons
+// ---------------------------------------------------------------------------
+
+const WHERE_STYLE: Record<WhereKind, { cls: string; Icon: typeof ClockIcon }> = {
+  now: { cls: "c-wait", Icon: ClockIcon },
+  hold: { cls: "c-hold", Icon: PauseIcon },
+  problem: { cls: "c-bad", Icon: AlertIcon },
+  returned: { cls: "c-act", Icon: ArrowLeftIcon },
+  done: { cls: "c-ok", Icon: CheckIcon },
+};
+function WherePill({ kind }: { kind: WhereKind }) {
+  const s = WHERE_STYLE[kind];
+  return <span className={`chip ${s.cls} h-6 shrink-0 px-2 text-xs`} data-where-pill={kind}><s.Icon size={12} strokeWidth={2.4} />{WHERE_WORD[kind]}</span>;
+}
+
+const FLAG_STYLE: Record<Flag | "funds", { tint: string; chip: string; Icon: typeof ClockIcon }> = {
+  return: { tint: "bg-act-bg", chip: "c-act", Icon: ArrowLeftIcon },
+  decline: { tint: "bg-act-bg", chip: "c-act", Icon: ArrowLeftIcon },
+  missing: { tint: "bg-act-bg", chip: "c-act", Icon: WarningIcon },
+  hold: { tint: "bg-hold-bg", chip: "c-hold", Icon: PauseIcon },
+  problem: { tint: "bg-bad-bg", chip: "c-bad", Icon: AlertIcon },
+  funds: { tint: "bg-fill", chip: "c-mute", Icon: CoinsIcon },
+};
+function FlagChip({ flag, word }: { flag: Flag | "funds"; word: string }) {
+  const s = FLAG_STYLE[flag];
+  return <span className={`chip ${s.chip} mr-1.5 h-5 shrink-0 px-1.5 align-[1px] text-[11px]`}><s.Icon size={11} strokeWidth={2.6} />{word}</span>;
+}
+
+const TONE_CLS: Record<string, string> = { act: "c-act", wait: "c-wait", ok: "c-ok", bad: "c-bad", mute: "c-mute", navy: "c-wait", hold: "c-hold" };
+const TxnPill = ({ name }: { name: string }) => <span className="chip c-mute h-5 shrink-0 px-1.5 text-[11px] font-semibold" data-txn-pill>{name}</span>;
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+// ---------------------------------------------------------------------------
+// 1. Where it is now
+// ---------------------------------------------------------------------------
+
+function WhereNow({ lines }: { lines: WhereLine[] }) {
+  return (
+    <section aria-labelledby="where-now" className="card px-3 py-2.5 sm:px-4" data-where-now>
+      <h2 id="where-now" className="text-[15px] font-bold text-navy">Where it is now</h2>
+      <ul className="mt-1 flex flex-col divide-y divide-line">
+        {lines.length === 0 && <li className="py-1.5 text-sm text-ink-2">No transactions.</li>}
+        {lines.map((l) => (
+          <li key={l.key} className="flex flex-col gap-1 py-1.5 sm:flex-row sm:items-center sm:gap-3" data-where-line data-strip={l.codes.join(" ")}>
+            <p className="flex min-w-0 flex-1 items-start gap-2 text-sm leading-6 text-ink">
+              <WherePill kind={l.kind} />
+              <span className="min-w-0 break-words">
+                <strong className="font-semibold">{l.label}</strong>: {lowerFirst(undoubleRole(l.text))}
+                {l.since && <> since {fmtShort(l.since)} <span className="whitespace-nowrap text-ink-2">({l.forText})</span></>}
+              </span>
+            </p>
+            {l.note && <span className={`shrink-0 pl-[68px] text-xs sm:pl-0 ${l.note.late ? "font-semibold text-bad-fg" : "text-ink-2"}`} data-where-note>{l.note.text}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 2. Story
+// ---------------------------------------------------------------------------
+
+const FILTERS: [string, string][] = [["all", "All"], ["attention", "Needs attention"], ["mine", "Mine"]];
+
+function StoryView({ story, now, userName, txns, params, href }: {
+  story: JourneyStory; now: Date; userName: string; txns: { code: string; name: string }[]; params: JourneyParams;
+  href: (p: Record<string, string | undefined>) => string;
+}) {
+  const show = FILTERS.some(([k]) => k === params.show) ? params.show! : "all";
+  const txn = txns.some((t) => t.code === params.txn) ? params.txn! : "";
+  const flag = (["return", "problem", "hold", "missing"] as const).find((f) => f === params.flag) ?? "";
+  const keep = { journey: "story", show: show === "all" ? undefined : show, txn: txn || undefined, flag: flag || undefined };
+
+  let lines = story.lines;
+  if (txn) lines = lines.filter((l) => l.txns.some((t) => t.code === txn));
+  if (show === "attention") lines = lines.filter((l) => l.flag);
+  if (show === "mine") lines = lines.filter((l) => l.who === userName);
+  if (flag) lines = lines.filter((l) => (flag === "return" ? l.flag === "return" || l.flag === "decline" : l.flag === flag));
+  const days = storyDays(lines, now);
+
+  const c = story.counts;
+  const counts: [Exclude<Flag, "decline">, number, string][] = [
+    ["return", c.return + c.decline, "return"], ["problem", c.problem, "problem"], ["hold", c.hold, "hold"],
+    ...(c.missing ? [["missing", c.missing, "missing paper"] as [Exclude<Flag, "decline">, number, string]] : []),
+  ];
+  const any = counts.some(([, n]) => n > 0);
+
+  return (
+    <section aria-label="Story" className="card flex min-w-0 flex-col gap-2 p-3 sm:p-4" data-story>
+      {any && (
+        // One soft badge per kind, in the colour and icon of its lines (grey at 0); pressing one shows only those lines.
+        <div role="group" aria-label="What held it up" className="flex flex-wrap items-center gap-1.5" data-story-counts>
+          {counts.map(([k, n, w]) => {
+            const st = FLAG_STYLE[k];
+            const on = flag === k;
+            return (
+              <Link key={k} href={href({ ...keep, flag: on ? undefined : k })} scroll={false} aria-current={on ? "true" : undefined}
+                className={`chip ${n ? st.chip : "c-mute"} h-auto min-h-11 gap-1 px-2.5 text-xs font-semibold no-underline sm:min-h-7 ${on ? "ring-2 ring-navy ring-offset-1" : ""} ${n ? "" : "opacity-80"}`}
+                data-story-count={k} data-count={n}>
+                <st.Icon size={12} strokeWidth={2.6} />{n} {w}{n === 1 ? "" : "s"}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5" data-story-filters>
+        <div role="group" aria-label="Show" className="inline-flex overflow-hidden rounded-lg border border-line-strong">
+          {FILTERS.map(([k, l]) => (
+            <Link key={k} href={href({ ...keep, show: k === "all" ? undefined : k })} scroll={false} aria-current={show === k ? "true" : undefined}
+              className={`inline-flex min-h-11 items-center px-3 text-sm font-semibold no-underline sm:min-h-8 ${show === k ? "bg-navy text-white" : "bg-white text-navy hover:bg-fill"}`}>{l}</Link>
+          ))}
+        </div>
+        <div role="group" aria-label="Transaction" className="flex min-w-0 flex-wrap gap-1.5">
+          {[{ code: "", name: "Whole loan" }, ...txns].map((t) => (
+            <Link key={t.code || "all"} href={href({ ...keep, txn: t.code || undefined })} scroll={false} aria-current={txn === t.code ? "true" : undefined}
+              className={`inline-flex min-h-11 items-center rounded-full border px-3 text-[13px] font-semibold no-underline sm:min-h-8 ${txn === t.code ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-navy hover:bg-fill"}`}>{t.name}</Link>
+          ))}
+        </div>
+      </div>
+
+      {story.lines.length === 0 ? <p className="py-2 text-sm text-ink-2" data-story-empty>Nothing has happened yet.</p>
+        : days.length === 0 ? <p className="py-2 text-sm text-ink-2" data-story-empty>Nothing here for this filter.</p>
+          : days.map((d) => (
+            <section key={d.date} aria-labelledby={`day-${d.date}`} className="min-w-0" data-story-day={d.date}>
+              {/* The date row; the day's events are its sub-rows, each with its time (newest first). */}
+              <h3 id={`day-${d.date}`} className="mt-1 rounded-md bg-fill px-2 py-1 text-[13px] font-bold text-navy" data-story-heading>{d.heading}</h3>
+              <ol className="mt-0.5 flex flex-col gap-0.5 border-l-2 border-line pl-2 sm:ml-2 sm:pl-3">
+                {d.lines.map((l) => <StoryRow key={l.key} l={l} />)}
+              </ol>
+            </section>
+          ))}
+    </section>
+  );
+}
+
+/** One event under its date row: the time (PHT), the sentence, the transaction pills. */
+function StoryRow({ l }: { l: StoryLine }) {
+  const tint = l.flag ? FLAG_STYLE[l.flag].tint : "";
+  return (
+    <li className={`flex min-w-0 gap-2.5 rounded-lg px-2 py-1 sm:gap-3 ${tint}`} data-story-line data-flag={l.flag ?? undefined} data-system={l.system ? "" : undefined}>
+      <time dateTime={l.at.toISOString()} className="w-[60px] shrink-0 pt-px text-xs tabular-nums leading-5 text-ink-2 sm:w-[68px]" data-story-time>{timeText(l.at)}</time>
+      <p className={`min-w-0 flex-1 break-words text-sm leading-5 ${l.system ? "text-ink-2" : "text-ink"}`}>
+        {l.flag && <FlagChip flag={l.flag} word={FLAG_WORD[l.flag]} />}
+        <span data-story-sentence>{l.sentence}</span>
+        {l.system && <>{" · "}{l.system.count} step{l.system.count === 1 ? "" : "s"}</>}
+        {l.txns.length > 0 && <span className="ml-1.5 inline-flex flex-wrap gap-1 align-[1px]">{l.txns.map((t) => <TxnPill key={t.code} name={t.name} />)}</span>}
+        {l.simulated && <span className="chip c-act ml-1.5 h-5 px-1.5 align-[1px] text-[11px]">Simulated</span>}
+      </p>
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 3. By document
+// ---------------------------------------------------------------------------
+
+function DocsBoard({ columns, words, attentionFirst, href }: { columns: DocColumn[]; words: Map<string, TxnStatus>; attentionFirst: boolean; href: (p: Record<string, string | undefined>) => string }) {
+  if (!columns.length) return <p className="card p-4 text-sm text-ink-2">No transactions.</p>;
+  const cols = attentionFirst ? [...columns.filter((c) => c.attention), ...columns.filter((c) => !c.attention)] : columns;
+  const openOnPhone = new Set(cols.some((c) => c.attention) ? cols.filter((c) => c.attention).map((c) => c.id) : [cols.find((c) => c.kind !== "done")?.id ?? cols[0].id]);
+  const wide = cols.length > 4;
+  return (
+    <section aria-label="By document" className="flex min-w-0 flex-col gap-2" data-by-document>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-ink-2">Each transaction from opened to done. Press a step for its details.</p>
+        <Link href={href({ journey: "docs", order: attentionFirst ? undefined : "attention" })} scroll={false} aria-pressed={attentionFirst}
+          className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold no-underline sm:min-h-8 ${attentionFirst ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-navy hover:bg-fill"}`} data-attention-first>
+          {attentionFirst && <CheckIcon size={13} strokeWidth={2.6} />}Needs attention first
+        </Link>
+      </div>
+
+      {/* Tablet and desktop: columns (two per row on tablet; side by side on desktop, scrolling inside the board only). */}
+      <div className="relative hidden min-w-0 md:block">
+        <div className={`grid min-w-0 grid-cols-2 gap-3 lg:flex lg:overflow-x-auto ${wide ? "lg:pr-10" : ""}`} data-board>
+          {cols.map((c) => (
+            <section key={c.id} aria-labelledby={`col-${c.code}`} className={`card flex min-w-0 flex-col p-3 lg:min-w-[232px] lg:flex-1 ${c.attention ? "border-act-line" : ""}`} data-doc-column={c.code} data-attention={c.attention || undefined}>
+              <ColumnHead c={c} word={words.get(c.id)} id={`col-${c.code}`} />
+              <Milestones c={c} />
+            </section>
+          ))}
+        </div>
+        {wide && (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 hidden w-12 items-center justify-end bg-gradient-to-l from-white to-transparent pr-1 text-ink-2 lg:flex" data-board-fade>
+            <ChevronRightIcon size={18} />
+          </div>
+        )}
+        {wide && <p className="mt-1 hidden text-xs text-ink-2 lg:block">Scroll sideways in the board for more transactions.</p>}
+      </div>
+
+      {/* Phone: one card per transaction; the ones that need attention are open. */}
+      <div className="flex min-w-0 flex-col gap-2 md:hidden">
+        {cols.map((c) => (
+          <details key={c.id} open={openOnPhone.has(c.id)} className={`card group min-w-0 ${c.attention ? "border-act-line" : ""}`} data-doc-card={c.code} data-attention={c.attention || undefined}>
+            <summary className="flex min-h-12 list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+              <ColumnHead c={c} word={words.get(c.id)} id={`card-${c.code}`} />
+              <ChevronDownIcon size={16} className="ml-auto shrink-0 text-ink-2 transition-transform group-open:rotate-180 motion-reduce:transition-none" />
+            </summary>
+            <div className="px-3 pb-3"><Milestones c={c} /></div>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ColumnHead({ c, word, id }: { c: DocColumn; word: TxnStatus | undefined; id: string }) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+      <h3 id={id} className="min-w-0 text-[15px] font-bold text-navy">{c.name}</h3>
+      {word && <span className={`chip ${TONE_CLS[word.pill.tone] ?? "c-mute"} h-6 px-2 text-xs`} data-column-status>{word.pill.text}</span>}
+      {c.note && <span className={`text-xs ${c.note.late ? "font-semibold text-bad-fg" : "text-ink-2"}`}>{c.note.text}</span>}
+    </div>
+  );
+}
+
+const DOT: Record<Milestone["state"], string> = {
+  done: "border-ok-fg bg-ok-fg",
+  now: "border-gold bg-[linear-gradient(90deg,var(--gold)_50%,white_50%)]",
+  later: "border-line-strong bg-white",
+};
+const STATE_WORD: Record<Milestone["state"], string> = { done: "done", now: "now", later: "later" };
+
+function Milestones({ c }: { c: DocColumn }) {
+  const max = Math.max(1, ...c.milestones.map((m) => m.durationMs ?? 0));
+  return (
+    <ol className="mt-2 flex min-w-0 flex-col" aria-label={`${c.name} steps`}>
+      {c.milestones.map((m, i) => (
+        <li key={m.key} className="relative flex min-w-0 gap-2 pb-2 last:pb-0" data-milestone={m.key} data-milestone-state={m.state}>
+          {i < c.milestones.length - 1 && <span aria-hidden="true" className={`absolute bottom-0 left-[6px] top-4 w-0.5 ${m.state === "done" ? "bg-ok-fg/50" : "bg-line"}`} />}
+          <span aria-hidden="true" className={`relative z-[1] mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${DOT[m.state]}`} />
+          <MilestoneButton title={`${c.name}: ${m.label}`} details={m.details.map((d) => ({ when: fmtShort(d.at), text: d.text }))}
+            className="-my-0.5 flex min-h-11 min-w-0 flex-1 flex-col items-start rounded-lg px-1.5 py-0.5 text-left hover:bg-fill sm:min-h-0">
+            <span className={`block text-sm font-semibold ${m.state === "later" ? "text-ink-2" : "text-ink"}`}>
+              {m.label}<span className="sr-only">, {STATE_WORD[m.state]}</span>
+            </span>
+            {m.state === "done" && (
+              <span className="block text-xs text-ink-2" data-milestone-when>
+                {m.at ? fmtShort(m.at) : "Done"}{m.who ? ` · ${m.who}` : ""}{m.durationMs !== null ? ` · ${spanText(m.durationMs)}` : ""}
+              </span>
+            )}
+            {m.state === "now" && (
+              <span className="block text-xs font-semibold text-navy" data-milestone-when>
+                {m.since ? `since ${fmtShort(m.since)} · ${m.forText}` : "Now"}
+              </span>
+            )}
+            {m.state === "later" && <span className="block text-xs text-ink-2">Later</span>}
+            {m.sub && <span className="block text-xs text-ink-2">{m.sub}</span>}
+            {m.markers.map((k, x) => (
+              <span key={x} className={`mt-0.5 block rounded-md px-1.5 py-0.5 text-xs leading-snug text-ink ${FLAG_STYLE[k.kind].tint}`} data-marker={k.kind}>
+                <FlagChip flag={k.kind} word={k.word} />{k.text}{k.round ? ` (Round ${k.round})` : ""}
+              </span>
+            ))}
+            {m.state === "done" && m.durationMs !== null && (
+              <span aria-hidden="true" className="mt-1 block h-1 w-full rounded-full bg-fill-strong">
+                <span className="block h-1 rounded-full bg-navy/40" style={{ width: `${Math.max(3, Math.round((m.durationMs / max) * 100))}%` }} />
+              </span>
+            )}
+          </MilestoneButton>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 4. Full log (the phases, every step, for checking)
+// ---------------------------------------------------------------------------
+
+function FullLog({ j, open, papersOpen, sys, na, codes }: { j: Journey; open: boolean; papersOpen: boolean; sys: boolean; na: boolean; codes: string[] }) {
+  const today = businessDate(j.now);
+  return (
+    <div className="flex min-w-0 flex-col gap-3" data-log-root data-sys-off={sys ? undefined : ""} data-na-off={na ? undefined : ""}>
+      <details open={open} className="card group min-w-0 overflow-hidden" data-full-log>
+        <summary className="flex min-h-12 cursor-pointer list-none items-start gap-2 px-3 py-2.5 sm:px-4 [&::-webkit-details-marker]:hidden">
+          <ChevronRightIcon size={18} className="mt-0.5 shrink-0 text-navy transition-transform group-open:rotate-90 motion-reduce:transition-none" />
+          <span className="min-w-0">
+            <span className="block text-[15px] font-bold text-navy">Full audit log</span>
+            <span className="block text-[13px] text-ink-2">Every step, including automatic ones. For checking.</span>
+          </span>
+        </summary>
+        <LogControls sys={sys} na={na} />
+        <ol aria-label="Journey" className="flex min-w-0 flex-col">
+          {j.phases.map((p) => <PhaseBlock key={p.n} p={p} now={j.now} today={today} />)}
+        </ol>
+      </details>
+      <details className="card group min-w-0 overflow-hidden" data-papers-log open={papersOpen}>
+        <summary className="flex min-h-12 cursor-pointer list-none items-start gap-2 px-3 py-2.5 sm:px-4 [&::-webkit-details-marker]:hidden">
+          <ChevronRightIcon size={18} className="mt-0.5 shrink-0 text-navy transition-transform group-open:rotate-90 motion-reduce:transition-none" />
+          <span className="min-w-0">
+            <span className="block text-[15px] font-bold text-navy">Papers: who has them</span>
+            <span className="block text-[13px] text-ink-2">Each paper&apos;s trail: who held it, where and for how long.</span>
+          </span>
+        </summary>
+        <div className="border-t border-line p-3 sm:p-4"><DocsList docs={docItems(j, codes)} /></div>
+      </details>
+    </div>
+  );
+}
 
 const STATE_STYLE: Record<StepState, { cls: string; Icon: typeof ClockIcon }> = {
   waiting: { cls: "c-mute", Icon: HourglassIcon },
@@ -37,245 +391,79 @@ const STATE_STYLE: Record<StepState, { cls: string; Icon: typeof ClockIcon }> = 
   na: { cls: "c-mute", Icon: MinusIcon },
 };
 
-export function StateChip({ state, label }: { state: StepState; label?: string }) {
+function StateChip({ state }: { state: StepState }) {
   const s = STATE_STYLE[state];
   return (
-    <span className={`chip ${s.cls} h-6 shrink-0 px-2.5 align-middle text-xs`} data-state={state}>
-      <s.Icon size={13} strokeWidth={2.4} />
-      {label ?? STEP_STATE_LABEL[state]}
+    <span className={`chip ${s.cls} h-6 shrink-0 px-2 align-middle text-xs`} data-state={state}>
+      <s.Icon size={12} strokeWidth={2.4} />{STEP_STATE_LABEL[state]}
     </span>
   );
 }
 
-/** "2d 3h", "5h 10m", "12m" (elapsed time). */
-export function msText(ms: number): string {
-  const m = Math.floor(ms / 60_000);
-  if (m < 1) return "under 1 min";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h${m % 60 ? ` ${m % 60}m` : ""}`;
-  return `${Math.floor(h / 24)}d${h % 24 ? ` ${h % 24}h` : ""}`;
-}
-
-const SEG_BG: Record<SegState, string> = { waiting: "bg-[rgb(12_35_64/0.22)]", processing: "bg-gold", hold: "bg-[var(--hold-stripe)]", problem: "bg-[var(--bad-fg)]" };
-
-export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; user: CurrentUser; params: JourneyParams }) {
-  const { journey: j, holidays } = await loadJourney(user, loan);
-  const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
-  const codes = live.map((t) => t.type.code);
-  const scope = params.scope === "DOCS" ? "DOCS" : codes.find((c) => c === params.scope?.toUpperCase()) ?? "ALL";
-  const filter = params.filter === "issues" || params.filter === "mine" ? params.filter : "all";
-  const view = params.view === "bars" ? "bars" : "list";
-  const base = `/loans/${loan.pn}?tab=journey`;
-  const href = (p: Partial<{ scope: string; filter: string; view: string }>) => {
-    const q = { scope, filter, view, ...p };
-    return `${base}${q.scope !== "ALL" ? `&scope=${q.scope}` : ""}${q.filter !== "all" ? `&filter=${q.filter}` : ""}${q.view !== "list" ? `&view=${q.view}` : ""}`;
-  };
-  const inScope = (code: string | null) => scope === "ALL" || scope === "DOCS" || code === scope;
-  const txns = j.txns.filter((t) => t.state !== "na" && inScope(t.code));
-  const now = j.now;
-
-  const scopes: [string, string][] = [["ALL", "Whole loan"], ...live.map((t) => [t.type.code, txnName(t.type.code, t.type.name)] as [string, string]), ["DOCS", "Documents"]];
-  const filters: [string, string][] = [["all", "All"], ["issues", "Problems and holds"], ["mine", "My steps"]];
-
+function PhaseBlock({ p, now, today }: { p: JPhase; now: Date; today: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-4" data-journey>
-      <WhereNow txns={txns} now={now} />
-
-      <nav aria-label="Journey view" className="flex min-w-0 flex-col gap-2">
-        <ChipRow label="Show" items={scopes.map(([k, l]) => ({ key: k, label: l, href: href({ scope: k }), on: scope === k }))} />
-        {scope !== "DOCS" && (
-          <div className="flex flex-wrap items-center gap-2">
-            <ChipRow label="Filter" items={filters.map(([k, l]) => ({ key: k, label: l, href: href({ filter: k }), on: filter === k }))} />
-            <div role="group" aria-label="View" className="ml-auto inline-flex overflow-hidden rounded-xl border border-line-strong">
-              {(["list", "bars"] as const).map((v) => (
-                <Link key={v} href={href({ view: v })} aria-current={view === v ? "page" : undefined} scroll={false}
-                  className={`inline-flex min-h-11 items-center gap-1.5 px-4 text-sm font-semibold no-underline ${view === v ? "bg-navy text-white" : "bg-white text-navy hover:bg-fill"}`}>
-                  {v === "list" ? <ListIcon size={16} /> : <BarsIcon />} {v === "list" ? "List" : "Bars"}
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
-      </nav>
-
-      {scope !== "DOCS" && <Rounds txns={live.filter((t) => inScope(t.type.code))} now={now} />}
-      {scope === "DOCS" && <DocsList docs={docItems(j, live.map((t) => t.type.code))} />}
-      {scope !== "DOCS" && view === "list" && <ListView phases={j.phases} scope={scope} filter={filter} userId={user.id} now={now} />}
-      {scope !== "DOCS" && view === "bars" && <BarsView txns={txns} holidays={holidays} now={now} />}
-
-      <SimulatorBlock loan={loan} user={user} />
-    </div>
+    <li className="min-w-0 border-t border-line" data-phase={p.n}>
+      <h3 className="flex flex-wrap items-center gap-2 bg-fill px-3 py-1.5 sm:px-4">
+        <span className="min-w-0 flex-1 text-sm font-bold text-navy">Phase {p.n}: {p.title}</span>
+        <span className="text-xs text-ink-2">{p.state === "done" ? "Done" : p.state === "current" ? "Now" : "Later"}</span>
+      </h3>
+      <ul className="flex flex-col">
+        {p.steps.map((s) => <LogRow key={s.key} s={s} now={now} today={today} />)}
+      </ul>
+      {p.events.length > 0 && (
+        <details className="border-t border-line px-3 py-1 sm:px-4" data-log-row data-log-who="SYS" data-log-text={p.events.map((e) => e.text).join(" ").toLowerCase()}>
+          <summary className="flex min-h-11 cursor-pointer items-center text-[13px] font-semibold text-navy sm:min-h-9">Other events in this phase ({p.events.length})</summary>
+          <Events events={p.events} />
+        </details>
+      )}
+    </li>
   );
 }
+
+const dd = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
 
 /**
- * Rounds with the processor, per transaction, in order: Sent (round 1), Declined by DP or Returned
- * by DP (reason and findings, DP, date and time PHT, how long), Sent again (round 2), and so on.
- * Shown for a transaction that was sent back at least once.
+ * One step: the state, the step number (here only, for reference), the title, who, and one phrase
+ * for its time ("Done in 4 min · Nov 9, 11:54 PM", "Open since ..."). The target is named only when
+ * it is late or due today; holds, problems and attempts nest under it, with its recorded details.
  */
-function Rounds({ txns, now }: { txns: LoanDetail["transactions"]; now: Date }) {
-  const withRounds = txns.map((t) => ({ t, rows: roundEntries(t.dpAssignments, now) })).filter((x) => x.rows.some((r) => r.round > 1 || r.outcome.endsWith("by DP")));
-  if (!withRounds.length) return null;
+function LogRow({ s, now, today }: { s: JStep; now: Date; today: string }) {
+  const system = s.ownerRoles.length > 0 && s.ownerRoles.every((r) => r === "SYS");
+  const text = [s.stepId, s.title, s.txnName ?? "", s.ownerName ?? "", s.note ?? "", ...s.events.map((e) => e.text), ...s.holds.map((h) => `${h.reason} ${h.note}`), ...s.problems.map((p) => p.reason)].join(" ").toLowerCase();
+  const late = s.tat.late > 0 && s.state !== "na" && s.state !== "later";
+  const dueToday = !late && !s.end && s.start && s.tat.deadline === today;
   return (
-    <section aria-labelledby="rounds-h" className="card p-3 sm:p-4" data-rounds>
-      <h2 id="rounds-h" className="text-[17px] font-bold text-navy">Rounds with the processor</h2>
-      {withRounds.map(({ t, rows }) => (
-        <div key={t.id} className="mt-2 border-t border-line pt-2 first-of-type:border-t-0" data-rounds-txn={t.type.code}>
-          <h3 className="text-[15px] font-semibold text-ink">{txnName(t.type.code, t.type.name)}</h3>
-          <ol className="mt-1 flex flex-col gap-1.5">
-            {rows.map((r, i) => (
-              <li key={i} className="rounded-lg bg-fill p-2 text-[13px]" data-round-entry={r.round}>
-                <p className="font-semibold text-ink">
-                  <span className="tag mr-1.5">Round {r.round}</span>{r.sentText} to {r.dpName}{r.sentBy ? ` by ${r.sentBy}` : ""} · {fmtDateTime(r.sentAt)}
-                </p>
-                <p className="text-ink" data-round-outcome>
-                  {r.outcome}{r.outcomeAt ? ` · ${fmtDateTime(r.outcomeAt)}` : ""} · {r.outcomeAt ? "took" : "so far"} {r.duration}
-                </p>
-                {r.findings && <p className="break-words text-ink-2" data-round-findings>{r.findings}</p>}
-                {r.papers.map((line, k) => <p key={k} className="text-ink" data-round-papers>{line}</p>)}
-              </li>
-            ))}
-          </ol>
-        </div>
-      ))}
-    </section>
-  );
-}
-
-function ChipRow({ label, items }: { label: string; items: { key: string; label: string; href: string; on: boolean }[] }) {
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5" role="group" aria-label={label}>
-      <span className="mr-1 text-[13px] font-semibold text-ink-2">{label}</span>
-      {items.map((i) => (
-        <Link key={i.key} href={i.href} scroll={false} aria-current={i.on ? "page" : undefined}
-          className={`inline-flex min-h-11 items-center rounded-full border px-3.5 text-sm font-semibold no-underline sm:min-h-9 ${i.on ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-navy hover:bg-fill"}`}>
-          {i.label}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-const BarsIcon = () => (
-  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true"><path d="M4 7h10M4 12h16M4 17h7" /></svg>
-);
-
-// ---------------------------------------------------------------------------
-// "Where it is now": the open segment of each transaction
-// ---------------------------------------------------------------------------
-
-function WhereNow({ txns, now }: { txns: JTxn[]; now: Date }) {
-  return (
-    <section aria-labelledby="where-now" className="card border-2 border-navy p-3 sm:p-4" data-where-now>
-      <h2 id="where-now" className="text-[17px] font-bold text-navy">Where it is now</h2>
-      <ul className="mt-2 flex flex-col">
-        {txns.length === 0 && <li className="text-[15px] text-ink-2">No transactions.</li>}
-        {txns.map((t) => (
-          <li key={t.id} className="flex flex-col gap-1.5 border-t border-line py-2 first:border-t-0 md:flex-row md:items-center md:gap-3" data-strip={t.code}>
-            <p className="min-w-0 flex-1 text-[15px] leading-7 text-ink">
-              <StateChip state={t.state} />{" "}
-              <strong className="font-semibold">{txnName(t.code, t.name)}</strong>
-              {" · "}{t.owner ? t.owner.text : "Done"}
-              {t.owner && !t.done && <> since {fmtShort(t.owner.since)} <span className="whitespace-nowrap text-[13px] text-ink-2">(<LiveSince since={t.owner.since.toISOString()} now={now.toISOString()} />)</span></>}
-            </p>
-            {t.tat && <span className="shrink-0"><TatChip data={t.tat} /></span>}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// List view: the 10 phases, compact step rows, nested holds, problems and attempts
-// ---------------------------------------------------------------------------
-
-function ListView({ phases, scope, filter, userId, now }: { phases: JPhase[]; scope: string; filter: string; userId: string; now: Date }) {
-  const keep = (s: JStep) =>
-    (scope === "ALL" || s.txnCode === scope)
-    && (filter !== "issues" || s.holds.length > 0 || s.problems.length > 0 || s.state === "hold" || s.state === "problem")
-    && (filter !== "mine" || s.ownerIds.includes(userId));
-  const shown = phases.map((p) => ({ ...p, steps: p.steps.filter(keep) })).filter((p) => p.steps.length > 0 || (scope === "ALL" && filter === "all"));
-  if (!shown.length) {
-    return <p className="card p-4 text-[15px] text-ink-2">{filter === "issues" ? "No problems or holds here." : filter === "mine" ? "None of these steps are yours." : "Nothing to show."}</p>;
-  }
-  return (
-    <ol aria-label="Journey" className="flex min-w-0 flex-col gap-3">
-      {shown.map((p) => (
-        <li key={p.n} className="card min-w-0 overflow-hidden" data-phase={p.n}>
-          <h2 className="flex flex-wrap items-center gap-2 border-b border-line bg-fill px-3 py-2 sm:px-4">
-            <span aria-hidden="true" className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${p.state === "done" ? "bg-ok-fg text-white" : p.state === "current" ? "bg-gold text-navy" : "bg-fill-strong text-navy"}`}>{p.n}</span>
-            <span className="min-w-0 flex-1 text-[15px] font-bold text-navy">Phase {p.n}: {p.title}</span>
-            <span className="chip c-mute h-6 text-xs">{p.state === "done" ? "Done" : p.state === "current" ? "Now" : "Later"}</span>
-          </h2>
-          <ul className="flex flex-col">
-            {p.steps.map((s) => <StepRow key={s.key} s={s} now={now} />)}
-          </ul>
-          {p.events.length > 0 && scope === "ALL" && filter === "all" && (
-            <details className="border-t border-line px-3 py-1 sm:px-4">
-              <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-navy">Other events in this phase ({p.events.length})</summary>
-              <Events events={p.events} />
-            </details>
-          )}
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function StepRow({ s, now }: { s: JStep; now: Date }) {
-  const reached = s.state !== "later" && s.state !== "na";
-  const total = s.durationMs ?? 0;
-  const parts = (Object.keys(s.stateMs) as SegState[]).filter((k) => s.stateMs[k] > 0);
-  return (
-    <li
-      className={`flex min-w-0 flex-col gap-1.5 border-t border-line px-3 py-2.5 first:border-t-0 sm:px-4 ${s.open ? "border-l-4 border-l-gold bg-gold-soft" : ""} ${s.state === "problem" ? "border-l-[var(--bad-fg)]" : s.state === "hold" ? "border-l-navy" : ""}`}
-      data-step={s.key} aria-current={s.open ? "step" : undefined}
-    >
+    <li id={`step-${s.key}`} className={`flex min-w-0 scroll-mt-28 flex-col gap-1 border-t border-line px-3 py-2 first:border-t-0 sm:px-4 ${s.open ? "bg-gold-soft" : ""}`}
+      data-step={s.key} data-log-row data-log-sys={system || undefined} data-log-na={s.state === "na" || undefined} data-log-who={s.ownerRoles.join(" ")} data-log-text={text}
+      aria-current={s.open ? "step" : undefined}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <StateChip state={s.state} />
-        <span className="mono text-xs text-ink-2">{s.stepId}</span>
-        <span className={`min-w-0 text-[15px] font-semibold ${s.state === "na" ? "text-ink-2" : "text-ink"}`}>{s.title}</span>
-        {s.txnName && <span className="chip c-wait h-6 text-xs">{txnName(s.txnCode ?? "", s.txnName)}</span>}
-        {s.simulated && <span className="chip c-act h-6 text-xs">Simulated</span>}
+        <span className="mono text-[11px] text-ink-2">{s.stepId}</span>
+        <span className={`min-w-0 text-sm font-semibold ${s.state === "na" ? "text-ink-2" : "text-ink"}`}>{s.title}</span>
+        {s.txnName && <span className="chip c-mute h-5 px-1.5 text-[11px]">{txnName(s.txnCode ?? "", s.txnName)}</span>}
+        {s.simulated && <span className="chip c-act h-5 px-1.5 text-[11px]">Simulated</span>}
         <span className="flex flex-wrap items-center gap-1 sm:ml-auto">
           {s.ownerRoles.map((r) => <RoleChip key={r} role={r} />)}
           {s.ownerName && <span className="text-[13px] text-ink">{s.ownerName}</span>}
         </span>
       </div>
-
-      {s.state === "na" && <p className="text-[13px] text-ink-2">Not applicable{s.note ? ` · ${s.note}` : ""}</p>}
-      {s.state === "later" && <p className="text-[13px] text-ink-2">Later · Target: {s.tat.targetText}{s.note ? ` · ${s.note}` : ""}</p>}
-      {reached && (
-        <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-[13px] text-ink-2">
-          {s.start && <span>Started {fmtShort(s.start)}</span>}
-          {s.end ? <span>Ended {fmtShort(s.end)}</span> : s.start ? <span className="font-semibold text-ink">Still open{s.openSince ? <> · <LiveSince since={s.openSince.toISOString()} now={now.toISOString()} /></> : null}</span> : null}
-          {s.durationMs !== null && <span>Took {msText(total)}</span>}
-          <span>Target: {s.tat.targetText}</span>
-          {s.tat.actualText && <span className={s.tat.late > 0 ? "font-semibold text-bad-fg" : "text-ink"}>{s.tat.actualText}</span>}
-          {s.note && <span>{s.note}</span>}
-        </p>
-      )}
-
-      {reached && total > 0 && parts.length > 0 && (
-        <div className="flex min-w-0 flex-col gap-1">
-          <span aria-hidden="true" className="flex h-1.5 w-full max-w-md overflow-hidden rounded-full bg-fill-strong">
-            {s.segments.map((g, i) => {
-              const w = Math.max(0, ((g.end ?? now).getTime() - g.start.getTime()) / total) * 100;
-              return <span key={i} className={SEG_BG[g.state]} style={{ width: `${w}%` }} />;
-            })}
-          </span>
-          <span className="text-xs text-ink-2">{parts.map((k) => `${SEG_LABEL[k]} ${msText(s.stateMs[k])}`).join(" · ")}</span>
-        </div>
-      )}
+      <p className="flex flex-wrap gap-x-2 text-[13px] text-ink-2" data-log-time>
+        {s.state === "na" ? <span>Not applicable{s.note ? ` · ${s.note}` : ""}</span>
+          : s.state === "later" ? <span>Later{s.note ? ` · ${s.note}` : ""}</span>
+            : s.end ? <span>{s.durationMs !== null && s.start ? `Done in ${spanText(s.durationMs)}` : "Done"} · {fmtShort(s.end)}</span>
+              : s.start ? <span className="font-semibold text-ink">Open since {fmtShort(s.openSince ?? s.start)} · <LiveSince since={(s.openSince ?? s.start).toISOString()} now={now.toISOString()} /></span>
+                : <span>{STEP_STATE_LABEL[s.state]}</span>}
+        {late && <span className="font-semibold text-bad-fg" data-log-late>{dd(s.tat.late)} late</span>}
+        {dueToday && <span className="font-semibold text-act-fg">Due today</span>}
+        {s.note && s.state !== "na" && s.state !== "later" && <span>{s.note}</span>}
+      </p>
 
       {s.stages && s.stages.length > 0 && (
-        <ol className="ml-1 flex min-w-0 flex-col gap-1.5 border-l-2 border-gold/60 pl-3" aria-label="Stages" data-journey-stages>
+        <ol className="ml-1 flex min-w-0 flex-col gap-1 border-l-2 border-gold/60 pl-3" aria-label="Stages" data-journey-stages>
           {s.stages.map((g) => (
-            <li key={g.id} className={`rounded-lg p-2 text-[13px] ${g.state === "now" ? "bg-select-bg" : "bg-fill"}`} data-journey-stage={g.state}>
+            <li key={g.id} className={`rounded-lg px-2 py-1 text-[13px] ${g.state === "now" ? "bg-select-bg" : "bg-fill"}`} data-journey-stage={g.state}>
               <p className="flex flex-wrap items-center gap-1.5 font-semibold text-navy">
-                {g.state === "done" ? <CheckIcon size={14} /> : null}
+                {g.state === "done" ? <CheckIcon size={13} /> : null}
                 {g.name}
                 <span className="font-normal text-ink-2">· {g.state === "done" ? "Done" : g.state === "now" ? (g.startedAt ? "Now" : "Next") : "Later"}</span>
               </p>
@@ -283,36 +471,26 @@ function StepRow({ s, now }: { s: JStep; now: Date }) {
                 <p className="text-ink-2">
                   {g.startedAt ? `Started ${fmtShort(g.startedAt)}` : g.migrated ? "Recorded before stages existed" : ""}
                   {g.finishedAt ? ` · finished ${fmtShort(g.finishedAt)}` : ""}
-                  {g.durationMs !== null && g.startedAt ? ` · ${msText(g.durationMs)}` : ""}
+                  {g.durationMs !== null && g.startedAt ? ` · ${spanText(g.durationMs)}` : ""}
                   {g.by ? ` · ${g.by}` : ""}
                 </p>
               )}
               {g.summary && <p className="text-ink">{g.summary}</p>}
-              {(g.attempts.length > 0 || g.holds.length > 0 || g.problems.length > 0) && (
-                <p className="text-ink-2">
-                  {[
-                    g.attempts.length ? `${g.attempts.length} attempt${g.attempts.length === 1 ? "" : "s"}` : "",
-                    ...g.holds.map((h) => `On hold: ${h.reason}`),
-                    ...g.problems.map((p) => `Problem: ${p.reason}${p.resolvedAt ? " (resolved)" : ""}`),
-                  ].filter(Boolean).join(" · ")}
-                </p>
-              )}
             </li>
           ))}
         </ol>
       )}
 
       {(s.holds.length > 0 || s.problems.length > 0 || s.attempts.length > 0) && (
-        <ul className="ml-1 flex min-w-0 flex-col gap-1.5 border-l-2 border-line pl-3" aria-label="Holds, problems and attempts">
+        <ul className="ml-1 flex min-w-0 flex-col gap-1 border-l-2 border-line pl-3" aria-label="Holds, problems and attempts">
           {s.holds.map((h) => (
-            <li key={h.id} className={`p-2 text-[13px] ${h.resumedAt ? "rounded-lg bg-fill" : "hold-card pl-4"}`} data-sub="hold">
+            <li key={h.id} className={`px-2 py-1 text-[13px] ${h.resumedAt ? "rounded-lg bg-fill" : "hold-card pl-4"}`} data-sub="hold">
               <p className="flex flex-wrap items-center gap-1.5 font-semibold">
-                <span className="text-hold-fg"><PauseIcon size={14} /></span>
+                <span className="text-hold-fg"><PauseIcon size={13} /></span>
                 On hold: {h.reason}
                 <span className="font-normal">· {h.days} business day{h.days === 1 ? "" : "s"}</span>
                 {h.simulated && <span className="chip c-act h-5 text-[11px]">Simulated</span>}
               </p>
-              {/* Two entries: when it started (with the remarks) and when it resumed (with how long it waited). */}
               <p className="break-words text-ink" data-hold-started>{journeyHoldStarted({ reason: h.reason, note: h.note, raisedBy: h.raisedBy, raisedAt: h.raisedAt })}</p>
               {(h.transfers ?? []).map((x, i) => <p key={i} className="break-words text-ink" data-hold-transferred>{journeyHoldTransferred(x)}</p>)}
               {h.resumedAt
@@ -321,9 +499,9 @@ function StepRow({ s, now }: { s: JStep; now: Date }) {
             </li>
           ))}
           {s.problems.map((p) => (
-            <li key={p.id} className={`rounded-lg p-2 text-[13px] ${p.resolvedAt ? "bg-fill" : "bg-bad-bg text-bad-fg"}`} data-sub="problem">
+            <li key={p.id} className={`rounded-lg px-2 py-1 text-[13px] ${p.resolvedAt ? "bg-fill" : "bg-bad-bg text-bad-fg"}`} data-sub="problem">
               <p className="flex flex-wrap items-center gap-1.5 font-semibold">
-                <AlertIcon size={14} /> Problem: {p.reason}
+                <AlertIcon size={13} /> Problem: {p.reason}
                 <span className="font-normal">· {p.days} business day{p.days === 1 ? "" : "s"}</span>
                 {p.outsideControl && <span className="chip c-wait h-5 text-[11px]">Outside our control</span>}
                 {p.simulated && <span className="chip c-act h-5 text-[11px]">Simulated</span>}
@@ -336,9 +514,9 @@ function StepRow({ s, now }: { s: JStep; now: Date }) {
             </li>
           ))}
           {s.attempts.map((a) => (
-            <li key={a.id} className="rounded-lg bg-fill p-2 text-[13px]" data-sub="attempt">
+            <li key={a.id} className="rounded-lg bg-fill px-2 py-1 text-[13px]" data-sub="attempt">
               <p className="flex flex-wrap items-center gap-1.5 font-semibold">
-                {a.result === "DONE" ? <CheckIcon size={14} /> : <WarningIcon size={14} />}
+                {a.result === "DONE" ? <CheckIcon size={13} /> : <WarningIcon size={13} />}
                 Attempt on {fmtDate(a.date)}: {a.result === "DONE" ? "Done" : `Not processed (${a.reason ?? "no reason"})`}
                 {a.simulated && <span className="chip c-act h-5 text-[11px]">Simulated</span>}
               </p>
@@ -349,9 +527,9 @@ function StepRow({ s, now }: { s: JStep; now: Date }) {
       )}
 
       {s.events.length > 0 && (
-        <details className="group">
+        <details className="group/d">
           <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1 text-[13px] font-semibold text-navy sm:min-h-8">
-            <ChevronRightIcon size={16} className="transition-transform group-open:rotate-90" /> Details ({s.events.length})
+            <ChevronRightIcon size={15} className="transition-transform group-open/d:rotate-90 motion-reduce:transition-none" /> Details ({s.events.length})
           </summary>
           <Events events={s.events} />
         </details>
@@ -362,10 +540,10 @@ function StepRow({ s, now }: { s: JStep; now: Date }) {
 
 function Events({ events }: { events: { at: Date; text: string; simulated: boolean }[] }) {
   return (
-    <ol className="mb-2 flex flex-col gap-1.5 pl-5">
+    <ol className="mb-2 flex flex-col gap-1 pl-5">
       {events.map((e, i) => (
         <li key={i} className="text-[13px]">
-          <span className="text-ink">{e.text}</span>{" "}
+          <span className="text-ink">{undoubleRole(e.text)}</span>{" "}
           <span className="whitespace-nowrap text-ink-2">{fmtShort(e.at)}</span>
           {e.simulated && <span className="chip c-act ml-1.5 h-5 text-[11px]">Simulated</span>}
         </li>
@@ -374,132 +552,14 @@ function Events({ events }: { events: { at: Date; text: string; simulated: boole
   );
 }
 
-// ---------------------------------------------------------------------------
-// Bars view: one row per transaction, a cell per day coloured by state
-// ---------------------------------------------------------------------------
-
-const CELL: Record<CellState, string> = {
-  waiting: "bg-[rgb(12_35_64/0.22)]", processing: "bg-gold", hold: "bg-[var(--hold-line)] text-hold-fg", problem: "bg-[var(--bad-fg)] text-white", done: "bg-ok-fg text-white", none: "bg-white",
-};
-const CELL_WORD: Record<CellState, string> = { waiting: "Waiting", processing: "Processing", hold: "On hold", problem: "Problem", done: "Done", none: "Nothing" };
-
-function BarsView({ txns, holidays, now }: { txns: JTxn[]; holidays: ReadonlySet<string>; now: Date }) {
-  if (!txns.length) return <p className="card p-4 text-[15px] text-ink-2">Nothing to show.</p>;
-  const rows = txns.map((t) => ({ t, cells: dayCells(t, holidays, now) }));
-  const first = rows.map((r) => r.cells[0]?.date).filter(Boolean).sort()[0]!;
-  const last = rows.map((r) => r.cells.at(-1)?.date).filter(Boolean).sort().at(-1)!;
-  const dates: string[] = [];
-  for (let d = first; d <= last && dates.length < 400; d = addDay(d)) dates.push(d);
-  const today = businessDate(now);
-  return (
-    <section aria-labelledby="bars-h" className="card flex min-w-0 flex-col gap-3 p-3 sm:p-4" data-bars>
-      <h2 id="bars-h" className="text-[17px] font-bold text-navy">Days by state</h2>
-      <Legend />
-      {/* The picture (the table below has the same data for screen readers). Scrolls inside its own box. */}
-      <div aria-hidden="true" className="min-w-0 overflow-x-auto" data-bars-scroll>
-        <div className="inline-grid gap-y-1.5" style={{ gridTemplateColumns: `minmax(96px,140px) repeat(${dates.length}, 26px)` }}>
-          <span />
-          {dates.map((d) => (
-            <span key={d} className={`text-center text-[10px] leading-tight ${d === today ? "font-bold text-navy" : "text-ink-2"}`} title={fmtDate(d)}>
-              {d.slice(8)}<br />{["S", "M", "T", "W", "T", "F", "S"][new Date(`${d}T12:00:00Z`).getUTCDay()]}
-            </span>
-          ))}
-          {rows.map(({ t, cells }) => {
-            const byDate = new Map(cells.map((c) => [c.date, c]));
-            return [
-              <span key={`${t.id}-n`} className="flex items-center pr-2 text-[13px] font-semibold text-navy">{txnName(t.code, t.name)}</span>,
-              ...dates.map((d) => {
-                const c = byDate.get(d);
-                const st: CellState = c?.state ?? "none";
-                const off = c ? c.offDay : !isWorkday(d, holidays);
-                return (
-                  <span key={`${t.id}-${d}`} title={`${txnName(t.code, t.name)} · ${fmtDate(d)} · ${CELL_WORD[st]}${off ? " (weekend or holiday)" : ""}${c?.deadline ? " · Target date" : ""}`}
-                    className={`relative flex h-7 items-center justify-center border-y border-l border-white ${CELL[st]} ${off ? "opacity-40" : ""} ${st === "none" ? "border-line" : ""}`}>
-                    {st === "hold" && <PauseIcon size={11} strokeWidth={3} />}
-                    {st === "problem" && <AlertIcon size={11} strokeWidth={3} />}
-                    {c?.deadline && <span className="absolute inset-y-[-4px] right-[-2px] border-r-2 border-dashed border-navy" />}
-                    {d === today && <span className="absolute inset-x-0 -bottom-1 h-0.5 bg-navy" />}
-                  </span>
-                );
-              }),
-            ];
-          })}
-        </div>
-      </div>
-      <BarsTable txns={txns} holidays={holidays} now={now} />
-    </section>
-  );
-}
-
-function Legend() {
-  const items: [CellState | "deadline" | "off", string][] = [["waiting", "Waiting"], ["processing", "Processing"], ["hold", "On hold"], ["problem", "Problem"], ["done", "Done"], ["off", "Weekend or holiday (dimmed)"], ["deadline", "Target date (dashed line)"]];
-  return (
-    <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-ink" aria-label="Legend">
-      {items.map(([k, l]) => (
-        <li key={k} className="inline-flex items-center gap-1.5">
-          {k === "deadline" ? <span aria-hidden="true" className="h-4 w-0 border-r-2 border-dashed border-navy" />
-            : k === "off" ? <span aria-hidden="true" className="h-3.5 w-3.5 rounded-sm bg-gold opacity-40" />
-              : <span aria-hidden="true" className={`flex h-3.5 w-3.5 items-center justify-center rounded-sm ${CELL[k]}`}>{k === "hold" && <PauseIcon size={9} strokeWidth={3} />}</span>}
-          {l}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** The same data as the bars, as a table: each state span of each transaction. */
-function BarsTable({ txns, holidays, now }: { txns: JTxn[]; holidays: ReadonlySet<string>; now: Date }) {
-  return (
-    <details className="group" open>
-      <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1 text-sm font-semibold text-navy">
-        <ChevronRightIcon size={16} className="transition-transform group-open:rotate-90" /> The same as a table
-      </summary>
-      <div className="min-w-0 overflow-x-auto">
-        <table className="table whitespace-nowrap" data-bars-table>
-          <caption className="sr-only">Time in each state, per transaction (business days skip weekends and holidays)</caption>
-          <thead><tr><th scope="col">Transaction</th><th scope="col">State</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Business days</th></tr></thead>
-          <tbody>
-            {txns.flatMap((t) => [
-              ...t.segments.map((g, i) => (
-                <tr key={`${t.id}-${i}`}>
-                  <th scope="row" className="font-semibold">{txnName(t.code, t.name)}</th>
-                  <td>{SEG_LABEL[g.state]}</td>
-                  <td>{fmtShort(g.start)}</td>
-                  <td>{g.end ? fmtShort(g.end) : "Now"}</td>
-                  <td>{businessSpan(g.start, g.end ?? now, holidays)}</td>
-                </tr>
-              )),
-              ...(t.done && t.end ? [<tr key={`${t.id}-done`}><th scope="row" className="font-semibold">{txnName(t.code, t.name)}</th><td>Done</td><td>{fmtShort(t.end)}</td><td>-</td><td>-</td></tr>] : []),
-              ...(t.deadline ? [<tr key={`${t.id}-dl`}><th scope="row" className="font-semibold">{txnName(t.code, t.name)}</th><td>Target date</td><td colSpan={3}>{fmtDate(t.deadline)}</td></tr>] : []),
-            ])}
-          </tbody>
-        </table>
-      </div>
-    </details>
-  );
-}
-
-function addDay(ymd: string): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
-}
-function isWorkday(ymd: string, holidays: ReadonlySet<string>) {
-  const day = new Date(`${ymd}T12:00:00Z`).getUTCDay();
-  return day !== 0 && day !== 6 && !holidays.has(ymd);
-}
-
-// ---------------------------------------------------------------------------
-// Documents scope
-// ---------------------------------------------------------------------------
-
 function docItems(j: Journey, liveCodes: string[]): DocItem[] {
   return j.docs
     .filter((d) => !d.txnCode || liveCodes.includes(d.txnCode))
     .map((d) => ({
       id: d.id, documentId: d.documentId, label: d.label, original: d.originality === "ORIGINAL",
       txnName: d.txnCode ? txnName(d.txnCode, d.txnName ?? undefined) : null,
-      holder: d.holder, place: d.place, sinceText: fmtShort(d.since),
-      trail: d.trail.map((m) => ({ id: m.id, label: m.label, when: fmtShort(m.at), by: m.by, place: m.place, ack: m.acknowledgedBy, remarks: m.remarks, simulated: m.simulated })),
-      periods: d.periods.map((p) => ({ holder: p.holder, place: p.place, from: fmtShort(p.from), to: p.to ? fmtShort(p.to) : null, held: msText(p.ms) })),
+      holder: undoubleRole(d.holder), place: undoubleRole(d.place), sinceText: fmtShort(d.since),
+      trail: d.trail.map((m) => ({ id: m.id, label: m.label, when: fmtShort(m.at), by: m.by, place: m.place ? undoubleRole(m.place) : null, ack: m.acknowledgedBy, remarks: m.remarks, simulated: m.simulated })),
+      periods: d.periods.map((p) => ({ holder: undoubleRole(p.holder), place: p.place ? undoubleRole(p.place) : null, from: fmtShort(p.from), to: p.to ? fmtShort(p.to) : null, held: spanText(p.ms) })),
     }));
 }

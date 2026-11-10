@@ -12,6 +12,7 @@ import { txnFunds } from "@/lib/jobs/view";
 import { historySentence, progressStep } from "@/lib/ui/plain";
 import { NO_DETAILS, holdReasonName } from "@/lib/ui/holds";
 import { buildJourney, type EventRec, type Journey, type JourneyInput, type StageRec } from "@/lib/workflow/build-journey";
+import { buildJourneyStory, type JourneyStory } from "@/lib/workflow/journey-story";
 import type { LoanDetail } from "./queries";
 
 /**
@@ -20,7 +21,7 @@ import type { LoanDetail } from "./queries";
  * (journey:view_amounts): without it, amounts are removed here (advances carry no cents, and peso
  * amounts are cut from the event sentences), so the page never receives them.
  */
-export async function loadJourney(user: CurrentUser, loan: LoanDetail, now: Date = new Date()): Promise<{ journey: Journey; amounts: boolean; holidays: Set<string> }> {
+export async function loadJourney(user: CurrentUser, loan: LoanDetail, now: Date = new Date()): Promise<{ journey: Journey; story: JourneyStory; amounts: boolean; holidays: Set<string> }> {
   const amounts = can(user, PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
   const [tats, holidays, audit, movements, advances] = await Promise.all([
     getTatMap(),
@@ -35,7 +36,9 @@ export async function loadJourney(user: CurrentUser, loan: LoanDetail, now: Date
     }),
   ]);
   const input = journeyInput(loan, { audit, movements, advances }, amounts);
-  return { journey: buildJourney(input, tats, holidays, now), amounts, holidays };
+  const journey = buildJourney(input, tats, holidays, now);
+  // Story, By document and "Where it is now" read the same records (read only).
+  return { journey, story: buildJourneyStory(input, journey), amounts, holidays };
 }
 
 /** Peso amounts in a sentence ("₱1,500.00", "PHP 1,500.00", "1500.00 for ..."), removed for viewers without the permission. */
@@ -157,6 +160,9 @@ export function journeyInput(loan: LoanDetail, rows: { audit: Audit[]; movements
           receivingLa: a.receivingLaId && a.receivingLa ? { id: a.receivingLaId, name: a.receivingLa.name } : null,
           assignedBy: { id: a.assignedById, name: a.assignedBy.name },
           stages: a.stages.map((st) => stageRec(st)),
+          // The DP's findings as recorded (the same text the rounds and the "Do this now" card show).
+          findings: a.status === "DECLINED" ? a.declineReasons : a.status === "WITHDRAWN" && a.returnedAt ? a.returnReasons : null,
+          papersHandedAt: a.papersHandedAt, papersReceivedAt: a.papersReceivedAt, papersReceivedBy: a.papersReceivedBy,
         })),
         attempts: t.attempts.map((x) => ({
           id: x.id, date: x.date, result: x.result, reason: x.reason?.name ?? null, note: x.note, by: x.dpUser.name, createdAt: x.createdAt, simulated: x.simulated, stageId: x.jobStageId,

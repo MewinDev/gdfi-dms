@@ -164,23 +164,24 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
   await shot(page, "dp-job-returned");
   await noSideways(page);
 
-  // The LA who sent it: the findings at the top, the Requested tag, the Open items rows; the processor is chosen again (nothing pre-selected).
+  // The LA who sent it: the findings once in the "Do this now" card, one marker on the paper, the word Returned; the processor is chosen again (nothing pre-selected).
   await signInAs(page, "la");
   await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
-  await expect(page.locator("[data-sent-back=returned] [data-findings]")).toContainText("Missing paper");
-  await expect(page.locator("[data-sent-back=returned] [data-findings]")).toContainText("Bring the original ID");
-  const tag = page.getByRole("group", { name: "Notary papers" }).locator("[data-requested]");
+  const fix = page.locator('[data-do-now] [data-step="fix"]');
+  await expect(fix).toContainText("Missing paper");
+  await expect(fix).toContainText("Bring the original ID");
+  await expect(page.getByText("Bring the original ID", { exact: false }).filter({ visible: true })).toHaveCount(1);
+  await expect(page.locator("[data-sent-back]")).toHaveCount(0);
+  const tag = page.getByRole("group", { name: "Notary papers" }).locator("[data-returned-marker]").filter({ visible: true });
   await expect(tag).toHaveCount(1);
-  await expect(tag).toHaveAttribute("title", /^Asked by Test Document Processor \(DP\)/);
-  const list = wide(page) ? page.locator('[data-open-items="card"]') : page.locator('[data-open-items="collapsible"]');
-  if (!wide(page)) await list.locator("summary").click();
-  await expect(list.locator('[data-open-row="missing"]')).toContainText("Test Document Processor (DP)");
-  // One pill per row: the open missing-paper request wins; the line says it was returned.
-  await expect(page.locator("[data-status-line]", { hasText: "Returned: Missing paper" }).filter({ visible: true }).first()).toBeVisible();
+  await expect(tag).toHaveText("Returned: missing paper");
+  await expect(page.locator("[data-open-items]").filter({ visible: true })).toHaveCount(0); // only this transaction: the card says it
+  // One word per row: Returned.
+  await expect(page.locator("[data-txn=NOTARY] [data-status-chip]").filter({ visible: true })).toHaveText("Returned");
   await shot(page, "la-after-return");
   await noSideways(page);
   await page.getByRole("group", { name: "Notary papers" }).getByLabel(required.rule!.label).check();
-  await expect(page.getByRole("group", { name: "Notary papers" }).locator("[data-requested]")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByRole("group", { name: "Notary papers" }).locator("[data-returned-marker]")).toHaveCount(0, { timeout: 30_000 });
   await expect(page.locator("label", { hasText: "Test Document Processor" }).locator("input")).not.toBeChecked();
   // No "Pending" or "Rejected" for these states.
   expect(await page.locator("main").innerText()).not.toMatch(/pending|rejected/i);

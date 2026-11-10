@@ -39,6 +39,8 @@ export interface Line {
   requested?: boolean;
   /** "Asked by Ana Cruz · 2 minutes ago · from Borrower" (shown on hover or focus of the tag). */
   requestedInfo?: string;
+  /** The DP returned this paper ("Returned: missing paper"): the one marker on its row (the reason itself is in the "Do this now" card). */
+  returned?: string;
 }
 
 /** Same rule as the server (lib/workflow/checklist.ts), on the ticks as they are on screen. */
@@ -67,8 +69,13 @@ function ChecklistRow({ l, on, disabled, onToggle, highlight }: { l: Line; on: b
       <span className="min-w-0 flex-1 leading-snug">
         <span className={`text-[15px] ${on ? "font-semibold text-ink" : l.required ? "font-semibold text-ink" : "font-medium text-ink-2"}`}>{l.label}</span>
         {l.documentId && <span className="mono ml-2 text-xs text-ink-2">{l.documentId}</span>}
+        {/* Phone: the returned marker sits under the name so the name keeps its room. */}
+        {l.returned && !on && <span className="mt-0.5 block w-fit rounded-md border border-act-line bg-act-bg px-1.5 py-0.5 text-xs font-semibold text-act-fg sm:hidden" data-returned-marker>{l.returned}</span>}
       </span>
       <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {l.returned && !on && (
+          <span className="rounded-md border border-act-line bg-act-bg px-1.5 py-0.5 text-xs font-semibold text-act-fg max-sm:hidden" data-returned-marker>{l.returned}</span>
+        )}
         {l.requested && !on && (
           <span tabIndex={0} title={l.requestedInfo} aria-label={`Requested. ${l.requestedInfo ?? ""}`} data-requested
             className="group/req relative rounded-md bg-bad-bg px-1.5 py-0.5 text-xs font-semibold text-bad-fg outline-none focus-visible:outline-2 focus-visible:outline-navy">
@@ -247,8 +254,8 @@ export function WorkCard(p: WorkCardProps) {
         )}
       </div>
 
-      {/* Action area: a footer section of the card */}
-      <div className="flex flex-col gap-3 border-t border-[rgb(12_35_64/0.1)] pt-4 empty:hidden sm:px-5 sm:pb-4">
+      {/* Action area: a footer section of the card (the "Do this now" card's last step points here) */}
+      <div id={`act-${p.txnId}`} className="flex scroll-mt-28 flex-col gap-3 border-t border-[rgb(12_35_64/0.1)] pt-4 empty:hidden sm:px-5 sm:pb-4">
         {p.assignmentText && <p className="rounded-xl bg-wait-bg px-4 py-3 text-[15px] text-wait-fg">{p.assignmentText}</p>}
         {p.code === "EDST" && p.status === "COMPLETED" && (
           <p className="rounded-xl bg-ok-bg px-4 py-3 text-[15px] text-ok-fg">EDST done. Reference {p.edstReference}.</p>

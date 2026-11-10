@@ -78,11 +78,8 @@ export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; se
                 <span className="pt-0.5"><Badge item={i} selected={on} /></span>
                 <span className="min-w-0 flex-1 leading-snug">
                   <span className="flex items-center gap-2"><span className="min-w-0 flex-1 text-[15px] font-semibold text-ink">{i.name}</span>{on && <OpenNow />}</span>
-                  <span className="mt-0.5 block"><TxnStatusChips s={i.status} clock={false} /></span>
-                  <span className="mt-0.5 block text-[13px] text-ink-2">
-                    <span data-status-line>{i.status.line}</span>
-                    {i.status.clock && <> · <span className={i.status.clock.late ? "font-semibold text-bad-fg" : undefined} data-clock>{i.status.clock.text}</span></>}
-                  </span>
+                  {/* One status word; the day count and the due note in grey. What to do is in the "Do this now" card. */}
+                  <span className="mt-0.5 block"><TxnStatusChips s={i.status} /></span>
                 </span>
               </button>
             </li>
@@ -114,14 +111,12 @@ export function TxnStrip({ items, selected, summary }: { items: TxnItem[]; selec
           return (
             <li key={i.code} className="shrink-0 snap-start">
               <button type="button" onClick={() => (on ? undefined : select(i))} aria-current={on ? "true" : undefined} data-txn={i.code}
-                className={`flex h-full min-h-[72px] w-[208px] flex-col items-start gap-1 rounded-xl border px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy ${on ? "border-line-soft bg-select-bg shadow-[inset_3px_0_0_var(--gold)]" : "border-line bg-white hover:border-navy/40"}`}>
+                className={`flex h-full min-h-14 w-[184px] flex-col items-start gap-1 rounded-xl border px-3 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy ${on ? "border-line-soft bg-select-bg shadow-[inset_3px_0_0_var(--gold)]" : "border-line bg-white hover:border-navy/40"}`}>
                 <span className="flex w-full items-center gap-2">
                   <Badge item={i} selected={on} /><span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{i.name}</span>
-                  {i.dot && <span role="img" aria-label={i.dot === "bad" ? "Has an open item" : "On hold"} data-dot={i.dot} className={`h-2.5 w-2.5 shrink-0 rounded-full ${i.dot === "bad" ? "bg-[var(--bad-fg)]" : "bg-[var(--hold-stripe)]"}`} />}
-                  {on && <OpenNow />}
                 </span>
-                <TxnStatusChips s={i.status} />
-                <span className="line-clamp-1 text-xs text-ink-2" title={i.status.line} data-status-line>{i.status.line}</span>
+                {/* One status word and the day count: what to do is in the "Do this now" card. */}
+                <span className="flex w-full items-center gap-2"><span className="min-w-0 flex-1"><TxnStatusChips s={i.status} /></span>{on && <OpenNow />}</span>
               </button>
             </li>
           );

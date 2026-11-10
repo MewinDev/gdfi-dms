@@ -2,7 +2,7 @@
 
 What is built today, what is planned, and the questions still open for the business.
 
-Last updated: 9 November 2026 (PHT)
+Last updated: 10 November 2026 (PHT)
 
 ## Status
 
@@ -24,6 +24,8 @@ Checked against the code and the tests on 8 November 2026. Each row gives one li
 | Transfer hold (`holds:transfer`: Admin any hold, others their branches; same work role, active; remarks; never resume), the line "Needs to be resumed by {name}" | Built | Integration test transfer-papers-finance: supervisor of another branch refused, Admin and Finance allowed, refusals for self, current owner, DP, inactive and no remarks, old holder and Admin cannot resume; Playwright transfer form at 1440, 820 and 390 on 8 November 2026. Answers the open question on the hold owner leaving. |
 | Inactive sending LA: the item goes to every active LA of the branch with "Sender {name} is inactive", in-app only | Built | Integration test: both branch LAs see it, no email queued, the Journey records who sent it again; Playwright Open items and Home. |
 | Return to LA: no "keep the papers" or "keep the cash"; papers handed over and confirmed back (Not received raises a Problem); send blocked until confirmed; "Cash to settle" for the DP and Finance | Built | Integration tests: the removed options refused, hand-over required, confirm with one paper not received, send blocked then allowed, liquidation after the return; Playwright return form, My funds and Send panel. |
+| Check documents "Do this now": one next step per transaction (On hold, Problem, Confirm the papers, Fix and send again, Waiting for a paper, Tick, Send), each fact once; one status word per transaction; Open items only for other transactions and MyLoans changes ([03](03-loan-associate.md#what-the-loan-file-shows-first)) | Built | 10 November 2026: unit getNextSteps (order, combinations, nothing repeats), integration next-steps (All received and Not received as before, hold lock), Playwright loan-file-next-step at 1440, 820 and 390 (findings text exactly once, Returned word, Open items hidden or shown, no sideways scroll). |
+| Journey v2: "Where it is now" one line per place (role word and name said once), Story (default; date rows, newest first, same-minute actions merged, automatic steps one line, holds, problems, returns, declines and missing paper flagged with soft count badges), By document (milestones per transaction, markers, details panel), Full log (collapsed, search, Who, system and not applicable switches); choice kept in the address; read only | Built | Playwright tests/e2e/journey.spec.ts at 1440, 820 and 390 (reason said once, grouped strip line, columns and phone cards, log switches, no sideways scroll); tests/integration/journey-story.test.ts (every table's row count unchanged after reading) |
 | Finance on a held transaction: request, approve, release, top-up and carry-over approval refused; receipts, returns, confirm, close and exceptions allowed | Built | Integration test of every action; Playwright Finance refusal message. |
 | Fresh database: all migrations in order, seed, unit and integration tests | Built | On 8 November 2026 a new empty database took all 19 migrations and the seed, and 524 of 524 tests passed against it; the database was then removed. |
 | DP lists: On hold tile on DP Home, On hold filter, chips (On hold, Package incomplete, current stage). The Returned tile and tab were removed: a declined or returned job leaves the DP | Built | Integration test of the list rows and the stage filter; Playwright DP Home with On hold passed. |

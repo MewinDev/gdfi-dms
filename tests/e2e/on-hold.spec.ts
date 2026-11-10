@@ -131,21 +131,20 @@ test("On hold shows the reason and the remarks everywhere, with soft colours", a
   // Locked: the papers stay readable, their controls are disabled, and the page says why.
   await expect(page.locator("[data-lock-note]").filter({ visible: true })).toContainText("Locked: on hold by Test Loan Associate since");
   await expect(page.getByRole("group", { name: /papers$/ }).first().getByRole("checkbox").first()).toBeDisabled();
-  // The transactions list: one pill (On hold), one short line, the day count as plain text; no "Ready to send".
+  // The transactions list: one pill (On hold) and the day count as plain text; the reason is in the card, not repeated here.
   const list = wide(page) ? page.getByRole("region", { name: /^Transactions \(\d+\)$/ }) : page.getByRole("region", { name: "Transactions", exact: true });
   const row = list.locator("[data-txn=MORTGAGE]");
   await expect(row.locator("[data-status-chip]")).toHaveCount(1);
   await expect(row.locator("[data-status-chip]")).toHaveText("On hold");
-  await expect(row.locator("[data-status-line]")).toHaveText("On hold: Other · 1 day");
+  await expect(row.locator("[data-status-line]")).toHaveCount(0);
   await expect(row).not.toContainText("Ready to send");
   await expect(row).not.toContainText("Processing ·");
   await expect(list).not.toContainText(/required papers$/m);
-  // Open items: the reason category and the first line of the remarks.
-  if (!wide(page)) await page.locator('[data-open-items="collapsible"] summary').click();
-  const openRow = page.locator('[data-open-row="hold"]').filter({ visible: true });
-  await expect(openRow.locator("[data-open-reason]")).toHaveText("Other");
-  await expect(openRow.locator("[data-open-remarks]")).toHaveText(`“${REMARKS}”`);
-  await expect(page.locator("[data-open-items]").filter({ visible: true })).not.toHaveAttribute("data-urgent", "true"); // no red frame for a hold
+  // The hold is the step to do now in the "Do this now" card; Open items does not repeat it (nothing else is open: no card).
+  await expect(page.locator('[data-do-now] [data-step="hold"]')).toHaveAttribute("data-step-state", "now");
+  await expect(page.locator("[data-do-now]")).toHaveAttribute("data-tone", "hold");
+  await expect(page.getByText(REMARKS).filter({ visible: true })).toHaveCount(1);
+  await expect(page.locator("[data-open-items]").filter({ visible: true })).toHaveCount(0);
   expect(await filledNavyPills(page)).toEqual([]);
   expect(await contrastIssues(page)).toEqual([]);
   await shot(page, "check-documents-held-mortgage");
@@ -207,8 +206,13 @@ test("On hold shows the reason and the remarks everywhere, with soft colours", a
   await go.click();
   await expect(page.locator("[data-holds-banner]")).toHaveCount(0);
 
-  // Journey: two entries for the hold.
+  // Journey, Story: the hold and the resume, each once.
   await page.goto(`/loans/${PN}?tab=journey`);
+  await expect(page.locator('[data-story-line][data-flag="hold"]')).toHaveCount(1);
+  await expect(page.locator('[data-story-line][data-flag="hold"]')).toContainText(`Test Loan Associate put Mortgage on hold: Other (${REMARKS})`);
+  await expect(page.locator("[data-story]")).toContainText("Test Loan Associate resumed Mortgage: A DP is free now");
+  // Full log: two entries for the hold.
+  await page.goto(`/loans/${PN}?tab=journey&journey=log&log=open`);
   const sub = page.locator('[data-sub="hold"]').filter({ visible: true }).first();
   await expect(sub.locator("[data-hold-started]")).toHaveText(new RegExp(`^Put on hold · Other · ${REMARKS} · by Test Loan Associate · .+ PHT$`));
   await expect(sub.locator("[data-hold-resumed]")).toHaveText(/^Resumed · A DP is free now · by Test Loan Associate · .+ PHT · was on hold for .+$/);
@@ -222,9 +226,16 @@ test("An older hold without remarks: the fallback and Add details", async ({ pag
   const la = await db.user.findUniqueOrThrow({ where: { email: "test.la@gdfi.ph" } }).catch(() => db.user.findFirstOrThrow({ where: { name: "Test Loan Associate" } }));
   const reason = await db.holdReason.findUniqueOrThrow({ where: { code: "OTHER" } });
   await db.hold.create({ data: { loanId: t.loanId, transactionId: t.id, reasonId: reason.id, note: "", raisedById: la.id, raisedByLabel: la.name, ownerId: la.id, ownerLabel: la.name, raisedAt: new Date(Date.now() - 26 * 3_600_000) } });
+  // No invalid nesting: "Add details" renders a <dialog> with a form, which must not sit inside a <p>.
+  const nesting: string[] = [];
+  page.on("console", (m) => { if (m.type() === "error" && /cannot be a descendant of|cannot contain a nested|hydration/i.test(m.text())) nesting.push(m.text()); });
+  // Check documents: the same fallback inside the "Do this now" card.
+  await page.goto(`/loans/${PN}?tab=todo&tx=PPSR`);
+  await expect(page.locator("[data-do-now] [data-remarks=none]").filter({ visible: true }).first()).toContainText("No details were written.");
   await page.goto(`/loans/${PN}?tab=todo`);
   const s = page.locator("[data-holds-banner] [data-hold-summary]");
   await expect(s.locator("[data-remarks=none]")).toContainText("No details were written.");
+  expect(nesting, nesting.join("\n")).toEqual([]);
   await expect(s.locator("[data-hold-by]")).toContainText("· 1 day ago");
   await s.getByRole("button", { name: "Add details" }).click();
   const dlg = page.getByRole("dialog", { name: "Add the hold details" });

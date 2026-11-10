@@ -2,7 +2,7 @@
 
 One Document Processor job, from arrival to the job closing at the branch.
 
-Last updated: 9 November 2026 (PHT)
+Last updated: 10 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -65,6 +65,7 @@ flowchart TD
 - Dotted lines (Return to LA, Pasuyo) can happen at any stage while the job is open. Pasuyo continues from the current stage.
 - After a Decline or a Return to LA the job is no longer the DP's: it leaves every DP list, tile and count, the DP's notifications about it are removed, and an old link says "This job is no longer with you." If the LA sends it again it is a new round, possibly to another processor.
 - While a job is on hold it is locked: nothing on it can change until the hold owner resumes it.
+- The loan's Journey shows the DP's part in plain sentences (accepted, held and resumed, returned with the findings and the Round, forwarded) and, in By document, the "With the processor" and "In process" milestones with the current stage. See [How to read the Journey](03-loan-associate.md#how-to-read-the-journey).
 - At LTO drop off or LTO pickup the DP can press **Report an LTO problem** (System down, Office closed, Long queue, Other, with remarks). It warns the people choosing that office and the processors going there, and Operations is told; it never blocks anything. Active advisories for the job's office show in its "Process at" box. See [Monitoring](11-monitoring.md#lto-advisories).
 
 [Back to the workflow index](README.md)

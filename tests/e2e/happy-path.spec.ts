@@ -60,8 +60,8 @@ test("LA: find GD1012026901001, open loan file, tick the papers, send to a proce
   await expect(samples.getByRole("button", { name: /Maria Santos/ })).toContainText("Opened");
   await expect(samples.getByRole("button", { name: /Ana Villanueva/ })).toContainText("Try it");
 
-  // The full journey is still available
-  await page.goto("/loans/GD1012026901001?tab=journey");
+  // The full journey is still available (Journey, Full log)
+  await page.goto("/loans/GD1012026901001?tab=journey&journey=log&log=open");
   await expect(page.getByText("Phase 10: Closure, archival, retention")).toBeVisible();
 
   // Out-of-branch loan file: 404 even by typing the URL

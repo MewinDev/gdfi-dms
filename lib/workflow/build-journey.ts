@@ -43,6 +43,12 @@ export interface AssignmentRec {
   id: string; status: string; endorsedAt: Date; decidedAt: Date | null; returnedAt: Date | null; processedAt: Date | null;
   forwardedAt: Date | null; closedAt: Date | null; dp: PersonRef; second: PersonRef | null; receivingLa: PersonRef | null; assignedBy: PersonRef;
   stages?: StageRec[];
+  /** Decline or Return to LA: the DP's findings as recorded (reason and remarks). */
+  findings?: string | null;
+  /** Return to LA: papers handed over by the DP, and confirmed back by the LA. */
+  papersHandedAt?: Date | null;
+  papersReceivedAt?: Date | null;
+  papersReceivedBy?: string | null;
 }
 export interface AdvanceRec {
   id: string; number: string; status: string; requestedAt: Date; approvedAt: Date | null; releasedAt: Date | null;
@@ -337,6 +343,18 @@ const EVENT_KIND: Record<string, Kind> = {
 // Who holds the ball
 // ---------------------------------------------------------------------------
 
+/**
+ * A role word and a person's name, said once: "LA Ana Cruz", but "LA 1" (not "LA LA 1") when the
+ * name already starts with the role word.
+ */
+export function withRole(role: string, name: string): string {
+  const n = name.trim();
+  return new RegExp(`^${role}\\b`, "i").test(n) ? n : `${role} ${n}`;
+}
+
+/** Stored text that already joined a role word to such a name ("With DP DP 1"): said once on screen. */
+export const undoubleRole = (text: string) => text.replace(/\b(LA|DP)\s+\1\b/g, "$1");
+
 export interface OwnerContext {
   loan: { stage: string; stageSince: Date; openedBy: PersonRef };
 }
@@ -368,11 +386,11 @@ function baseOwner(t: TxnRec, ctx: OwnerContext): Owner | null {
     case "READY":
     case "RETURNED": {
       const la = (t.status === "RETURNED" && last?.assignedBy) || ctx.loan.openedBy;
-      return { role: "LA", name: la.name, since: t.statusSince, text: `With LA ${la.name}` };
+      return { role: "LA", name: la.name, since: t.statusSince, text: `With ${withRole("LA", la.name)}` };
     }
     case "ASSIGNED":
       if (!a) return null;
-      return { role: "DP", name: dpNames(a), since: a.endorsedAt, text: `Waiting on DP ${dpNames(a)}` };
+      return { role: "DP", name: dpNames(a), since: a.endorsedAt, text: `Waiting on ${withRole("DP", dpNames(a))}` };
     case "IN_PROCESS": {
       if (!a) return null;
       if (t.fundsNeeded === "YES") {
@@ -384,15 +402,15 @@ function baseOwner(t: TxnRec, ctx: OwnerContext): Owner | null {
           return { role: "FIN", name: "Finance", since: waiting.status === "REQUESTED" ? waiting.requestedAt : waiting.approvedAt ?? waiting.requestedAt, reason: text, text };
         }
       }
-      return { role: "DP", name: dpNames(a), since: a.decidedAt ?? t.statusSince, text: `With DP ${dpNames(a)}` };
+      return { role: "DP", name: dpNames(a), since: a.decidedAt ?? t.statusSince, text: `With ${withRole("DP", dpNames(a))}` };
     }
     case "FORWARDED": {
       const la = a?.receivingLa;
-      return { role: "LA", name: la?.name ?? "the branch", since: a?.forwardedAt ?? t.statusSince, text: `On the way to LA ${la?.name ?? "at the branch"}` };
+      return { role: "LA", name: la?.name ?? "the branch", since: a?.forwardedAt ?? t.statusSince, text: la ? `On the way to ${withRole("LA", la.name)}` : "On the way to the branch" };
     }
     case "COMPLETED": {
       const s = ctx.loan.stage;
-      if (s === "For Vault Transmittal") return { role: "LA", name: ctx.loan.openedBy.name, since: ctx.loan.stageSince, text: `Branch LA ${ctx.loan.openedBy.name}: send to the vault` };
+      if (s === "For Vault Transmittal") return { role: "LA", name: ctx.loan.openedBy.name, since: ctx.loan.stageSince, text: `Branch ${withRole("LA", ctx.loan.openedBy.name)}: send to the vault` };
       if (s === "In transit to Vault") return { role: "VAULT", name: "Vault", since: ctx.loan.stageSince, text: "On the way to the vault" };
       if (s === "In Safekeeping") return { role: "VAULT", name: "Vault Custodian", since: ctx.loan.stageSince, text: "Safe in the vault (Vault Custodian)" };
       if (["Closed", "Archived", "Disposed"].includes(s)) return { role: "APPR", name: "Records", since: ctx.loan.stageSince, text: s };
@@ -645,7 +663,7 @@ export function buildJourney(input: JourneyInput, tats: TatMap, holidays: Readon
   return { phases, txns, docs, now };
 }
 
-function fundsWords(a: AdvanceRec): string {
+export function fundsWords(a: AdvanceRec): string {
   const st = a.status === "REQUESTED" ? "Requested" : a.status === "APPROVED" ? "Approved, waiting for release" : a.status === "DENIED" ? "Denied"
     : a.status === "CANCELLED" ? "Cancelled" : ["LIQUIDATED", "CLOSED"].includes(a.status) ? "Settled" : "Funded";
   const amount = a.releasedCents ?? a.requestedCents;

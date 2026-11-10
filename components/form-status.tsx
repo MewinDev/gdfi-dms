@@ -39,6 +39,8 @@ export function SubmitButton({
   id?: string;
   "aria-label"?: string;
   "aria-describedby"?: string;
+  /** The "Do this now" card's step button (focus moves to it when the step before is done). */
+  "data-step-action"?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
