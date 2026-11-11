@@ -11,7 +11,9 @@ export async function recomputeStage(tx: Tx, loanId: string, opts: { simulated?:
     select: {
       id: true, pn: true, stage: true, closedAt: true, cancelledAt: true, archivedAt: true, disposedAt: true, syncTier: true,
       transactions: { select: { status: true, fundsNeeded: true, type: { select: { requiresDp: true } }, advanceLines: { select: { denied: true, releasedCents: true, advance: { select: { status: true } } } } } },
-      documents: { where: { documentId: { not: null } }, select: { stage: true } },
+      // A paper marked Missing (not in hand) does not hold the file at the vault gate: the file goes on
+      // "Complete with exceptions" (lib/services/papers.ts) until the paper is Received.
+      documents: { where: { documentId: { not: null }, NOT: { check: { is: { missingState: "MISSING" } } } }, select: { stage: true } },
     },
   });
   // Cash out: an advance released and not yet settled.

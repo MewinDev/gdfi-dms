@@ -227,11 +227,15 @@ export async function buildBaseline(log: Log = () => {}, opts: { variant?: KitVa
   const db = kitDatabase();
   autoBackup(log, { forClean: variant === "clean" });
   const env: NodeJS.ProcessEnv = { ...process.env, SEED_TEST_USERS: "false" };
+  // npm run migrate:check before anything is emptied: a stray migration folder stops the rebuild here.
+  runBin("tsx", ["scripts/migrate-check.ts", "--folders-only"], env);
   blankGraph(env);
   terminateConnections(db);
   psql(db, `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`);
   log(`Emptied ${db}.`);
+  runBin("tsx", ["scripts/migrate-check.ts"], env);
   runBin("prisma", ["migrate", "deploy"], env, true);
+  runBin("tsx", ["scripts/migrate-check.ts"], env); // the loan-search indexes exist after deploy
   log(`Applied ${currentMigrations().length} migrations.`);
   runBin("tsx", ["--require=./scripts/server-only-stub.cjs", "prisma/seed.ts"], env, true);
   log("Seeded the settings and master data (roles, branches, transaction types, documents, hold reasons, stages, LTO offices).");

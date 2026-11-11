@@ -54,7 +54,7 @@ export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; use
     const h = openHold(t.holds);
     const missing = loan.exceptions.filter((e) => e.transactionId === t.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN").length;
     return [t.id, txnStatus({
-      code: t.type.code, requiresDp: t.type.requiresDp, status: t.status, requiredDone: c.requiredDone, requiredTotal: c.requiredTotal,
+      code: t.type.code, requiresDp: t.type.requiresDp, status: t.status, requiredDone: c.expectedDone, requiredTotal: c.expectedTotal,
       tickedAny: t.checks.some((x) => x.checked), edstReference: t.edstReference,
       returnedForPapers: t.status === "RETURNED" && !!t.dpAssignments[0]?.returnReasonId ? (t.dpAssignments[0].returnReason?.name ?? "Papers needed") : null,
       sentBack: sentBack(t.status, t.dpAssignments)?.kind ?? null,

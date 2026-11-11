@@ -56,7 +56,6 @@ function ReturnForm({ assignmentId, laName, reasons, papers, heldText, handover,
   const uid = useId();
   const [reason, setReason] = useState(atAccept ? reasons.find((r) => r.code === "MISSING")?.id ?? "" : "");
   const [picked, setPicked] = useState<Set<string>>(new Set(preselected));
-  const [labels, setLabels] = useState(false);
   const [other, setOther] = useState("");
   const [note, setNote] = useState("");
   const [handed, setHanded] = useState<Set<string>>(new Set());
@@ -66,7 +65,7 @@ function ReturnForm({ assignmentId, laName, reasons, papers, heldText, handover,
   const toggleHanded = (id: string) => setHanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const code = reasons.find((r) => r.id === reason)?.code ?? "";
   const needPapers = NEEDS_PAPERS.includes(code);
-  const ready = !!reason && remarksCounter(note).ok && (!needPapers || picked.size > 0 || other.trim().length > 0) && allHanded && (!atAccept || labels);
+  const ready = !!reason && remarksCounter(note).ok && (!needPapers || picked.size > 0 || other.trim().length > 0) && allHanded;
   const err = (f: string) => (state && !state.ok && state.field === f ? state.error : null);
   const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (
@@ -77,12 +76,6 @@ function ReturnForm({ assignmentId, laName, reasons, papers, heldText, handover,
           ? <>Some papers are missing. You accept the papers you received (they are recorded as received by you), and the job goes back to {laName} for the missing ones. Not a problem; the turnaround time keeps counting.</>
           : <>Return to LA: you accepted it, but something is wrong or missing. It goes back to {laName}, who sent it, with your findings, to fix and send again. After this you will not see this job any more. Not a problem; the turnaround time keeps counting.</>}
       </p>
-      {atAccept && (
-        <label className="inline-flex min-h-11 items-center gap-2 text-[15px] font-semibold">
-          <input type="checkbox" name="labels" checked={labels} onChange={(e) => setLabels(e.target.checked)} className="h-5 w-5 accent-[var(--navy)]" />
-          Labels are on the papers I received
-        </label>
-      )}
       <div>
         <label htmlFor={`${uid}-r`} className="label">Reason</label>
         <select id={`${uid}-r`} name="reasonId" value={reason} onChange={(e) => setReason(e.target.value)} className="input" aria-invalid={!!err("reasonId")}>

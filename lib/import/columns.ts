@@ -6,7 +6,7 @@
 
 export type ImportListKey =
   | "branches" | "lto" | "loan-types" | "transaction-types" | "document-types"
-  | "checklist" | "tat" | "holidays" | "cash-advance" | "users" | "problem-reasons" | "hold-reasons" | "return-reasons" | "processing-stages" | "funds-types" | "expense-kinds";
+  | "checklist" | "tat" | "holidays" | "cash-advance" | "users" | "problem-reasons" | "hold-reasons" | "return-reasons" | "missing-reasons" | "processing-stages" | "funds-types" | "expense-kinds";
 
 export interface ImportColumn {
   /** Column name in the file (first row). */
@@ -252,6 +252,20 @@ export const IMPORT_LISTS: Record<ImportListKey, ImportListDef> = {
     examples: [
       { code: "BANK", name: "Waiting on the bank", order: "5", status: "Active", notes: EXAMPLE_NOTE },
       { code: "COURIER", name: "Waiting on the courier", order: "6", status: "Active", notes: EXAMPLE_NOTE },
+    ],
+  },
+  "missing-reasons": {
+    key: "missing-reasons", title: "Missing paper reasons", slug: "missing-paper-reasons", keyColumns: ["code"],
+    keyHelp: "Rows are matched by code. A new code adds a reason; an existing code updates it.",
+    columns: [
+      { name: "code", label: "Code", what: "Short code of the reason.", required: "yes", allowed: "2 to 20 capital letters, numbers or -", example: "COURIER", text: true },
+      { name: "name", label: "Reason", what: "The reason in plain words. Remarks are always required as well.", required: "yes", allowed: "Text", example: "With the courier", text: true },
+      { name: "order", label: "Order", what: "Position in lists (smaller first).", required: "yes", allowed: "Whole number 0 to 99", example: "6" },
+      status, notes,
+    ],
+    examples: [
+      { code: "COURIER", name: "With the courier", order: "6", status: "Active", notes: EXAMPLE_NOTE },
+      { code: "BANK", name: "Held by the bank", order: "7", status: "Active", notes: EXAMPLE_NOTE },
     ],
   },
   "return-reasons": {

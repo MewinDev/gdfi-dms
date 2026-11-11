@@ -52,7 +52,7 @@ const OLD_TO_NEW: Record<string, string[]> = {
   "rules:override": [P.RULES_OVERRIDE],
   "audit:view": [P.AUDIT_VIEW],
   "simulator:use": [P.SIMULATOR_USE],
-  "workflow:la": [P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT],
+  "workflow:la": [P.CHECKLIST_TICK, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT],
   "workflow:dp": [P.DP_RECEIVE],
   "admin:users": [P.USERS_VIEW, P.USERS_EDIT],
   "admin:settings": [P.BRANCHES_MANAGE, P.SETTINGS_LOAN_TYPES, P.SETTINGS_TRANSACTION_TYPES, P.SETTINGS_DOCUMENT_TYPES, P.SETTINGS_CHECKLIST, P.SETTINGS_TAT, P.SETTINGS_HOLIDAYS, P.SETTINGS_CASH_ADVANCE, P.SETTINGS_LTO, P.SETTINGS_SYSTEM, P.SETTINGS_IMPORT, P.TESTDATA_RESET],
@@ -98,10 +98,10 @@ describe("can() for each seeded role matches the previous behaviour", () => {
 describe("Dependencies", () => {
   it("turning on Send to a processor turns on Tick papers and See loan files", () => {
     expect([...withRequirements([P.DP_SEND])].sort()).toEqual([P.CHECKLIST_TICK, P.LOANS_VIEW, P.DP_SEND].sort());
-    expect(normalizePermissions([P.LABELS_PRINT, "nonsense"])).toEqual([P.LOANS_VIEW, P.CHECKLIST_TICK, P.LABELS_PRINT]);
+    expect(normalizePermissions([P.TXN_ADD, "nonsense", "labels:print"])).toEqual([P.LOANS_VIEW, P.CHECKLIST_TICK, P.TXN_ADD]);
   });
   it("turning off Tick papers turns off what needs it; turning off Find a loan turns off Open a loan file", () => {
-    expect(dependentsOf(P.CHECKLIST_TICK).sort()).toEqual([P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.FUNDS_FLAG].sort());
+    expect(dependentsOf(P.CHECKLIST_TICK).sort()).toEqual([P.PAPERS_MARK_MISSING, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.FUNDS_FLAG].sort());
     expect(dependentsOf(P.LOANS_SEARCH)).toEqual([P.LOANS_OPEN]);
     expect(dependentsOf(P.LOANS_VIEW)).toContain(P.DP_SEND);
   });

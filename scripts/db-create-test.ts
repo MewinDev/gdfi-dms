@@ -30,7 +30,9 @@ if (databaseExists(name)) {
   psql("postgres", `CREATE DATABASE ${ident(name)};`);
   console.log(`- Created ${name}.`);
 }
+runBin("tsx", ["scripts/migrate-check.ts"], env); // stops on a stray migration folder (CLAUDE.md)
 runBin("prisma", ["migrate", "deploy"], env);
+runBin("tsx", ["scripts/migrate-check.ts"], env); // the search indexes are still there
 console.log("- Migrations applied.");
 runBin("tsx", ["--require=./scripts/server-only-stub.cjs", "prisma/seed.ts"], env);
 console.log(`Done: ${name} is ready for npm test and npm run test:e2e.`);

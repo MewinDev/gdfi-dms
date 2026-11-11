@@ -11,6 +11,21 @@ import { heldFor } from "./pasuyo";
 import { moveDocs } from "./custody";
 import { recomputeStage } from "./stage";
 import { UserError } from "./errors";
+import { isIncluded } from "@/lib/workflow/checklist";
+
+type ReturnableCheck = { id: string; required: boolean; checked: boolean; includedInFile: boolean; missingState: "MISSING" | "RECEIVED_LATE" | null; missingRemarks: string | null; otherLabel: string | null; rule: { label: string } | null };
+/**
+ * A paper the processor may name in a return: part of the file, and not already marked Missing by the
+ * LA with a reason and remarks (that paper goes through as an exception; the file can still be
+ * returned for another paper). A paper the LA marked Present that is not really there can be named.
+ */
+export function returnRefusal(c: ReturnableCheck): string | null {
+  const name = c.rule?.label ?? c.otherLabel ?? "Other paper";
+  if (c.missingState === "MISSING" && c.missingRemarks) return `${name} is already marked Missing by the Loan Associate, with remarks. It goes through as an exception: return the file for another paper or reason.`;
+  if (!isIncluded({ required: c.required, checked: c.checked, missing: c.missingState, included: c.includedInFile })) return `${name} is optional and not part of this file. It cannot be a reason to return the file.`;
+  return null;
+}
+export const returnablePapers = <C extends ReturnableCheck>(checks: C[]) => checks.filter((c) => !returnRefusal(c));
 
 /**
  * Return to LA: papers needed. After accepting, the processor sends the job back to the Loan
@@ -59,6 +74,7 @@ export async function returnToLa(u: CurrentUser, assignmentId: string, raw: Retu
     const checks = await tx.checklistCheck.findMany({ where: { transactionId: a.transactionId }, include: { rule: true } });
     const named = [...new Set(d.checkIds)].map((id) => checks.find((c) => c.id === id));
     if (named.some((c) => !c)) throw new UserError("Pick papers of this transaction only.", "checkIds");
+    for (const c of named) { const why = returnRefusal(c!); if (why) throw new UserError(why, "checkIds"); }
     if (NEEDS_PAPERS.includes(reason.code) && named.length === 0 && !d.otherPaper) throw new UserError("Pick the papers that are missing or wrong.", "checkIds");
 
     // Cash released for this job stays on the processor's advance as "Cash to settle": the return is
@@ -137,26 +153,26 @@ export async function returnToLa(u: CurrentUser, assignmentId: string, raw: Retu
 /**
  * At Accept, the processor has fewer papers than were ticked: accept the papers that arrived (one
  * "Received by the processor" movement each), note the others as not received, then the existing
- * Return to LA with those papers named. Labels must be confirmed on the papers received.
+ * Return to LA with those papers named.
  */
-export async function acceptWithMissing(u: CurrentUser, assignmentId: string, labels: boolean, raw: ReturnInput, now: Date = new Date()) {
+export async function acceptWithMissing(u: CurrentUser, assignmentId: string, raw: ReturnInput, now: Date = new Date()) {
   if (!can(u, PERMISSIONS.JOBS_RETURN_TO_LA)) throw new UserError("Your role does not allow returning jobs to the Loan Associate.");
   const p = returnSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
-  if (!labels) throw new UserError("Tick \"Labels are on the papers I received\".", "labels");
   const missing = new Set(p.data.checkIds);
   if (!missing.size && !p.data.otherPaper) throw new UserError("Pick the papers that are missing.", "checkIds");
   await withJob(u, assignmentId, async (tx, a) => {
     const reason = await tx.returnReason.findUnique({ where: { id: p.data.reasonId } });
     if (!reason || !reason.active) throw new UserError("Pick a reason.", "reasonId");
-    const checks = await tx.checklistCheck.findMany({ where: { transactionId: a.transactionId }, select: { id: true } });
+    const checks = await tx.checklistCheck.findMany({ where: { transactionId: a.transactionId }, include: { rule: true } });
     if ([...missing].some((id) => !checks.some((c) => c.id === id))) throw new UserError("Pick papers of this transaction only.", "checkIds");
+    for (const id of missing) { const why = returnRefusal(checks.find((c) => c.id === id)!); if (why) throw new UserError(why, "checkIds"); }
     const notHere = a.transaction.documents.filter((d) => d.checkId && missing.has(d.checkId) && d.stage === "IN_TRANSIT");
     // Check the hand-over before accepting, so a refusal leaves the job exactly as it was.
     const handed = new Set(p.data.handedOver);
     const received = a.transaction.documents.filter((d) => (d.stage === "IN_TRANSIT" && !notHere.includes(d)) || d.stage === "WITH_DP");
     if (received.some((d) => !handed.has(d.id) && !(d.checkId && handed.has(d.checkId)))) throw new UserError("Tick every paper you hand over to the Loan Associate.", "handedOver");
-    await acceptCore(tx, { ...a, transaction: { ...a.transaction, documents: a.transaction.documents.filter((d) => !notHere.includes(d)) } }, whoOf(u), true);
+    await acceptCore(tx, { ...a, transaction: { ...a.transaction, documents: a.transaction.documents.filter((d) => !notHere.includes(d)) } }, whoOf(u));
     await moveDocs(tx, notHere, { stage: "AT_BRANCH", custodian: null, role: "LA", userId: null, location: `${a.loan.branch.name} branch`, action: "NOT_RECEIVED_BY_DP" }, { by: { id: u.id, label: u.name } });
   });
   return returnToLa(u, assignmentId, raw, now);

@@ -111,7 +111,6 @@ test("Journey v2: the strip groups, Story is the default and says the reason onc
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: notary.id }, orderBy: { createdAt: "desc" } });
   await signInAs(page, "dp");
   await page.goto(`/jobs/${job.id}`);
-  await page.getByLabel("Labels are on all papers").check();
   await page.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.locator("[data-stages]")).toBeVisible();
   await page.getByRole("button", { name: "Put on hold" }).click();
@@ -141,9 +140,12 @@ test("Journey v2: the strip groups, Story is the default and says the reason onc
   await page.locator('[data-do-now] [data-step="confirm"] [data-step-action]').click();
   await expect(page.locator('[data-do-now] [data-step="confirm"]')).toHaveAttribute("data-step-state", "done");
 
-  // Test data: labels printed yesterday. Each day is a date row ("Yesterday · Mon, Nov 9, 2026"); its events show their time.
+  // Test data: an LTO change yesterday. Each day is a date row ("Yesterday · Mon, Nov 9, 2026"); its events show their time.
+  // An old "labels printed" row (labels were removed, 11 November 2026) stays in the audit log but is not shown.
   const loanRow = await db.loan.findUniqueOrThrow({ where: { pn: PN } });
-  await db.auditLog.create({ data: { at: new Date(Date.now() - 86_400_000), actorLabel: "Test Loan Associate", mode: "MANUAL", action: "labels_printed", entityType: "Loan", entityId: loanRow.id, loanId: loanRow.id, pn: PN, journeyStep: "3.2", summary: "Printed 3 labels", after: { documentIds: ["a", "b", "c"] } } });
+  const yday = new Date(Date.now() - 86_400_000);
+  await db.auditLog.create({ data: { at: yday, actorLabel: "Test Loan Associate", mode: "MANUAL", action: "lto_office_changed", entityType: "Loan", entityId: loanRow.id, loanId: loanRow.id, pn: PN, summary: "Test Loan Associate changed the LTO office to LTO Antipolo" } });
+  await db.auditLog.create({ data: { at: yday, actorLabel: "Test Loan Associate", mode: "MANUAL", action: "labels_printed", entityType: "Loan", entityId: loanRow.id, loanId: loanRow.id, pn: PN, journeyStep: "3.2", summary: "Printed 3 labels", after: { documentIds: ["a", "b", "c"] } } });
 
   // Story: newest first, the return flagged with its word, the reason once.
   await page.goto(`/loans/${PN}?tab=journey`);
@@ -151,7 +153,8 @@ test("Journey v2: the strip groups, Story is the default and says the reason onc
   await expect(page.locator("[data-story-heading]").first()).toHaveText(new RegExp(`^Today · ${DATE.source}`));
   const yesterday = page.locator("[data-story-day]").filter({ has: page.getByRole("heading", { name: /^Yesterday · / }) });
   await expect(yesterday.locator("[data-story-heading]")).toHaveText(new RegExp(`^Yesterday · ${DATE.source}`));
-  await expect(yesterday.locator("[data-story-line]")).toContainText(["Test Loan Associate printed 3 labels"]);
+  await expect(yesterday.locator("[data-story-line]")).toContainText(["Test Loan Associate changed the LTO office to LTO Antipolo"]);
+  await expect(page.locator("[data-story]")).not.toContainText(/label/i);
   for (const t of await page.locator("[data-story-time]").allInnerTexts()) expect(t).toMatch(/^\d{1,2}:\d{2} (AM|PM)$/);
   const story = page.locator("[data-story]");
   const ret1 = story.locator('[data-story-line][data-flag="return"]');

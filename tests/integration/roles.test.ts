@@ -10,7 +10,8 @@ import { effectivePermissions } from "@/lib/auth/access";
 import { testProvider } from "@/lib/auth/providers";
 import { accessMatrixCsv, duplicateRole, resetRoleToDefault, saveRole, setRoleActive } from "@/lib/services/roles";
 import { lookupPn, openLoanFile } from "@/lib/services/loan-file";
-import { assignToDp, markLabelsPrinted, saveChecklist } from "@/lib/services/workflow";
+import { assignToDp, saveChecklist } from "@/lib/services/workflow";
+import { markPaperMissing } from "@/lib/services/papers";
 import { saveSettingsRow, saveUser } from "@/lib/services/admin";
 import { saveUserAccess } from "@/lib/services/access";
 import { setRowActive } from "@/lib/services/settings-status";
@@ -73,8 +74,8 @@ describe("Seeded roles after the migration", () => {
 
 describe("A custom role grants and denies on the server", () => {
   it("five actions across areas", async () => {
-    const { user } = await customUser("Z Angono Reviewer", [P.LOANS_VIEW, P.LOANS_SEARCH, P.CHECKLIST_TICK, P.LABELS_PRINT]);
-    expect(user.permissions.has(P.LABELS_PRINT)).toBe(true);
+    const { user } = await customUser("Z Angono Reviewer", [P.LOANS_VIEW, P.LOANS_SEARCH, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING]);
+    expect(user.permissions.has(P.PAPERS_MARK_MISSING)).toBe(true);
 
     // Allowed: find a loan (MyLoans preview).
     expect((await lookupPn(user, "GD1012026901001")).kind).toBe("preview");
@@ -87,9 +88,9 @@ describe("A custom role grants and denies on the server", () => {
     // Allowed: tick papers.
     await saveChecklist(user, { transactionId: notary.id, checkedIds: [notary.checks[0].id], newOthers: [] });
     expect((await prisma.checklistCheck.findUniqueOrThrow({ where: { id: notary.checks[0].id } })).checked).toBe(true);
-    // Allowed: print labels.
-    const doc = await prisma.documentItem.findFirstOrThrow({ where: { checkId: notary.checks[0].id } });
-    await markLabelsPrinted(user, [doc.id]);
+    // Allowed: mark a paper Missing.
+    await markPaperMissing(user, { checkId: notary.checks[1].id });
+    expect((await prisma.checklistCheck.findUniqueOrThrow({ where: { id: notary.checks[1].id } })).missingState).toBe("MISSING");
     // Refused: send to a processor.
     const dp = await prisma.user.findFirstOrThrow({ where: { email: "dp.joy@gdfi.ph" } });
     await refused(assignToDp(user, { transactionId: notary.id, dpBranchId: loan.branchId, dpUserId: dp.id } as never), /does not allow this step/);
@@ -203,22 +204,22 @@ describe("Duplicate, rename, inactive, reset, audit, matrix", () => {
   it("one audit row per change, with the exact permissions added and removed; reset to default", async () => {
     const roleId = await saveRole(admin, null, { name: "Z Angono Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.TXN_ADD] });
     const before = await prisma.auditLog.count({ where: { entityId: roleId } });
-    await saveRole(admin, roleId, { name: "Z Angono Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.LABELS_PRINT] });
+    await saveRole(admin, roleId, { name: "Z Angono Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.TXN_COMPLETE] });
     const rows = await prisma.auditLog.findMany({ where: { entityId: roleId }, orderBy: { at: "asc" } });
     expect(rows.length).toBe(before + 1);
-    expect(rows.at(-1)!.summary).toBe("Role Z Angono Checker: added Print labels; removed Add a transaction");
+    expect(rows.at(-1)!.summary).toBe("Role Z Angono Checker: added Mark as done; removed Add a transaction");
     expect(rows.at(-1)!.actorId).toBe(admin.id);
     // Saving with no change writes nothing.
-    await saveRole(admin, roleId, { name: "Z Angono Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.LABELS_PRINT] });
+    await saveRole(admin, roleId, { name: "Z Angono Checker", description: "", branchAccess: "ASSIGNED", permissions: [P.LOANS_VIEW, P.CHECKLIST_TICK, P.TXN_COMPLETE] });
     expect(await prisma.auditLog.count({ where: { entityId: roleId } })).toBe(before + 1);
 
     const laRole = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
-    await saveRole(admin, laRole.id, { name: "Loan Associate", description: laRole.description, branchAccess: "ASSIGNED", permissions: ROLE_DEFAULTS.LA.permissions.filter((k) => k !== P.LABELS_PRINT) });
-    expect((await prisma.role.findUniqueOrThrow({ where: { id: laRole.id } })).permissions).not.toContain(P.LABELS_PRINT);
+    await saveRole(admin, laRole.id, { name: "Loan Associate", description: laRole.description, branchAccess: "ASSIGNED", permissions: ROLE_DEFAULTS.LA.permissions.filter((k) => k !== P.TXN_COMPLETE) });
+    expect((await prisma.role.findUniqueOrThrow({ where: { id: laRole.id } })).permissions).not.toContain(P.TXN_COMPLETE);
     await resetRoleToDefault(admin, laRole.id);
     expect([...(await prisma.role.findUniqueOrThrow({ where: { id: laRole.id } })).permissions].sort()).toEqual([...ROLE_DEFAULTS.LA.permissions].sort());
     const last = await prisma.auditLog.findFirstOrThrow({ where: { entityId: laRole.id }, orderBy: { at: "desc" } });
-    expect(last.summary).toBe("Role Loan Associate reset to default: added Print labels");
+    expect(last.summary).toBe("Role Loan Associate reset to default: added Mark as done");
   });
 
   it("the access matrix matches the data", async () => {

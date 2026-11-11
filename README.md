@@ -2,7 +2,7 @@
 
 The Loan Document Management System (DMS) of **Global Dominion Financing, Inc.** tracks the physical and digital loan documents of every released loan, from release to the end of archival retention.
 
-Built now: **Phase 1** (search PN and open the Loan File), **Phase 2** (automatic classification and transactions) and **Phase 3** (checklist, Document IDs and QR labels, EDST, cash-advance request, Assign to DP, notifications) for the **Loan Associate** and **Admin** test accounts. Phases 4 to 10 are modelled in the database and shown on each Loan File's **Journey** tab; an Admin-only **test simulator** pushes a loan through Phases 3.5 to 6 for demonstration.
+Built now: **Phase 1** (search PN and open the Loan File), **Phase 2** (automatic classification and transactions) and **Phase 3** (checklist, Document IDs, EDST, cash-advance request, Assign to DP, notifications) for the **Loan Associate** and **Admin** test accounts. Phases 4 to 10 are modelled in the database and shown on each Loan File's **Journey** tab; an Admin-only **test simulator** pushes a loan through Phases 3.5 to 6 for demonstration.
 
 Stack: Next.js 16 (App Router, TypeScript), Tailwind CSS 4, Prisma 6 + PostgreSQL 16, Zod, Vitest, Playwright.
 
@@ -33,8 +33,9 @@ If port 5432 is already used on your PC (for example a native PostgreSQL service
 |---|---|
 | `npm run db:up` / `db:down` | Start / stop the Docker database (data is kept in a named volume) |
 | `npm run db:tools` | Also start Adminer on http://localhost:8081 (compose profile `tools`) |
-| `npm run db:migrate` | `prisma migrate dev` (local development) |
-| `npm run db:deploy` | `prisma migrate deploy` (Supabase / any shared database) |
+| `npm run db:migrate` | Same as `db:deploy` (`prisma migrate dev` is never used here; see CLAUDE.md) |
+| `npm run db:deploy` | `migrate:check`, then `prisma migrate deploy` (local, Supabase or any shared database), then the check again |
+| `npm run migrate:check` | Fails on a stray or misnumbered migration folder, or a missing loan-search index |
 | `npm run db:seed` | Reference data + test users (idempotent) |
 | `npm run db:seed:reference` | Reference data only (never test users) |
 | `npm run db:reset` | Drop and recreate the local database, then seed. **Destroys local data.** Refused unless the database name contains `test` or `ALLOW_DESTRUCTIVE=1` is set (see `docs/ENVIRONMENT.md`). |

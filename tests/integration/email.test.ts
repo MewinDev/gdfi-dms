@@ -256,7 +256,7 @@ describe("Reminders", () => {
     const office = await prisma.ltoOffice.findFirstOrThrow({ where: { active: true }, orderBy: { code: "asc" } });
     await assignToDp(la, { transactionId: notary.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: office.id, fundsNeeded: "YES", fundsKinds: ["TRANSPORT"], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null });
     const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: notary.id } });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const adv = await requestAdvance(dp, { lines: [{ transactionId: notary.id, kind: "TRANSPORT", cents: 50000 }] });
     // Asked on Friday Nov 6, 2026 (PHT).
     await prisma.cashAdvance.update({ where: { id: adv.id }, data: { createdAt: new Date("2026-11-06T09:00:00+08:00") } });

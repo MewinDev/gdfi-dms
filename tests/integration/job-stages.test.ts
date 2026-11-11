@@ -163,7 +163,7 @@ describe("Settings > Processing stages", () => {
 describe("Stage rules on a job", () => {
   it("order, required evidence on the server, system times; Complete only when every stage is done", async () => {
     const { job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     expect((await rows(job.id)).map((r) => r.name)).toEqual(["Notarization", "LTO drop off", "LTO pickup", "Check and verify"]);
     await expect(startStage(dp, job.id, "LTO-DROP")).rejects.toThrow("Stages run in order. Finish Notarization first.");
     await expect(startStage(la, job.id, "NOTARIZATION")).rejects.toThrow(/does not allow working on jobs/);
@@ -186,7 +186,7 @@ describe("Stage rules on a job", () => {
 
   it("At the LTO stays blocked until funded; attempts, holds and problems attach to the current stage", async () => {
     const { job, txn } = await send("MORTGAGE", "YES", ["LTO_FEE"]);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const drop = await current(job.id);
     expect(drop.kind).toBe("LTO_DROP");
     await expect(startStage(dp, job.id, drop.code)).rejects.toThrow("This job needs funds. Request a cash advance first.");
@@ -209,7 +209,7 @@ describe("Stage rules on a job", () => {
 
   it("the transaction clock is the same with and without stages and holds (it never pauses)", async () => {
     const { job, txn } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const [tats, holidays] = await Promise.all([getTatMap(), getHolidaySet()]);
     const load = () => prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id }, include: { type: true, problems: { include: { reason: true } }, holds: { include: { reason: true } }, advanceLines: { include: { advance: true } } } });
     const at = new Date(Date.now() + 3 * 86_400_000);
@@ -223,10 +223,10 @@ describe("Stage rules on a job", () => {
 
   it("Needs LTO processing switched off: jobs not yet started lose the LTO stages; started jobs keep theirs", async () => {
     const a = await send("NOTARY");
-    await acceptJob(dp, a.job.id, true);
+    await acceptJob(dp, a.job.id);
     await startStage(dp, a.job.id, "NOTARIZATION"); // started: its stages are copied
     const b = await send("PPSR");
-    await acceptJob(dp, b.job.id, true);
+    await acceptJob(dp, b.job.id);
     await prisma.transactionType.updateMany({ where: { code: { in: ["NOTARY", "PPSR"] } }, data: { needsLto: false } });
     expect((await rows(a.job.id)).map((r) => r.kind)).toEqual(["OWN", "LTO_DROP", "LTO_PICKUP", "VERIFY"]);
     expect((await rows(b.job.id)).map((r) => r.kind)).toEqual(["OWN", "VERIFY"]);
@@ -234,7 +234,7 @@ describe("Stage rules on a job", () => {
 
   it("Return to LA and Pasuyo work at any stage; Pasuyo continues from the current stage", async () => {
     const { job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     await upTo(job.id, "LTO_DROP");
     await startStage(dp, job.id, "LTO-DROP");
     await passJob(dp, job.id, { toUserId: dp2.id, reason: "Out of town" });
@@ -253,7 +253,7 @@ describe("Stage rules on a job", () => {
 describe("Check and verify", () => {
   it("every paper ticked (Returned to DP), Something is missing opens a Problem on the stage, then Verified by DP", async () => {
     const { job, txn } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const v = await upTo(job.id, "VERIFY");
     await startStage(dp, job.id, v.code);
     const vid = (await current(job.id)).id!;
@@ -279,10 +279,10 @@ describe("Check and verify", () => {
   it("is the last stage with and without LTO; Making it inactive needs a confirmation (the effect text)", async () => {
     await prisma.transactionType.update({ where: { code: "NOTARY" }, data: { needsLto: false } });
     const { job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     expect((await rows(job.id)).map((r) => r.kind)).toEqual(["OWN", "VERIFY"]);
     const m = await send("MORTGAGE");
-    await acceptJob(dp, m.job.id, true);
+    await acceptJob(dp, m.job.id);
     expect((await rows(m.job.id)).map((r) => r.kind)).toEqual(["LTO_DROP", "LTO_PICKUP", "VERIFY"]);
   });
 });
@@ -290,7 +290,7 @@ describe("Check and verify", () => {
 describe("Forward to branch (manual, never automatic) and the receiving LA", () => {
   async function verified(code = "NOTARY") {
     const s = await send(code);
-    await acceptJob(dp, s.job.id, true);
+    await acceptJob(dp, s.job.id);
     return s;
   }
 
@@ -368,7 +368,7 @@ describe("Forward to branch (manual, never automatic) and the receiving LA", () 
     let advanceId = "";
     for (const code of ["NOTARY", "PPSR", "MORTGAGE"]) {
       const s = await send(code, code === "MORTGAGE" ? "YES" : "NO", code === "MORTGAGE" ? ["LTO_FEE"] : []);
-      await acceptJob(dp, s.job.id, true);
+      await acceptJob(dp, s.job.id);
       if (code === "MORTGAGE") {
         const r = await requestAdvance(dp, { lines: [{ transactionId: s.txn.id, kind: "LTO_FEE", cents: 100000, overMaxReason: "Integration test" }] });
         await decideAdvance(fin, r.id, { approve: true });
@@ -394,9 +394,8 @@ describe("Gaps closed", () => {
     const docs = await prisma.documentItem.findMany({ where: { transactionId: txn.id, documentId: { not: null } } });
     const missing = docs[0];
     const reason = await prisma.returnReason.findFirstOrThrow({ where: { code: "MISSING" } });
-    await expect(acceptWithMissing(dp, job.id, false, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope" })).rejects.toThrow(/Labels are on the papers I received/);
-    await expect(acceptWithMissing(dp, job.id, true, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope" })).rejects.toThrow("Tick every paper you hand over to the Loan Associate.");
-    await acceptWithMissing(dp, job.id, true, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope", handedOver: await allPapers(txn.id) });
+    await expect(acceptWithMissing(dp, job.id, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope" })).rejects.toThrow("Tick every paper you hand over to the Loan Associate.");
+    await acceptWithMissing(dp, job.id, { reasonId: reason.id, checkIds: [missing.checkId!], note: "Not in the envelope", handedOver: await allPapers(txn.id) });
     const acks = await prisma.documentMovement.findMany({ where: { documentItem: { transactionId: txn.id }, action: "ACKNOWLEDGED_BY_DP" } });
     expect(acks).toHaveLength(docs.length - 1);
     expect(acks.every((m) => m.actorLabel === "Test Document Processor" && m.acknowledgedAt)).toBe(true);
@@ -407,7 +406,7 @@ describe("Gaps closed", () => {
 
   it("DP lists: On hold shows with its chip; a returned job leaves the DP's list; the TAT report filters by stage", async () => {
     const a = await send("NOTARY");
-    await acceptJob(dp, a.job.id, true);
+    await acceptJob(dp, a.job.id);
     await startStage(dp, a.job.id, "NOTARIZATION");
     const hr = await prisma.holdReason.findFirstOrThrow({ where: { active: true } });
     await raiseHold(dp, { transactionId: a.txn.id, reasonId: hr.id, note: "Waiting on the LTO" });
@@ -415,7 +414,7 @@ describe("Gaps closed", () => {
     expect(mine.find((r) => r.id === a.job.id)).toMatchObject({ hold: expect.objectContaining({ reason: hr.name }), stage: "Notarization" });
     const b = await send("PPSR");
     const reason = await prisma.returnReason.findFirstOrThrow({ where: { code: "OTHER" } });
-    await acceptJob(dp, b.job.id, true);
+    await acceptJob(dp, b.job.id);
     await returnToLa(dp, b.job.id, { reasonId: reason.id, note: "Wrong branch", handedOver: await allPapers(b.txn.id) });
     // Returned to the LA who sent it: no longer in any DP list, tile or count.
     expect((await myJobs(dp)).find((r) => r.id === b.job.id)).toBeUndefined();
@@ -426,7 +425,7 @@ describe("Gaps closed", () => {
 
   it("the Journey shows the stage rows with what was recorded in each; the simulator uses the same stage functions", async () => {
     const { job, txn } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     await startStage(dp, job.id, "NOTARIZATION");
     const reason = await prisma.problemReason.findFirstOrThrow({ where: { code: "OTHER" } });
     await raiseProblem(dp, { transactionId: txn.id, reasonId: reason.id, note: "Notary out" });
@@ -449,7 +448,7 @@ describe("Gaps closed", () => {
 
   it("migration: a job completed before stages has every stage Done from its stored references", async () => {
     const { job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     // As a job completed with the old Complete step looks (no stage rows, references stored).
     await prisma.dpAssignment.update({ where: { id: job.id }, data: { processing: { notary: { name: "Atty. Old", docNo: "1", pageNo: "2", bookNo: "3", series: "2025" }, processedAt: new Date().toISOString() } } });
     const sql = (await import("node:fs")).readFileSync("prisma/migrations/20261117090000_job_stages/migration.sql", "utf8");

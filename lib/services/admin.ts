@@ -122,7 +122,7 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
 // Settings (reference data). Every change is audited.
 // ---------------------------------------------------------------------------
 
-export type SettingsKind = "branch" | "transactionType" | "documentType" | "checklistRule" | "tat" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage" | "fundsType" | "expenseKind";
+export type SettingsKind = "branch" | "transactionType" | "documentType" | "checklistRule" | "tat" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "missingReason" | "processingStage" | "fundsType" | "expenseKind";
 
 /** An optional number (blank means none), within limits. */
 const optNumber = (label: string, min: number, max: number) => z.preprocess(
@@ -209,6 +209,7 @@ export const SETTINGS_SCHEMAS = {
   }),
   /** Return reasons (the processor returns an accepted job to the LA for papers). */
   returnReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
+  missingReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
   /** Processing stages: the ordered stages of a transaction type (Settings > Processing stages). */
   processingStage: z.object({
     typeId: text("Transaction type"), name: text("Name"), code: codeOf("Short code", 2, 20, true), sortOrder: int("Order", 0, 99),
@@ -364,6 +365,7 @@ export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id:
     problemReason: tx.problemReason as unknown as Delegate,
     holdReason: tx.holdReason as unknown as Delegate,
     returnReason: tx.returnReason as unknown as Delegate,
+    missingReason: tx.missingPaperReason as unknown as Delegate,
     holiday: tx.holidayCalendar as unknown as Delegate,
     processingStage: tx.processingStage as unknown as Delegate,
     fundsType: tx.fundsType as unknown as Delegate,

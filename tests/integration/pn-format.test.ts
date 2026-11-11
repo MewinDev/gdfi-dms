@@ -2,7 +2,7 @@
  * The real PN format and the loan's branch: Find loan refuses a wrong PN in plain words without calling
  * MyLoans, a pasted variant works, the PN format setting changes the rules, an unknown branch code in a
  * PN goes to the Branch review without blocking the lookup, and a loan moved to another branch in
- * MyLoans changes only when Admin applies it ("Opened at Antipolo (101), now at Angono (165)").
+ * MyLoans changes only when Admin applies it ("Opened at Antipolo, now at Angono": names only, no codes).
  * Test database (gdfi_dms_test), sample MyLoans.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -89,7 +89,7 @@ describe("Find loan and the PN check", () => {
     await openLoanFile(la, { pn: rec.pn }); // opens at Antipolo, the MyLoans branch
     const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: rec.pn }, include: { branch: true } });
     expect(loan.branch.code).toBe("101");
-    expect((await openedAt(loan.pn, loan.branch))?.text).toBe("Opened at branch code 777 (not a branch here yet), now at Antipolo (101)");
+    expect((await openedAt(loan.pn, loan.branch))?.text).toBe("Opened at branch code 777 (not a branch here yet), now at Antipolo");
     // Seen again: still one open item.
     await lookupPn(la, rec.pn);
     expect(await prisma.branchReview.count({ where: { kind: "UNKNOWN_CODE", code: "777", state: "OPEN" } })).toBe(1);
@@ -100,13 +100,13 @@ describe("A loan's branch changes in MyLoans (material change)", () => {
   it("shows old and new branch and the impact; the loan's branch changes only when Admin applies it", async () => {
     await openLoanFile(la, { pn: ANTIPOLO });
     const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: ANTIPOLO }, include: { branch: true } });
-    expect((await openedAt(loan.pn, loan.branch))?.text).toBe("Opened at Antipolo (101)");
+    expect((await openedAt(loan.pn, loan.branch))?.text).toBe("Opened at Antipolo");
     await simulateSourceChange(admin, loan.id, "branch");
     const review = await reviewFor(admin, loan.id);
     expect(review).toMatchObject({ category: "MATERIAL" });
     expect(review!.rows.map((r) => r.label)).toEqual(expect.arrayContaining(["Branch", "Branch code"]));
     const to = await prisma.branch.findUniqueOrThrow({ where: { code: String(review!.rows.find((r) => r.label === "Branch code")!.now) } });
-    expect(review!.branchMove).toMatchObject({ from: "Antipolo (101)", to: `${to.name} (${to.code})`, known: true, openedAt: "Opened at Antipolo (101)" });
+    expect(review!.branchMove).toMatchObject({ from: "Antipolo", to: to.name, known: true, openedAt: "Opened at Antipolo" });
     expect(review!.branchMove!.seeBefore).toBeGreaterThan(0);
     // Not applied yet: still Antipolo.
     expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id }, include: { branch: true } })).branch.code).toBe("101");
@@ -114,8 +114,8 @@ describe("A loan's branch changes in MyLoans (material change)", () => {
     const after = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id }, include: { branch: true } });
     expect(after.branch.code).toBe(to.code);
     expect(after.pn).toBe(ANTIPOLO); // the PN never changes
-    expect((await openedAt(after.pn, after.branch))?.text).toBe(`Opened at Antipolo (101), now at ${to.name} (${to.code})`);
+    expect((await openedAt(after.pn, after.branch))?.text).toBe(`Opened at Antipolo, now at ${to.name}`);
     const audit = await prisma.auditLog.findFirstOrThrow({ where: { loanId: loan.id, action: "source_change_applied" } });
-    expect(audit.summary).toContain(`the loan's branch is now ${to.name} (${to.code}) (was Antipolo (101))`);
+    expect(audit.summary).toContain(`the loan's branch is now ${to.name} (was Antipolo)`);
   });
 });

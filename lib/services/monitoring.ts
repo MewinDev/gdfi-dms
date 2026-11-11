@@ -45,9 +45,11 @@ export interface MonitorQuery {
   open: boolean;
   /** Collapsed groups (keys). */
   collapsed: string[];
+  /** "Has missing papers": the loan files with a paper marked Missing (as of now), instead of the tab. */
+  missing: boolean;
 }
 
-export type MonitorSearch = Partial<Record<"tab" | "view" | "range" | "from" | "to" | "area" | "branch" | "type" | "dp" | "office" | "open" | "hide", string>>;
+export type MonitorSearch = Partial<Record<"tab" | "view" | "range" | "from" | "to" | "area" | "branch" | "type" | "dp" | "office" | "open" | "hide" | "missing", string>>;
 
 export function parseMonitorQuery(sp: MonitorSearch, user: CurrentUser, today: string = businessDate(new Date())): MonitorQuery {
   const canDp = can(user, PERMISSIONS.MONITOR_DP), canLto = can(user, PERMISSIONS.MONITOR_LTO);
@@ -56,6 +58,7 @@ export function parseMonitorQuery(sp: MonitorSearch, user: CurrentUser, today: s
     tab, view: sp.view === "day" ? "day" : "totals", range: parseRange(sp, today),
     branchId: sp.branch || null, areaId: sp.area || null, typeCode: sp.type || null, dpId: sp.dp || null, officeId: sp.office || null, open: sp.open === "1",
     collapsed: (sp.hide ?? "").split(",").filter(Boolean),
+    missing: sp.missing === "1",
   };
 }
 
@@ -66,6 +69,7 @@ export function monitorHref(q: MonitorQuery, change: Partial<Record<keyof Monito
     from: q.range.preset === "custom" ? q.range.from : undefined, to: q.range.preset === "custom" ? q.range.to : undefined,
     area: q.areaId ?? undefined, branch: q.branchId ?? undefined, type: q.typeCode ?? undefined, dp: q.dpId ?? undefined, office: q.officeId ?? undefined, open: q.open ? "1" : undefined,
     hide: q.collapsed.length ? q.collapsed.join(",") : undefined,
+    missing: q.missing ? "1" : undefined,
   };
   const merged = { ...base, ...change } as Record<string, string | null | undefined>;
   const qs = new URLSearchParams(Object.entries(merged).filter(([, v]) => !!v) as [string, string][]).toString();
@@ -192,9 +196,9 @@ export async function defaultCapacity(): Promise<number> {
   return Number.isFinite(v) && v >= AVAILABILITY.minCapacity ? Math.round(v) : AVAILABILITY.defaultCapacity;
 }
 
-/** A branch with its code and Area, for the groups, chips and filters ("Antipolo (101)"). */
+/** A branch with its code and Area, for the groups, chips and filters. On screen: the name only ("Antipolo"). */
 export interface BranchPlace { id: string; name: string; code: string | null; areaId: string | null; areaName: string | null; hidden: boolean }
-export const branchLabel = (b: { name: string; code: string | null }) => (b.code ? `${b.name} (${b.code})` : b.name);
+export const branchLabel = (b: { name: string; code: string | null }) => b.name;
 
 export async function branchPlaces(): Promise<Map<string, BranchPlace>> {
   const rows = await prisma.branch.findMany({ select: { id: true, name: true, code: true, areaId: true, hidden: true, area: { select: { name: true } } } });
@@ -207,7 +211,7 @@ export const NO_AREA = "Area needed";
 
 /**
  * Where a processor is grouped: their Area when all their branches share one, otherwise "Several areas"
- * (never twice); inside it the branch, or their branches together ("Angono (165) · Antipolo (101)").
+ * (never twice); inside it the branch, or their branches together ("Angono · Antipolo").
  */
 export function dpPlace(p: Pick<DpPerson, "branchIds">, places: Map<string, BranchPlace>): { area: string; areaId: string | null; branch: string; chips: string[] } {
   const mine = p.branchIds.map((id) => places.get(id)).filter((b): b is BranchPlace => !!b).sort((x, y) => x.name.localeCompare(y.name));
@@ -242,7 +246,7 @@ export interface DpRow {
   group: string;
   /** The branch group inside the Area ("Antipolo (101)", or the branches together). */
   branchGroup: string;
-  /** Every branch of the processor, as chips. */
+  /** Every branch of the processor, as chips (names only). */
   branches: string[];
   assigned: number;
   inProcess: number;
@@ -634,6 +638,55 @@ export async function filterOptions(user: CurrentUser) {
   const branches = rows.map((b) => ({ id: b.id, name: branchLabel(b), areaId: b.area?.id ?? null }));
   const areas = [...new Map(rows.filter((b) => b.area).map((b) => [b.area!.id, { id: b.area!.id, name: b.area!.name }])).values()].sort((a, z) => a.name.localeCompare(z.name));
   return { areas, branches, types, offices, dps: people.map((p) => ({ id: p.id, name: p.name })) };
+}
+
+// ---------------------------------------------------------------------------
+// Has missing papers (as of now; derived from the paper rows). No alerts and no emails: this list only.
+// ---------------------------------------------------------------------------
+
+export interface MissingPaperRow { label: string; txnName: string; reason: string | null; remarks: string | null; days: number; by: string | null }
+export interface MissingLoanRow { loanId: string; pn: string; href: string | null; borrower: string; branch: string; stage: string; papers: MissingPaperRow[] }
+
+/** Papers marked Missing on live transactions, in the person's branches and the Area, Branch and type filters. */
+function missingWhere(user: CurrentUser, q: Pick<MonitorQuery, "branchId" | "areaId" | "typeCode">): Prisma.ChecklistCheckWhereInput {
+  const ids: string[][] = [];
+  if (user.scopeBranchIds !== null) ids.push(user.scopeBranchIds);
+  if (q.branchId) ids.push([q.branchId]);
+  const branchIds = ids.length ? ids.reduce((a, b) => a.filter((x) => b.includes(x))) : null;
+  const loan: Prisma.LoanWhereInput = { ...(branchIds ? { branchId: { in: branchIds } } : {}), ...(q.areaId ? { branch: { areaId: q.areaId } } : {}) };
+  return { missingState: "MISSING", transaction: { status: { not: "CANCELLED" }, loan, ...(q.typeCode ? { type: { code: q.typeCode } } : {}) } };
+}
+
+const calendarDays = (from: string, to: string) => Math.max(0, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000));
+
+/** How many loan files have missing papers (the count beside the filter). */
+export async function missingPapersCount(user: CurrentUser, q: MonitorQuery): Promise<number> {
+  const rows = await prisma.checklistCheck.findMany({ where: missingWhere(user, q), select: { transaction: { select: { loanId: true } } } });
+  return new Set(rows.map((r) => r.transaction.loanId)).size;
+}
+
+/** The loan files with missing papers: which papers, and how many days each has been missing (calendar days, PHT). */
+export async function missingPapersMonitor(user: CurrentUser, q: MonitorQuery, now: Date = new Date()): Promise<MissingLoanRow[]> {
+  const today = businessDate(now);
+  const checks = await prisma.checklistCheck.findMany({
+    where: missingWhere(user, q),
+    orderBy: [{ missingAt: "asc" }],
+    include: { rule: true, missingReason: { select: { name: true } }, transaction: { include: { type: { select: { name: true, code: true } }, loan: { include: { branch: { select: { name: true } } } } } } },
+    take: 2000,
+  });
+  const out = new Map<string, MissingLoanRow>();
+  for (const c of checks) {
+    const l = c.transaction.loan;
+    const row = out.get(l.id) ?? { loanId: l.id, pn: l.pn, href: linkable(user, l.branchId) ? `/loans/${l.pn}?tab=todo&tx=${c.transaction.type.code}` : null, borrower: l.borrowerName, branch: l.branch.name, stage: l.stage, papers: [] };
+    row.papers.push({
+      label: c.rule?.label ?? c.otherLabel ?? "Other paper", txnName: c.transaction.type.name, reason: c.missingReason?.name ?? null,
+      remarks: c.missingRemarks, by: c.missingByLabel, days: calendarDays(c.missingAt ? businessDate(c.missingAt) : today, today),
+    });
+    out.set(l.id, row);
+  }
+  // The longest missing first.
+  const longest = (r: MissingLoanRow) => Math.max(...r.papers.map((p) => p.days));
+  return [...out.values()].sort((a, b) => longest(b) - longest(a) || a.pn.localeCompare(b.pn));
 }
 
 /** Runs some work and says how long it took (milliseconds). */

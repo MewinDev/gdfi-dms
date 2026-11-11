@@ -26,9 +26,10 @@ export async function loadJourney(user: CurrentUser, loan: LoanDetail, now: Date
   const [tats, holidays, audit, movements, advances] = await Promise.all([
     getTatMap(),
     getHolidaySet(),
-    prisma.auditLog.findMany({ where: { loanId: loan.id }, orderBy: { at: "asc" }, take: 2000 }),
+    // Labels were removed (11 November 2026): older label rows stay in the audit log and custody trail but are not shown.
+    prisma.auditLog.findMany({ where: { loanId: loan.id, action: { not: "labels_printed" } }, orderBy: { at: "asc" }, take: 2000 }),
     // Rows written in one database transaction can share a timestamp: the id (cuid) keeps their order.
-    prisma.documentMovement.findMany({ where: { documentItem: { loanId: loan.id } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+    prisma.documentMovement.findMany({ where: { documentItem: { loanId: loan.id }, action: { not: "LABEL_PRINTED" } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
     prisma.cashAdvance.findMany({
       where: { lines: { some: { transaction: { loanId: loan.id } } } },
       select: { id: true, number: true, status: true, createdAt: true, approvedAt: true, releasedAt: true, requestedCents: true, releasedCents: true, lines: { select: { transactionId: true, kind: true, otherDescription: true, amountSource: true, presetCents: true, locked: true, requestedCents: true, kindRef: { select: { name: true } } } } },
@@ -72,6 +73,15 @@ export function eventText(r: Audit): string {
     case "hold_ended": return who === "System" ? "The hold ended when the work was finished." : `Resumed · ${/\): (.+)$/.exec(s)?.[1] ?? NO_DETAILS} · by ${who}`;
     case "hold_transferred": return s.replace(/^.+?: /, "");
     case "hold_details_added": return `${who} added the hold details: ${String((r.details as { note?: unknown } | null)?.note ?? "")}`;
+    // Missing papers (lib/services/papers.ts): one event per marking, per remarks save or edit, per Received.
+    case "paper_marked_missing": return `${who} marked ${String((r.details as { paper?: unknown } | null)?.paper ?? "a paper")} Missing.`;
+    case "paper_missing_remarks": return `${who}: ${s}`;
+    case "paper_missing_remarks_edited": {
+      const a = (r.after as { reason?: string; remarks?: string } | null) ?? {};
+      return `${who} edited the remarks of the missing ${String((r.details as { paper?: unknown } | null)?.paper ?? "paper")}: ${a.reason ?? ""}. ${a.remarks ?? ""}`.trim();
+    }
+    case "paper_missing_cleared": return `${who} took back the Missing mark of ${String((r.details as { paper?: unknown } | null)?.paper ?? "a paper")}.`;
+    case "paper_received_late": return `${who}: ${s}.`;
     case "problem_raised": return `${who} raised a problem: ${s.replace(/^Problem on .+?: /, "")}.`;
     case "problem_resolved": return `${who} resolved the problem.`;
     case "problem_outside_control": return `${who} ${s.includes("no longer") ? "removed the tag" : "tagged the problem"} “Outside our control”.`;

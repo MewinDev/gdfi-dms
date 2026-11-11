@@ -10,7 +10,7 @@
  *    test-results/e2e-groups-summary.md (and prints it).
  *
  * Options: --size=4 (specs per group), --widths=1440,820,390, --only=funds (specs whose file name
- * contains it), --no-build (reuse the last build). Example: npm run e2e:groups -- --widths=390 --only=funds
+ * contains it; several with commas: --only=funds,journey), --no-build (reuse the last build). Example: npm run e2e:groups -- --widths=390 --only=funds
  */
 import { execSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -79,7 +79,7 @@ const failedOf = (suites: Suite[] = []): string[] => suites.flatMap((s) => [...(
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
-  const specs = readdirSync(path.join("tests", "e2e")).filter((f) => f.endsWith(".spec.ts") && (!only || f.includes(only))).sort();
+  const specs = readdirSync(path.join("tests", "e2e")).filter((f) => f.endsWith(".spec.ts") && (!only || only.split(",").some((o) => o && f.includes(o)))).sort();
   if (!specs.length) { console.error("No spec matches."); process.exit(1); }
   const groups: string[][] = [];
   for (let i = 0; i < specs.length; i += size) groups.push(specs.slice(i, i + size));

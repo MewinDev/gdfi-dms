@@ -6,7 +6,6 @@ import {
   overrideAction,
   recordEdstAction,
   refreshLoanAction,
-  requestMissingAction,
   resolveExceptionAction,
   saveChecklistAction,
   simulateAction,
@@ -113,22 +112,6 @@ function groupLines(items: ChecklistLine[]): [string | null, ChecklistLine[]][] 
   const map = new Map<string | null, ChecklistLine[]>();
   for (const i of items) map.set(i.group, [...(map.get(i.group) ?? []), i]);
   return [...map.entries()];
-}
-
-export function RequestMissingForm({ transactionId }: { transactionId: string }) {
-  const [state, action] = useActionState(requestMissingAction, null);
-  return (
-    <details className="rounded-lg border border-line p-3">
-      <summary className="text-sm font-semibold">Request missing documents</summary>
-      <form action={action} className="mt-2 space-y-2">
-        <input type="hidden" name="transactionId" value={transactionId} />
-        <label htmlFor={`note-${transactionId}`} className="label">Note to the borrower or branch (optional)</label>
-        <textarea id={`note-${transactionId}`} name="note" rows={2} maxLength={500} className="input" />
-        <FormMessage state={state} />
-        <SubmitButton className="btn-secondary">Raise Legal Docs Completion</SubmitButton>
-      </form>
-    </details>
-  );
 }
 
 // ---------------------------------------------------------------------------

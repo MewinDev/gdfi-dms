@@ -4,7 +4,7 @@ import { approveWithConfirm } from "./approve";
 import { completeAndForwardUi, workStagesUi } from "./helpers";
 
 /**
- * Full path with GD1652026901003: LA sends Mortgage flagged for an LTO fee → DP accepts (labels) →
+ * Full path with GD1652026901003: LA sends Mortgage flagged for an LTO fee → DP accepts →
  * "At the LTO" blocked → DP requests funds → Finance approves and releases → DP logs Not processed
  * (problem, red) → Resume → Done → Complete → Forward → LA receives (Phase 5).
  * Screenshots go to SHOTS_DIR when it is set.
@@ -85,7 +85,7 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   await expect(page.getByText(/Waiting for them to accept\./)).toBeVisible();
   await expect(page.getByRole("region", { name: "Mortgage: job" }).locator('[data-funds="NEEDED"]')).toBeVisible();
 
-  // DP: Home, review and accept (labels).
+  // DP: Home, review and accept.
   await signInAs(page, "dp");
   await expect(page.getByRole("heading", { name: "Do these next" })).toBeVisible();
   await shot(page, "dp-home");
@@ -93,8 +93,8 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: mortgage } });
   await page.goto(`/jobs/${job.id}`);
   const accept = page.getByRole("button", { name: "Accept" });
-  await expect(accept).toBeDisabled();
-  await page.getByLabel("Labels are on all papers").check();
+  // No label tick: Accept is ready at once.
+  await expect(accept).toBeEnabled();
   await accept.click();
   await expect(page.getByText("This job needs funds. Request a cash advance first.").first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Log today/ })).toBeDisabled();

@@ -36,7 +36,7 @@ export async function moveDocs(
   }
 }
 
-/** A movement that does not change the holder (label printed, at the LTO, passed to a second processor). */
+/** A movement that does not change the holder (at the LTO, passed to a second processor). */
 export async function noteDocs(
   tx: Tx,
   docs: { id: string; custodianLabel: string; location?: string }[],

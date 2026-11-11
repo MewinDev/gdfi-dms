@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { assignToDp, markLabelsPrinted, saveChecklist } from "@/lib/services/workflow";
+import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob, changeFundsFlag, completeJob, finishStage, forwardJob, logAttempt, raiseProblem, receivePackage, startStage, verifyPaper } from "@/lib/services/jobs";
 import { returnToLa } from "@/lib/services/return-to-la";
 import { addHoldDetails, raiseHold, resumeHold } from "@/lib/services/holds";
@@ -110,7 +110,7 @@ describe("Holds: who may raise and resume", () => {
 
   it("the DP on their own job; one audit row per action; the branch LA and Admin are told", async () => {
     const { txn, job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     // Once sent and accepted it is the DP's work, not the LA's.
     await expect(raiseHold(la, { transactionId: txn.id, reasonId: borrower, note: REMARKS })).rejects.toThrow("You can put on hold only work you do.");
     const auditBefore = await prisma.auditLog.count({ where: { action: { startsWith: "hold_" } } });
@@ -124,7 +124,7 @@ describe("Holds: who may raise and resume", () => {
 
   it("a held job is locked for the processor: every step is refused until the holder resumes; then it works", async () => {
     const { txn, job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const id = await raiseHold(dp, { transactionId: txn.id, reasonId: borrower, note: REMARKS });
     const h = await prisma.hold.findUniqueOrThrow({ where: { id } });
     const locked = `Locked: on hold by Test Document Processor since ${fmtDateTime(h.raisedAt)}. Only Test Document Processor can resume.`;
@@ -207,7 +207,7 @@ describe("Hold reasons in Settings", () => {
 describe("Journey: cash amounts stay on the server unless allowed", () => {
   it("Finance receives amounts; the LA and the DP never do; a role switch takes effect on the next request", async () => {
     const { txn, job } = await send("MORTGAGE", "YES", ["LTO_FEE"]);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 150000, overMaxReason: "Integration test" }] });
     await decideAdvance(fin, r.id, { approve: true });
     await releaseAdvance(fin, r.id, { ref: "VOUCHER-1" });
@@ -240,12 +240,11 @@ describe("Journey: cash amounts stay on the server unless allowed", () => {
 });
 
 describe("Custody trail: who and where at each hand-over", () => {
-  it("label printed, sent, DP accepted, at the LTO and back, forwarded, LA received; time held per holder", async () => {
+  it("sent, DP accepted, at the LTO and back, forwarded, LA received; time held per holder", async () => {
     const t0 = await tick("MORTGAGE");
     const docs = await prisma.documentItem.findMany({ where: { transactionId: t0.txn.id, documentId: { not: null } } });
-    await markLabelsPrinted(la, docs.map((d) => d.id));
     const { loan, job } = await send("MORTGAGE", "NO");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     await logAttempt(dp, job.id, { date: today(), result: "DONE" });
     await workStages(dp, job.id, { droppedAt: today(), pickedUpAt: today(), annotatedOrCr: "on" });
     await completeJob(dp, job.id, {});
@@ -253,10 +252,10 @@ describe("Custody trail: who and where at each hand-over", () => {
     await receivePackage(la, job.id, true, "");
     const moves = await prisma.documentMovement.findMany({ where: { documentItemId: docs[0].id }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
     expect(moves.map((m) => m.action)).toEqual([
-      "RECEIVED_AT_BRANCH", "LABEL_PRINTED", "DISPATCHED_TO_DP", "ACKNOWLEDGED_BY_DP", "AT_LTO", "RETURNED_FROM_LTO", "RETURNED_TO_DP", "VERIFIED_BY_DP", "FORWARDED_TO_BRANCH", "ACCEPTED_AT_BRANCH",
+      "RECEIVED_AT_BRANCH", "DISPATCHED_TO_DP", "ACKNOWLEDGED_BY_DP", "AT_LTO", "RETURNED_FROM_LTO", "RETURNED_TO_DP", "VERIFIED_BY_DP", "FORWARDED_TO_BRANCH", "ACCEPTED_AT_BRANCH",
     ]);
     expect(moves.every((m) => m.actorLabel)).toBe(true);
-    expect(moves.every((m) => m.location || m.action === "LABEL_PRINTED")).toBe(true);
+    expect(moves.every((m) => m.location)).toBe(true);
     expect(moves.find((m) => m.action === "ACKNOWLEDGED_BY_DP")).toMatchObject({ actorLabel: "Test Document Processor", acknowledgedById: dp.id });
     expect(moves.find((m) => m.action === "ACCEPTED_AT_BRANCH")).toMatchObject({ actorLabel: "Test Loan Associate", acknowledgedById: la.id });
 
@@ -285,30 +284,24 @@ describe("Admin simulator: events in the Journey are tagged Simulated", () => {
   });
 });
 
-describe("Missing paper: specific papers, closes when they are ticked", () => {
-  it("needs at least one unticked paper of this transaction; one audit row; ticking closes it; unticking does not reopen", async () => {
-    const { requestMissingDocuments } = await import("@/lib/services/workflow");
+describe("Missing paper: the LA marks it on its row (no request, nothing to close)", () => {
+  it("Mark Missing needs papers:mark_missing; it unticks the paper, one history row and one audit row; Send waits for the remarks", async () => {
+    const { markPaperMissing, saveMissingRemarks } = await import("@/lib/services/papers");
     const loan = await open();
     const notary = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code: "NOTARY" } }, include: { checks: { include: { rule: true } } } });
-    const ppsr = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code: "PPSR" } }, include: { checks: true } });
-    const [a, b] = notary.checks;
-    await saveChecklist(la, { transactionId: notary.id, checkedIds: [b.id], newOthers: [] });
-    await expect(requestMissingDocuments(la, { transactionId: notary.id, checkIds: [] })).rejects.toThrow("Pick at least one paper.");
-    await expect(requestMissingDocuments(la, { transactionId: notary.id, checkIds: [ppsr.checks[0].id] })).rejects.toThrow("Pick papers of this transaction only.");
-    await expect(requestMissingDocuments(la, { transactionId: notary.id, checkIds: [b.id] })).rejects.toThrow(/already ticked/);
-    await expect(requestMissingDocuments(dp, { transactionId: notary.id, checkIds: [a.id] })).rejects.toThrow();
-    const before = await prisma.auditLog.count({ where: { action: "exception_raised" } });
-    const papers = await requestMissingDocuments(la, { transactionId: notary.id, checkIds: [a.id], askedFrom: "BORROWER", note: "Bring it Monday" });
-    expect(papers).toEqual([a.rule!.label]);
-    expect(await prisma.auditLog.count({ where: { action: "exception_raised" } })).toBe(before + 1);
-    const ex = await prisma.loanException.findFirstOrThrow({ where: { transactionId: notary.id, type: "LEGAL_DOCS_COMPLETION" } });
-    expect(ex.details).toMatchObject({ checkIds: [a.id], askedFrom: "BORROWER" });
-    // Ticking another paper does not close it; ticking the requested one does.
-    await saveChecklist(la, { transactionId: notary.id, checkedIds: [b.id, notary.checks[2].id], newOthers: [] });
-    expect((await prisma.loanException.findUniqueOrThrow({ where: { id: ex.id } })).status).toBe("OPEN");
-    await saveChecklist(la, { transactionId: notary.id, checkedIds: [a.id, b.id], newOthers: [] });
-    expect((await prisma.loanException.findUniqueOrThrow({ where: { id: ex.id } })).status).toBe("RESOLVED");
-    await saveChecklist(la, { transactionId: notary.id, checkedIds: [b.id], newOthers: [] });
-    expect(await prisma.loanException.count({ where: { transactionId: notary.id, type: "LEGAL_DOCS_COMPLETION", status: "OPEN" } })).toBe(0);
+    const a = notary.checks.find((c) => c.required)!;
+    await saveChecklist(la, { transactionId: notary.id, checkedIds: notary.checks.map((c) => c.id), newOthers: [] });
+    await expect(markPaperMissing(dp, { checkId: a.id })).rejects.toThrow();
+    await markPaperMissing(la, { checkId: a.id });
+    const row = await prisma.checklistCheck.findUniqueOrThrow({ where: { id: a.id } });
+    expect(row).toMatchObject({ checked: false, missingState: "MISSING", missingRemarks: null });
+    expect(await prisma.paperEvent.count({ where: { checkId: a.id, kind: "MARKED_MISSING" } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: "paper_marked_missing", loanId: loan.id } })).toBe(1);
+    expect((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: notary.id } })).status).toBe("FOR_CHECKLIST");
+    const reason = await prisma.missingPaperReason.findFirstOrThrow({ where: { active: true } });
+    await saveMissingRemarks(la, { checkId: a.id, reasonId: reason.id, remarks: "Bring it Monday" });
+    expect((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: notary.id } })).status).toBe("READY");
+    // No missing-paper request (problem card) is made for the LA's marking.
+    expect(await prisma.loanException.count({ where: { transactionId: notary.id, type: "LEGAL_DOCS_COMPLETION" } })).toBe(0);
   });
 });

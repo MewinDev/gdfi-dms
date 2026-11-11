@@ -10,7 +10,8 @@
 
 ## Migrations
 
-- Until 19 November 2026, create every migration with `npx prisma migrate dev --create-only --name <name>`, then rename the new folder to the next number after the latest one (`20261119090001`, `20261119090002`, and so on) before applying it. Never leave Prisma's automatic date name. From 20 November 2026 this rule no longer applies.
+- Never use `prisma migrate dev` in this project (not even `--create-only`: twice it left a stray folder with Prisma's own date name, and `migrate deploy` then dropped the two loan-search trigram indexes). Create a migration only with `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`, save it in a folder named with the next number after the latest one (`20261119090011_<name>`, then `20261119090012_<name>`, and so on), and remove the trigram "drop index" lines (`Loan_pn_trgm_idx`, `Loan_borrowerName_trgm_idx`) from the SQL. Apply it with `npm run db:deploy`.
+- `npm run migrate:check` fails when a folder does not match `<14 digits>_<name>`, the numbers are not strictly increasing (the next number each time; no stray date-named folder), or the connected database is missing a loan-search trigram index. It runs before and after `migrate deploy` in `db:deploy`, `db:migrate`, `db:reset`, `db:create-test` and the kit rebuild. Rules: `lib/db/migration-check.ts` (tested in `migration-check.test.ts`).
 - After every migration, print the folder list of `prisma/migrations/` in order and the output of `npx prisma migrate status`, and check the new one is last. `lib/db/migrations.test.ts` checks the folder names and that the test database applied them in name order.
 - After every migration, also run `npm run db:create-test` (brings `gdfi_dms_test` up to date) and `npm run kit:rebuild` (the Manual Test Kit's baseline; until then `kit:reset` refuses with "The baseline is out of date").
 

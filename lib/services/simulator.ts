@@ -149,7 +149,7 @@ async function simulateInner(user: CurrentUser, input: { loanId: string; action:
       }
       case "DP_ACCEPT": {
         const a = await getAssignment();
-        await acceptCore(tx, a, as(a.dpUser.name, null), true);
+        await acceptCore(tx, a, as(a.dpUser.name, null));
         break;
       }
       case "DP_DECLINE": {

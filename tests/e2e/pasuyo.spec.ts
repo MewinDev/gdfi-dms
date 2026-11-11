@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice } from "./helpers";
+import { openFundsDetails, pickLtoOffice } from "./helpers";
 
 /**
  * Second processor (Pasuyo): the LA adds one at Send; the DP passes a job on, choosing what happens
@@ -90,7 +90,6 @@ test("DP: Pasuyo pop-up asks about held cash first; Hand the balance; Jobs shows
   // DP accepts; Finance has released ₱2,000.00 for it (test setup).
   await signInAs(page, "dp");
   await page.goto(`/jobs/${job.id}`);
-  await page.getByLabel("Labels are on all papers").check();
   await page.getByRole("button", { name: "Accept" }).click();
   await expect(page.getByRole("button", { name: /Log today/ })).toBeVisible();
   const dp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
@@ -137,7 +136,7 @@ test("DP: Pasuyo pop-up asks about held cash first; Hand the balance; Jobs shows
   const grace = page.locator("[data-advance]", { has: page.locator(".fl-asked", { hasText: "Grace Tan" }) });
   await expect(grace.locator("[data-amount]")).toHaveText("₱2,000.00");
   // Tablet: the notes sit in For, which opens with each row's Details.
-  if ((page.viewportSize()?.width ?? 0) === 820) for (const b of await page.getByRole("button", { name: /^Show details of / }).all()) await b.click();
+  if ((page.viewportSize()?.width ?? 0) === 820) for (const r of await page.locator("[data-advance]").all()) await openFundsDetails(r);
   await expect(page.getByText(/Handed over from CA-2026-9001 by Test Document Processor \(Pasuyo\)/)).toBeVisible();
   await expect(page.getByText(/₱2,000\.00 handed to Grace Tan/)).toBeVisible();
 });

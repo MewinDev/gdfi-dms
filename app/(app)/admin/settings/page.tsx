@@ -71,6 +71,7 @@ const AREAS = [
   { key: "approval-bands", title: "Approval bands", desc: "Who approves a cash advance, by amount.", help: "The band with the highest \"from\" amount at or below the advance decides who approves it.", Icon: UsersIcon },
   { key: "problem-reasons", title: "Problem reasons", desc: "Why a job can be stuck.", help: "Offered when a job has a problem or an attempt was not processed. Nothing is deleted: make it inactive instead.", Icon: AlertIcon },
   { key: "hold-reasons", title: "Hold reasons", desc: "Why a job can wait (not a fault).", help: "Offered when someone puts work on hold (remarks are required for every reason). Add, rename, reorder (Order) or switch off; a switched-off reason stays on old holds, which keep the name they had. The list was seeded as \"Proposed, to be confirmed with the team\"; saving a reason confirms it. The turnaround time keeps counting.", Icon: PauseIcon },
+  { key: "missing-reasons", title: "Missing paper reasons", desc: "Why a paper is missing from the file.", help: "Offered when a Loan Associate marks a paper Missing. Remarks are always required too, for every reason. Nothing is deleted: make it inactive instead.", Icon: AlertIcon },
   { key: "return-reasons", title: "Return reasons", desc: "Why a processor returns a job to the Loan Associate.", help: "Offered when a processor returns an accepted job for papers. The turnaround time keeps counting. Nothing is deleted: make it inactive instead.", Icon: ArrowLeftIcon },
   { key: "holidays", title: "Holidays", desc: "Days skipped when counting turnaround times.", help: "Add or change a holiday. An inactive holiday is no longer skipped.", Icon: CalendarIcon },
   { key: "system", title: "System and test mode", desc: "PN format, MyLoans adapter, simulator and test switches.", help: "These switches save as soon as you press them.", Icon: SettingsIcon },
@@ -157,6 +158,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: string; extra: string }>> {
   const pair = (m: { count(a: { where: { active: boolean } }): Promise<number> }) => Promise.all([m.count({ where: { active: true } }), m.count({ where: { active: false } })]);
   const [bands, reasons, holdReasons, returnReasons] = await Promise.all([pair(prisma.approvalBand), pair(prisma.problemReason), pair(prisma.holdReason), pair(prisma.returnReason)]);
+  const missingReasons = await pair(prisma.missingPaperReason);
   const [branches, types, docs, rules, required, tats, loanTypes, lto, ca, holidays, sim, unavailable] = await Promise.all([
     Promise.all([prisma.branch.count({ where: { active: true, hidden: false } }), prisma.branch.count({ where: { active: false, hidden: false } })]), pair(prisma.transactionType), pair(prisma.documentType), pair(prisma.checklistRule),
     prisma.checklistRule.count({ where: { active: true, required: true } }), prisma.tatRule.count(), pair(prisma.loanType),
@@ -183,6 +185,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     "funds-types": n(await pair(prisma.fundsType), "type", "types"),
     "expense-kinds": n(await pair(prisma.expenseKind), "kind", "kinds"),
     "return-reasons": n(returnReasons, "reason", "reasons"),
+    "missing-reasons": n(missingReasons, "reason", "reasons"),
     "processing-stages": n(stages, "stage", "stages"),
     "myloans-sync": await syncStatusLine(),
     email: { main: (await getSetting("email.active")) ? "Active" : "Not active", extra: senderLine() === "Not set up" ? "Not set up" : "" },
@@ -640,6 +643,19 @@ async function loadListArea(key: AreaKey, opts: { btype?: TypeKey } = {}): Promi
       ];
       return {
         kind: "returnReason", statusKind: "returnReason", noun: "return reason", addLabel: "Add reason", filterLabel: "Find a reason",
+        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: r.code, inactive: !r.active, href: editHref(key, r.id) })),
+        fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
+      };
+    }
+    case "missing-reasons": {
+      const rows = await prisma.missingPaperReason.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+      const f = (r?: (typeof rows)[number]): FieldDef[] => [
+        { name: "code", label: "Code", type: "text", value: r?.code, width: "sm" },
+        { name: "name", label: "Reason", type: "text", value: r?.name, width: "lg" },
+        { name: "sortOrder", label: "Order", type: "number", value: r?.sortOrder ?? rows.length + 1, width: "sm" },
+      ];
+      return {
+        kind: "missingReason", statusKind: "missingReason", noun: "missing paper reason", addLabel: "Add reason", filterLabel: "Find a reason",
         rows: rows.map((r) => ({ id: r.id, title: r.name, sub: r.code, inactive: !r.active, href: editHref(key, r.id) })),
         fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
       };

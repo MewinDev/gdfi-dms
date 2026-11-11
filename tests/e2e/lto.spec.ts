@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
+import { openFundsDetails } from "./helpers";
 
 /**
  * "Needs LTO processing" per transaction type and the LTO office everywhere it is needed:
@@ -174,7 +175,6 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   const at = page.locator("[data-process-at]");
   await expect(page.locator("#lto-h")).toHaveText(/Process at: Z LTO Cebu City/);
   await expect(at).toContainText("No estimate yet");
-  await page.getByLabel("Labels are on all papers").check();
   await page.getByRole("button", { name: "Accept" }).click();
   await expect(page.getByText("This job needs funds. Request a cash advance first.")).toBeVisible();
   await at.getByRole("button", { name: "Change LTO office" }).click();
@@ -212,7 +212,7 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await signInAs(page, "fin");
   await page.goto("/funds?tab=approve");
   // Tablet: the For column opens with the row's Details.
-  if ((page.viewportSize()?.width ?? 0) === 820) await page.getByRole("button", { name: /^Show details of / }).first().click();
+  if ((page.viewportSize()?.width ?? 0) === 820) await openFundsDetails(page.locator(".fl-row[id]").first());
   await expect(page.getByText("Z LTO Cebu City · No estimate yet").first()).toBeVisible();
   await expect(page.getByText("Office changed from Z LTO Mandaue to Z LTO Cebu City").first()).toBeVisible();
   await shot(page, "approve-lto-line");
@@ -220,7 +220,7 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await approveWithConfirm(page);
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
   await page.goto("/funds?tab=release");
-  if ((page.viewportSize()?.width ?? 0) === 820) await page.getByRole("button", { name: /^Show details of / }).first().click();
+  if ((page.viewportSize()?.width ?? 0) === 820) await openFundsDetails(page.locator(".fl-row[id]").first());
   await expect(page.getByText("Z LTO Cebu City · No estimate yet").first()).toBeVisible();
   await expect(page.getByText("Office changed from Z LTO Mandaue to Z LTO Cebu City").first()).toBeVisible();
   await shot(page, "release-lto-line");

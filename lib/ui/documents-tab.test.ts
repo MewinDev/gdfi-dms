@@ -3,7 +3,7 @@ import { countText, custodyLine, emptyText, filterCounts, filterPapers, papersFi
 
 const at = (s: string) => new Date(`${s.replace(" ", "T")}:00+08:00`);
 const paper = (stage: string, p: Record<string, unknown> = {}) => ({
-  stage, location: "Antipolo branch", custodianLabel: "LA 1 (LA, Antipolo)", since: at("2026-11-10 00:10"), documentId: null as string | null, labelPrintedAt: null as Date | null, ...p,
+  stage, location: "Antipolo branch", custodianLabel: "LA 1 (LA, Antipolo)", since: at("2026-11-10 00:10"), documentId: null as string | null, ...p,
 });
 
 describe("Documents tab words", () => {
@@ -38,9 +38,8 @@ describe("Documents tab words", () => {
   });
 
   it("custody details line: who, where and since when in Philippine time, and the label", () => {
-    expect(custodyLine(paper("AT_BRANCH", { documentId: "GD1-CHM-01" }))).toBe("LA 1 (LA, Antipolo) at the Antipolo branch, since Nov 10, 12:10 AM. Label not printed yet.");
-    expect(custodyLine(paper("AT_BRANCH", { documentId: "GD1-CHM-01", labelPrintedAt: at("2026-11-10 09:05") }))).toBe("LA 1 (LA, Antipolo) at the Antipolo branch, since Nov 10, 12:10 AM. Label printed Nov 10, 9:05 AM.");
-    expect(custodyLine(paper("WITH_DP", { custodianLabel: "DP 1 (DP)", location: "With DP DP 1", documentId: "X" }))).toBe("DP 1 (DP) · With DP 1, since Nov 10, 12:10 AM. Label not printed yet.");
+    expect(custodyLine(paper("AT_BRANCH", { documentId: "GD1-CHM-01" }))).toBe("LA 1 (LA, Antipolo) at the Antipolo branch, since Nov 10, 12:10 AM.");
+    expect(custodyLine(paper("WITH_DP", { custodianLabel: "DP 1 (DP)", location: "With DP DP 1", documentId: "X" }))).toBe("DP 1 (DP) · With DP 1, since Nov 10, 12:10 AM.");
     expect(custodyLine(paper("EXPECTED"))).toBe("Not with you yet: it is on the checklist and has not been ticked.");
     expect(custodyLine(paper("AT_BRANCH"))).not.toMatch(/ago/);
   });

@@ -9,8 +9,8 @@ See the [colour key](README.md#colour-key).
 ```mermaid
 flowchart TD
   X{"What is going on?"}
-  X -->|"A paper has not arrived"| M1["Missing paper: a reminder naming the papers"]:::la
-  M1 --> M2["Closes by itself when the paper is ticked"]:::sys
+  X -->|"A paper has not arrived"| M1["Missing paper: marked on its row with a reason and remarks; the file goes on"]:::la
+  M1 --> M2["Received with the date it arrived; the flag clears with the last one. No alert, no email, the clock keeps counting"]:::la
   X -->|"Waiting on someone outside our hands"| H1["On hold: reason and remarks required, start time automatic"]:::hold
   H1 --> H1L["Locked: nobody can change it until it is resumed"]:::hold
   H1L --> H2["Resume: only the hold owner, remarks required, time automatic"]:::hold
@@ -36,7 +36,7 @@ flowchart TD
   Y1 -->|"Cancelled or not released"| Y4["Admin closes as cancelled after cash is returned"]:::admin
   Y1 -->|"New PN, same details, old PN ended"| Y5["Admin links as replacement after confirming no payment"]:::admin
   Y1 -->|"New PN, new application"| Y6["Shown in Related loans: no alert, no link"]:::sys
-  Z["Open items card on Check documents shows missing papers, holds, problems and MyLoans changes"]:::sys
+  Z["Loan File: Missing papers row. Monitoring: Has missing papers. Open items: holds, problems and MyLoans changes"]:::sys
   M1 -.-> Z
   H1 -.-> Z
   P1 -.-> Z

@@ -2,7 +2,7 @@
 
 One Document Processor job, from arrival to the job closing at the branch.
 
-Last updated: 10 November 2026 (PHT)
+Last updated: 11 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -11,7 +11,7 @@ flowchart TD
   A["Job arrives: Sent to me, waiting to accept"]:::dp
   A --> B{"Papers and funds flag look right?"}
   B -->|No| B1["Decline: one reason and remarks. Back to the LA who sent it; gone from my lists"]:::dp
-  B -->|Yes| C["Accept: confirm labels are on all papers, papers received into my custody"]:::dp
+  B -->|Yes| C["Accept: papers received into my custody"]:::dp
   C --> F{"Needs funds?"}
   F -->|Yes| F1["Request one cash advance, see My funds"]:::fin
   F1 --> F2["Approver approves, Finance releases: job is Funded"]:::fin
@@ -46,6 +46,7 @@ flowchart TD
   X2 --> FW
   X -->|Complete| X3["Job closes"]:::sys
   S1 -.->|"Papers missing or wrong"| R["Return to LA: findings required, every paper handed over. Back to the LA who sent it; gone from my lists"]:::dp
+  S1 -.->|"A paper the LA marked Missing with remarks"| EX["Goes through as an exception: shown in Missing papers and reasons, never a reason to return"]:::dp
   R -.-> RS["Cash released for the job: Cash to settle in My funds until liquidated"]:::fin
   L3 -.->|"Another processor must continue"| PS["Pasuyo: pass to a second processor, decide the cash first"]:::dp
   classDef dp fill:#fdecc8,stroke:#c98512,color:#14213a
@@ -59,6 +60,7 @@ flowchart TD
 - The job runs its type's stages in order (Settings, Processing stages). Each stage has Start and Finish; the times are the system's, nobody types them. Required evidence is checked on screen and on the server.
 - LTO drop off and LTO pickup appear only when the transaction type has "Needs LTO processing" switched on. Starting LTO drop off is blocked until the job is funded when that setting is on.
 - Attempts, holds and problems belong to the stage that is current when they are recorded.
+- **Missing papers and reasons.** A card on the job lists each paper the LA marked Missing: the reason, the remarks, who and when (and Received with its date once it arrives). Those papers never went to the processor, so they are not on the Accept list or in Check and verify. A Return to LA (at Accept or later) cannot name one of them, nor an optional paper the LA did not include; the server refuses it. The file can still be returned for another paper or reason, and a paper the LA ticked Present that is not really there is returned as before (Round 2 when sent again).
 - Check and verify is the last stage: the DP ticks every paper as received back and complete. A missing paper becomes a Problem (Missing paper) until found. Complete job and Forward stay blocked until it is done.
 - Forwarding is manual and never automatic: the DP chooses the branch, then the named LA, and confirms the paper count. Liquidation runs beside forwarding and does not block it.
 - The receiving LA records Complete, Incomplete or Other. Incomplete (or a blocking Other) sends the package back to the DP, who is told, corrects it and forwards again. The clock is never paused.

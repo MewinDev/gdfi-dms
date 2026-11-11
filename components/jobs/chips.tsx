@@ -2,7 +2,7 @@ import type { TatChipData } from "@/lib/workflow/tat";
 import { FUNDS_LABEL, type FundsStatus } from "@/lib/funds/rules";
 import { FUNDS_TONE } from "@/lib/jobs/view";
 import { ToneChip } from "@/components/ui/basics";
-import { AlertIcon, CheckIcon, ClockIcon, CoinsIcon, HourglassIcon, PauseIcon, TagIcon, WarningIcon } from "@/components/ui/icons";
+import { AlertIcon, CheckIcon, ClockIcon, CoinsIcon, HourglassIcon, PauseIcon, WarningIcon } from "@/components/ui/icons";
 
 const TAT_STYLE: Record<TatChipData["state"], { cls: string; Icon: typeof ClockIcon; label: string }> = {
   waiting: { cls: "c-mute", Icon: HourglassIcon, label: "Waiting" },
@@ -39,15 +39,6 @@ export function FundsChip({ status }: { status: FundsStatus }) {
     <span className={`chip c-${FUNDS_TONE[status]}`} data-funds={status}>
       <CoinsIcon size={14} strokeWidth={2.4} />
       {FUNDS_LABEL[status]}
-    </span>
-  );
-}
-
-export function LabelsChip({ printed }: { printed: boolean }) {
-  return (
-    <span className={`chip ${printed ? "c-ok" : "c-act"}`}>
-      <TagIcon size={14} strokeWidth={2.4} />
-      {printed ? "Labels printed" : "Labels not printed"}
     </span>
   );
 }

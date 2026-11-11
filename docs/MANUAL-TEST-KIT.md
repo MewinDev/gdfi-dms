@@ -1,6 +1,6 @@
 # Manual Test Kit
 
-Last updated: 10 November 2026 (PHT)
+Last updated: 11 November 2026 (PHT)
 
 Test GDFI DMS by hand from zero. The kit puts your own database (`gdfi_dms`) in a clean state: the settings, the branches and the sign-in accounts below, and a list of PNs that exist only in the sample MyLoans. Nothing is opened yet: you search each PN and open it yourself. The automated tests use another database (`gdfi_dms_test`).
 
@@ -71,6 +71,10 @@ Sign in at `/login`, under **Test sign-in**. The accounts are grouped by role, w
 - GD1012026903009
 - GD1012026903010
 - GD7772026903011
+- GD1012026903041
+- GD1012026903042
+- GD1012026903043
+- GD1012026903044
 
 ### Angono (165)
 
@@ -153,6 +157,20 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 8. **Finance Transfer.** Do the same as Finance Transfer.
 9. **Approver Cash and Approver Transfer.** Sign in as each one and open Funds, To approve. Each role shares its own type's approval bands (with Approver Small and Approver Large), so nothing needs setting up.
 10. **Nobody can release fund transfers.** As Admin, untick **Release fund transfers** on every role that has it (Settings, Roles). Look at Settings, Funds types, at Settings, Roles and at Funds. Tick it again on Finance and look once more.
+
+### Missing papers
+
+11. **Missing papers.** On Check papers, press **Missing** on a required paper and try to Send; then write the reason and remarks and Send. Tick **Include in this file** on an optional paper and mark it Missing too. As the processor, try to return the file for that paper. When it arrives, mark it **Received**. Check the Loan File row, the Journey and Monitoring, **Has missing papers**.
+12. **The reason and remarks box.** Press **Missing** on a required paper, pick a reason, type a short note and press Enter. Then press **Edit**, change it and press Esc. Try it on a phone too.
+
+### Labels (removed 11 November 2026)
+
+13. **No labels.** Check the papers of a transaction and send it, then accept it as the processor. Look for anything about labels on Check papers, the Loan File (To do and Documents), the processor's job page and Settings, Roles.
+
+| Item | Status |
+|---|---|
+| Print labels, the labels warning, "Labels printed" chips, "Labels are on all papers" at Accept, the Print labels permission | Removed |
+| Archiving and Warehousing QR code (vault, box, part, specific numbers) | Not built |
 
 ## If the sign-in page keeps coming back
 

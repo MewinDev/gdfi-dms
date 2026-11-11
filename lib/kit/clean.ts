@@ -1,5 +1,5 @@
 /**
- * The CLEAN Manual Test Kit (data only): the sign-in accounts and the pool of 40 fresh PNs that exist
+ * The CLEAN Manual Test Kit (data only): the sign-in accounts and the pool of 44 fresh PNs that exist
  * only in the sample MyLoans. Nothing is opened in the DMS: the tester finds each loan by its PN.
  * lib/kit/build-clean.ts builds it; docs/MANUAL-TEST-KIT.md lists the accounts and the PNs (nothing
  * else); docs/MANUAL-TEST-KIT-ANSWERS.md says what each PN is. tests/integration/kit.test.ts checks
@@ -90,7 +90,7 @@ export interface PoolLoan {
   answer: string;
 }
 
-/** Running numbers 03001 to 03040: well clear of the old kit (02001-02073, the replacement 09100). */
+/** Running numbers 03001 to 03044: well clear of the old kit (02001-02073, the replacement 09100). */
 const P = (n: number, branch: string, borrower: string, answer: string, over: Partial<PoolLoan> = {}): PoolLoan => ({
   pn: buildPn(over.pnBranch ?? branch, 2026, 3000 + n), branch, borrower, product: "Auto Refinancing", loanType: "New", amount: 400_000, daysAgo: 0, answer, ...over,
 });
@@ -140,6 +140,11 @@ export const CLEAN_POOL: PoolLoan[] = [
   P(37, "163", "Kristoffer Basa", "Marcos Highway (Luzon 1), Auto Financing.", { product: "Auto Financing", amount: 310_000 }),
   P(38, "147", "Lourdes Dizon", "Mandaluyong (Luzon 1).", { amount: 300_000 }),
   P(39, "155", "Mauricio Reyes", "Libis (Luzon 1), released 2 business days ago.", { daysAgo: 2, amount: 290_000 }),
+  // Missing papers with reasons (Antipolo)
+  P(41, "101", "Ruperto Alonzo", "Missing papers: mark a required Notary paper Missing, try to Send (it names the paper: \"Add remarks for: ...\"), write a reason and remarks, then Send. As DP 1, the paper is in \"Missing papers and reasons\" and cannot be named in a return.", { amount: 395_000 }),
+  P(42, "101", "Soledad Bernal", "Missing papers, optional paper: on Notary tick \"Include in this file\" for Valid ID of co-maker, mark it Missing with remarks; an optional paper left unticked needs nothing.", { amount: 385_000 }),
+  P(43, "101", "Teofilo Cabral", "Missing papers through the vault gate: Refinancing above ₱500,000 (EDST and Notary). Send Notary with a paper Missing (with remarks), finish it; the loan file shows \"Complete with exceptions\" until the paper is Received.", { amount: 650_000 }),
+  P(44, "101", "Ursula Dimaculangan", "Ticked Present but not there: tick every Notary paper and send it to DP 1; as DP 1, at Accept mark one paper not received: the Return to LA still works for a paper the LA ticked Present.", { amount: 375_000 }),
   // The inactive branch
   P(40, "718", "Natividad Lopez", "At Alicia-Inactive (718), a branch MyLoans closed: opening it is refused (\"Alicia-Inactive (718) is inactive in Settings, so no new loan files can be opened for it.\").", { amount: 280_000 }),
 ];

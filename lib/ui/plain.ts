@@ -153,7 +153,7 @@ export const JOURNEY_STEP_COUNT = JOURNEY_STEPS.length;
 /**
  * Current step (1-10) from the loan file's stage; 11 when every step is done (archived or disposed).
  * Steps 1 and 2 are done as soon as the loan file exists (opening runs the automatic classification).
- * Checking papers, labels and sending to a processor are all step 3, as in the Journey tab (phase 3).
+ * Checking papers and sending to a processor are both step 3, as in the Journey tab (phase 3).
  */
 export function progressStep(stage: string): number {
   if (["Archived", "Disposed"].includes(stage)) return 11;
@@ -280,11 +280,7 @@ export function historySentence(r: HistoryRow): string {
     }
     case "document_ids_generated": {
       const n = Array.isArray(a.documentIds) ? a.documentIds.length : 0;
-      return `The system made ${n} new label${n === 1 ? "" : "s"}.`;
-    }
-    case "labels_printed": {
-      const n = Array.isArray(a.documentIds) ? a.documentIds.length : 0;
-      return `${who} printed ${n} label${n === 1 ? "" : "s"}.`;
+      return `The system made ${n} new Document ID${n === 1 ? "" : "s"}.`;
     }
     case "edst_completed":
       return `${who} marked EDST done (reference ${String(a.edstReference ?? "")}).`;

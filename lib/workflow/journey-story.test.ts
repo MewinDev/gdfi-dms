@@ -84,11 +84,11 @@ describe("Story", () => {
       ev("e2", "classification_applied", "2026-11-09 23:54", "The system marked this as a Financing loan.", { by: "System", journeyStep: "2.1" }),
       ev("e3", "mortgage_determined", "2026-11-09 23:54", "The system checked the amount: a mortgage is needed.", { by: "System", journeyStep: "2.4" }),
       ev("e4", "transactions_generated", "2026-11-09 23:54", "The system listed the work to do: Notary, EDST.", { by: "System", journeyStep: "2.5" }),
-      ev("e5", "labels_printed", "2026-11-10 07:10", "LA 1 printed 5 labels."),
+      ev("e5", "funds_flag_changed", "2026-11-10 07:10", "LA 1 changed the funds answer."),
     ]);
     const lines = storyLines(i);
     expect(lines.map((l) => l.sentence)).toEqual([
-      "LA 1 printed 5 labels",
+      "LA 1 changed the funds answer",
       "4 transactions created: Notary, EDST, Entry of PPSR and Mortgage",
       "LA 1 opened the loan file",
       "Loan opened and checked automatically",
@@ -123,11 +123,11 @@ describe("Story", () => {
     const t = txn("NOTARY", { status: "ASSIGNED", assignments: [assignment({ status: "PENDING_ACCEPTANCE", decidedAt: null })] });
     const i = input([t], [
       ev("s1", "assigned_to_dp", "2026-11-10 09:00", "LA 1 sent the Notary to DP 1.", { txnId: t.id }),
-      ev("x1", "labels_printed", "2026-11-10 09:01", "LA 1 printed 5 labels."),
-      ev("x2", "labels_printed", "2026-11-10 09:01", "LA 1 printed 5 labels."),
+      ev("x1", "funds_flag_changed", "2026-11-10 09:01", "LA 1 changed the funds answer."),
+      ev("x2", "funds_flag_changed", "2026-11-10 09:01", "LA 1 changed the funds answer."),
     ]);
     const s = storyLines(i).map((l) => l.sentence);
-    expect(s).toEqual(["LA 1 printed 5 labels", "LA 1 sent Notary to DP 1"]);
+    expect(s).toEqual(["LA 1 changed the funds answer", "LA 1 sent Notary to DP 1"]);
     expect(new Set(s).size).toBe(s.length);
   });
 

@@ -48,14 +48,14 @@ test("Admin Loans: one toolbar, Filters with a count, chips, Clear all, Show res
   await expect(filtersBtn(page)).toHaveAccessibleName("Filters, 2 on");
   const main = page.getByRole("main");
   await expect(main.getByRole("link", { name: "Remove filter Classification: Refinancing" })).toBeVisible();
-  await expect(main.getByRole("link", { name: "Remove filter Branch: Antipolo (101)" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Remove filter Branch: Antipolo" })).toBeVisible();
 
   // Refresh keeps them.
   await page.reload();
-  await expect(main.getByRole("link", { name: "Remove filter Branch: Antipolo (101)" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Remove filter Branch: Antipolo" })).toBeVisible();
 
   // Removing a chip updates the list at once.
-  await main.getByRole("link", { name: "Remove filter Branch: Antipolo (101)" }).click();
+  await main.getByRole("link", { name: "Remove filter Branch: Antipolo" }).click();
   await expect(page).not.toHaveURL(/branch=/);
   await expect(filtersBtn(page)).toHaveAccessibleName("Filters, 1 on");
   await main.getByRole("link", { name: "Clear all" }).click();
@@ -94,14 +94,12 @@ test("Admin Loans: empty state with and without filters; tabs without arrows; PN
   await expect(page).toHaveURL(/q=PN-0009/);
 });
 
-test("Export CSV only with the export permission", async ({ page }) => {
+test("No Export CSV for now, even with the export permission; the old address is gone", async ({ page }) => {
   await signIn(page, "admin");
   await page.goto("/loans");
-  await expect(page.getByRole("main").getByRole("link", { name: "Export CSV" })).toBeVisible();
-  await page.context().clearCookies();
-  await signIn(page, "la");
-  await page.goto("/loans");
+  await expect(page.getByRole("main").getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expect(page.getByRole("main").getByRole("link", { name: "Export CSV" })).toHaveCount(0);
+  expect((await page.request.get("/api/loans/export")).status()).toBe(404);
 });
 
 test("Loan Associate My loans: compact search, samples in one row, the list below; Filters panel closes on outside click", async ({ page }) => {

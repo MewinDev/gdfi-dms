@@ -57,7 +57,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
     where: { hidden: false, ...(user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }) }, orderBy: { name: "asc" },
     select: { id: true, name: true, code: true, area: { select: { id: true, name: true } } },
   });
-  const branches = branchRows.map((b) => ({ id: b.id, name: b.code ? `${b.name} (${b.code})` : b.name }));
+  const branches = branchRows.map((b) => ({ id: b.id, name: b.name }));
   const areas = [...new Map(branchRows.filter((b) => b.area).map((b) => [b.area!.id, { id: b.area!.id, name: b.area!.name }])).values()].sort((a, z) => a.name.localeCompare(z.name));
   // Each tab with its count (same filters).
   const perTab = await Promise.all(tabs.map((t) => listLoans(user, { ...f, tab: t.key })));
@@ -65,13 +65,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   const counts = Object.fromEntries(tabs.map((t, i) => [t.key, perTab[i].length]));
   return la
     ? <LaList f={f} sp={sp} rows={rows} branches={branches} counts={counts} />
-    : <AdminList user={user} f={f} rows={rows} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)} />;
-}
-
-function qs(f: LoanListFilters, over: Record<string, string | undefined>) {
-  const p = new URLSearchParams();
-  for (const [k, v] of Object.entries({ ...f, ...over })) if (v) p.set(k, v);
-  return `?${p.toString()}`;
+    : <AdminList f={f} rows={rows} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)} />;
 }
 
 const TAT_OPTIONS: [string, string][] = [["ON_TIME", "On time"], ["DUE_TODAY", "Due today"], ["OVERDUE", "Overdue"], ["DUE_OR_OVERDUE", "Due today or overdue"]];
@@ -179,8 +173,7 @@ async function holdReasonCounts(user: CurrentUser) {
   };
 }
 
-function AdminList({ user, f, rows, branches, areas, byArea, tabs, counts, holds }: { user: CurrentUser; f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>> }) {
-  const exportAllowed = can(user, PERMISSIONS.LOANS_EXPORT);
+function AdminList({ f, rows, branches, areas, byArea, tabs, counts, holds }: { f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>> }) {
   const fields: FilterField[] = [
     { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, s]) },
     { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"]] },
@@ -200,7 +193,6 @@ function AdminList({ user, f, rows, branches, areas, byArea, tabs, counts, holds
       <LoansToolbar
         search={{ action: "/loans", defaultValue: f.q ?? "", required: false, hidden: { ...params, q: undefined } }}
         filters={{ fields, hidden: { tab: f.tab, q: f.q, by: params.by }, activeCount: chips.length, clearHref: clearAllHref(params) }}
-        exportHref={exportAllowed ? `/api/loans/export${qs(f, {})}` : undefined}
         resultCount={rows.length}
       />
       <Segments tabs={tabs} current={f.tab} counts={counts} params={params} />

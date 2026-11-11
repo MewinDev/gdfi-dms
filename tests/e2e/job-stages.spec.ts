@@ -64,7 +64,6 @@ async function send(page: Page, pn: string, code: string, funds: "YES" | "NO", k
 }
 async function accept(page: Page, jobId: string) {
   await page.goto(`/jobs/${jobId}`);
-  await page.getByLabel("Labels are on all papers").check();
   await page.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.locator("[data-stages]")).toBeVisible();
 }

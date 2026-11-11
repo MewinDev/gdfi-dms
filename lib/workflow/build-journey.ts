@@ -428,7 +428,6 @@ function baseOwner(t: TxnRec, ctx: OwnerContext): Owner | null {
 export const MOVE_LABEL: Record<string, string> = {
   RECEIVED_AT_BRANCH: "Received at the branch",
   MARKED_NOT_PRESENT: "Marked not in hand",
-  LABEL_PRINTED: "Label printed",
   DISPATCHED_TO_DP: "Sent to the processor (in transit)",
   ACKNOWLEDGED_BY_DP: "Received by the processor",
   NOT_RECEIVED_BY_DP: "Not received by the processor (missing at Accept)",
@@ -461,7 +460,7 @@ export function custodyOf(d: DocRec, now: Date): { trail: CustodyStep[]; periods
       if (cur) { cur.to = m.at; periods.push(cur); cur = null; }
       continue;
     }
-    // Not a hand-over (label printed, in transit, at the LTO): the same holder, maybe in a new place.
+    // Not a hand-over (in transit, at the LTO): the same holder, maybe in a new place.
     if (!m.acknowledgedAt || !m.to) { if (cur && m.location) cur.place = m.location; continue; }
     if (cur) { cur.to = m.at; periods.push(cur); }
     cur = { holder: m.to, place: m.location, from: m.at, to: null, ms: 0 };
@@ -506,7 +505,7 @@ export function buildJourney(input: JourneyInput, tats: TatMap, holidays: Readon
     overridden: input.loan.overridden, openedAt: input.loan.openedAt, openedBy: input.loan.openedBy.name, openSourceChange: input.loan.openSourceChange,
     transactions: input.transactions.map((t) => ({ code: t.code, requiresDp: t.requiresDp, status: t.status, processed: t.assignments.some((a) => a.status !== "DECLINED" && !!a.processedAt) })),
     cashAdvances: input.advances.map((a) => ({ status: a.status })),
-    documents: input.documents.map((d) => ({ hasId: !!d.documentId, labelPrinted: d.movements.some((m) => m.action === "LABEL_PRINTED"), stage: d.stage })),
+    documents: input.documents.map((d) => ({ hasId: !!d.documentId, stage: d.stage })),
     transmittalDispatched: input.loan.transmittalDispatched, transmittalReceived: input.loan.transmittalReceived,
     audit: new Map(input.events.filter((e) => e.journeyStep).sort((a, b) => a.at.getTime() - b.at.getTime()).map((e) => [e.journeyStep!, { at: e.at, actor: e.by, simulated: e.simulated }])),
   };

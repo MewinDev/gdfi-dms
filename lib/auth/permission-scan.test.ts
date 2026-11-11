@@ -12,7 +12,7 @@ describe("every server action and route handler checks a permission", () => {
   it("finds the actions and routes", () => {
     expect(results.length).toBeGreaterThan(80);
     expect(results.some((r) => r.file === "app/actions/loan.ts" && r.name === "refreshLoanAction")).toBe(true);
-    expect(results.some((r) => r.file === "app/api/loans/export/route.ts" && r.name === "GET")).toBe(true);
+    expect(results.some((r) => r.file === "app/api/settings/roles-matrix/route.ts" && r.name === "GET")).toBe(true);
   });
 
   it("none is missing a check", () => {

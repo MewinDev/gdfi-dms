@@ -85,7 +85,7 @@ describe("DP: Pasuyo, pass a job to a second processor", () => {
     const { loan, txn } = await ready("NOTARY");
     await assignToDp(la, input(loan, txn.id));
     const job = await jobOf(txn.id);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const before = await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } });
     await expect(passJob(dp, job.id, { toUserId: dp.id, reason: "x x x" })).rejects.toThrow(/other than the current one/);
     await expect(passJob(dp, job.id, { toUserId: dp2.id, reason: "" })).rejects.toThrow(/why a second processor/);
@@ -111,7 +111,7 @@ describe("DP: Pasuyo, pass a job to a second processor", () => {
     const lto = await prisma.ltoOffice.findFirstOrThrow({ where: { active: true } });
     await assignToDp(la, input(loan, txn.id, { fundsNeeded: "YES", fundsKinds: ["LTO_FEE"], ltoOfficeId: lto.id }));
     const job = await jobOf(txn.id);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 200000 }] });
     await decideAdvance(fin, r.id, { approve: true });
     await releaseAdvance(fin, r.id, { ref: "V-1" });

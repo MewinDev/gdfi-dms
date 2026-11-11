@@ -50,7 +50,7 @@ export const PHASES: PhaseDef[] = [
     n: 3, title: "Checklist, Document IDs, EDST, cash advance, assign DP", built: true,
     steps: [
       { id: "3.1", title: "Check physical documents against the checklist", owner: ["LA"], mode: "Manual", tatKey: "P3_CHECKLIST" },
-      { id: "3.2", title: "Generate Document IDs; print and attach QR labels", owner: ["SYS", "LA"], mode: "Auto + print", tatKey: "P3_LABELS" },
+      { id: "3.2", title: "Generate Document IDs", owner: ["SYS"], mode: "Auto", tatText: "Instant" },
       { id: "3.3", title: "For EDST: enter in EDST, record reference", owner: ["LA"], mode: "Manual", tatKey: "P3_EDST" },
       { id: "3.4", title: "Request cash advance if fees need funds", owner: ["LA", "DP"], mode: "Manual", tatKey: "P3_CA" },
       { id: "3.5", title: "Approve and release cash advance", owner: ["FIN"], mode: "Manual", tatKey: "P3_CA_RELEASE" },
@@ -137,7 +137,7 @@ export interface JourneyContext {
   openSourceChange: boolean;
   transactions: { code: string; requiresDp: boolean; status: string; processed: boolean }[];
   cashAdvances: { status: string }[];
-  documents: { hasId: boolean; labelPrinted: boolean; stage: string }[];
+  documents: { hasId: boolean; stage: string }[];
   transmittalDispatched: boolean;
   transmittalReceived: boolean;
   /** Latest audit entry per journey step. */
@@ -200,15 +200,7 @@ export function computeJourney(ctx: JourneyContext, tats: TatMap): JourneyPhase[
     "2.6": () => ({ state: "done" }),
     "2.7": () => (ctx.overridden ? { state: "done" } : { state: "na", note: "Not needed" }),
     "3.1": () => ({ state: checklistDone ? "done" : "pending" }),
-    "3.2": () => {
-      if (!checklistDone) return { state: "pending" };
-      const unprinted = docsWithId.filter((d) => !d.labelPrinted).length;
-      if (!unprinted) return { state: "done" };
-      // Labels hold the journey only while the LA still has the file at the checklist stage.
-      return stageIdx(ctx.stage) <= stageIdx("No DP assignment required")
-        ? { state: "pending", note: `${unprinted} label(s) to print` }
-        : { state: "done", note: `${unprinted} label(s) not recorded as printed` };
-    },
+    "3.2": () => ({ state: checklistDone ? "done" : "pending" }),
     "3.3": () => {
       const t = has("EDST");
       if (!t) return { state: "na" };

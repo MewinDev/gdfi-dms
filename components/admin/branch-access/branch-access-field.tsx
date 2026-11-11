@@ -17,7 +17,7 @@ export interface AccessValue { all: boolean; grants: GrantLike[]; homeBranchId: 
 export interface AccessOtherUser extends AccessValue { id: string; name: string }
 
 const branchWord = (n: number) => `${n} branch${n === 1 ? "" : "es"}`;
-const label = (b: { name: string; code: string | null }) => `${b.name}${b.code ? ` (${b.code})` : " (code needed)"}`;
+const label = (b: { name: string; code: string | null }) => b.name;
 
 function Tri({ id, state, disabled, onChange, labelText, describedBy }: { id: string; state: "all" | "some" | "none"; disabled?: boolean; onChange: () => void; labelText: string; describedBy?: string }) {
   const ref = useRef<HTMLInputElement>(null);

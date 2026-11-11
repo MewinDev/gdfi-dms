@@ -92,8 +92,12 @@ export async function currentStageIdFor(tx: Tx, transactionId: string): Promise<
   return i >= 0 ? rows[i].id : null;
 }
 
-/** Papers checked in Check and verify: every paper of the transaction that was confirmed present. */
-export const verifiablePapers = <D extends { documentId: string | null }>(docs: D[]) => docs.filter((d) => !!d.documentId);
+/**
+ * Papers checked in Check and verify: every paper of the transaction that was confirmed present and went
+ * to the processor. Not a paper marked Missing (expected again), nor one received late that is still at
+ * the branch: the processor never had it, and it is not a reason to stop the file.
+ */
+export const verifiablePapers = <D extends { documentId: string | null; stage?: string }>(docs: D[]) => docs.filter((d) => !!d.documentId && d.stage !== "EXPECTED" && d.stage !== "AT_BRANCH");
 
 const JOURNEY_STEP: Record<string, string> = { NOTARY: "4.2", PPSR: "4.3", MORTGAGE: "4.4" };
 const stepOf = (a: AssignmentFull) => JOURNEY_STEP[a.transaction.type.code] ?? "4.4";

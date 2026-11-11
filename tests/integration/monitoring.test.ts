@@ -19,12 +19,7 @@ import { saveDefaultCapacity, saveDpCapacity } from "@/lib/services/dp-capacity"
 import { setSetting } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
 import { shiftBusinessDays } from "@/lib/kit/rebase";
-import { GET as csvGet } from "@/app/api/monitoring/csv/route";
 import { asUser, cleanLoans, workStages, allPapers } from "./helpers";
-
-// The CSV route reads the signed-in person from the session: here, whoever `csvAs.user` is.
-const csvAs = vi.hoisted(() => ({ user: null as CurrentUser | null }));
-vi.mock("@/lib/auth/current-user", async (orig) => ({ ...(await orig<typeof import("@/lib/auth/current-user")>()), getCurrentUser: async () => csvAs.user }));
 
 let la: CurrentUser, dp: CurrentUser, paolo: CurrentUser, admin: CurrentUser, monitor: CurrentUser, fin: CurrentUser;
 let holidays: Set<string>;
@@ -53,7 +48,7 @@ async function move(jobId: string, sent: Date, accepted: Date | null, stages: Pa
   for (const [kind, t] of Object.entries(stages)) await prisma.jobStage.updateMany({ where: { assignmentId: jobId, kind: kind as "OWN" }, data: { startedAt: t, finishedAt: t } });
 }
 async function finish(jobId: string, by: CurrentUser) {
-  await acceptJob(by, jobId, true);
+  await acceptJob(by, jobId);
   await workStages(by, jobId);
   await completeJob(by, jobId, {});
   const a = await prisma.dpAssignment.findUniqueOrThrow({ where: { id: jobId }, include: { loan: true } });
@@ -104,10 +99,10 @@ beforeAll(async () => {
   ids.bNotary = (await send("GD1012026901006", "NOTARY", dp, qcOffice)).id;
   await move(ids.bNotary, ago(2, "09:00"), null);
   ids.bPpsr = (await send("GD1012026901006", "PPSR", dp, qcOffice)).id;
-  await acceptJob(dp, ids.bPpsr, true);
+  await acceptJob(dp, ids.bPpsr);
   await raiseHold(dp, { transactionId: (await prisma.dpAssignment.findUniqueOrThrow({ where: { id: ids.bPpsr } })).transactionId, reasonId: (await prisma.holdReason.findUniqueOrThrow({ where: { code: "CLIENT-PAPERS" } })).id, note: "Waiting for the borrower's signature." });
   ids.bMortgage = (await send("GD1012026901006", "MORTGAGE", dp, qcOffice)).id;
-  await acceptJob(dp, ids.bMortgage, true);
+  await acceptJob(dp, ids.bMortgage);
   await workStagesUpTo(ids.bMortgage, dp, 1); // LTO drop off done: at the LTO now
   await move(ids.bMortgage, ago(1, "09:00"), ago(1, "09:30"), { LTO_DROP: ago(1, "11:00") });
 
@@ -115,7 +110,7 @@ beforeAll(async () => {
   ids.cNotary = (await send("GD1652026901003", "NOTARY", paolo, cebOffice)).id;
   await declineJob(paolo, ids.cNotary, { reasons: ["No capacity"], remarks: "Too many jobs this week." });
   ids.cPpsr = (await send("GD1652026901003", "PPSR", paolo, cebOffice)).id;
-  await acceptJob(paolo, ids.cPpsr, true);
+  await acceptJob(paolo, ids.cPpsr);
   const cPpsr = await prisma.dpAssignment.findUniqueOrThrow({ where: { id: ids.cPpsr } });
   await returnToLa(paolo, ids.cPpsr, { reasonId: (await prisma.returnReason.findUniqueOrThrow({ where: { code: "OTHER" } })).id, note: "The ID copy is unreadable.", handedOver: await allPapers(cPpsr.transactionId) });
   ids.cMortgage = (await send("GD1652026901003", "MORTGAGE", paolo, cebOffice)).id;
@@ -189,9 +184,9 @@ describe("DP monitor", () => {
     try {
       const m = await dpMonitor(monitor, q30(monitor));
       const l1 = m.groups.find((g) => g.label === "LUZON 1 (NGMA + RIZAL)")!;
-      expect(l1.branches.map((b) => b.label)).toEqual(expect.arrayContaining(["Antipolo (101)", "Angono (165) · Antipolo (101)", "Angono (165)"]));
+      expect(l1.branches.map((b) => b.label)).toEqual(expect.arrayContaining(["Antipolo", "Angono · Antipolo", "Angono"]));
       const mine = m.rows.find((r) => r.id === dp.id)!;
-      expect(mine).toMatchObject({ group: "LUZON 1 (NGMA + RIZAL)", branchGroup: "Angono (165) · Antipolo (101)", branches: ["Angono (165)", "Antipolo (101)"] });
+      expect(mine).toMatchObject({ group: "LUZON 1 (NGMA + RIZAL)", branchGroup: "Angono · Antipolo", branches: ["Angono", "Antipolo"] });
       expect(m.groups.find((g) => g.label === "LUZON 3 NORTH")!.rows.map((r) => r.name)).toContain("Ben Ocampo");
       // Several areas: last, once.
       expect(m.groups.at(-1)!.label).toBe("Several areas");
@@ -396,21 +391,4 @@ describe("Permissions", () => {
     expect(dp.permissions.has(PERMISSIONS.MONITOR_DP)).toBe(false);
   });
 
-  it("CSV: refused without the tab's permission; follows the filters and the view", async () => {
-    const { NextRequest } = await import("next/server");
-    const req = (qs: string) => new NextRequest(`http://localhost/api/monitoring/csv?${qs}`);
-    const as = async (u: CurrentUser | null, qs: string) => { csvAs.user = u; try { return await csvGet(req(qs)); } finally { csvAs.user = null; } };
-    expect((await as(null, "tab=dp")).status).toBe(401);
-    expect((await as(la, "tab=dp")).status).toBe(403);
-    expect((await as(fin, "tab=lto")).status).toBe(403);
-    const totals = await (await as(monitor, "tab=dp&type=NOTARY")).text();
-    expect(totals).toContain("Includes time on hold");
-    expect(totals.split("\r\n")[1]).toMatch(/^Area,Branch,Processor,Branch codes,Assigned \(now\)/);
-    const mine = totals.split("\r\n").find((l) => l.includes("Test Document Processor"))!;
-    expect(mine).toMatch(/^"?LUZON 1 \(NGMA \+ RIZAL\)"?,Angono \(165\) · Antipolo \(101\),Test Document Processor,165 101,1,0,/); // assigned 1, in process 0 for Notary only
-    const day = await (await as(monitor, "tab=dp&view=day&range=today")).text();
-    expect(day.split("\r\n")[1]).toBe("Group,Day,Assigned,Accepted,Finished,Declined,Returned");
-    const lto = await (await as(monitor, "tab=lto")).text();
-    expect(lto).not.toContain("Estimated travel cash");
-  });
 });

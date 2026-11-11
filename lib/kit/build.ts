@@ -7,7 +7,8 @@ import { getHolidaySet, setSetting } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
 import type { MyLoansRecord } from "@/lib/myloans/types";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { assignToDp, confirmPapersBack, markLabelsPrinted, recordEdst, requestMissingDocuments, saveChecklist } from "@/lib/services/workflow";
+import { assignToDp, confirmPapersBack, recordEdst, saveChecklist } from "@/lib/services/workflow";
+import { markPaperMissing, saveMissingRemarks, setPaperIncluded } from "@/lib/services/papers";
 import { acceptJob, completeJob, declineJob, finishStage, forwardJob, loadAssignment, raiseProblem, receivePackage, somethingMissing, startStage, verifyPaper } from "@/lib/services/jobs";
 import { stageRows, verifiablePapers } from "@/lib/services/job-stages";
 import { returnToLa } from "@/lib/services/return-to-la";
@@ -161,16 +162,11 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     await saveChecklist(by, { transactionId: t.id, checkedIds: t.checks.filter((c) => !leave.includes(c.id)).map((c) => c.id), newOthers: [] });
     return t;
   };
-  const labels = async (by: CurrentUser, transactionId: string) => {
-    const docs = await prisma.documentItem.findMany({ where: { transactionId, documentId: { not: null }, labelPrintedAt: null }, select: { id: true } });
-    if (docs.length) await markLabelsPrinted(by, docs.map((d) => d.id));
-  };
   const latestJob = (transactionId: string) => prisma.dpAssignment.findFirstOrThrow({ where: { transactionId }, orderBy: { createdAt: "desc" } });
-  /** Tick every paper, print the labels and send to a processor (Send step). */
+  /** Tick every paper and send to a processor (Send step). */
   const send = async (pn: string, code: string, dp: CurrentUser, o: { by?: CurrentUser; funds?: string[]; tick?: boolean } = {}) => {
     const by = o.by ?? u.la1;
     const t = o.tick === false ? await txn(pn, code) : await tick(by, pn, code);
-    await labels(by, t.id);
     const l = await loan(pn);
     await assignToDp(by, {
       transactionId: t.id, dpBranchId: l.branchId, dpUserId: dp.id, ltoOfficeId: await office(pn), fundsNeeded: o.funds ? "YES" : "NO", fundsKinds: o.funds ?? [],
@@ -178,9 +174,15 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     });
     return { t, job: await latestJob(t.id) };
   };
+  /** Marks a paper Missing and saves a reason (Settings code) and remarks: the Check papers row. */
+  const missingWithRemarks = async (by: CurrentUser, checkId: string, reasonCode: string, remarks: string) => {
+    await markPaperMissing(by, { checkId });
+    const r = await prisma.missingPaperReason.findUniqueOrThrow({ where: { code: reasonCode } });
+    await saveMissingRemarks(by, { checkId, reasonId: r.id, remarks });
+  };
   const accepted = async (pn: string, code: string, dp: CurrentUser, funds?: string[]) => {
     const s = await send(pn, code, dp, { funds });
-    await acceptJob(dp, s.job.id, true);
+    await acceptJob(dp, s.job.id);
     return s;
   };
   /** Works the stages in order: `count` of them, or up to (not into) Check and verify. */
@@ -236,12 +238,37 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
   const cases: Record<string, () => Promise<unknown>> = {
     // Loan Associate
     "GD1012026902011": () => tick(u.la1, "GD1012026902011", "MORTGAGE"),
+    // Missing papers with reasons: marked Missing on the row, with a reason and remarks (Send is allowed).
     "GD1012026902012": async () => {
       const t = await txn("GD1012026902012", "NOTARY");
-      const missing = t.checks.find((c) => c.required)!;
-      await tick(u.la1, "GD1012026902012", "NOTARY", [missing.id]);
-      await requestMissingDocuments(u.la1, { transactionId: t.id, checkIds: [missing.id], askedFrom: "BORROWER", note: "The borrower brings it on Monday." });
+      const ids = t.checks.find((c) => c.required && /Valid IDs/i.test(c.rule?.label ?? ""))!;
+      await tick(u.la1, "GD1012026902012", "NOTARY", [ids.id]);
+      await missingWithRemarks(u.la1, ids.id, "LATER", "The borrower brings the second ID on Monday.");
     },
+    "GD1012026902080": async () => {
+      const t = await txn("GD1012026902080", "NOTARY");
+      const coMaker = t.checks.find((c) => !c.required && /co-maker/i.test(c.rule?.label ?? ""))!;
+      await tick(u.la1, "GD1012026902080", "NOTARY", [coMaker.id]);
+      await setPaperIncluded(u.la1, { checkId: coMaker.id, included: true });
+      await missingWithRemarks(u.la1, coMaker.id, "NOT_ISSUED", "The co-maker is renewing the ID; the copy comes next week.");
+    },
+    "GD1012026902081": async () => {
+      const e = await txn("GD1012026902081", "EDST");
+      await tick(u.la1, "GD1012026902081", "EDST", e.checks.filter((c) => !c.required).map((c) => c.id));
+      await recordEdst(u.la1, { transactionId: e.id, reference: "EDST-2081" });
+      const t = await txn("GD1012026902081", "NOTARY");
+      const ids = t.checks.find((c) => c.required && /Valid IDs/i.test(c.rule?.label ?? ""))!;
+      await tick(u.la1, "GD1012026902081", "NOTARY", [ids.id]);
+      await missingWithRemarks(u.la1, ids.id, "LATER", "The borrower brings the second ID after release.");
+      const { job } = await send("GD1012026902081", "NOTARY", u.dp1, { tick: false });
+      await acceptJob(u.dp1, job.id);
+      await work(u.dp1, job.id, "ALL");
+      await completeJob(u.dp1, job.id, {});
+      await forwardJob(u.dp1, job.id, { branchId: (await loan("GD1012026902081")).branchId, receivingLaId: u.la1.id });
+      await receivePackage(u.la1, job.id, { result: "complete", note: "" });
+    },
+    // Ticked Present by the LA; the processor finds at Accept that the paper is not there (Return to LA applies).
+    "GD1012026902082": () => send("GD1012026902082", "NOTARY", u.dp1),
     "GD1012026902013": async () => {
       await raiseHold(u.la1, { transactionId: (await txn("GD1012026902013", "NOTARY")).id, reasonId: await reason.hold("CLIENT-PAPERS"), note: "Waiting for the signed deed of sale from the borrower." });
       await raiseHold(u.la2, { transactionId: (await txn("GD1012026902013", "PPSR")).id, reasonId: await reason.hold("BRANCH-HEAD"), note: "Branch head to approve the PPSR fee first." });
@@ -458,7 +485,7 @@ async function buildMonitoring(
     const a = await prisma.dpAssignment.findUniqueOrThrow({ where: { id: jobId }, include: { transaction: true } });
     const sent = at(plan.sent, "09:00");
     const acc = plan.accepted !== undefined ? at(plan.accepted, "09:30") : null;
-    await prisma.dpAssignment.update({ where: { id: jobId }, data: { endorsedAt: sent, createdAt: sent, ...(acc ? { decidedAt: acc, labelsConfirmedAt: acc } : {}) } });
+    await prisma.dpAssignment.update({ where: { id: jobId }, data: { endorsedAt: sent, createdAt: sent, ...(acc ? { decidedAt: acc } : {}) } });
     if (a.transaction.status === "ASSIGNED") await prisma.loanTransaction.update({ where: { id: a.transactionId }, data: { statusSince: sent } });
     if (a.transaction.status === "IN_PROCESS" && acc) await prisma.loanTransaction.update({ where: { id: a.transactionId }, data: { statusSince: acc } });
     for (const [kind, n] of Object.entries(plan.stages ?? {})) {
@@ -469,7 +496,7 @@ async function buildMonitoring(
   /** Sent by the branch's LA and accepted by the processor. */
   const acceptedBy = async (pn: string, dp: CurrentUser, la: CurrentUser) => {
     const { job } = await h.send(pn, "NOTARY", dp, { by: la });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     return { job };
   };
   const finish = async (pn: string, dp: CurrentUser, la: CurrentUser) => {

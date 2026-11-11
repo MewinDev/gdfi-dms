@@ -1,6 +1,6 @@
 # Manual Test Kit: answers
 
-Last updated: 10 November 2026 (PHT)
+Last updated: 11 November 2026 (PHT)
 
 What each PN of the [Manual Test Kit](MANUAL-TEST-KIT.md) is and what it is good for. Look here only if you get stuck: the point is to find it out by searching and opening the PN.
 
@@ -25,6 +25,10 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 | GD1012026903009 | Same borrower, additional unit: after opening GD1012026903008, Find loan shows it as related (same CIN). |
 | GD1012026903010 | MyLoans change after Refresh: open it, then as Admin use Simulate a MyLoans change (amount or name) on its loan file; the change shows only after Refresh or the next sync. |
 | GD7772026903011 | Unknown branch code 777 in the PN; MyLoans puts the loan at Antipolo, so it opens at Antipolo (the branch comes from MyLoans, not from the PN). |
+| GD1012026903041 | Missing papers: mark a required Notary paper Missing, try to Send (it names the paper: "Add remarks for: ..."), write a reason and remarks, then Send. As DP 1, the paper is in "Missing papers and reasons" and cannot be named in a return. |
+| GD1012026903042 | Missing papers, optional paper: on Notary tick "Include in this file" for Valid ID of co-maker, mark it Missing with remarks; an optional paper left unticked needs nothing. |
+| GD1012026903043 | Missing papers through the vault gate: Refinancing above ₱500,000 (EDST and Notary). Send Notary with a paper Missing (with remarks), finish it; the loan file shows "Complete with exceptions" until the paper is Received. |
+| GD1012026903044 | Ticked Present but not there: tick every Notary paper and send it to DP 1; as DP 1, at Accept mark one paper not received: the Return to LA still works for a paper the LA ticked Present. |
 
 ### Angono (165)
 
@@ -125,4 +129,13 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 8. **Finance Transfer** sees only fund transfers, with "Fund transfers" under the title.
 9. **Approver Cash** sees cash advances only and has Approve on them (its role shares both Cash advance bands); **Approver Transfer** the same for fund transfers. Neither sees the other type. Settings, Approval bands lists the shared bands per type (two roles on each amount).
 10. With **Release fund transfers** on no role, Settings, Funds types shows "Nobody can release fund transfers." in soft amber under Fund transfer (and Release: Nobody); Settings, Roles and the top of Funds (Admin) show the same line. Fund transfers wait at To release and the Admin is told. Tick it again and the line goes.
+
+### Missing papers
+
+11. **Missing papers.** Pressing **Missing** opens a small box under the row (red "Missing, remarks needed"); Send says "Add remarks for: ..." naming the paper. After Save remarks the row is amber "Missing, with remarks" and Send works. An optional paper without **Include in this file** stays quiet and needs nothing. As the processor, the job shows **Missing papers and reasons** and the paper is not offered in Return to LA (the server refuses it too). **Received** asks for the date it arrived; the reason and remarks stay, and the Loan File row goes with the last one. The Journey has one event per marking and per Received. Monitoring, **Has missing papers**, lists the paper and its days. No email and no alert.
+12. **The reason and remarks box.** The focus goes to the reason chips (one tap picks one; it turns navy with a tick). The remarks are one line that grows; the hint says how many characters are left ("4 more characters.") and Save stays off until there are 5. Enter saves (Shift+Enter is a new line). Saved, it folds to one line: the reason chip, the remarks, who and when, and **Edit**; Esc on Edit cancels and keeps the old text. On a phone the chips wrap, Save sits under the remarks, nothing scrolls sideways.
+
+### Labels (removed 11 November 2026)
+
+13. **No labels.** No Print labels button or page, no "Labels not printed yet" warning, no "Labels printed" chip and no "Labels are on all papers" tick: Send depends only on the papers (required papers, missing papers with remarks) and the other usual checks, and Accept is one press. The Documents tab shows each paper's Document ID (column ID). Settings, Roles has no Print labels tick. A QR code for Archiving and Warehousing (where a file is stored: vault, box, part, numbers) comes in a later phase; it is not built.
 

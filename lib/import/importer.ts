@@ -606,6 +606,30 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
       }
       break;
     }
+    case "missing-reasons": {
+      const existing = await db.missingPaperReason.findMany();
+      const counter = new ActiveCounter(existing.filter((b) => b.active).length);
+      for (const row of rows) {
+        const code = (row.cells.code ?? "").toUpperCase();
+        const cur = existing.find((b) => b.code === code) ?? null;
+        const data = validate(row, SETTINGS_SCHEMAS.missingReason, { code: row.cells.code, name: row.cells.name, sortOrder: row.cells.order }, { code: "code", name: "name", sortOrder: "order" });
+        const s = statusOf(row.cells.status);
+        if (s === "bad") row.bad("status", "type Active or Inactive.");
+        const active = s === "bad" || s === null ? cur?.active ?? true : s;
+        if (!data || row.problems.length) { finish(row, code, null); continue; }
+        const lim = counter.change(cur ? cur.active : null, active);
+        if (lim) { row.bad("status", lim); finish(row, code, null); continue; }
+        const changes = cur ? diff({ name: "Reason", sortOrder: "Order", active: "Status" }, cur, { ...data, active }) : [];
+        finish(row, data.code, {
+          action: !cur ? "new" : changes.length ? "changed" : "unchanged", changes,
+          apply: async (tx, actor) => {
+            if (!cur) await tx.missingPaperReason.create({ data: { ...data, ...statusData(active, actor) } });
+            else await tx.missingPaperReason.update({ where: { id: cur.id }, data: { name: data.name, sortOrder: data.sortOrder, ...(cur.active !== active ? statusData(active, actor) : {}) } });
+          },
+        });
+      }
+      break;
+    }
     case "processing-stages": {
       const [types, existing] = await Promise.all([db.transactionType.findMany(), db.processingStage.findMany({ include: { type: true } })]);
       for (const row of rows) {
@@ -846,6 +870,8 @@ export async function currentDataRows(list: ImportListKey): Promise<Record<strin
       return (await prisma.holdReason.findMany({ orderBy: { sortOrder: "asc" } })).map((r) => ({ code: r.code, name: r.name, order: String(r.sortOrder), status: st(r.active), notes: "" }));
     case "return-reasons":
       return (await prisma.returnReason.findMany({ orderBy: { sortOrder: "asc" } })).map((r) => ({ code: r.code, name: r.name, order: String(r.sortOrder), status: st(r.active), notes: "" }));
+    case "missing-reasons":
+      return (await prisma.missingPaperReason.findMany({ orderBy: { sortOrder: "asc" } })).map((r) => ({ code: r.code, name: r.name, order: String(r.sortOrder), status: st(r.active), notes: "" }));
     case "processing-stages":
       return (await prisma.processingStage.findMany({ include: { type: true }, orderBy: [{ type: { sortOrder: "asc" } }, { sortOrder: "asc" }] })).map((r) => ({
         transaction_code: r.type.code, code: r.code, name: r.name, order: String(r.sortOrder), evidence_fields: fieldsToText(r.fields as unknown as EvidenceField[]),

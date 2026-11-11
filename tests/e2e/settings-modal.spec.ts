@@ -17,7 +17,7 @@ test("cards are grouped under four headings, in order; Jump to scrolls to a grou
   const groups: [string, string[]][] = [
     ["Company setup", ["Branches", "LTO offices", "Loan types"]],
     ["People and access", ["Roles and access", "Processor capacity"]], // users: the Users page in the sidebar
-    ["Documents and steps", ["Transaction types", "Document types", "Checklist items", "Processing stages", "Problem reasons", "Hold reasons", "Return reasons"]],
+    ["Documents and steps", ["Transaction types", "Document types", "Checklist items", "Processing stages", "Problem reasons", "Hold reasons", "Return reasons", "Missing paper reasons"]],
     ["Time and money", ["Turnaround times", "Holidays", "Cash-advance rules", "Expense kinds", "Funds types", "Approval bands"]],
     ["System and testing", ["System and test mode", "MyLoans sync", "Email notifications", "Test data"]],
   ];

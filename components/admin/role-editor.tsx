@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, startTransition, useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { roleCheckAction, roleCommandAction, saveRoleAction } from "@/app/actions/admin";
-import { PERMISSION_GROUPS, permissionLabel, plainWords, type PermissionDef } from "@/lib/auth/permissions";
+import { VISIBLE_PERMISSION_GROUPS, isHiddenPermission, permissionLabel, plainWords, type PermissionDef } from "@/lib/auth/permissions";
 import { tick, tickMany } from "@/lib/roles/impact";
 import { ChevronDownIcon, SearchIcon } from "@/components/ui/icons";
 import { SAVED_EVENT } from "./settings-modal";
@@ -64,6 +64,8 @@ export function RoleEditor({
 }) {
   const router = useRouter();
   const [perms, setPerms] = useState<Set<string>>(() => new Set(role.permissions));
+  // Hidden ticks (a feature switched off for now) stay on the role and are saved with it, but are not counted.
+  const shown = [...perms].filter((k) => !isHiddenPermission(k)).length;
   const [branchAccess, setBranchAccess] = useState(role.branchAccess);
   const [q, setQ] = useState("");
   const [closed, setClosed] = useState<Set<string>>(new Set());
@@ -165,7 +167,7 @@ export function RoleEditor({
         {general && <p role="alert" className="rounded-xl bg-bad-bg px-4 py-2.5 text-sm text-bad-fg">{general}</p>}
 
         <div className="flex flex-wrap gap-2 text-sm" aria-live="polite">
-          <span className="chip c-navy h-7" data-tick-count={perms.size}>{perms.size} {perms.size === 1 ? "permission" : "permissions"} ticked</span>
+          <span className="chip c-navy h-7" data-tick-count={shown}>{shown} {shown === 1 ? "permission" : "permissions"} ticked</span>
           {role.id && <span className="chip c-mute h-7" data-used-by={usedBy}>Used by {usedBy} {usedBy === 1 ? "user" : "users"}</span>}
         </div>
 
@@ -245,7 +247,7 @@ export function RoleEditor({
         )}
 
         <div className="flex flex-col gap-3">
-          {PERMISSION_GROUPS.map((g) => {
+          {VISIBLE_PERMISSION_GROUPS.map((g) => {
             const rows = rowsOf(g.items).filter((r) => (r.kind === "one" ? matches(r.item, g.label) : matches(r.view, g.label) || matches(r.change, g.label)));
             if (rows.length === 0) return null;
             const on = g.items.filter((i) => perms.has(i.key)).length;

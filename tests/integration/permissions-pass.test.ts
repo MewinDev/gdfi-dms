@@ -7,7 +7,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { ALL_PERMISSIONS, AREA_PERMISSIONS, KIND_PERMISSION, LIST_PERMISSION, PERMISSIONS as P, ROLE_DEFAULTS } from "@/lib/auth/permissions";
+import { ALL_PERMISSIONS, AREA_PERMISSIONS, KIND_PERMISSION, LIST_PERMISSION, PERMISSIONS as P, ROLE_DEFAULTS, isHiddenPermission } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { NO_REFRESH, openLoanFile, refreshFromMyLoans } from "@/lib/services/loan-file";
 import { saveRole, setRoleActive } from "@/lib/services/roles";
@@ -73,7 +73,7 @@ describe("the migration gives every role the new ticks for what it could already
     for (const s of statements) await prisma.$executeRawUnsafe(s);
     // Later migrations' role steps run after it, as on a real database (20261119090005_expense_kinds adds the expense-kind ticks).
     // (20261119090006_decisions_batch adds "Print liquidation report" and takes "Move a hold" from Finance.)
-    for (const later of ["20261119090005_expense_kinds", "20261119090006_decisions_batch", "20261119090007_funds_per_type", "20261119090008_funds_edit_split"]) {
+    for (const later of ["20261119090005_expense_kinds", "20261119090006_decisions_batch", "20261119090007_funds_per_type", "20261119090008_funds_edit_split", "20261119090009_missing_papers"]) {
       const sqlLater = readFileSync(path.join("prisma", "migrations", later, "migration.sql"), "utf8");
       for (const s of sqlLater.split(/;\s*\n/).map((x) => x.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim()).filter((x) => x.startsWith('UPDATE "Role"'))) await prisma.$executeRawUnsafe(s);
     }
@@ -193,6 +193,9 @@ describe("roles are just ticks", () => {
     // An exact name: "See funds status" (funds:view) only looked enforced because "PERMISSIONS.FUNDS_VIEW" is
     // the start of "PERMISSIONS.FUNDS_VIEW_ALL"; it was removed (20261119090008_funds_edit_split).
     for (const k of ALL_PERMISSIONS) {
+      // A hidden tick belongs to a feature switched off for now (the CSV exports): nobody can tick it, so it
+      // cannot be decorative. Only hidden ticks may go unenforced.
+      if (isHiddenPermission(k)) continue;
       const constName = names.find(([, v]) => v === k)![0];
       // Settings lists and areas are checked through LIST_PERMISSION / KIND_PERMISSION / AREA_PERMISSIONS.
       const viaList = Object.values(LIST_PERMISSION).includes(k) || Object.values(KIND_PERMISSION).includes(k) || Object.values(AREA_PERMISSIONS).flat().includes(k);

@@ -18,12 +18,13 @@ export class NotInScopeError extends Error {
 }
 
 /**
- * Refused because required papers are not ticked. The message is "Still needed: A, B." and
- * `missing` holds the plain names so the screen can show the same list.
+ * Refused because papers are not answered: "Still needed: A, B." (neither Present nor Missing) and/or
+ * "Add remarks for: C, D." (marked Missing without saved remarks). `missing` and `needsRemarks` hold
+ * the plain names so the screen can show the same lists.
  */
 export class MissingPapersError extends UserError {
-  constructor(public readonly missing: string[]) {
-    super(`Still needed: ${missing.join(", ")}.`, "missing");
+  constructor(public readonly missing: string[], public readonly needsRemarks: string[] = []) {
+    super([missing.length ? `Still needed: ${missing.join(", ")}.` : "", needsRemarks.length ? `Add remarks for: ${needsRemarks.join(", ")}.` : ""].filter(Boolean).join(" "), "missing");
     this.name = "MissingPapersError";
   }
 }

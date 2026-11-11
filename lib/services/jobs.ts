@@ -73,14 +73,13 @@ export function canSeeJob(user: CurrentUser, a: { dpUserId: string; secondaryDpU
 // Accept / decline / return
 // ---------------------------------------------------------------------------
 
-export async function acceptCore(tx: Tx, a: AssignmentFull, who: Who, labelsConfirmed: boolean) {
+export async function acceptCore(tx: Tx, a: AssignmentFull, who: Who) {
   if (a.status !== "PENDING_ACCEPTANCE") throw new UserError("This job is not waiting for acceptance.");
-  if (!labelsConfirmed) throw new UserError("Tick \"Labels are on all papers\" to accept.", "labels");
   const now = new Date();
-  await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "ACCEPTED", decidedAt: now, labelsConfirmedAt: now } });
+  await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "ACCEPTED", decidedAt: now } });
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "IN_PROCESS", statusSince: now } });
   await moveDocs(tx, a.transaction.documents.filter((d) => d.stage === "IN_TRANSIT"), { stage: "WITH_DP", custodian: `${a.dpUser.name} (DP)`, role: "DP", userId: a.dpUserId, location: `With DP ${a.dpUser.name}`, action: "ACKNOWLEDGED_BY_DP" }, { simulated: who.mode === "SIMULATED", by: who.actor });
-  await audit(tx, who, a, "dp_assignment_accepted", "4.1", `${a.dpUser.name} accepted ${a.transaction.type.name} (labels confirmed on all papers); custody moved to the DP`);
+  await audit(tx, who, a, "dp_assignment_accepted", "4.1", `${a.dpUser.name} accepted ${a.transaction.type.name}; custody moved to the DP`);
   await notify(tx, { email: { event: "job_accepted", transactionId: a.transactionId, vars: { pn: a.loan.pn, transaction: a.transaction.type.name, who: a.dpUser.name } }, userIds: [a.assignedById], loanId: a.loanId, title: `${a.loan.pn}: ${a.transaction.type.name} accepted`, body: `${a.dpUser.name} accepted the job.`, link: `/loans/${a.loan.pn}` });
   await recomputeStage(tx, a.loanId, { simulated: who.mode === "SIMULATED" });
 }
@@ -429,7 +428,7 @@ export async function withJob<T>(user: CurrentUser, assignmentId: string, fn: (t
   });
 }
 
-export const acceptJob = (u: CurrentUser, id: string, labels: boolean) => withJob(u, id, (tx, a) => acceptCore(tx, a, whoOf(u), labels));
+export const acceptJob = (u: CurrentUser, id: string) => withJob(u, id, (tx, a) => acceptCore(tx, a, whoOf(u)));
 export async function declineJob(u: CurrentUser, id: string, raw: unknown) {
   const p = declineSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }

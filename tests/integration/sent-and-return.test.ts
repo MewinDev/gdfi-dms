@@ -122,7 +122,7 @@ describe("A. Sent, not accepted yet: the LA can still change it", () => {
 
   it("after the processor accepted every change is refused, including one at the same moment", async () => {
     const { txn, job } = await send();
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const checks = await checksOf(txn.id);
     await expect(saveChecklist(la, { transactionId: txn.id, checkedIds: checks.map((c) => c.id), newOthers: [] })).rejects.toThrow(ACCEPTED);
     await expect(laSetFundsFlag(la, { transactionId: txn.id, needed: false, kinds: [] })).rejects.toThrow(ACCEPTED);
@@ -134,7 +134,7 @@ describe("A. Sent, not accepted yet: the LA can still change it", () => {
 
   it("accept and pull back at the same moment: exactly one wins, the other is refused", async () => {
     const { txn, job } = await send();
-    const results = await Promise.allSettled([acceptJob(dp, job.id, true), pullBack(la, txn.id, { reason: "At the same time" })]);
+    const results = await Promise.allSettled([acceptJob(dp, job.id), pullBack(la, txn.id, { reason: "At the same time" })]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     const a = await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } });
     expect(["ACCEPTED", "PULLED_BACK"]).toContain(a.status);
@@ -160,7 +160,7 @@ describe("B. Return to LA: papers needed", () => {
     await expect(returnToLa(la, job.id, { reasonId: await reasonId("MISSING"), note: "x", checkIds: [] })).rejects.toThrow(/does not allow returning/);
     await expect(returnToLa(admin, job.id, { reasonId: await reasonId("MISSING"), note: "x", checkIds: [] })).rejects.toThrow(/does not allow returning/);
     await expect(returnToLa(dp, job.id, { reasonId: await reasonId("OTHER"), note: "Before accepting" })).rejects.toThrow(/Only an accepted job/);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const since = (await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } })).statusSince;
     const checks = await checksOf(txn.id);
     const valid = checks.find((c) => c.required)!;
@@ -208,7 +208,7 @@ describe("B. Return to LA: papers needed", () => {
     // Round 2: the first "New assignment" alert was removed with the return (the job left the DP); this is the new one.
     expect(await prisma.notification.count({ where: { userId: dp.id, title: { startsWith: "New assignment" } } })).toBe(1);
     const again = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id, status: "PENDING_ACCEPTANCE" } });
-    await acceptJob(dp, again.id, true);
+    await acceptJob(dp, again.id);
 
     // Returned twice: the Journey shows both; the report counts Returned separately.
     await returnToLa(dp, again.id, { reasonId: await reasonId("OTHER"), note: "Needs the PPSR first", handedOver: await allPapers(txn.id) });
@@ -223,7 +223,7 @@ describe("B. Return to LA: papers needed", () => {
 
   it("cash released for the job: the return goes ahead; the advance stays the processor's to liquidate (Cash to settle)", async () => {
     const { txn, job } = await send("MORTGAGE", "YES", ["LTO_FEE"]);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 150000, overMaxReason: "Integration test" }] });
     await decideAdvance(fin, r.id, { approve: true });
     await releaseAdvance(fin, r.id, { ref: "V-1" });
