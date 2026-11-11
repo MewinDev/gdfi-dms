@@ -9,6 +9,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { OutsideControlToggle, ResolveProblemForm, ResumeHoldForm, type HoldBrief } from "@/components/jobs/forms";
 import { SourceReviewSheet } from "@/components/loan/source-review";
 import type { ReviewData } from "@/lib/services/source-review";
+import { BorrowerReviewSheet } from "@/components/loan/borrower-review";
+import type { BorrowerReviewData } from "@/lib/services/borrower-review";
 
 /** Scrolls to an element and highlights it for a moment (the paper row or the title chip). */
 export function flash(id: string) {
@@ -35,7 +37,7 @@ export function FocusFromUrl() {
 
 export interface OpenRow {
   id: string;
-  kind: "problem" | "hold" | "missing" | "source" | "returned";
+  kind: "problem" | "hold" | "missing" | "source" | "correction" | "returned";
   /** Overrides the kind's word on the pill ("Declined by the DP", "Returned by the DP"). */
   badge?: string;
   txnCode: string;
@@ -61,6 +63,8 @@ export interface OpenRow {
   funds?: { code: string; name: string } | null;
   /** MyLoans change under review: the review pop-up. */
   review?: ReviewData;
+  /** MyLoans correction of the borrower's details: its review pop-up. */
+  correction?: BorrowerReviewData;
 }
 
 const KIND: Record<OpenRow["kind"], { word: string; cls: string; Icon: typeof AlertIcon }> = {
@@ -68,10 +72,12 @@ const KIND: Record<OpenRow["kind"], { word: string; cls: string; Icon: typeof Al
   problem: { word: "Problem", cls: "c-bad", Icon: AlertIcon },
   hold: { word: "On hold", cls: "c-hold", Icon: PauseIcon },
   source: { word: "Needs review", cls: "c-bad", Icon: AlertIcon },
+  correction: { word: "Borrower details", cls: "c-wait", Icon: AlertIcon },
   returned: { word: "Returned by the DP", cls: "c-act", Icon: ArrowLeftIcon },
 };
 const GROUPS: { kind: OpenRow["kind"]; title: string }[] = [
   { kind: "source", title: "MyLoans changes" },
+  { kind: "correction", title: "MyLoans corrections" },
   { kind: "returned", title: "Sent back to you" },
   { kind: "missing", title: "Waiting for papers" },
   { kind: "hold", title: "On hold" },
@@ -100,7 +106,7 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
   const shownIds = useMemo(() => new Set((rows.length > 4 && !all ? rows.slice(0, 3) : rows).map((r) => r.id)), [rows, all]);
   if (!rows.length) return null;
   const select = (r: OpenRow, highlight = false) => {
-    if (r.kind === "source") { setReview(r); return; }
+    if (r.kind === "source" || r.kind === "correction") { setReview(r); return; }
     if (r.txnCode === selected) { if (highlight) flash(r.target); return; }
     router.push(highlight ? r.href : r.href.replace(/&focus=[^&]*/, ""), { scroll: false });
   };
@@ -167,7 +173,7 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
                     <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
                       {r.kind === "hold" && r.canResume && r.hold && <ResumeHoldForm hold={r.hold} buttonClass="btn-ghost btn-sm min-h-9" />}
                       {r.kind === "problem" && <button type="button" onClick={() => setProblem(r)} className="btn-ghost btn-sm min-h-9">Open</button>}
-                      {r.kind === "source" && <button type="button" onClick={() => setReview(r)} className="btn-ghost btn-sm min-h-9">Review</button>}
+                      {(r.kind === "source" || r.kind === "correction") && <button type="button" onClick={() => setReview(r)} className="btn-ghost btn-sm min-h-9">{r.kind === "correction" && !r.correction?.canDecide ? "See" : "Review"}</button>}
                     </span>
                   </li>
                 );
@@ -180,6 +186,7 @@ export function OpenItemsCard({ rows, selected, collapsible = false }: { rows: O
         <button type="button" onClick={() => setAll(true)} className="flex min-h-11 w-full items-center border-t border-line pl-4 pr-3 text-sm font-semibold text-navy underline underline-offset-2">Show all ({rows.length})</button>
       )}
       {review?.review && <SourceReviewSheet review={review.review} open={!!review} onClose={() => setReview(null)} />}
+      {review?.correction && <BorrowerReviewSheet review={review.correction} open={!!review} onClose={() => setReview(null)} />}
       <Sheet open={!!problem} onClose={() => setProblem(null)} title={problem ? `Problem: ${problem.txnName}` : "Problem"}>
         {problem?.problem && (
           <div className="flex flex-col gap-3">

@@ -86,6 +86,8 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
           )}
           {result?.kind === "preview" ? (
             <Preview r={result} warnings={can(user, PERMISSIONS.SOURCE_MANAGE) ? accountWarnings(result.record) : []} />
+          ) : result?.kind === "status" ? (
+            <StatusCard r={result} q={q} />
           ) : result && result.kind !== "invalid" ? (
             <Problem r={result} q={q} />
           ) : null}
@@ -133,7 +135,7 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
 }
 
 /** A compact one- or two-line message: an icon, what happened and the PN, the next step, and Try again. */
-function Notice({ tone, role = "alert", pn, title, q, children, data }: { tone: "bad" | "act" | "mute"; role?: "alert" | "status"; pn: string; title: React.ReactNode; q: string; children: React.ReactNode; data?: Record<string, string> }) {
+function Notice({ tone, role = "alert", pn, title, q, children, data }: { tone: "bad" | "act" | "mute"; role?: "alert" | "status"; pn: string; title: React.ReactNode; q: string; children?: React.ReactNode; data?: Record<string, string> }) {
   const cls = tone === "bad" ? "border-bad-line bg-bad-bg" : tone === "act" ? "border-act-line bg-act-bg" : "border-line bg-white";
   const icon = tone === "bad" ? "text-bad-fg" : tone === "act" ? "text-act-fg" : "text-ink-2";
   return (
@@ -142,7 +144,7 @@ function Notice({ tone, role = "alert", pn, title, q, children, data }: { tone: 
       {/* One text block on tablet and desktop; on a phone the explanation runs under Try again (full width). */}
       <div className="min-w-0 max-sm:contents" data-notice-text>
         <p className="col-start-2 row-start-1"><span className={`font-bold ${tone === "bad" ? "text-bad-fg" : "text-navy"}`}>{title}</span> <span className="font-mono text-sm text-ink-2" data-notice-pn>{pn}</span></p>
-        <p className="col-span-2 col-start-2 row-start-2 text-sm text-ink sm:mt-0.5">{children}</p>
+        {children && <p className="col-span-2 col-start-2 row-start-2 text-sm text-ink sm:mt-0.5">{children}</p>}
       </div>
       <Link href={`/search?q=${encodeURIComponent(q)}`} className="btn-ghost col-start-3 row-start-1 h-10 min-h-10 px-3 text-sm">Try again</Link>
     </section>
@@ -153,30 +155,64 @@ const NEXT_STEP: Record<string, string> = {
   pn: "Check the number and try again.",
   branch: "This loan belongs to another branch. Ask that branch to open it.",
   status: "Wait until the loan is released in MyLoans, then try again.",
+  borrowerName: "",
   releaseDate: "Ask the MyLoans data owner to add the release date, then try again.",
   loanType: "Ask the MyLoans data owner to correct the loan type, then try again.",
   totalReleasedAmount: "Ask the MyLoans data owner to correct the amount, then try again.",
 };
 
 function Problem({ r, q }: { r: PnLookupResult; q: string }) {
-  if (r.kind === "preview" || r.kind === "existing" || r.kind === "invalid") return null;
+  if (r.kind === "preview" || r.kind === "existing" || r.kind === "invalid" || r.kind === "status") return null;
+  // No row: one sentence, shown once.
+  if (r.kind === "not_found") return <Notice tone="bad" pn={r.pn} title={r.message} q={q} data={{ "data-find-problem": "not_found" }} />;
   const title =
-    r.kind === "not_found" ? "We could not find this loan in MyLoans."
-    : r.kind === "unavailable" ? "MyLoans is not answering right now."
+    r.kind === "unavailable" ? (r.busy ? "MyLoans is busy, please try again in a few minutes." : "MyLoans is not answering right now.")
     : r.fieldLabel.startsWith("Inactive") ? `This ${r.field === "branch" ? "branch" : "loan type"} is inactive in Settings.`
     : r.field === "branch" ? "This loan is outside your branches."
     : r.field === "status" ? "This loan is not released yet."
     : "Some loan details in MyLoans need fixing first.";
   const next =
-    r.kind === "not_found" ? NEXT_STEP.pn
-    : r.kind === "unavailable" ? "Try again in a few minutes. If it keeps happening, contact IT."
+    r.kind === "unavailable" ? "Try again in a few minutes. If it keeps happening, contact IT."
     : r.fieldLabel.startsWith("Inactive") ? "Ask an Admin to make it active in Settings, then try again."
     : NEXT_STEP[r.field] ?? "Try again later.";
-  const kind = r.kind === "refused" ? r.field : r.kind;
+  const kind = r.kind === "refused" ? r.field : r.kind === "unavailable" && r.busy ? "busy" : r.kind;
+  // Busy: the title says it all (never "not found").
+  if (r.kind === "unavailable" && r.busy) return <Notice tone="bad" pn={r.pn} title={title} q={q} data={{ "data-find-problem": kind }}>Nothing was saved.</Notice>;
   return (
     <Notice tone="bad" pn={r.pn} title={title} q={q} data={{ "data-find-problem": kind }}>
-      {r.message} {next} Nothing was saved.
+      {[r.message, next, "Nothing was saved."].filter(Boolean).join(" ")}
     </Notice>
+  );
+}
+
+/**
+ * A loan in MyLoans and in the person's branches whose status the DMS does not accept (only Loan Released
+ * is): what MyLoans says, by name. No Open button; nothing is saved; no further MyLoans call.
+ */
+function StatusCard({ r, q }: { r: Extract<PnLookupResult, { kind: "status" }>; q: string }) {
+  const text = r.statusKind === "before_release" ? <>This loan is not released yet. MyLoans status: <b data-status-name>{r.statusName}</b>.</>
+    : r.statusKind === "cancelled" ? <>This loan was cancelled in MyLoans.</>
+    : <>MyLoans status: <b data-status-name>{r.statusName}</b>. The DMS does not accept this status.</>;
+  const facts: [string, string][] = [["PN", r.pn], ["Borrower", r.borrowerName.trim() || "-"], ["Branch", r.branchName?.trim() || "-"], ["MyLoans status", r.statusName]];
+  return (
+    <section role="status" aria-labelledby="status-title" className="card min-w-0 p-4 sm:p-5" data-find-status={r.statusKind}>
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex shrink-0 text-act-fg"><AlertIcon size={18} /></span>
+        <div className="min-w-0 flex-1">
+          <h2 id="status-title" className="text-base font-bold leading-snug text-navy sm:text-[17px]" data-status-text>{text}</h2>
+          <p className="mt-0.5 text-sm text-ink-2">Only released loans can be opened in the DMS. Nothing was saved.</p>
+        </div>
+        <Link href={`/search?q=${encodeURIComponent(q)}`} className="btn-ghost h-10 min-h-10 shrink-0 px-3 text-sm">Try again</Link>
+      </div>
+      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-4">
+        {facts.map(([k, v]) => (
+          <div key={k} className="min-w-0">
+            <dt className="text-xs text-ink-2">{k}</dt>
+            <dd className={`mt-0.5 break-words text-[15px] font-semibold text-navy ${k === "PN" ? "font-mono" : ""}`}>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -199,7 +235,7 @@ function Preview({ r, warnings }: { r: Extract<PnLookupResult, { kind: "preview"
     <section aria-labelledby="found-title" className="card min-w-0 p-4 sm:p-6" data-find-preview>
       {(r.otherLoans.length > 0 || r.otherHidden > 0 || r.replacesPn) && (
         <div className="mb-4 flex flex-col gap-2" data-preview-warnings>
-          {r.replacesPn && <p className="rounded-xl bg-fill px-3 py-2 text-sm font-semibold text-navy">MyLoans says this PN replaces {r.replacesPn}. Opening it links both files; Admin then reviews the old one.</p>}
+          {r.replacesPn && <p className="rounded-xl bg-fill px-3 py-2 text-sm font-semibold text-navy">MyLoans says this PN replaces {r.replacesPn}. Opening it does not link them: Admin reviews the old one and decides whether to link them.</p>}
           {(r.otherLoans.length > 0 || r.otherHidden > 0) && (
             <p className="rounded-xl bg-wait-bg px-3 py-2 text-sm font-semibold text-wait-fg" data-other-loans>
               {r.otherLoans.length > 0 ? `This borrower has another loan: ${r.otherLoans.join(", ")}` : "This borrower has another loan"}

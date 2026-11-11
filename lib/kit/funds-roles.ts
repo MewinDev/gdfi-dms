@@ -7,13 +7,14 @@ import { PERMISSIONS as P, type Permission } from "@/lib/auth/permissions";
 export type TypeRoleKey = "FIN_CA" | "FIN_FT" | "APPR_CA" | "APPR_FT";
 
 const fin = (t: "CA" | "FT"): Permission[] => [
-  P.LOANS_VIEW, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW,
+  P.LOANS_VIEW, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.SOURCE_REVIEW_BORROWER,
   ...(t === "CA"
     ? [P.FUNDS_CA_VIEW, P.FUNDS_CA_APPROVE, P.FUNDS_CA_RELEASE, P.FUNDS_CA_SETTLE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_CHANGE_TYPE, P.FUNDS_CA_PRINT]
     : [P.FUNDS_FT_VIEW, P.FUNDS_FT_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_FT_SETTLE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_CHANGE_TYPE, P.FUNDS_FT_PRINT]),
 ];
+// Approvers review the borrower detail corrections too (source:review_borrower is on for every funds approver).
 const appr = (t: "CA" | "FT"): Permission[] => [
-  P.LOANS_VIEW, P.FUNDS_KINDS_VIEW,
+  P.LOANS_VIEW, P.FUNDS_KINDS_VIEW, P.SOURCE_REVIEW_BORROWER,
   ...(t === "CA" ? [P.FUNDS_CA_VIEW, P.FUNDS_CA_APPROVE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_PRINT] : [P.FUNDS_FT_VIEW, P.FUNDS_FT_APPROVE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_PRINT]),
 ];
 
@@ -26,7 +27,7 @@ export const TYPE_ROLES: Record<TypeRoleKey, { name: string; description: string
 
 /** The kit approvers of the clean kit keep both types (as before the split). */
 export const BOTH_TYPES_APPROVER: Permission[] = [
-  P.LOANS_VIEW, P.FUNDS_KINDS_VIEW,
+  P.LOANS_VIEW, P.FUNDS_KINDS_VIEW, P.SOURCE_REVIEW_BORROWER,
   P.FUNDS_CA_VIEW, P.FUNDS_CA_APPROVE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_PRINT,
   P.FUNDS_FT_VIEW, P.FUNDS_FT_APPROVE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_PRINT,
 ];

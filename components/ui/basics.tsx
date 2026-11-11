@@ -14,7 +14,8 @@ const TONE_CLASS: Record<Tone, string> = { act: "c-act", wait: "c-wait", ok: "c-
 
 export function ToneChip({ tone, children, check, title }: { tone: Tone; children: React.ReactNode; check?: boolean; title?: string }) {
   return (
-    <span className={`chip ${TONE_CLASS[tone]}`} title={title}>
+    // A long text (for example "MyLoans changed borrower details, waiting for review") wraps on a phone.
+    <span className={`chip ${TONE_CLASS[tone]}${typeof children === "string" && children.length > 30 ? " h-auto min-h-7 max-w-full whitespace-normal py-1 text-left" : ""}`} title={title}>
       {check && <CheckIcon size={14} strokeWidth={2.6} />}
       {children}
     </span>

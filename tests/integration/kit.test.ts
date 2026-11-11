@@ -223,7 +223,8 @@ describe("Manual Test Kit on the test database", () => {
     expect((await prisma.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1012026902028" }, type: { code: "NOTARY" } } })).status).toBe("COMPLETED");
     // MyLoans: material, status and replacement wait for Admin review; a minor change updates the copy by itself.
     for (const pn of ["GD1012026902042", "GD1012026902043", "GD1012026902044"]) expect(await prisma.sourceChange.count({ where: { loan: { pn }, state: "OPEN" } }), pn).toBe(1);
-    expect(await prisma.auditLog.count({ where: { pn: "GD1012026902041", action: "source_minor_updated" } })).toBe(1);
+    // Borrower details (name, address, contact): their own review item, the loan keeps the old name.
+    expect(await prisma.sourceChange.count({ where: { loan: { pn: "GD1012026902041" }, state: "OPEN", category: "BORROWER" } })).toBe(1);
     // Branches: a branch change waiting, one applied (opened at Antipolo, now at Angono), an open loan at
     // a branch MyLoans closed, a rename and a code change waiting in the Branch review.
     const moved = await prisma.sourceChange.findFirstOrThrow({ where: { loan: { pn: "GD1012026902071" }, state: "OPEN" } });

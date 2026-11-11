@@ -1,6 +1,6 @@
 import { BUILTIN_BRANCHES } from "@/lib/branches/builtin";
 import type { MyLoansRecord } from "./types";
-import { RELEASED_STATUS_ID, STATUS_NAMES } from "./status";
+import { recordStatusKind, releasedStatus } from "./status";
 
 /**
  * The sample MyLoans only: fills the account details a sample record leaves out (product code, area,
@@ -25,7 +25,7 @@ export function productCodeFor(name: string | null | undefined): string | null {
 
 export function completeSample(r: MyLoansRecord): MyLoansRecord {
   const br = BUILTIN_BRANCHES.find((b) => b.code === r.branchCode?.trim());
-  const released = (r.status ?? "").toUpperCase() === "RELEASED";
+  const released = recordStatusKind({ status: r.status }) === "released";
   const has = (k: keyof MyLoansRecord) => r[k] !== undefined;
   return {
     ...r,
@@ -37,8 +37,8 @@ export function completeSample(r: MyLoansRecord): MyLoansRecord {
     ...(has("companyId") ? {} : { companyId: SAMPLE_COMPANY.companyId }),
     ...(has("companyName") ? {} : { companyName: SAMPLE_COMPANY.companyName }),
     // A status changed by the simulator (CANCELLED...) has no MyLoans id here: the name is the word.
-    ...(has("statusId") ? {} : { statusId: released ? RELEASED_STATUS_ID : null }),
-    ...(has("statusName") ? {} : { statusName: released ? STATUS_NAMES[RELEASED_STATUS_ID] : null }),
+    ...(has("statusId") ? {} : { statusId: released ? releasedStatus().statusId : null }),
+    ...(has("statusName") ? {} : { statusName: released ? releasedStatus().statusName : null }),
     ...(has("isActive") ? {} : { isActive: true }),
     ...(has("sourceUpdatedAt") ? {} : { sourceUpdatedAt: r.releaseDate ? `${r.releaseDate}T17:00:00+08:00` : null }),
   };

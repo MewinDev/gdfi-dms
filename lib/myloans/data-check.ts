@@ -1,5 +1,6 @@
 import { isValidLoanType, type LoanTypeValue } from "@/lib/rules";
 import type { MyLoansRecord } from "./types";
+import { recordStatusKind, statusLabel } from "./status";
 
 /**
  * Data Check (prompt section 5.1). Pure. Runs before anything is saved.
@@ -16,7 +17,10 @@ export interface DataCheckContext {
   today: string;
 }
 
-export type DataCheckField = "branch" | "status" | "releaseDate" | "loanType" | "totalReleasedAmount";
+export type DataCheckField = "branch" | "status" | "borrowerName" | "releaseDate" | "loanType" | "totalReleasedAmount";
+
+/** No name at all from MyLoans (neither the personal name parts nor a company name). */
+export const NO_NAME_MESSAGE = "MyLoans has no borrower name for this loan. Ask the MyLoans team to complete it.";
 
 export interface DataCheckFailure {
   ok: false;
@@ -66,10 +70,13 @@ export function runDataCheck(record: MyLoansRecord, ctx: DataCheckContext): Data
   if (ctx.allowedBranches !== null && !inBranches(record, ctx.allowedBranches)) {
     return fail("branch", "Branch", "Outside your branch access.");
   }
-  // Source status
-  if ((record.status ?? "").toUpperCase() !== "RELEASED") {
-    return fail("status", "Source status", `Not yet released. MyLoans status is ${record.status ? `"${record.status}"` : "blank"}.`);
+  // Source status: only the one accepted status (lib/myloans/status.ts).
+  if (recordStatusKind(record) !== "released") {
+    return fail("status", "Source status", `Not yet released. MyLoans status is ${record.status || record.statusId ? `"${statusLabel(record)}"` : "blank"}.`);
   }
+  // Borrower name: blocked only when there is no name at all (a company-only borrower is fine: the
+  // composed name is the company name, lib/myloans/borrower-name.ts).
+  if (!(record.borrowerName ?? "").trim()) return fail("borrowerName", "Borrower name", NO_NAME_MESSAGE);
   // Release date
   if (!record.releaseDate || !/^\d{4}-\d{2}-\d{2}$/.test(record.releaseDate)) {
     return fail("releaseDate", "Release date", "Release date is missing in MyLoans.");

@@ -11,7 +11,7 @@ import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob } from "@/lib/services/jobs";
 import { decideAdvance, requestAdvance } from "@/lib/services/funds";
 import {
-  applySourceChange, closeAsCancelled, copyReusablePapers, isBusinessHours, keepCurrent, moveCashToNewPn, outstandingCash, refreshLoan, refreshOnOpen,
+  applySourceChange, closeAsCancelled, copyReusablePapers, isBusinessHours, keepCurrent, linkReplacement, moveCashToNewPn, outstandingCash, refreshLoan, refreshOnOpen,
   reusablePapers, runMyLoansSync, runSyncNow, sameBorrowerLoans, saveSyncSettings, simulateSourceChange,
 } from "@/lib/services/source-sync";
 import { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "@/lib/services/source-blocks";
@@ -150,13 +150,13 @@ describe("Refresh rules", () => {
 });
 
 describe("Changes and the review item", () => {
-  it("minor: the copy is updated, no alert", async () => {
+  it("minor: the copy is updated, no alert (the borrower's own details are a review: sync-check.test.ts)", async () => {
     const { loan } = await open();
-    await change(PN, { borrowerName: "Ana Villanueva-Cruz", address: "9 Osmeña Blvd" });
+    await change(PN, { areaName: "LUZON 1 (corrected)", divisionName: "Branch Division 2" });
     expect(await refreshLoan(loan.id, sys)).toMatchObject({ ok: true, outcome: "minor" });
-    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).borrowerName).toBe("Ana Villanueva-Cruz");
+    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).sourceAreaName).toBe("LUZON 1 (corrected)");
     expect(await prisma.sourceChange.count({ where: { loanId: loan.id } })).toBe(0);
-    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_minor_updated", loanId: loan.id } })).summary).toBe("MyLoans updated the borrower's name and address");
+    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_minor_updated", loanId: loan.id } })).summary).toBe("MyLoans updated the loan's area and division");
   });
 
   it("material: one item, Send held only where the change reaches, Apply refused for sent work, Keep current does not re-alert; newer change updates the same item", async () => {
@@ -268,11 +268,14 @@ describe("Replacement PN", () => {
     const preview = await lookupPn(la, newPn);
     expect(preview).toMatchObject({ kind: "preview", otherLoans: [PN], replacesPn: PN });
     await openLoanFile(la, { pn: newPn, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
+    // Only a suggestion: nothing is linked until Admin presses Link as replacement (with a note).
+    expect((await prisma.loan.findUniqueOrThrow({ where: { pn: newPn } })).replacesPn).toBeNull();
+    const it1 = await item(old.id);
+    expect(it1).toMatchObject({ state: "OPEN", category: "REPLACEMENT", candidates: expect.arrayContaining([newPn]) });
+    await linkReplacement(admin, it1.id, { newPn, note: "MyLoans gave the unit a new PN", confirmNoPayment: true });
     const nw = await prisma.loan.findUniqueOrThrow({ where: { pn: newPn } });
     expect(nw.replacesPn).toBe(PN);
     expect((await prisma.loan.findUniqueOrThrow({ where: { id: old.id } })).replacedByPn).toBe(newPn);
-    const it1 = await item(old.id);
-    expect(it1).toMatchObject({ state: "OPEN", category: "REPLACEMENT", candidates: expect.arrayContaining([newPn]) });
     expect((await sameBorrowerLoans(prisma, old)).map((l) => l.pn)).toContain(newPn);
     // Reusable papers: valid IDs only (unit papers never), each confirmed; custody on both.
     const options = await reusablePapers(prisma, nw.id);

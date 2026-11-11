@@ -50,6 +50,10 @@ import { COMPLETE_WITH_EXCEPTIONS, VAULT_STAGES, missingPapersOf } from "@/lib/s
 import type { PaperTools } from "@/components/loan/paper-row";
 import { RelatedLoansCard } from "@/components/loan/related-loans";
 import { CopyReusablePapers, SourceReviewEntry } from "@/components/loan/source-review";
+import { BorrowerReviewEntry } from "@/components/loan/borrower-review";
+import { borrowerReviewFor, type BorrowerReviewData } from "@/lib/services/borrower-review";
+import { BORROWER_CHIP } from "@/lib/ui/borrower-chip";
+import { getSetting } from "@/lib/settings";
 
 type Ctx = Awaited<ReturnType<typeof getLoanContext>>;
 type Txn = LoanDetail["transactions"][number];
@@ -77,7 +81,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
   if (!loan) notFound(); // includes loan files outside the LA's branches
   // Refreshed from MyLoans when the copy is older than the setting; an outage never blocks the page.
   if (await refreshOnOpen(loan)) loan = (await getLoanForUser(user, loan.pn)) ?? loan;
-  const [review, reusable, related, opened] = await Promise.all([reviewFor(user, loan.id), reusableFor(user, loan.id), relatedPanel(user, loan), openedAt(loan.pn, loan.branch)]);
+  const [review, reusable, related, opened, correction] = await Promise.all([reviewFor(user, loan.id), reusableFor(user, loan.id), relatedPanel(user, loan), openedAt(loan.pn, loan.branch), borrowerReviewFor(user, loan.id)]);
   const copySources = [...new Set(reusable.map((o) => o.fromPn))].map((pn) => ({ pn, options: reusable.filter((o) => o.fromPn === pn) }));
   if (OLD_HISTORY.includes(sp.tab ?? "")) redirect(`/loans/${loan.pn}?tab=journey`);
   const ctx = await getLoanContext(loan);
@@ -126,8 +130,10 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
       />
 
       {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
+      {/* The loan keeps the DMS details until the correction is decided (nothing is blocked). */}
+      {correction && <p className="-mt-1" data-borrower-chip><ToneChip tone="wait">{BORROWER_CHIP}</ToneChip></p>}
       {loan.cancelledAt && <Banner tone="bad">Closed: {loan.cancelReason ?? "Cancelled in MyLoans"} ({fmtDateTime(loan.cancelledAt)}). Nothing was deleted.</Banner>}
-      <SourceStrip loan={loan} view={can(user, PERMISSIONS.MYLOANS_VIEW)} refresh={can(user, PERMISSIONS.LOANS_REFRESH)} />
+      <SourceStrip loan={loan} view={can(user, PERMISSIONS.MYLOANS_VIEW)} refresh={can(user, PERMISSIONS.LOANS_REFRESH)} paused={await getSetting("myloans.paused")} />
       {!la && <Banner tone="wait">You are viewing this loan file. Your role does not include the steps on it.</Banner>}
 
       {!workTxn && <Stepper current={step} problem={loanProblem} hold={loanHold} />}
@@ -140,10 +146,11 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
         ))}
       </nav>
 
-      {tab === "todo" && workTxn && <WorkView loan={loan} ctx={ctx} user={user} selected={workTxn} review={review} />}
+      {tab === "todo" && workTxn && <WorkView loan={loan} ctx={ctx} user={user} selected={workTxn} review={review} correction={correction} />}
       {tab === "todo" && !workTxn && (
         <>
           {review && <SourceReviewEntry review={review} />}
+          {correction && <BorrowerReviewEntry review={correction} />}
           {copySources.map((c) => <CopyReusablePapers key={c.pn} loanId={loan.id} oldPn={c.pn} mode={c.options[0].mode} options={c.options} />)}
           <TodoTab loan={loan} ctx={ctx} user={user} step={step} related={<RelatedLoansCard loanId={loan.id} rows={related.rows} hidden={related.hidden} />} />
         </>
@@ -526,7 +533,7 @@ function nextAfter(loan: LoanDetail, t: Txn): { href: string; name: string } | n
   return n ? { href: `/loans/${loan.pn}?tab=todo&tx=${n.type.code}`, name: txnName(n.type.code, n.type.name) } : null;
 }
 
-async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; selected: Txn; review: ReviewData | null }) {
+async function WorkView({ loan, ctx, user, selected, review, correction }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; selected: Txn; review: ReviewData | null; correction: BorrowerReviewData | null }) {
   const la = can(user, PERMISSIONS.CHECKLIST_TICK);
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
   const opens = openItemsFor(loan, ctx.holidays);
@@ -641,8 +648,8 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
 
   // Open items: only what the card does not already say (other transactions, MyLoans changes).
   const covered = coveredOpenKinds(steps);
-  const rows = [...(review ? [sourceRow(review)] : []), ...backRows(loan, user), ...openRows(loan, opens, user)]
-    .filter((r) => !(r.txnCode === selected.type.code && r.kind !== "source" && covered.has(r.kind)));
+  const rows = [...(review ? [sourceRow(review)] : []), ...(correction ? [correctionRow(correction)] : []), ...backRows(loan, user), ...openRows(loan, opens, user)]
+    .filter((r) => !(r.txnCode === selected.type.code && r.kind !== "source" && r.kind !== "correction" && covered.has(r.kind)));
 
   const selectedIndex = live.findIndex((t) => t.id === selected.id) + 1;
   const items = txnItems(loan, ctx, opens);
@@ -890,11 +897,19 @@ function sourceRow(r: ReviewData): OpenRow {
   };
 }
 
+/** The borrower details correction, as an Open items row ("MyLoans corrections" group). */
+function correctionRow(r: BorrowerReviewData): OpenRow {
+  return {
+    id: r.id, kind: "correction", txnCode: "", txnName: "MyLoans", days: 0, href: "", target: "", canResume: false, correction: r,
+    reason: `Borrower details changed: ${r.fields}`, who: r.canDecide ? "Review it" : r.waiting, since: "",
+  };
+}
+
 /**
  * "MyLoans · Last checked 2:10 PM" (myloans:view) with Refresh (loans:refresh), and the replacement links.
  * Without the ticks the strip stays tidy: no line, no button (never a dead button).
  */
-function SourceStrip({ loan, view, refresh }: { loan: LoanDetail; view: boolean; refresh: boolean }) {
+function SourceStrip({ loan, view, refresh, paused }: { loan: LoanDetail; view: boolean; refresh: boolean; paused: boolean }) {
   const when = fmtShort(loan.lastCheckedAt ?? loan.retrievedAt);
   if (!view && !refresh && !loan.replacesPn && !loan.replacedByPn) return null;
   return (
@@ -902,6 +917,7 @@ function SourceStrip({ loan, view, refresh }: { loan: LoanDetail; view: boolean;
       {loan.replacesPn && <Link href={`/loans/${loan.replacesPn}`} className="chip c-navy h-7 no-underline" data-replaces>Replaces {loan.replacesPn}</Link>}
       {loan.replacedByPn && <Link href={`/loans/${loan.replacedByPn}`} className="chip c-navy h-7 no-underline" data-replaced-by>Replaced by {loan.replacedByPn}</Link>}
       <span className="flex-1" />
+      {view && paused && <span className="chip c-wait h-auto min-h-7 whitespace-normal py-1" data-myloans-paused>MyLoans calls are paused by Admin</span>}
       {view && (loan.sourceCurrent
         ? <span className="text-ink-2" data-last-checked>MyLoans · Last checked {when}</span>
         : <span className="chip c-act h-auto min-h-7 whitespace-normal py-1" data-last-checked>Last checked {when}. MyLoans did not answer.</span>)}

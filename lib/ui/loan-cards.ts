@@ -1,5 +1,6 @@
 import type { LoanRow } from "@/lib/services/queries";
 import type { LoanCardData } from "@/components/ui/loan-card";
+import { BORROWER_CHIP } from "./borrower-chip";
 import { deadlineChip, LA_STAGES, peso, stageWords, WAITING_STAGES } from "./plain";
 
 export function cardFor(r: LoanRow, holidays: ReadonlySet<string>): LoanCardData & { urgency: number; group: "need" | "wait" | "other"; problem: boolean } {
@@ -12,7 +13,7 @@ export function cardFor(r: LoanRow, holidays: ReadonlySet<string>): LoanCardData
     branch: r.branch,
     amountText: peso(r.amount),
     action: problem ? "Fix a problem first" : stageWords(r.stage),
-    chip: r.sourceChanged ? { text: "MyLoans changed", tone: "bad" } : problem ? { text: `${r.openExceptions} problem${r.openExceptions === 1 ? "" : "s"}`, tone: "bad" } : dl ? { text: dl.text, tone: dl.tone } : null,
+    chip: r.sourceChanged ? { text: "MyLoans changed", tone: "bad" } : r.borrowerChanged ? { text: BORROWER_CHIP, tone: "wait" } : problem ? { text: `${r.openExceptions} problem${r.openExceptions === 1 ? "" : "s"}`, tone: "bad" } : dl ? { text: dl.text, tone: dl.tone } : null,
     urgency: (problem ? 10 : 0) + (dl?.urgency ?? 0),
     group: needsYou ? "need" : WAITING_STAGES.includes(r.stage) ? "wait" : "other",
     problem,

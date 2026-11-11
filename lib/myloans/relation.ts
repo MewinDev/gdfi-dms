@@ -1,4 +1,5 @@
 import { ENDED_STATUSES } from "./live-mapping";
+import { recordStatusKind } from "./status";
 
 /**
  * Replacement or additional unit. Pure. Two loans of the same borrower (same CIN or CIF; never by
@@ -27,8 +28,9 @@ export type Relation =
   | { kind: "REPLACEMENT_CANDIDATE"; matched: string[]; mismatched: []; reason: string }
   | { kind: "ADDITIONAL"; matched: string[]; mismatched: string[]; reason: string };
 
+/** Ended: one of the ended words, or the MyLoans cancelled status by id (STATUS_14, lib/myloans/status.ts). */
 export const isEnded = (status: string | null | undefined, ended: readonly string[] = ENDED_STATUSES) =>
-  ended.includes((status ?? "").trim().toUpperCase());
+  ended.includes((status ?? "").trim().toUpperCase()) || (/^STATUS_\d+$/i.test((status ?? "").trim()) && recordStatusKind({ status }) === "cancelled");
 
 const norm = (v: unknown) => (v === null || v === undefined ? null : String(v).replace(/\s+/g, " ").trim().toUpperCase() || null);
 const days = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);

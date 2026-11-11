@@ -14,7 +14,8 @@ export const CHANGED_REASON = "MyLoans changed this loan. Admin is reviewing.";
 export async function sendBlockReason(db: Tx | typeof prisma, loanId: string, txnCode: string): Promise<string | null> {
   const loan = await db.loan.findUnique({ where: { id: loanId }, select: { cancelledAt: true, cancelReason: true } });
   if (loan?.cancelledAt) return `This loan was closed: ${loan.cancelReason ?? "Cancelled in MyLoans"}.`;
-  const item = await db.sourceChange.findFirst({ where: { loanId, state: "OPEN" } });
+  // Borrower details corrections never block Send (they have their own review).
+  const item = await db.sourceChange.findFirst({ where: { loanId, state: "OPEN", category: { not: "BORROWER" } } });
   if (!item) return null;
   if (item.category !== "MATERIAL") return CANCELLED_REASON;
   const p = item.proposed as unknown as Proposed;

@@ -1,5 +1,9 @@
 import type { ListBranchesOptions, MyLoansAdapter, MyLoansBranches, MyLoansChanged, MyLoansLookup, MyLoansSearch } from "./types";
-import { UNAVAILABLE_MESSAGE } from "./types";
+import { NOT_FOUND_MESSAGE, UNAVAILABLE_MESSAGE } from "./types";
+import { recordStatusKind } from "./status";
+
+/** Statuses 15 to 19 are disbursement-check records, not loans: never a loan file, never shown as a status. */
+const isLoan = (r: { statusId?: string | null; status?: string | null }) => recordStatusKind(r) !== "not_a_loan";
 
 /**
  * Wraps an adapter: retry with backoff on "did not answer", honour Retry-After (429), and a simple
@@ -55,16 +59,19 @@ export class ResilientAdapter implements MyLoansAdapter {
     }
   }
 
-  getByPn(pn: string): Promise<MyLoansLookup> {
-    return this.run(() => this.inner.getByPn(pn), (message) => ({ ok: false, reason: "UNAVAILABLE", message }), (r) => !r.ok && r.reason === "UNAVAILABLE");
+  async getByPn(pn: string): Promise<MyLoansLookup> {
+    const r = await this.run(() => this.inner.getByPn(pn), (message): MyLoansLookup => ({ ok: false, reason: "UNAVAILABLE", message }), (x) => !x.ok && x.reason === "UNAVAILABLE");
+    return r.ok && !isLoan(r.record) ? { ok: false, reason: "NOT_FOUND", message: NOT_FOUND_MESSAGE } : r;
   }
-  search(query: string, limit: number): Promise<MyLoansSearch> {
+  async search(query: string, limit: number): Promise<MyLoansSearch> {
     if (!this.capabilities.search) return this.inner.search(query, limit);
-    return this.run(() => this.inner.search(query, limit), (message) => ({ ok: false, reason: "UNAVAILABLE", message }), (r) => !r.ok && r.reason === "UNAVAILABLE");
+    const r = await this.run(() => this.inner.search(query, limit), (message): MyLoansSearch => ({ ok: false, reason: "UNAVAILABLE", message }), (x) => !x.ok && x.reason === "UNAVAILABLE");
+    return r.ok ? { ok: true, hits: r.hits.filter((h) => isLoan({ status: h.status })) } : r;
   }
-  getChangedSince(since: Date, limit: number): Promise<MyLoansChanged> {
+  async getChangedSince(since: Date, limit: number): Promise<MyLoansChanged> {
     if (!this.capabilities.changedSince) return this.inner.getChangedSince(since, limit);
-    return this.run(() => this.inner.getChangedSince(since, limit), (message) => ({ ok: false, reason: "UNAVAILABLE", message }), (r) => !r.ok && r.reason === "UNAVAILABLE");
+    const r = await this.run(() => this.inner.getChangedSince(since, limit), (message): MyLoansChanged => ({ ok: false, reason: "UNAVAILABLE", message }), (x) => !x.ok && x.reason === "UNAVAILABLE");
+    return r.ok ? { ...r, records: r.records.filter(isLoan) } : r;
   }
   listBranches(o: ListBranchesOptions): Promise<MyLoansBranches> {
     const inner = this.inner.listBranches?.bind(this.inner);

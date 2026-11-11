@@ -4,10 +4,12 @@ import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getMyLoansAdapter, type MyLoansRecord } from "@/lib/myloans";
+import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloans";
 import { getPnFormat, parsePn, pnHeadline } from "@/lib/pn";
 import { reportUnknownBranchCode, resolveLoanBranch } from "./branches";
-import { runDataCheck, type DataCheckField } from "@/lib/myloans/data-check";
+import { inBranches, runDataCheck, type DataCheckField } from "@/lib/myloans/data-check";
+import { callsThisHour, hasCached, lookupPn as cachedLookup } from "@/lib/myloans/client";
+import { recordStatusKind, statusLabel, type StatusKind } from "@/lib/myloans/status";
 import { accountColumns } from "@/lib/myloans/account";
 import {
   classifyProductName,
@@ -21,7 +23,7 @@ import {
 } from "@/lib/rules";
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { recomputeStage } from "./stage";
-import { getSetting } from "@/lib/settings";
+import { getSetting, setSetting } from "@/lib/settings";
 import { linkOnOpen, refreshLoan, sameBorrowerLoans, suggestOnOpen } from "./source-sync";
 import { hashTracked, trackedOf } from "@/lib/myloans/changes";
 import { UserError } from "./errors";
@@ -35,7 +37,13 @@ export type PnLookupResult =
   | { kind: "existing"; pn: string }
   | { kind: "invalid"; message: string; part?: string }
   | { kind: "not_found"; pn: string; message: string }
-  | { kind: "unavailable"; pn: string; message: string }
+  /**
+   * In MyLoans and in the person's branches, but not the one accepted status (lib/myloans/status.ts):
+   * a card with the real status name, never a loan file and never a saved copy.
+   */
+  | { kind: "status"; pn: string; statusKind: Exclude<StatusKind, "released" | "not_a_loan">; statusName: string; borrowerName: string; branchName: string | null }
+  /** busy: the hourly limit or the circuit breaker stopped the call ("MyLoans is busy..."). */
+  | { kind: "unavailable"; pn: string; message: string; busy?: boolean }
   | { kind: "refused"; pn: string; field: DataCheckField; fieldLabel: string; message: string; record: MyLoansRecord }
   | {
       kind: "preview";
@@ -111,15 +119,38 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
     return { kind: "existing", pn };
   }
 
-  const lookup = await getMyLoansAdapter().getByPn(pn);
+  // The one MyLoans call for an unsaved PN, through the shared client: a second look within its short
+  // cache time (a reload of the status card) reuses this answer instead of asking again. It counts toward
+  // the hourly limit; when the limit or the circuit breaker stops it, the person is told MyLoans is busy
+  // (never "not found").
+  const adapter = getMyLoansAdapter();
+  const stopped = callsThisHour() >= (await getSetting("myloans.hourlyCeiling")) || adapter.breakerState().open;
+  // The sample MyLoans: a simulated change to this PN is a new answer (not hidden by the cache).
+  const variant = myLoansMode() === "mock" ? `find:${JSON.stringify([(await getSetting("myloans.mockOverrides"))[pn] ?? null, (await getSetting("myloans.mockExtra")).find((r) => r.pn === pn) ?? null])}` : undefined;
+  const lookup = stopped && !hasCached(pn, Date.now(), variant) ? null : await cachedLookup(adapter, pn, { variant });
+  if (!lookup || (!lookup.ok && lookup.reason === "UNAVAILABLE" && adapter.breakerState().open)) {
+    return { kind: "unavailable", pn, message: MYLOANS_BUSY, busy: true };
+  }
   if (!lookup.ok) {
     return lookup.reason === "NOT_FOUND"
-      ? { kind: "not_found", pn, message: lookup.message }
+      ? { kind: "not_found", pn, message: NOT_IN_MYLOANS }
       : { kind: "unavailable", pn, message: lookup.message };
   }
+  // Statuses 15 to 19 are not loans (the adapter already answers "not found"; this is the second guard).
+  const sk = recordStatusKind(lookup.record);
+  if (sk === "not_a_loan") return { kind: "not_found", pn, message: NOT_IN_MYLOANS };
   await noteUnknownCodes(lookup.record);
+  const mine = allowedBranches(user);
+  if (sk !== "released") {
+    // The branch check first: a loan outside the person's branches shows none of its details.
+    if (mine !== null && !inBranches(lookup.record, mine)) {
+      return { kind: "refused", pn, field: "branch", fieldLabel: "Branch", message: "Outside your branch access.", record: emptyRecord(pn) };
+    }
+    return { kind: "status", pn, statusKind: sk, statusName: statusLabel(lookup.record), borrowerName: lookup.record.borrowerName, branchName: lookup.record.branchName };
+  }
   const check = runDataCheck(lookup.record, { allowedBranches: allowedBranches(user), today: businessDate(new Date()) });
   if (!check.ok) {
+    if (check.field === "borrowerName") await noteNoName(lookup.record);
     return { kind: "refused", pn, field: check.field, fieldLabel: check.fieldLabel, message: check.message, record: lookup.record };
   }
   const off = await inactiveRefusal(lookup.record);
@@ -149,6 +180,18 @@ async function otherLoansOf(user: CurrentUser, rec: { cin: string | null; cif: s
   const mine = all.filter((l) => inScope(user, branches.find((b) => b.id === l.id)?.branchId ?? ""));
   return { otherLoans: mine.map((l) => l.pn), otherHidden: all.length - mine.length };
 }
+
+/** Admin data check (Settings, MyLoans sync): the loans refused because MyLoans has no borrower name. */
+async function noteNoName(rec: MyLoansRecord) {
+  const list = (await getSetting("myloans.noNameLoans")).filter((x) => x.pn !== rec.pn);
+  await setSetting("myloans.noNameLoans", [{ pn: rec.pn, branch: rec.branchName, at: new Date().toISOString() }, ...list].slice(0, 50)).catch(() => null);
+}
+
+/** The hourly limit or the circuit breaker stopped the lookup. */
+export const MYLOANS_BUSY = "MyLoans is busy, please try again in a few minutes.";
+
+/** The one sentence for a PN MyLoans has no loan for. */
+export const NOT_IN_MYLOANS = "No loan with this PN was found in MyLoans.";
 
 function emptyRecord(pn: string): MyLoansRecord {
   return { pn, cin: null, cif: null, sourceLoanId: null, borrowerName: "", branchName: null, branchCode: null, status: null, loanType: null, productName: null, totalReleasedAmount: null, releaseDate: null };
@@ -184,7 +227,10 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
   const lookup = await getMyLoansAdapter().getByPn(pn);
   if (!lookup.ok) throw new UserError(lookup.message, "pn");
   const check = runDataCheck(lookup.record, { allowedBranches: allowedBranches(user), today: businessDate(new Date()) });
-  if (!check.ok) throw new UserError(check.message, check.field);
+  if (!check.ok) {
+    if (check.field === "borrowerName") await noteNoName(lookup.record);
+    throw new UserError(check.message, check.field);
+  }
   const off = await inactiveRefusal(lookup.record);
   if (off) throw new UserError(off.message, off.field);
   const branch = await resolveLoanBranch(prisma, lookup.record);
@@ -219,6 +265,9 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
           cif: rec.cif,
           sourceLoanId: rec.sourceLoanId,
           borrowerName: rec.borrowerName,
+          // What the DMS shows until a MyLoans correction is accepted (Borrower details review).
+          borrowerAddress: rec.address?.trim() || null,
+          borrowerContactNo: rec.contactNo?.trim() || null,
           branchId: branch.id,
           loanType: check.normalized.loanType,
           productName: check.normalized.productName,

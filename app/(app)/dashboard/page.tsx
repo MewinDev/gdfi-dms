@@ -19,6 +19,7 @@ import { DpHome } from "@/components/jobs/dp-home";
 import { FinanceHome } from "@/components/funds/finance-home";
 import { TatProblemsCard } from "@/components/jobs/tat-report";
 import { SourceChangesCard } from "@/components/loan/source-changes-card";
+import { BorrowerCorrectionsCard } from "@/components/loan/borrower-corrections-card";
 import { BranchReviewCard } from "@/components/admin/branches/review-card";
 import { PackagesToReceive } from "@/components/jobs/packages-to-receive";
 import { SentBackToYou } from "@/components/loan/sent-back-to-you";
@@ -85,6 +86,8 @@ export default async function HomePage() {
           <PackagesToReceive user={user} />
           <SentBackToYou user={user} />
           {can(user, PERMISSIONS.SOURCE_REVIEW) && <SourceChangesCard />}
+          {/* Supervisors and approvers: the corrections of their branches (Admin sees those routed to it above). */}
+          {can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER) && !can(user, PERMISSIONS.SOURCE_REVIEW) && <BorrowerCorrectionsCard user={user} />}
           {can(user, PERMISSIONS.BRANCHES_REVIEW) && <BranchReviewCard />}
           {can(user, PERMISSIONS.REPORTS_TAT) && <TatProblemsCard />}
           <section aria-labelledby="next-title" className="card overflow-hidden">

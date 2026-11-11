@@ -26,6 +26,7 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
     expect(SUPERVISOR_TICKS.map((t) => t.plain)).toEqual([
       "See loans and open loan files (within their branches)", "Move a hold to another person", "Resolve any problem (at their branches)",
       "See the Monitoring pages for DPs and LTO offices (their branches)", "See the TAT report",
+      "Review borrower detail corrections from MyLoans (their branches)",
     ]);
   });
 });

@@ -5,6 +5,9 @@ import { notifyOverdue } from "@/lib/services/funds";
 import { OPEN_ADVANCE, isOverdue, peso } from "@/lib/funds/rules";
 import { greeting } from "@/lib/ui/plain";
 import { PageHeader } from "@/components/ui/basics";
+import { can } from "@/lib/auth/current-user";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { BorrowerCorrectionsCard } from "@/components/loan/borrower-corrections-card";
 
 /** Finance's Home: what waits for approval and release, and what is outstanding. */
 export async function FinanceHome({ user }: { user: CurrentUser }) {
@@ -36,6 +39,7 @@ export async function FinanceHome({ user }: { user: CurrentUser }) {
         ))}
       </section>
       <Link href="/funds" className="btn-primary self-start">Open Funds</Link>
+      {can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER) && <BorrowerCorrectionsCard user={user} />}
     </div>
   );
 }

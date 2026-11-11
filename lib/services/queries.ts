@@ -1,4 +1,5 @@
 import "server-only";
+import { borrowerChangedLoanIds } from "./borrower-review";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { can, inScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
@@ -144,6 +145,8 @@ export interface LoanRow {
   archived: boolean;
   /** A MyLoans change waits for Admin to review. */
   sourceChanged?: boolean;
+  /** MyLoans corrected the borrower's details: waiting for the supervisor's review (nothing blocked). */
+  borrowerChanged?: boolean;
 }
 
 export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: TatMap, holidays?: Set<string>): Promise<LoanRow[]> {
@@ -175,10 +178,11 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
     include: {
       branch: { select: { id: true, name: true, code: true, area: { select: { name: true } } } },
       transactions: { where: { status: "IN_PROCESS" }, select: { type: { select: { code: true } } } },
-      _count: { select: { exceptions: { where: { status: "OPEN" } }, problems: { where: { resolvedAt: null } }, sourceChanges: { where: { state: "OPEN" } } } },
+      _count: { select: { exceptions: { where: { status: "OPEN" } }, problems: { where: { resolvedAt: null } }, sourceChanges: { where: { state: "OPEN", category: { not: "BORROWER" } } } } },
     },
     take: 500,
   });
+  const corrected = await borrowerChangedLoanIds(loans.map((l) => l.id));
   let rows: LoanRow[] = loans.map((l) => {
     const tat = loanTat({ stage: l.stage, stageSince: l.stageSince, releasedAt: l.releasedAt, inProcessCodes: l.transactions.map((x) => x.type.code) }, t, h);
     const next = nextActionForStage(l.stage as Stage, { hasOpenException: l._count.exceptions > 0 });
@@ -192,6 +196,7 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
       openExceptions: l._count.exceptions + l._count.problems, needsAction, archived: !!l.archivedAt,
       // A MyLoans change waits for Admin's review ("MyLoans changed").
       sourceChanged: l._count.sourceChanges > 0,
+      borrowerChanged: corrected.has(l.id),
     };
   });
   if (f.tab === "queue" || !f.tab) rows = rows.filter((r) => r.needsAction);

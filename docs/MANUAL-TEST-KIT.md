@@ -1,6 +1,6 @@
 # Manual Test Kit
 
-Last updated: 11 November 2026 (PHT)
+Last updated: 12 November 2026 (PHT)
 
 Test GDFI DMS by hand from zero. The kit puts your own database (`gdfi_dms`) in a clean state: the settings, the branches and the sign-in accounts below, and a list of PNs that exist only in the sample MyLoans. Nothing is opened yet: you search each PN and open it yourself. The automated tests use another database (`gdfi_dms_test`).
 
@@ -194,6 +194,20 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 25. **Refresh when found (Admin).** As **Admin**, open Settings, MyLoans sync and find the setting for a saved loan found on Find a loan. Change it, save, and read it again.
 26. **Two people, one PN.** In two browsers (one private window), sign in as **LA Angono** and **Roving LA**. Both find the same Angono PN that nobody opened yet and answer the questions. Press **Open loan file** in both, as close together as you can.
 27. **Without GD.** Type the PN of a loan file you opened without the GD (the 13 digits only) and press **Find loan**. Then do the same with an Angono PN from the list that nobody opened yet.
+
+### MyLoans status (12 November 2026)
+
+28. **Not released, cancelled, not a loan.** As **Admin**, open Settings and turn on **Show data-check test PNs**. As **LA Angono**, open `/search` and, under Data-check samples, pick the one whose tooltip says "Check Prepared", then press **Find loan**. Do the same with the "For Approval (Loan Released)", "status 49" and "disbursement-check record" samples. Then, as **LA Antipolo**, pick the "Cancelled" sample. Try it on a phone too. Turn the setting off again when done.
+29. **Cancelled, outside your branches.** As **LA Angono**, pick the "Cancelled" sample (an Antipolo loan) and press **Find loan**.
+
+### MyLoans sync check (12 November 2026)
+
+Before these, as **Admin**, turn on the test simulator in Settings, System. "Simulate a MyLoans change" is on the Journey tab of a loan file (Admin).
+
+30. **Borrower details.** As **LA Angono**, open an Angono PN from the list, tick the Notary papers and send one transaction to a processor. As **Admin**, on its Journey tab, simulate "Change the borrower name, address and contact number". As **LA Angono**, open the loan file, its To do tab and **See the change**. As **Branch Supervisor**, open it from Home and decide it. Then, as Admin, simulate "Change the borrower's CIF" and, as Branch Supervisor, press **Keep current**. Press **Refresh from MyLoans** afterwards.
+31. **Amount and branch.** On another Angono loan, as Admin, simulate "Change the amount". As LA Angono, open Check documents for Mortgage and Notary. As Admin, open the review and press **Keep current** without a note, then with one. On an Antipolo loan (LA Antipolo opens it), simulate "Move the loan to another branch" and apply it as Admin; then look for the loan as LA Antipolo and as LA Angono.
+32. **Pause MyLoans calls.** As **Admin**, Settings, MyLoans sync: press **Pause MyLoans calls**, then **Run now**. Open a loan file. Then turn MyLoans calls back on. As **Finance**, look for the same switch.
+33. **Area name.** As Admin, simulate "Correct the area name (minor)" on any loan and open its Journey tab.
 
 ## If the sign-in page keeps coming back
 

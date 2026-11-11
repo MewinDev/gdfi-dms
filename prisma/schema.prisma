@@ -625,6 +625,10 @@ model Loan {
   cif                 String?
   sourceLoanId        String?
   borrowerName        String
+  /// The borrower's address and contact number as the DMS shows them (MyLoans' values, changed only when a
+  /// "Borrower details" correction is accepted).
+  borrowerAddress     String?
+  borrowerContactNo   String?
   branchId            String
   branch              Branch   @relation(fields: [branchId], references: [id])
   loanType            String
@@ -743,6 +747,9 @@ enum SourceChangeCategory {
   MATERIAL
   STATUS
   REPLACEMENT
+  /// Borrower details (name, address, contact number, CIF, CIN): decided by the branch supervisors and
+  /// approvers (source:review_borrower), apart from the Admin item. One open item of each per loan.
+  BORROWER
 }
 
 enum SourceChangeState {

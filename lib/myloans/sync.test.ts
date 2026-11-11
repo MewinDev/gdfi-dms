@@ -20,16 +20,17 @@ describe("detectChanges", () => {
     expect(hashTracked(t({ totalReleasedAmount: "450000.00" }))).toBe(hashTracked(t())); // same amount, other spelling
     expect(detectChanges(null, t()).category).toBe("NONE"); // first copy
   });
-  it("minor: name spelling and address", () => {
+  it("borrower details: name spelling and address (a review of their own, not minor)", () => {
     const d = detectChanges(t(), t({ borrowerName: "Maria  Santos-Cruz", address: "2 Rizal Ave" }));
-    expect(d.category).toBe("MINOR");
-    expect(d.changes.map((c) => c.label)).toEqual(["Borrower name", "Address"]);
+    expect(d.category).toBe("BORROWER");
+    expect(d.changes.map((c) => c.label)).toEqual(["Name", "Address"]);
+    expect(detectChanges(t(), t({ areaName: "Somewhere" } as never)).category).toBe("MINOR");
   });
   it("material: amount (in centavos), product, loan type; several at once keep the minor ones too", () => {
     const d = detectChanges(t(), t({ totalReleasedAmount: 520_000, productName: "Auto Financing", loanType: "Renewal", address: "3 Mabini St" }));
     expect(d.category).toBe("MATERIAL");
     expect(d.changes.find((c) => c.field === "amount")).toMatchObject({ was: 45_000_000, now: 52_000_000, kind: "material" });
-    expect(d.changes.map((c) => c.kind).sort()).toEqual(["material", "material", "material", "minor"]);
+    expect(d.changes.map((c) => c.kind).sort()).toEqual(["borrower", "material", "material", "material"]);
   });
   it("status wins over material; replacement wins over status", () => {
     expect(detectChanges(t(), t({ status: "CANCELLED", totalReleasedAmount: 1 })).category).toBe("STATUS");

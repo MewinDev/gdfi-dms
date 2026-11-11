@@ -31,6 +31,7 @@ import { paymentEvidence } from "@/lib/myloans/relation";
 export { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "./source-blocks";
 import { UserError, NotInScopeError } from "./errors";
 import { createTransactionOfType } from "./loan-file";
+import { raiseBorrowerReview } from "./borrower-review";
 import { nextDocumentId } from "./workflow";
 import { bandApprovers } from "./jobs";
 import { financeIds, nextNumber } from "./funds";
@@ -45,7 +46,7 @@ type Mode = "MANUAL" | "AUTOMATIC" | "SIMULATED";
 /** find: the background refresh after Find a loan shows a saved loan (Settings > MyLoans sync, "When a saved loan is found"). */
 export type Trigger = "open" | "button" | "background" | "simulator" | "find";
 export type RefreshResult =
-  | { ok: true; outcome: "none" | "minor" | "review"; category: ChangeCategory; checkedAt: Date }
+  | { ok: true; outcome: "none" | "minor" | "review"; category: ChangeCategory; checkedAt: Date; borrower?: boolean }
   | { ok: false; message: string; checkedAt: Date };
 
 const OPEN_JOB = ["PENDING_ACCEPTANCE", "ACCEPTED"] as const;
@@ -188,12 +189,10 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
     const mode: Mode = opts.mode === "SIMULATED" ? "SIMULATED" : "AUTOMATIC";
     const minor = det.changes.filter((c) => c.kind === "minor");
     if (minor.length) {
-      // Minor: the copy is updated, no alert ("MyLoans updated the borrower's address").
+      // Minor: the copy is updated, no alert ("MyLoans updated the loan's area"). The borrower's own details
+      // are never updated here: they are the Borrower details review below.
       const data: Prisma.LoanUpdateInput = {};
       for (const c of minor) {
-        if (c.field === "borrowerName" && c.now) data.borrowerName = String(c.now);
-        if (c.field === "cin") data.cin = c.now === null ? null : String(c.now);
-        if (c.field === "cif") data.cif = c.now === null ? null : String(c.now);
         // Area, division and company: the copy shown under More loan details.
         if (c.field in MINOR_ACCOUNT_COLUMNS) data[MINOR_ACCOUNT_COLUMNS[c.field as keyof typeof MINOR_ACCOUNT_COLUMNS]] = c.now === null ? null : String(c.now);
       }
@@ -203,21 +202,25 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
         summary: minorSummary(minor), details: { changes: minor },
       });
     }
-    const big = det.changes.filter((c) => c.kind !== "minor");
-    if (!big.length) { result = { ok: true, outcome: "minor", category: "MINOR", checkedAt: now }; return; }
+    // Borrower details (name, address, contact number, CIF, CIN): their own review item, decided by the
+    // branch supervisors and approvers. The loan keeps the old details until then; nothing is blocked.
+    const borrower = det.changes.some((c) => c.kind === "borrower")
+      ? !!(await raiseBorrowerReview(tx, { loanId: loan.id, pn: loan.pn, current, hash, mode, now }))
+      : false;
+    // (A replaces-PN link that disappears is not a change to review.)
+    const big = det.changes.filter((c) => c.kind !== "minor" && c.kind !== "borrower" && !(c.kind === "replacement" && !c.now));
+    if (!big.length) { result = { ok: true, outcome: borrower ? "review" : "minor", category: borrower ? "BORROWER" : "MINOR", checkedAt: now, borrower }; return; }
 
-    const category = det.category as Exclude<ChangeCategory, "NONE" | "MINOR">;
+    const category = (big.some((c) => c.kind === "replacement" && c.now) ? "REPLACEMENT" : big.some((c) => c.kind === "status") ? "STATUS" : "MATERIAL") as Exclude<ChangeCategory, "NONE" | "MINOR" | "BORROWER">;
     let target = { id: loan.id, pn: loan.pn };
     let candidates: string[] = [];
     let itemChanges: FieldChange[] = big;
     if (category === "REPLACEMENT" && current.previousPn) {
-      // MyLoans says this PN replaces another: link both files; the old one gets the review item.
-      await tx.loan.update({ where: { id: loan.id }, data: { replacesPn: current.previousPn } });
+      // MyLoans says this PN replaces another: only a suggestion. The old one gets the review item with this
+      // PN as a possible replacement; a person links them ("Link as replacement", with a note). Never linked here.
       const old = await tx.loan.findUnique({ where: { pn: current.previousPn } });
-      await writeAudit(tx, { actor: SYSTEM_ACTOR, mode, action: "replacement_linked", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn: loan.pn, summary: `MyLoans says ${loan.pn} replaces ${current.previousPn}. The files are linked.` });
-      if (!old) { result = { ok: true, outcome: "minor", category: "REPLACEMENT", checkedAt: now }; return; }
-      await tx.loan.update({ where: { id: old.id }, data: { replacedByPn: loan.pn } });
-      await writeAudit(tx, { actor: SYSTEM_ACTOR, mode, action: "replacement_linked", entityType: "Loan", entityId: old.id, loanId: old.id, pn: old.pn, summary: `MyLoans says ${loan.pn} replaces ${old.pn}. The files are linked.` });
+      await writeAudit(tx, { actor: SYSTEM_ACTOR, mode, action: "replacement_suggested", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn: loan.pn, summary: `MyLoans says ${loan.pn} replaces ${current.previousPn}. Suggested as a replacement; Admin decides whether to link them.` });
+      if (!old) { result = { ok: true, outcome: "minor", category: "REPLACEMENT", checkedAt: now, borrower }; return; }
       target = { id: old.id, pn: old.pn };
       candidates = [loan.pn];
       itemChanges = [{ field: "previousPn", label: "Replaced by", kind: "replacement", was: null, now: loan.pn }];
@@ -227,7 +230,7 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
       candidates = (await replacementCandidates(tx, me)).map((r) => r.loan.pn);
     }
     await raiseReview(tx, { loanId: target.id, pn: target.pn, category, changes: itemChanges, hash, candidates, mode, now });
-    result = { ok: true, outcome: "review", category, checkedAt: now };
+    result = { ok: true, outcome: "review", category, checkedAt: now, borrower };
   });
   return result;
 }
@@ -252,16 +255,16 @@ export async function suggestOnOpen(newPn: string) {
   }
 }
 
-/** A new loan file whose MyLoans record names the PN it replaces: link both; the old one gets the review item. */
+/**
+ * A new loan file whose MyLoans record names the PN it replaces: a suggestion only. The old one gets the
+ * review item with the new PN as a possible replacement; a person links them. Never linked here.
+ */
 export async function linkOnOpen(newPn: string, previousPn: string) {
   const [nw, old] = await Promise.all([prisma.loan.findUnique({ where: { pn: newPn } }), prisma.loan.findUnique({ where: { pn: previousPn } })]);
   if (!nw) return;
   await withLoanLock(old?.id ?? nw.id, async (tx) => {
-    await tx.loan.update({ where: { id: nw.id }, data: { replacesPn: previousPn } });
-    await writeAudit(tx, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "replacement_linked", entityType: "Loan", entityId: nw.id, loanId: nw.id, pn: nw.pn, summary: `MyLoans says ${nw.pn} replaces ${previousPn}. The files are linked.` });
+    await writeAudit(tx, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "replacement_suggested", entityType: "Loan", entityId: nw.id, loanId: nw.id, pn: nw.pn, summary: `MyLoans says ${nw.pn} replaces ${previousPn}. Suggested as a replacement; Admin decides whether to link them.` });
     if (!old) return;
-    await tx.loan.update({ where: { id: old.id }, data: { replacedByPn: nw.pn } });
-    await writeAudit(tx, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "replacement_linked", entityType: "Loan", entityId: old.id, loanId: old.id, pn: old.pn, summary: `MyLoans says ${nw.pn} replaces ${old.pn}. The files are linked.` });
     const snap = await tx.loanSourceSnapshot.findFirst({ where: { loanId: old.id }, orderBy: { retrievedAt: "desc" } });
     await raiseReview(tx, {
       loanId: old.id, pn: old.pn, category: "REPLACEMENT", changes: [{ field: "previousPn", label: "Replaced by", kind: "replacement", was: null, now: nw.pn }],
@@ -271,8 +274,8 @@ export async function linkOnOpen(newPn: string, previousPn: string) {
 }
 
 /** One open review item per loan: a newer change updates it and keeps the earlier one in its history. */
-async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Exclude<ChangeCategory, "NONE" | "MINOR">; changes: FieldChange[]; hash: string; candidates: string[]; mode: Mode; now: Date }) {
-  const open = await tx.sourceChange.findFirst({ where: { loanId: a.loanId, state: "OPEN" } });
+async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Exclude<ChangeCategory, "NONE" | "MINOR" | "BORROWER">; changes: FieldChange[]; hash: string; candidates: string[]; mode: Mode; now: Date }) {
+  const open = await tx.sourceChange.findFirst({ where: { loanId: a.loanId, state: "OPEN", category: { not: "BORROWER" } } });
   const loan = await tx.loan.findUniqueOrThrow({ where: { id: a.loanId } });
   let id: string;
   let category = a.category;
@@ -334,6 +337,7 @@ const listWords = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(
 async function openItem(tx: Tx, id: string, u: CurrentUser) {
   const item = await tx.sourceChange.findUnique({ where: { id }, include: { loan: true } });
   if (!item || !inScope(u, item.loan.branchId)) throw new NotInScopeError();
+  if (item.category === "BORROWER") throw new UserError("This is a borrower details correction: Accept the correction or Keep current.");
   if (item.state !== "OPEN") throw new UserError("This change was already decided.");
   return item;
 }
@@ -526,12 +530,22 @@ export interface LinkInput { newPn?: unknown; note?: unknown; confirmNoPayment?:
  * old PN: MyLoans' payments field when it has one (a recorded payment needs an override note), else the
  * Admin's confirmation. The confirmation and the note are saved on the new loan and audited.
  */
+/** MyLoans itself says the new PN replaces the old one (the new loan's latest copy names it). */
+async function namedByMyLoans(db: Tx | typeof prisma, oldPn: string, newPn: string) {
+  const snap = await db.loanSourceSnapshot.findFirst({ where: { loan: { pn: newPn } }, orderBy: { retrievedAt: "desc" }, select: { tracked: true, payload: true } });
+  const t = (snap?.tracked as Tracked | null) ?? (snap ? trackedOf(recordFromPayload(snap.payload) ?? ({} as MyLoansRecord)) : null);
+  return (t?.previousPn ?? null) === oldPn;
+}
+
 async function linkCore(tx: Tx, u: CurrentUser, oldPn: string, newPn: string, raw: LinkInput, manual: boolean) {
   const note = noteOf(raw.note);
   const [old, nw] = await Promise.all([tx.loan.findUnique({ where: { pn: oldPn }, select: RELATED_SELECT }), tx.loan.findUnique({ where: { pn: newPn }, select: RELATED_SELECT })]);
   if (!old || !nw || !inScope(u, old.branchId) || !inScope(u, nw.branchId)) throw new UserError("Pick one of the loans of the same borrower (same CIN or CIF).", "newPn");
-  const rel = (await relatedLoans(tx, old)).find((r) => r.loan.pn === nw.pn);
-  if (!rel) throw new UserError("Pick one of the loans of the same borrower (same CIN or CIF).", "newPn");
+  const found = (await relatedLoans(tx, old)).find((r) => r.loan.pn === nw.pn);
+  // MyLoans named the old PN on the new one: a suggestion a person may confirm even without the same CIF.
+  const named = !found && !manual && await namedByMyLoans(tx, old.pn, nw.pn);
+  if (!found && !named) throw new UserError("Pick one of the loans of the same borrower (same CIN or CIF).", "newPn");
+  const rel = found ?? { tag: "POSSIBLE" as const, relation: null, paymentRecorded: (await tx.loanSourceSnapshot.findFirst({ where: { loanId: old.id }, orderBy: { retrievedAt: "desc" }, select: { payload: true } }).then((s) => (s ? recordFromPayload(s.payload)?.paymentRecorded : undefined))) };
   if (old.replacedByPn && old.replacedByPn !== nw.pn) throw new UserError(`${old.pn} is already replaced by ${old.replacedByPn}.`, "newPn");
   if (nw.replacesPn && nw.replacesPn !== old.pn) throw new UserError(`${nw.pn} already replaces ${nw.replacesPn}.`, "newPn");
   if (!manual && rel.tag !== "POSSIBLE") throw new UserError(`${rel.relation?.reason ?? "This is not a replacement."} Link it from Related loans only if you are sure.`, "newPn");
@@ -712,7 +726,10 @@ export async function copyReusablePapers(u: CurrentUser, newLoanId: string, from
 // ---------------------------------------------------------------------------
 
 /** Refresh a loan being opened when its copy is older than the setting (0 = always). Never throws. */
-export async function refreshOnOpen(loan: { id: string; lastCheckedAt: Date | null; retrievedAt: Date; cancelledAt?: Date | null }, now: Date = new Date()): Promise<RefreshResult | null> {
+export async function refreshOnOpen(loan: { id: string; lastCheckedAt: Date | null; retrievedAt: Date; cancelledAt?: Date | null; closedAt?: Date | null; archivedAt?: Date | null }, now: Date = new Date()): Promise<RefreshResult | null> {
+  // Paused by Admin, or a closed or cancelled loan: no call.
+  if (await getSetting("myloans.paused")) return null;
+  if (loan.cancelledAt || loan.closedAt || loan.archivedAt) return null;
   const minutes = await getSetting("myloans.refreshOnOpenMinutes");
   const last = loan.lastCheckedAt ?? loan.retrievedAt;
   if (minutes > 0 && now.getTime() - last.getTime() < minutes * 60_000) return null;
@@ -747,6 +764,8 @@ export interface RunStat {
   updated: number; changes: number; cap: number; hourCalls: number; ceiling: number;
   /** Kept for the old status lines. */
   ok: boolean; failed: number; error: string | null;
+  /** Skipped: Admin paused MyLoans calls (status "paused"). */
+  byAdmin?: boolean;
 }
 
 const LOCK_KEY = 7_120_001; // pg advisory lock: one MyLoans sync at a time (cron, Run now, a second server)
@@ -795,9 +814,23 @@ export const dueQuery = (now: Date, cap: number) => Prisma.sql`
  *  - otherwise the due loans by tier, capped (adaptive cap, hourly ceiling), with a jittered pause;
  *  - unchanged loans cost no write but one batched update for the whole run; only changes are written.
  */
+/** The words for a run skipped because Admin paused MyLoans calls. */
+export const PAUSED_BY_ADMIN = "MyLoans calls are paused by Admin.";
+
 export async function runMyLoansSync(o: SyncOptions) {
   const now = o.now ?? new Date();
   const s = await syncSettings();
+  // Paused by Admin: no call at all (the schedule, the console script and Run now alike). The run history
+  // says Paused so the schedule can be seen working.
+  if (await getSetting("myloans.paused")) {
+    const run: RunStat = {
+      at: now.toISOString(), trigger: o.trigger, mode: "poll", status: "paused", due: 0, checked: 0, calls: 0, saved: 0, avgMs: 0, maxMs: 0, errors: 0, ms: 0,
+      updated: 0, changes: 0, cap: s.state.cap ?? s.max, hourCalls: callsThisHour(), ceiling: s.ceiling, ok: true, failed: 0, error: PAUSED_BY_ADMIN, byAdmin: true,
+    };
+    await setSetting("myloans.state", { ...s.state, runs: [run, ...s.state.runs].slice(0, 10) });
+    await writeAudit(prisma as unknown as Tx, { actor: o.trigger === "run_now" && o.actor ? o.actor : SYSTEM_ACTOR, mode: o.trigger === "run_now" ? "MANUAL" : "AUTOMATIC", action: "myloans_sync_run", entityType: "Setting", entityId: "myloans.lastRun", summary: `MyLoans sync skipped: ${PAUSED_BY_ADMIN}`, details: { trigger: o.trigger, paused: true } });
+    return { ran: false as const, reason: PAUSED_BY_ADMIN };
+  }
   if (!o.force) {
     const holidays = await getHolidaySet();
     if (s.hoursOnly && !isBusinessHours(now, holidays)) return { ran: false as const, reason: "Outside business hours." };
@@ -895,10 +928,26 @@ async function runLocked(o: SyncOptions, s: Awaited<ReturnType<typeof syncSettin
   const state = { cursor, cap: paused ? cap : nextCap(cap, s.max, trouble), runs: [run, ...s.state.runs].slice(0, 10) };
   await prisma.setting.upsert({ where: { key: "myloans.state" }, create: { key: "myloans.state", value: state as unknown as Prisma.InputJsonValue }, update: { value: state as unknown as Prisma.InputJsonValue } });
   await prisma.setting.upsert({ where: { key: "myloans.lastRun" }, create: { key: "myloans.lastRun", value: run as unknown as Prisma.InputJsonValue }, update: { value: run as unknown as Prisma.InputJsonValue } });
-  if (o.trigger === "run_now" && o.actor) {
-    await writeAudit(prisma as unknown as Tx, { actor: o.actor, mode: "MANUAL", action: "myloans_sync_run", entityType: "Setting", entityId: "myloans.lastRun", summary: `${o.actor.label} ran the MyLoans sync: ${run.checked} checked, ${run.changes} with changes, ${run.calls} calls${run.failed ? `, ${run.failed} not answered` : ""}` });
-  }
+  // Every run is audited: Run now as the person, the schedule and the console script as the system.
+  const by = o.trigger === "run_now" && o.actor ? o.actor : SYSTEM_ACTOR;
+  const who = o.trigger === "run_now" && o.actor ? o.actor.label : o.trigger === "cron" ? "The schedule" : "The console script";
+  await writeAudit(prisma as unknown as Tx, { actor: by, mode: o.trigger === "run_now" ? "MANUAL" : "AUTOMATIC", action: "myloans_sync_run", entityType: "Setting", entityId: "myloans.lastRun", summary: `${who} ran the MyLoans sync: ${run.checked} checked, ${run.changes} with changes, ${run.calls} calls${run.failed ? `, ${run.failed} not answered` : ""}${paused ? " (hourly limit reached)" : ""}`, details: { trigger: o.trigger } });
   return { ran: true as const, ...run };
+}
+
+/** Admin: "Pause MyLoans calls" on or off (myloans:manage). Audited. */
+export async function setMyLoansPaused(u: CurrentUser, on: boolean) {
+  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change MyLoans sync settings\" for your role.");
+  await prisma.$transaction(async (tx) => {
+    const was = await getSetting("myloans.paused", tx);
+    if (was === on) return;
+    await setSetting("myloans.paused", on, tx);
+    await writeAudit(tx, {
+      actor: actorOf(u), mode: "MANUAL", action: "myloans_paused", entityType: "Setting", entityId: "myloans.paused",
+      summary: on ? `${u.name} paused MyLoans calls: the background run, the stale refresh and refresh on open make no call` : `${u.name} turned MyLoans calls back on`,
+      before: { paused: was }, after: { paused: on },
+    });
+  });
 }
 
 export async function runSyncNow(u: CurrentUser) {
@@ -955,7 +1004,8 @@ export async function syncStatus() {
   const last = state.runs[0] ?? null;
   const breaker = adapter.breakerState();
   const hourCalls = callsThisHour();
-  const health = hourCalls >= ceiling || last?.status === "paused" ? "Paused: hourly limit reached"
+  const health = (await getSetting("myloans.paused")) ? "Paused by Admin: MyLoans calls are paused"
+    : hourCalls >= ceiling || (last?.status === "paused" && !last.byAdmin) ? "Paused: hourly limit reached"
     : breaker.open || last?.status === "slowed" ? "Slowed down: MyLoans is answering slowly" : "Healthy";
   return {
     mode: myLoansMode(), capabilities: adapter.capabilities, breaker, lastRun: last, runs: state.runs, cap: state.cap, cursor: state.cursor,
@@ -967,7 +1017,7 @@ export async function syncStatus() {
 // Simulator (TEST_MODE only, mock MyLoans): "Simulate a MyLoans change"
 // ---------------------------------------------------------------------------
 
-export const SIM_SOURCE_KINDS = ["amount", "name", "product", "cancel", "replace", "branch"] as const;
+export const SIM_SOURCE_KINDS = ["amount", "name", "cif", "area", "product", "cancel", "replace", "branch"] as const;
 export type SimSourceKind = (typeof SIM_SOURCE_KINDS)[number];
 
 export async function simulateSourceChange(u: CurrentUser, loanId: string, kind: SimSourceKind): Promise<string> {
@@ -992,7 +1042,14 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
   } else if (kind === "name") {
     over.borrowerName = /Jr\.$/.test(rec.borrowerName) ? rec.borrowerName.replace(/ Jr\.$/, "") : `${rec.borrowerName} Jr.`;
     over.address = `${Math.floor(Math.random() * 900) + 100} Rizal Ave, ${rec.branchName ?? "Antipolo"}`;
-    message = "MyLoans now spells the borrower's name differently and has a new address.";
+    over.contactNo = `0917${String(Math.floor(Math.random() * 10_000_000)).padStart(7, "0")}`;
+    message = "MyLoans now spells the borrower's name differently and has a new address and contact number (Borrower details: a supervisor reviews it).";
+  } else if (kind === "cif") {
+    over.cif = `CIF-${String(Math.floor(Math.random() * 900_000) + 100_000)}`;
+    message = "MyLoans now has another CIF for the borrower (Borrower details: a supervisor reviews it).";
+  } else if (kind === "area") {
+    over.areaName = /corrected/i.test(rec.areaName ?? "") ? (rec.areaName ?? "").replace(/ \(corrected\)$/, "") : `${rec.areaName ?? "Area"} (corrected)`;
+    message = "MyLoans corrected the area name (minor: the copy updates, no review).";
   } else if (kind === "product") {
     over.productName = /refinancing/i.test(rec.productName ?? "") ? "Auto Financing" : "Auto Refinancing";
     message = `MyLoans now says the product is ${over.productName}.`;
@@ -1033,7 +1090,7 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
 /** For Find loan and the TAT report: loans with an open review item. */
 export async function openReviewLoanIds(ids: string[]): Promise<Set<string>> {
   if (!ids.length) return new Set();
-  const rows = await prisma.sourceChange.findMany({ where: { loanId: { in: ids }, state: "OPEN" }, select: { loanId: true } });
+  const rows = await prisma.sourceChange.findMany({ where: { loanId: { in: ids }, state: "OPEN", category: { not: "BORROWER" } }, select: { loanId: true } });
   return new Set(rows.map((r) => r.loanId));
 }
 

@@ -94,6 +94,11 @@ export const EMAIL_EVENTS = {
     subject: "{pn}: MyLoans changed this loan",
     body: "{reason}\nAdmin is reviewing it. Until then the work it reaches waits.\nWhen: {when}.",
   },
+  borrower_changed: {
+    label: "MyLoans corrected a borrower's details (supervisor reviews)", to: "The branch supervisors and approvers who review corrections (Admin when the branch has none)", urgent: false,
+    subject: "{pn}: MyLoans changed the borrower's details",
+    body: "{reason}\nPlease review it: Accept the correction or Keep current. Until then the DMS keeps showing the old details; nothing is blocked.\nWhen: {when}.",
+  },
   lto_advisory: {
     label: "LTO advisory filed or resolved", to: "The Operations Monitors", urgent: true,
     subject: "LTO advisory {status}: {office}",

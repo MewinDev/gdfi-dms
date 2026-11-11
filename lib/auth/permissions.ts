@@ -98,6 +98,7 @@ export const PERMISSIONS = {
   MYLOANS_VIEW: "myloans:view", // see "MyLoans · Last checked" on a loan file
   LOANS_REFRESH: "loans:refresh", // Refresh from MyLoans on a loan file
   SOURCE_REVIEW: "myloans:review", // decide MyLoans changes: Apply, Keep current, Close as cancelled, replacement PNs (was source:review)
+  SOURCE_REVIEW_BORROWER: "source:review_borrower", // decide MyLoans corrections of the borrower's details (loans in the person's branches)
   SOURCE_MANAGE: "myloans:manage", // MyLoans sync settings (was source:manage)
   MYLOANS_SYNC: "myloans:sync", // run the bulk sync now (Run now)
   // Branches and access
@@ -260,6 +261,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.MYLOANS_VIEW, label: "See when MyLoans was last checked", help: "Show \"MyLoans · Last checked\" on a loan file.", requires: [P.LOANS_VIEW], can: "see when MyLoans was last checked", where: "Loan File, top strip", was: "loans:view" },
       { key: P.LOANS_REFRESH, label: "Refresh a loan from MyLoans", help: "The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now.", requires: [P.MYLOANS_VIEW], view: P.MYLOANS_VIEW, can: "refresh a loan from MyLoans", where: "Loan File, Refresh from MyLoans", was: "none (shown to everyone who sees the loan file)" },
       { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
+      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches; when nobody in the branch has this tick, Admin reviews it.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new (borrower details used to update without a review)" },
       { key: P.SOURCE_MANAGE, label: "Change MyLoans sync settings", help: "How often loans are checked against MyLoans and the business hours.", can: "change MyLoans sync settings", where: "Settings, MyLoans sync", was: "source:manage" },
       { key: P.MYLOANS_SYNC, label: "Run the MyLoans sync now", help: "The Run now button: check every open loan against MyLoans at once.", can: "run the MyLoans sync now", where: "Settings, MyLoans sync, Run now", was: "source:manage" },
     ],
@@ -412,7 +414,7 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
     permissions: ADMIN_PERMISSIONS,
   },
   DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: false, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, P.LTO_REPORTS_CREATE, ...SOURCE_STRIP] },
-  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; prints liquidation reports.", permissions: [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW] },
+  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; prints liquidation reports.", permissions: [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.SOURCE_REVIEW_BORROWER] },
   VAULT: { name: "Vault Custodian", canSignIn: false, sortOrder: 5, branchAccess: "ASSIGNED", description: "Phases 6 and 8.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   DIG: { name: "Digital Records", canSignIn: false, sortOrder: 6, branchAccess: "ASSIGNED", description: "Phase 7 DigiCur.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   QA: { name: "QA", canSignIn: false, sortOrder: 7, branchAccess: "ASSIGNED", description: "Phase 9 QA review.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
@@ -425,7 +427,7 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
    * TAT report. Never money, Settings, users, roles or branch imports. Created by migration
    * 20261119090006_decisions_batch only when no role of this name exists (the seed does the same).
    */
-  SUP: { name: "Branch Supervisor", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Sees the loans of their branches, moves holds to another person, resolves any problem there, the Monitoring pages and the TAT report. No money, Settings, users or roles.", permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, ...SOURCE_STRIP] },
+  SUP: { name: "Branch Supervisor", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Sees the loans of their branches, moves holds to another person, resolves any problem there, the Monitoring pages and the TAT report. No money, Settings, users or roles.", permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, P.SOURCE_REVIEW_BORROWER, ...SOURCE_STRIP] },
 };
 /** The plain ticks of the Branch Supervisor role and their keys (the report and the role's docs). */
 export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
@@ -434,6 +436,7 @@ export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
   { plain: "Resolve any problem (at their branches)", keys: [P.PROBLEMS_RESOLVE_ANY] },
   { plain: "See the Monitoring pages for DPs and LTO offices (their branches)", keys: [P.MONITOR_DP, P.MONITOR_LTO] },
   { plain: "See the TAT report", keys: [P.REPORTS_TAT] },
+  { plain: "Review borrower detail corrections from MyLoans (their branches)", keys: [P.SOURCE_REVIEW_BORROWER] },
 ];
 
 /** Role chips used everywhere (role key -> label and CSS token). */
