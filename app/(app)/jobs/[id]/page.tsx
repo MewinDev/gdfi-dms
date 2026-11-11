@@ -23,8 +23,9 @@ import { FundsChip, TatChip } from "@/components/jobs/chips";
 import { AttemptTimeline } from "@/components/jobs/timeline";
 import {
   AttemptForm, CompleteForm, ForwardForm, FundsFlagForm, OutsideControlToggle, RaiseProblemForm, ResolveProblemForm, ReviewForm,
-  PasuyoForm, PutOnHoldForm,
+  PasuyoForm, PutOnHoldForm, type ReceivedPaper,
 } from "@/components/jobs/forms";
+import { MISSING_NOTE, MissingPaperRow, paperCountText, type MissingPaperLine } from "@/components/jobs/missing-paper-row";
 import { HoldSummary } from "@/components/jobs/hold-summary";
 import { lockedMessage, mayAddDetails, mayResumeHold, holdReasonName } from "@/lib/ui/holds";
 import { LockedArea } from "@/components/ui/locked-area";
@@ -38,7 +39,6 @@ import { updatesBeforeAccept } from "@/lib/services/sent-changes";
 import { LiveAnnouncer, LiveToast } from "@/components/ui/live-toast";
 import { receiverWhere } from "@/lib/services/jobs";
 import { stageRows, verifiablePapers } from "@/lib/services/job-stages";
-import { missingPapersOf } from "@/lib/services/papers";
 import { returnablePapers } from "@/lib/services/return-to-la";
 import { currentIndex, stepStates, type StepState } from "@/lib/stages/rules";
 import { stepClock, tatChip } from "@/lib/workflow/tat";
@@ -127,9 +127,24 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       ])
     : [[], [], []];
   const returnHeldCents = returnHeld.reduce((x, h) => x + h.balance, 0);
-  // Missing papers the LA marked with a reason and remarks: shown as exceptions, never a reason to return.
-  const missingPapers = missingPapersOf([t]);
-  const exceptionIds = new Set(t.checks.filter((c) => c.missingState === "MISSING").map((c) => c.id));
+  // Missing papers the LA marked with a reason and remarks: exceptions, never a reason to return. They
+  // sit in the paper lists in their checklist place (no tick), not in a card of their own.
+  const missingChecks = t.checks.filter((c) => c.missingState === "MISSING");
+  const exceptionIds = new Set(missingChecks.map((c) => c.id));
+  const checkOrder = new Map(t.checks.map((c, i) => [c.id, i]));
+  const missingRows = missingChecks.map((c) => {
+    const d = t.documents.find((x) => x.checkId === c.id);
+    const line: MissingPaperLine = {
+      label: d?.label ?? c.rule?.label ?? c.otherLabel ?? "Other paper", documentId: d?.documentId ?? null,
+      reason: c.missingReason?.name ?? null, remarks: c.missingRemarks,
+      byText: `${c.missingByLabel ?? "The Loan Associate"}${c.missingAt ? ` · ${fmtDateTime(c.missingAt)}` : ""}`,
+    };
+    return { id: d?.id ?? c.id, checkId: c.id, originality: d?.originality ?? c.rule?.originality ?? "ORIGINAL", line };
+  });
+  /** Present papers and missing ones together, in the checklist's own order (papers with no checklist line last). */
+  const inChecklistOrder = <P extends { checkId: string | null }>(present: P[], missing: P[]) =>
+    [...present, ...missing].map((p, i) => ({ p, k: p.checkId && checkOrder.has(p.checkId) ? checkOrder.get(p.checkId)! : t.checks.length + i }))
+      .sort((x, y) => x.k - y.k).map((x) => x.p);
   // Where the processor takes it (types that need LTO processing, or an office given at Send).
   const atLto = t.type.needsLto || !!a.ltoOffice;
   const canChangeLto = atLto && working && !a.processing;
@@ -140,8 +155,21 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const officeAdvisories = a.ltoOfficeId ? await activeAdvisories(user, [a.ltoOfficeId], now) : [];
   // What the LA changed since sending (shown to the processor until they accept).
   const updates = a.status === "PENDING_ACCEPTANCE" ? await updatesBeforeAccept(a) : null;
-  // The papers that went to the processor (a paper marked Missing keeps its old Document ID but stays expected).
-  const docs = t.documents.filter((d) => d.documentId && d.stage !== "EXPECTED" && !(d.checkId && exceptionIds.has(d.checkId)));
+  // Review the papers: built from the checklist lines, the same records as the loan file. Present = ticked
+  // (also when it arrived late); Missing = marked Missing with remarks, whatever Document ID it kept from an
+  // earlier tick (a Document ID is given at the tick and is never proof of receipt). Optional papers left out
+  // are not in it. Papers with no checklist line (older records) follow: the ones that went to the processor.
+  const reviewPapers: ReceivedPaper[] = [
+    ...t.checks.flatMap((c): ReceivedPaper[] => {
+      const m = missingRows.find((r) => r.checkId === c.id);
+      if (m) return [{ checkId: c.id, label: m.line.label, original: m.originality === "ORIGINAL", documentId: m.line.documentId, missing: m.line }];
+      if (!c.checked) return [];
+      const d = t.documents.find((x) => x.checkId === c.id);
+      return [{ checkId: c.id, label: d?.label ?? c.rule?.label ?? c.otherLabel ?? "Other paper", original: (d?.originality ?? c.rule?.originality ?? "ORIGINAL") === "ORIGINAL", documentId: d?.documentId ?? null, missing: null }];
+    }),
+    ...t.documents.filter((d) => !d.checkId && d.documentId && d.stage !== "EXPECTED")
+      .map((d) => ({ checkId: null, label: d.label, original: d.originality === "ORIGINAL", documentId: d.documentId, missing: null })),
+  ];
   const kinds = t.fundsKinds.map((k) => names.get(k) ?? k).join(", ");
   const pDays = problemDays(t.problems, holidays, now);
   const incomplete = t.status === "IN_PROCESS" ? await prisma.loanException.findFirst({ where: { transactionId: t.id, type: "INCOMPLETE_PACKAGE", status: "OPEN" }, orderBy: { raisedAt: "desc" } }) : null;
@@ -156,7 +184,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const curView: StageView | null = cur ? { id: cur.id ?? cur.code, name: cur.name, kind: cur.kind, status: cur.status, fields: cur.fields, startedText: cur.startedAt ? fmtShort(cur.startedAt) : null } : null;
   const ticks = (cur?.kind === "VERIFY" ? (cur.evidence?.papers ?? {}) : {}) as Record<string, { at: string; by: string }>;
   const papersToVerify = cur?.kind === "VERIFY"
-    ? verifiablePapers(t.documents).map((d) => ({ id: d.id, label: d.label, original: d.originality === "ORIGINAL", tickedText: ticks[d.id] ? `${fmtShort(new Date(ticks[d.id].at))} · ${ticks[d.id].by}` : null }))
+    ? inChecklistOrder(
+        verifiablePapers(t.documents).filter((d) => !(d.checkId && exceptionIds.has(d.checkId)))
+          .map((d) => ({ id: d.id, checkId: d.checkId, label: d.label, original: d.originality === "ORIGINAL", tickedText: ticks[d.id] ? `${fmtShort(new Date(ticks[d.id].at))} · ${ticks[d.id].by}` : null, missing: null as MissingPaperLine | null })),
+        missingRows.map((m) => ({ id: m.id, checkId: m.checkId, label: m.line.label, original: m.originality === "ORIGINAL", tickedText: null, missing: m.line })),
+      )
     : [];
   const stageBlocked = cur?.kind === "LTO_DROP" && cur.status === "LATER" ? blocked : undefined;
   const canReportLto = working && !!a.ltoOffice && (cur?.kind === "LTO_DROP" || cur?.kind === "LTO_PICKUP") && (can(user, PERMISSIONS.LTO_REPORTS_CREATE) || can(user, PERMISSIONS.LTO_REPORTS_MANAGE));
@@ -229,27 +261,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         </section>
       )}
 
-      <p className="-mt-2 text-[13px] text-ink-2">
-        Sent to <strong className="text-ink">{a.dpUser.name}</strong>
-        {a.secondaryDpUser && <>, with a second processor (Pasuyo) <strong className="text-ink">{a.secondaryDpUser.name}</strong></>}.
-      </p>
-
-      {missingPapers.length > 0 && (
-        <section aria-labelledby="missing-papers-h" className="rounded-xl border border-act-line bg-act-bg px-3 py-2.5 sm:px-4" data-missing-papers-card>
-          <h2 id="missing-papers-h" className="text-[15px] font-bold text-act-fg">Missing papers and reasons ({missingPapers.filter((m) => m.state === "MISSING").length})</h2>
-          <p className="text-[13px] text-ink-2">Marked Missing by the Loan Associate, with remarks. They go through as exceptions: not a reason to return the file.</p>
-          <ul className="mt-1.5 flex flex-col divide-y divide-line overflow-hidden rounded-lg border border-line-soft bg-white">
-            {missingPapers.map((m) => (
-              <li key={m.checkId} className="flex flex-col gap-0.5 px-3 py-2 text-[13px]" data-missing-paper={m.state}>
-                <p className="flex flex-wrap items-center gap-x-2"><span className="text-[14px] font-semibold text-ink">{m.label}</span>
-                  {m.state === "RECEIVED_LATE" && <span className="rounded-md bg-ok-bg px-1.5 py-0.5 text-xs font-semibold text-ok-fg">Received {m.receivedOn ? dayText(m.receivedOn) : ""}</span>}
-                </p>
-                <p className="text-ink"><span className="font-semibold">{m.reason ?? "No reason"}</span>{m.remarks ? ` · ${m.remarks}` : ""}</p>
-                <p className="text-ink-2">{m.by ?? "The Loan Associate"}{m.at ? ` · ${fmtDateTime(m.at)}` : ""}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {/* Who it was sent to is not repeated here (the processor is the reader); a second processor is named. */}
+      {a.secondaryDpUser && (
+        <p className="-mt-2 text-[13px] text-ink-2" data-second-processor>
+          Second processor (Pasuyo): <strong className="text-ink">{a.secondaryDpUser.name}</strong>.
+        </p>
       )}
 
       {incomplete && (
@@ -338,11 +354,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <ReviewForm
               assignmentId={a.id} laName={a.assignedBy.name}
               returnReasons={can(user, PERMISSIONS.JOBS_RETURN_TO_LA) ? await prisma.returnReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, code: true } }) : []}
-              papers={(docs.length ? docs : t.documents.filter((d) => !(d.checkId && exceptionIds.has(d.checkId)))).map((d) => ({ checkId: d.checkId, label: d.label, original: d.originality === "ORIGINAL", documentId: d.documentId }))}
+              papers={reviewPapers}
             />
           ) : (
             <>
-              <PaperList docs={docs.length ? docs : t.documents.filter((d) => !(d.checkId && exceptionIds.has(d.checkId)))} />
+              <PaperList papers={reviewPapers} />
               <p className="text-sm text-ink-2">Waiting for {a.dpUser.name} to accept.</p>
             </>
           )}
@@ -457,15 +473,20 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   );
 }
 
-function PaperList({ docs }: { docs: { id: string; label: string; documentId: string | null; originality: string }[] }) {
+function PaperList({ papers }: { papers: ReceivedPaper[] }) {
+  const missing = papers.filter((p) => p.missing).length;
   return (
-    <ul className="flex flex-col rounded-xl border border-line">
-      {docs.map((d) => (
-        <li key={d.id} className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 last:border-0">
-          <span className="min-w-0 flex-1 text-[15px]">{d.label} <span className="tag">{d.originality === "ORIGINAL" ? "Original" : "Copy"}</span></span>
-          {d.documentId && <span className="mono text-xs text-ink-2">{d.documentId}</span>}
-        </li>
-      ))}
-    </ul>
+    <>
+      {missing > 0 && <p className="text-[13px] text-ink-2" data-paper-count>{paperCountText(papers.length - missing, missing)}</p>}
+      <ul className="flex flex-col overflow-hidden rounded-xl border border-line">
+        {papers.map((p, i) => p.missing ? <MissingPaperRow key={p.checkId ?? `m${i}`} p={p.missing} /> : (
+          <li key={p.checkId ?? i} className="flex min-h-11 flex-wrap items-center gap-2 border-b border-line px-3 py-2 last:border-0">
+            <span className="min-w-0 flex-1 text-[15px]">{p.label} <span className="tag">{p.original ? "Original" : "Copy"}</span></span>
+            {p.documentId && <span className="mono text-xs text-ink-2">{p.documentId}</span>}
+          </li>
+        ))}
+      </ul>
+      {missing > 0 && <p className="help -mt-2" data-missing-note>{MISSING_NOTE}</p>}
+    </>
   );
 }

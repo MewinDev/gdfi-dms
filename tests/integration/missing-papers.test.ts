@@ -10,7 +10,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { assignToDp, recordEdst, saveChecklist } from "@/lib/services/workflow";
+import { assignToDp, checklistStatusOf, recordEdst, saveChecklist } from "@/lib/services/workflow";
+import { receivedText } from "@/lib/workflow/checklist";
 import { acceptJob, completeJob, receivePackage } from "@/lib/services/jobs";
 import { acceptWithMissing, returnToLa } from "@/lib/services/return-to-la";
 import {
@@ -187,6 +188,44 @@ describe("The processor (DP)", () => {
     expect((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: n.txn.id } })).status).toBe("RETURNED");
     // The missing paper keeps its mark and remarks through the return.
     expect(await prisma.checklistCheck.findUniqueOrThrow({ where: { id: n.id("Valid IDs of borrower (2)") } })).toMatchObject({ missingState: "MISSING", missingRemarks: "Borrower brings it on Monday" });
+  });
+
+  it("a paper ticked first (it has a Document ID) then marked Missing: never received, Accept records no custody for it", async () => {
+    // The kit case: the LA ticks the IDs (the Document ID is given at the tick), then marks them Missing.
+    const n = await openNotary();
+    await saveChecklist(la, { transactionId: n.txn.id, checkedIds: REQUIRED.map(n.id), newOthers: [] });
+    const idsDoc = await prisma.documentItem.findFirstOrThrow({ where: { checkId: n.id("Valid IDs of borrower (2)") } });
+    expect(idsDoc.documentId).toMatch(/-ID-01$/);
+    await markPaperMissing(la, { checkId: n.id("Valid IDs of borrower (2)") });
+    await saveMissingRemarks(la, { checkId: n.id("Valid IDs of borrower (2)"), reasonId: await reasonId("LOST"), remarks: "Missing valid Id of the borrower" });
+    // It keeps the Document ID but is expected again, and it is not counted as received.
+    expect(await prisma.documentItem.findUniqueOrThrow({ where: { id: idsDoc.id } })).toMatchObject({ documentId: idsDoc.documentId, stage: "EXPECTED" });
+    const status = checklistStatusOf((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: n.txn.id }, include: { checks: { include: { rule: true } } } })).checks);
+    expect({ done: status.requiredDone, received: status.requiredReceived, total: status.requiredTotal }).toEqual({ done: 5, received: 4, total: 5 });
+    expect(receivedText(status.requiredReceived, status.requiredTotal, status.requiredDone - status.requiredReceived)).toBe("4 of 5 received · 1 missing with remarks");
+
+    // Send: only the papers in hand go in transit; Accept: custody ("Received by the processor") for those only.
+    await assignToDp(la, await sendInput(n.loan.branchId, n.txn.id));
+    expect((await prisma.documentItem.findUniqueOrThrow({ where: { id: idsDoc.id } })).stage).toBe("EXPECTED");
+    const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: n.txn.id } });
+    await acceptJob(dp, job.id);
+    const acks = await prisma.documentMovement.findMany({ where: { action: "ACKNOWLEDGED_BY_DP", documentItem: { transactionId: n.txn.id } }, select: { documentItemId: true } });
+    expect(acks.map((m) => m.documentItemId)).not.toContain(idsDoc.id);
+    expect(acks).toHaveLength(4);
+    expect(await prisma.documentMovement.count({ where: { documentItemId: idsDoc.id, action: { in: ["DISPATCHED_TO_DP", "ACKNOWLEDGED_BY_DP"] } } })).toBe(0);
+    expect(await prisma.documentItem.findUniqueOrThrow({ where: { id: idsDoc.id } })).toMatchObject({ stage: "EXPECTED", custodianRole: null });
+  });
+
+  it("Accept never moves custody for a paper marked Missing, even if its record were in transit", async () => {
+    const n = await notaryWithMissing("Valid IDs of borrower (2)");
+    await assignToDp(la, await sendInput(n.loan.branchId, n.txn.id));
+    // A damaged record (should never happen): the missing paper's item says In transit.
+    const doc = await prisma.documentItem.findFirstOrThrow({ where: { checkId: n.id("Valid IDs of borrower (2)") } });
+    await prisma.documentItem.update({ where: { id: doc.id }, data: { documentId: doc.documentId ?? `${n.loan.pn}-ID-99`, stage: "IN_TRANSIT" } });
+    const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: n.txn.id } });
+    await acceptJob(dp, job.id);
+    expect(await prisma.documentMovement.count({ where: { documentItemId: doc.id, action: "ACKNOWLEDGED_BY_DP" } })).toBe(0);
+    expect((await prisma.documentItem.findUniqueOrThrow({ where: { id: doc.id } })).stage).toBe("IN_TRANSIT");
   });
 
   it("refuses marking Missing and receiving without the permissions (server side)", async () => {

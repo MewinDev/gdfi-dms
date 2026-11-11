@@ -1,5 +1,6 @@
 "use client";
 
+import { MISSING_NOTE, MissingPaperRow, type MissingPaperLine } from "./missing-paper-row";
 import Link from "next/link";
 import { startTransition, useActionState, useEffect, useId, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form-status";
@@ -32,7 +33,8 @@ export interface StageView {
   fields: EvidenceField[];
   startedText: string | null;
 }
-export interface PaperView { id: string; label: string; original: boolean; tickedText: string | null }
+/** missing: a paper the LA marked Missing with remarks (shown in its place, nothing to verify). */
+export interface PaperView { id: string; label: string; original: boolean; tickedText: string | null; missing?: MissingPaperLine | null }
 
 /** Start (a system time). Disabled with the reason beside it when the stage is blocked (At the LTO, not funded). */
 export function StartStageButton({ assignmentId, stage, blocked }: { assignmentId: string; stage: StageView; blocked?: string }) {
@@ -98,15 +100,18 @@ export function FinishStageButton({ assignmentId, stage, today, office }: { assi
 }
 
 /** Check and verify: tick every paper "Received back and complete", or say what is missing. */
-export function VerifyPapers({ assignmentId, stage, papers, problemOpen }: { assignmentId: string; stage: StageView; papers: PaperView[]; problemOpen: boolean }) {
+export function VerifyPapers({ assignmentId, stage, papers: rows, problemOpen }: { assignmentId: string; stage: StageView; papers: PaperView[]; problemOpen: boolean }) {
+  const papers = rows.filter((p) => !p.missing);
+  const missingCount = rows.length - papers.length;
   const left = papers.filter((p) => !p.tickedText).length;
   const [fin, finAction] = useActionState(finishStageAction, null);
   return (
     <div className="flex flex-col gap-3" data-verify>
       <p className="text-[15px]">Check that every paper is back and complete. {left > 0 ? `${left} of ${papers.length} left.` : "All papers are back."}</p>
-      <ul className="flex flex-col rounded-xl border border-line" aria-label="Papers to verify">
-        {papers.map((p) => <VerifyRow key={p.id} assignmentId={assignmentId} stageId={stage.id} paper={p} />)}
+      <ul className="flex flex-col overflow-hidden rounded-xl border border-line" aria-label="Papers to verify">
+        {rows.map((p) => p.missing ? <MissingPaperRow key={p.id} p={p.missing} /> : <VerifyRow key={p.id} assignmentId={assignmentId} stageId={stage.id} paper={p} />)}
       </ul>
+      {missingCount > 0 && <p className="help -mt-2" data-missing-note>{MISSING_NOTE}</p>}
       {problemOpen && <p className="rounded-xl bg-bad-bg px-3 py-2 text-[14px] font-semibold text-bad-fg" data-verify-blocked>A problem is open. Resolve it when the paper is found, then finish Check and verify.</p>}
       <div className="flex flex-wrap items-start gap-2">
         <form onSubmit={(e) => keepValues(e, finAction)} className="flex flex-col gap-2">

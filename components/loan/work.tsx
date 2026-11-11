@@ -11,7 +11,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { ToneChip } from "@/components/ui/basics";
 import { AlertIcon, CheckIcon, PauseIcon, PlusIcon, InfoIcon } from "@/components/ui/icons";
 import { plainMessage } from "@/lib/ui/plain";
-import { checklistStatus, type ChecklistStatus } from "@/lib/workflow/checklist";
+import { checklistStatus, receivedText, type ChecklistStatus } from "@/lib/workflow/checklist";
 
 type Result = { ok: boolean; message?: string; error?: string; field?: string; missing?: string[] } | null;
 
@@ -81,6 +81,11 @@ export function WorkCard(p: WorkCardProps) {
 
   const status = statusFor(p.lines, checked);
   const complete = status.complete;
+  // A paper missing with remarks is answered, not received: "4 of 5 received · 1 missing with remarks".
+  const missingRequired = status.requiredDone - status.requiredReceived;
+  const countText = missingRequired > 0
+    ? receivedText(status.requiredReceived, status.requiredTotal, missingRequired)
+    : `${status.requiredDone} of ${status.requiredTotal} required`;
   // The send area shows for every DP transaction not yet sent; it stays locked until all required papers are ticked.
   const sendVisible = p.requiresDp && p.canAct && !!p.send && (p.status === "READY" || p.status === "RETURNED" || p.status === "FOR_CHECKLIST");
   const [highlight, setHighlight] = useState<string[]>([]);
@@ -151,7 +156,7 @@ export function WorkCard(p: WorkCardProps) {
           {p.total !== undefined && <span className="basis-full text-xs text-ink-2" data-txn-position>Transaction {p.index} of {p.total}</span>}
           {hint && <span className="self-center text-ink-2" title={hint} aria-label={hint} role="img"><InfoIcon size={16} /></span>}
           {status.requiredTotal > 0 && (
-            <span className="text-[13px] text-ink-2">{status.requiredDone} of {status.requiredTotal} required{status.optionalTotal > 0 ? ` · ${status.optionalDone} of ${status.optionalTotal} optional` : ""}</span>
+            <span className="text-[13px] text-ink-2" data-paper-count>{countText}{status.optionalTotal > 0 ? ` · ${status.optionalDone} of ${status.optionalTotal} optional` : ""}</span>
           )}
         </div>
         {complete && status.requiredTotal > 0 && status.exceptions.length === 0 && <ToneChip tone="ok" check>All documents checked</ToneChip>}
@@ -163,7 +168,7 @@ export function WorkCard(p: WorkCardProps) {
         {(p.titleChips ?? []).length > 0 && <p className="flex flex-wrap gap-1.5 sm:hidden">{(p.titleChips ?? []).map((c) => <TitleChip key={c.id} c={c} phone />)}</p>}
         <p className="text-[13px] text-ink-2 sm:hidden">
           {p.total !== undefined && <span data-txn-position>Transaction {p.index} of {p.total} · </span>}
-          {status.requiredDone} of {status.requiredTotal} required ticked{status.optionalTotal > 0 ? ` · ${status.optionalDone} of ${status.optionalTotal} optional` : ""}
+          {missingRequired > 0 ? countText : `${countText} ticked`}{status.optionalTotal > 0 ? ` · ${status.optionalDone} of ${status.optionalTotal} optional` : ""}
         </p>
         <div id={`papers-${p.txnId}`} className="grid scroll-mt-28 grid-cols-1 gap-1.5" role="group" aria-label={`${p.name} papers`}>
           {required.map(row)}
@@ -213,7 +218,7 @@ export function WorkCard(p: WorkCardProps) {
         {sendVisible && p.send && (
           <SendPanel
             txnId={p.txnId} code={p.code} name={p.name} borrower={p.borrower} status={p.status} o={p.send}
-            ready={complete} requiredDone={status.requiredDone} requiredTotal={status.requiredTotal} missing={status.missing} needsRemarks={status.needsRemarks}
+            ready={complete} requiredDone={status.requiredDone} requiredTotal={status.requiredTotal} requiredReceived={status.requiredReceived} missing={status.missing} needsRemarks={status.needsRemarks}
             waitingForSave={complete && p.status === "FOR_CHECKLIST"} savedText={savedText} goTo={goToLines}
           />
         )}

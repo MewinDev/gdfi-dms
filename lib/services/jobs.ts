@@ -78,7 +78,10 @@ export async function acceptCore(tx: Tx, a: AssignmentFull, who: Who) {
   const now = new Date();
   await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "ACCEPTED", decidedAt: now } });
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "IN_PROCESS", statusSince: now } });
-  await moveDocs(tx, a.transaction.documents.filter((d) => d.stage === "IN_TRANSIT"), { stage: "WITH_DP", custodian: `${a.dpUser.name} (DP)`, role: "DP", userId: a.dpUserId, location: `With DP ${a.dpUser.name}`, action: "ACKNOWLEDGED_BY_DP" }, { simulated: who.mode === "SIMULATED", by: who.actor });
+  // Custody moves only for papers in transit to the processor, and never for a paper marked Missing
+  // (it keeps any Document ID from an earlier tick, which is not proof that it was handed over).
+  const missing = new Set((await tx.checklistCheck.findMany({ where: { transactionId: a.transactionId, missingState: "MISSING" }, select: { id: true } })).map((c) => c.id));
+  await moveDocs(tx, a.transaction.documents.filter((d) => d.stage === "IN_TRANSIT" && !(d.checkId && missing.has(d.checkId))), { stage: "WITH_DP", custodian: `${a.dpUser.name} (DP)`, role: "DP", userId: a.dpUserId, location: `With DP ${a.dpUser.name}`, action: "ACKNOWLEDGED_BY_DP" }, { simulated: who.mode === "SIMULATED", by: who.actor });
   await audit(tx, who, a, "dp_assignment_accepted", "4.1", `${a.dpUser.name} accepted ${a.transaction.type.name}; custody moved to the DP`);
   await notify(tx, { email: { event: "job_accepted", transactionId: a.transactionId, vars: { pn: a.loan.pn, transaction: a.transaction.type.name, who: a.dpUser.name } }, userIds: [a.assignedById], loanId: a.loanId, title: `${a.loan.pn}: ${a.transaction.type.name} accepted`, body: `${a.dpUser.name} accepted the job.`, link: `/loans/${a.loan.pn}` });
   await recomputeStage(tx, a.loanId, { simulated: who.mode === "SIMULATED" });

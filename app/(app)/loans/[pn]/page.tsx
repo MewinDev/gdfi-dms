@@ -634,7 +634,7 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       note: facts.note, findings: sb.findings, forSender, senderName: sb.senderName,
     } : undefined,
     missing: otherMissing ? { papers: missingItem!.papers.length ? missingItem!.papers : [missingItem!.reason], lineIds: missingItem!.lineIds, who: askedText(missingItem!) } : undefined,
-    tick: { done: checklist.expectedDone, total: checklist.expectedTotal, lineIds: [...checklist.missing, ...checklist.needsRemarks].flatMap((m) => m.lineIds) },
+    tick: { done: checklist.expectedDone, total: checklist.expectedTotal, received: checklist.expectedReceived, lineIds: [...checklist.missing, ...checklist.needsRemarks].flatMap((m) => m.lineIds) },
     finish: finishTarget ? { targetId: finishTarget, edst: selected.type.code === "EDST", markDone: laCustom } : undefined,
   };
 
@@ -646,7 +646,7 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
   const selectedIndex = live.findIndex((t) => t.id === selected.id) + 1;
   const items = txnItems(loan, ctx, opens);
   const sums = live.map((t) => checklistStatusOf(t.checks));
-  const summary = { done: sums.reduce((x, c) => x + c.requiredDone, 0), total: sums.reduce((x, c) => x + c.requiredTotal, 0) };
+  const summary = { done: sums.reduce((x, c) => x + c.requiredDone, 0), total: sums.reduce((x, c) => x + c.requiredTotal, 0), received: sums.reduce((x, c) => x + c.requiredReceived, 0) };
 
   // "Add a transaction": active custom types (never created by the automation), not already on this loan file.
   const canAdd = can(user, PERMISSIONS.TXN_ADD) && !["For Vault Transmittal", "In transit to Vault", "In Safekeeping", "Closed", "Archived", "Disposed"].includes(loan.stage);

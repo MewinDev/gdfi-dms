@@ -7,7 +7,7 @@ import { assignToDpAction } from "@/app/actions/loan";
 import { Sheet } from "@/components/ui/sheet";
 import { CheckIcon, CoinsIcon, MapPinIcon, UsersIcon, ChecklistIcon, WarningIcon } from "@/components/ui/icons";
 import { initials, plainMessage } from "@/lib/ui/plain";
-import { addRemarksText, type MissingPaper } from "@/lib/workflow/checklist";
+import { addRemarksText, receivedText, type MissingPaper } from "@/lib/workflow/checklist";
 import { AVAILABILITY_LABEL, AVAILABILITY_TONE, type AvailabilityStatus } from "@/lib/monitoring/rules";
 import { AdvisoryWarnings } from "@/components/monitoring/advisory-forms";
 
@@ -81,6 +81,8 @@ export interface SendPanelProps {
   ready: boolean;
   requiredDone: number;
   requiredTotal: number;
+  /** Ticked Present (a paper missing with remarks is answered, not received). */
+  requiredReceived?: number;
   missing: MissingPaper[];
   /** Papers marked Missing whose reason and remarks are not saved yet: Send stays locked, naming them. */
   needsRemarks?: MissingPaper[];
@@ -187,6 +189,9 @@ export function SendPanel(p: SendPanelProps) {
   const ring = (part: string) => (flash === part ? "border-gold shadow-[0_0_0_3px_var(--act-bg)]" : "border-line");
   const reasonId = `send-why-${uid}`;
 
+  // A paper missing with remarks is answered, not received.
+  const missingPapers = p.requiredReceived === undefined ? 0 : p.requiredDone - p.requiredReceived;
+  const papersText = missingPapers > 0 ? `Papers ${receivedText(p.requiredReceived!, p.requiredTotal, missingPapers)}` : `Papers ${p.requiredDone} of ${p.requiredTotal}`;
   return (
     <form
       ref={formRef}
@@ -207,7 +212,7 @@ export function SendPanel(p: SendPanelProps) {
       {/* 1. Ready check */}
       <ul aria-label="Ready to send?" className="flex flex-wrap gap-2">
         {o.papersBlock && <Check ok={false} icon={<ChecklistIcon size={16} />} okText="" badText="Papers back not confirmed" onGo={() => document.getElementById("papers-back")?.scrollIntoView({ behavior: "smooth", block: "center" })} />}
-        <Check ok={p.ready} icon={<ChecklistIcon size={16} />} okText={`Papers ${p.requiredDone} of ${p.requiredTotal}`} badText={`Papers ${p.requiredDone} of ${p.requiredTotal}`} onGo={() => go("papers")} />
+        <Check ok={p.ready} icon={<ChecklistIcon size={16} />} okText={papersText} badText={papersText} onGo={() => go("papers")} />
         <Check ok={fundsOk} icon={<CoinsIcon size={16} />} okText={funds === "YES" ? "Needs funds" : "No funds needed"} badText={funds === "YES" ? "Pick what the funds are for" : "Funds not answered"} onGo={() => go("funds")} />
         <Check ok={!!dp} icon={<UsersIcon size={16} />} okText={dp ? dp.name : ""} badText="No processor chosen" onGo={() => go("dp")} />
         {second && <Check ok={secondOk} icon={<UsersIcon size={16} />} okText={`Pasuyo: ${secondDp?.name ?? ""}`} badText={!secondDp ? "No second processor chosen" : "Pasuyo reason missing"} onGo={() => go("second")} />}
