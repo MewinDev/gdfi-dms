@@ -160,7 +160,7 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 
 ### Missing papers
 
-11. **Missing papers.** On Check papers, press **Missing** on a required paper and try to Send; then write the reason and remarks and Send. Tick **Include in this file** on an optional paper and mark it Missing too. As the processor, try to return the file for that paper. When it arrives, mark it **Received**. Check the Loan File row, the Journey and Monitoring, **Has missing papers**.
+11. **Missing papers.** On Check papers, press **Missing** on a required paper and try to Send; then write the reason and remarks and Send. Tick **Include in this file** on an optional paper and mark it Missing too. As the processor, open the job: the paper is in **Review the papers** as an amber **Missing** row with no tick box; press **Accept**, then try to return the file for that paper. Try it also with a paper you ticked first (it gets a Document ID) and then marked Missing. When it arrives, mark it **Received**. Check the Loan File row, the Journey and Monitoring, **Has missing papers**.
 12. **The reason and remarks box.** Press **Missing** on a required paper, pick a reason, type a short note and press Enter. Then press **Edit**, change it and press Esc. Try it on a phone too.
 
 ### Labels (removed 11 November 2026)

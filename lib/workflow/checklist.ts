@@ -57,7 +57,17 @@ export interface ChecklistStatus {
   /** Every expected paper (required, and optional ones included): for the "tick" step. */
   expectedTotal: number;
   expectedDone: number;
+  /**
+   * Received (ticked Present, also when it arrived late): never a paper marked Missing, whatever its
+   * Document ID. "Done" above means answered (it lets the file go on); these are what is in hand.
+   */
+  requiredReceived: number;
+  expectedReceived: number;
 }
+
+/** "4 of 5 received · 1 missing with remarks": the count while a paper is missing with remarks. */
+export const receivedText = (received: number, total: number, missing: number) =>
+  `${received} of ${total} received · ${missing} missing with remarks`;
 
 /** An optional line is part of the file when included, ticked, or marked Missing. */
 export const isIncluded = (l: Pick<CheckLine, "required" | "checked" | "missing" | "included">) =>
@@ -74,11 +84,12 @@ function answerOf(l: CheckLine): Answer {
 export function checklistStatus(lines: CheckLine[]): ChecklistStatus {
   const live = lines.filter((l) => l.active);
   const out = { missing: [] as MissingPaper[], needsRemarks: [] as MissingPaper[], exceptions: [] as MissingPaper[] };
-  let requiredTotal = 0, requiredDone = 0, expectedTotal = 0, expectedDone = 0;
+  let requiredTotal = 0, requiredDone = 0, expectedTotal = 0, expectedDone = 0, requiredReceived = 0, expectedReceived = 0;
   const count = (a: Answer, name: string, lineIds: string[], required: boolean) => {
     expectedTotal++;
     if (required) requiredTotal++;
     if (a === "present" || a === "exception") { expectedDone++; if (required) requiredDone++; }
+    if (a === "present") { expectedReceived++; if (required) requiredReceived++; }
     if (a === "exception") out.exceptions.push({ name, lineIds });
     if (a === "needsRemarks") out.needsRemarks.push({ name, lineIds });
     if (a === "open") out.missing.push({ name, lineIds });
@@ -114,6 +125,8 @@ export function checklistStatus(lines: CheckLine[]): ChecklistStatus {
     optionalDone: optional.filter(isIncluded).length,
     expectedTotal,
     expectedDone,
+    requiredReceived,
+    expectedReceived,
   };
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { receivedText } from "@/lib/workflow/checklist";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CheckIcon } from "@/components/ui/icons";
@@ -42,12 +43,16 @@ function Badge({ item, selected }: { item: TxnItem; selected?: boolean }) {
 /** The selected row's tag: a soft pill (the row itself has a very light tint and a thin left accent). */
 const OpenNow = () => <span className="chip c-mute h-5 shrink-0 px-2 text-[11px]" data-open-now>Open now</span>;
 
-export function PackageSummary({ done, total }: { done: number; total: number }) {
-  const pct = total ? Math.round((done / total) * 100) : 0;
+/** done: answered (ticked, or missing with remarks); received: ticked only. The bar shows received papers. */
+export interface PaperSummary { done: number; total: number; received?: number }
+
+export function PackageSummary({ done, total, received = done }: PaperSummary) {
+  const missing = done - received;
+  const pct = total ? Math.round((received / total) * 100) : 0;
   return (
     <div className="flex flex-col gap-1" data-package-summary>
-      <p className="text-[13px] font-semibold text-navy">{done} of {total} required papers</p>
-      <span className="block h-1.5 w-full overflow-hidden rounded-full bg-fill-strong" role="progressbar" aria-label="Required papers ticked" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}>
+      <p className="text-[13px] font-semibold text-navy">{missing > 0 ? receivedText(received, total, missing) : `${done} of ${total} required papers`}</p>
+      <span className="block h-1.5 w-full overflow-hidden rounded-full bg-fill-strong" role="progressbar" aria-label="Required papers received" aria-valuemin={0} aria-valuemax={total} aria-valuenow={received}>
         <span className="block h-full rounded-full bg-ok-fg" style={{ width: `${pct}%` }} />
       </span>
     </div>
@@ -60,7 +65,7 @@ export function PackageSummary({ done, total }: { done: number; total: number })
  * detail only). The open one stays in its place and is marked (very light tint, thin left accent,
  * "Open now"); the order never changes.
  */
-export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; selected: string; summary: { done: number; total: number } }) {
+export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; selected: string; summary: PaperSummary }) {
   const select = useSelect();
   return (
     <section aria-labelledby="all-txns" className="card flex shrink-0 flex-col overflow-hidden">
@@ -91,7 +96,7 @@ export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; se
 }
 
 /** Tablet and phone: every transaction as a card in number order; only the strip scrolls, to keep the open card in view. */
-export function TxnStrip({ items, selected, summary }: { items: TxnItem[]; selected: string; summary: { done: number; total: number } }) {
+export function TxnStrip({ items, selected, summary }: { items: TxnItem[]; selected: string; summary: PaperSummary }) {
   const select = useSelect();
   const ref = useRef<HTMLUListElement>(null);
   useEffect(() => {

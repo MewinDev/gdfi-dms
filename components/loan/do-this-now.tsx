@@ -1,5 +1,6 @@
 "use client";
 
+import { receivedText } from "@/lib/workflow/checklist";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form-status";
 import { announcing } from "@/components/ui/live-toast";
@@ -39,7 +40,8 @@ export interface DoThisNowProps {
    */
   fix?: { dpName: string; reason: string | null; papers: { lineId: string; label: string }[]; note: string; findings: string; forSender: boolean; senderName: string | null };
   missing?: { papers: string[]; lineIds: string[]; who: string };
-  tick?: { done: number; total: number; lineIds: string[] };
+  /** done: answered (ticked, or missing with remarks); received: ticked only (the bar shows these). */
+  tick?: { done: number; total: number; received?: number; lineIds: string[] };
   /** Where the Send panel (or EDST, Mark as done) is on the page. */
   finish?: { targetId: string; edst: boolean; markDone: boolean };
 }
@@ -66,6 +68,12 @@ const TONE: Record<DoThisNowProps["tone"], string> = {
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /** Scroll to an element, highlight it a moment, and put the keyboard on its first control. */
+type Tick = NonNullable<DoThisNowProps["tick"]>;
+/** Papers marked Missing with remarks: answered (the file goes on) but not received. */
+const tickMissing = (t: Tick) => t.done - (t.received ?? t.done);
+/** "4 of 5 received · 1 missing with remarks", or "4 of 5 required". */
+const tickText = (t: Tick) => tickMissing(t) > 0 ? receivedText(t.received!, t.total, tickMissing(t)) : `${t.done} of ${t.total} required`;
+
 function goTo(id: string, focusSel = "input:not([type=hidden]):not(:disabled), select, button:not(:disabled), textarea") {
   if (!flash(id)) document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
   const el = document.getElementById(id);
@@ -163,7 +171,7 @@ function lineOf(s: DoNowStep, p: DoThisNowProps): string | null {
       if (done) return `${p.fix.papers.map((x) => x.label).join(", ")} ticked again`;
       return fixText(p.fix);
     case "missing": return p.missing?.papers.join(", ") ?? null;
-    case "tick": return p.tick ? (done ? `All ${plural(p.tick.total, "required paper")} ticked` : `${p.tick.done} of ${p.tick.total} required`) : null;
+    case "tick": return p.tick ? (tickMissing(p.tick) > 0 ? tickText(p.tick) : done ? `All ${plural(p.tick.total, "required paper")} ticked` : `${p.tick.done} of ${p.tick.total} required`) : null;
     case "send": return null;
     case "finish": return p.finish?.edst ? "Enter it in EDST" : p.finish?.markDone ? "Mark it as done" : null;
   }
@@ -263,9 +271,9 @@ function NowContent({ step, p }: { step: DoNowStep; p: DoThisNowProps }) {
         <StepRow
           main={
             <p className="flex items-center gap-2" data-tick-progress>
-              <span className="whitespace-nowrap">{p.tick.done} of {p.tick.total} required</span>
+              <span className={tickMissing(p.tick) > 0 ? "" : "whitespace-nowrap"}>{tickText(p.tick)}</span>
               <span className="block h-1.5 w-full max-w-40 overflow-hidden rounded-full bg-fill-strong" aria-hidden="true">
-                <span className="block h-full rounded-full bg-ok-fg" style={{ width: `${p.tick.total ? Math.round((p.tick.done / p.tick.total) * 100) : 0}%` }} />
+                <span className="block h-full rounded-full bg-ok-fg" style={{ width: `${p.tick.total ? Math.round(((p.tick.received ?? p.tick.done) / p.tick.total) * 100) : 0}%` }} />
               </span>
             </p>
           }

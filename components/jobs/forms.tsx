@@ -19,6 +19,7 @@ import {
 } from "@/app/actions/jobs";
 import { setFundsFlagAction } from "@/app/actions/loan";
 import { MissingAtAcceptSheet } from "./return-to-la-form";
+import { MISSING_NOTE, MissingPaperRow, paperCountText, type MissingPaperLine } from "./missing-paper-row";
 import type { ActionState } from "@/lib/action";
 
 type Act = (p: ActionState, fd: FormData) => Promise<ActionState>;
@@ -453,7 +454,8 @@ export function ReceivePackageForm({ assignmentId, from, papers }: { assignmentI
 // ---------------------------------------------------------------------------
 
 
-export interface ReceivedPaper { checkId: string | null; label: string; original: boolean; documentId: string | null }
+/** A paper in Review the papers. missing: the LA marked it Missing with remarks (an exception: no tick, never a reason to return). */
+export interface ReceivedPaper { checkId: string | null; label: string; original: boolean; documentId: string | null; missing?: MissingPaperLine | null }
 
 /**
  * Review: the processor confirms the papers received (one "Received by the processor" movement each
@@ -468,14 +470,20 @@ export function ReviewForm({ assignmentId, papers = [], laName = "the Loan Assoc
   const [missing, setMissing] = useState<Set<string>>(new Set());
   const [missingOpen, setMissingOpen] = useState(false);
   const canMark = returnReasons.length > 0;
+  // Missing with remarks: shown in the list, never ticked, never counted as "not received".
+  const present = papers.filter((p) => !p.missing);
+  const missingCount = papers.length - present.length;
   const toggle = (id: string) => setMissing((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (
     <div className="flex flex-col gap-3">
+      {missingCount > 0 && <p className="text-[13px] text-ink-2" data-paper-count>{paperCountText(present.length, missingCount)}</p>}
       {papers.length > 0 && (
-        <fieldset className="flex flex-col rounded-xl border border-line" data-received-papers>
+        <fieldset className="flex flex-col overflow-hidden rounded-xl border border-line" data-received-papers>
           <legend className="sr-only">Papers received</legend>
-          {papers.map((p, i) => (
-            <label key={p.checkId ?? i} className="flex min-h-11 flex-wrap items-center gap-2 border-b border-line px-3 py-2 last:border-0">
+          {papers.map((p, i) => p.missing ? (
+            <MissingPaperRow key={p.checkId ?? `m${i}`} as="div" p={p.missing} />
+          ) : (
+            <label key={p.checkId ?? i} className="flex min-h-11 flex-wrap items-center gap-2 border-b border-line px-3 py-2 last:border-0" data-received-paper>
               {canMark && p.checkId && (
                 <input type="checkbox" checked={!missing.has(p.checkId)} onChange={() => toggle(p.checkId!)} className="h-5 w-5 shrink-0 accent-[var(--navy)]" aria-label={`${p.label}: received`} />
               )}
@@ -485,7 +493,12 @@ export function ReviewForm({ assignmentId, papers = [], laName = "the Loan Assoc
           ))}
         </fieldset>
       )}
-      {canMark && papers.length > 0 && <p className="help -mt-2">Untick a paper you did not receive.</p>}
+      {(canMark && present.length > 0 || missingCount > 0) && (
+        <div className="-mt-2 flex flex-col gap-0.5">
+          {canMark && present.length > 0 && <p className="help mt-0">Untick a paper you did not receive.</p>}
+          {missingCount > 0 && <p className="help mt-0" data-missing-note>{MISSING_NOTE}</p>}
+        </div>
+      )}
       {missing.size === 0 ? (
         <form action={accept} className="flex flex-col gap-3">
           <Hidden v={{ assignmentId }} />
@@ -508,7 +521,7 @@ export function ReviewForm({ assignmentId, papers = [], laName = "the Loan Assoc
       {canMark && (
         <MissingAtAcceptSheet
           open={missingOpen} onClose={() => setMissingOpen(false)} assignmentId={assignmentId} laName={laName} reasons={returnReasons}
-          papers={papers.filter((p) => p.checkId).map((p) => ({ id: p.checkId!, label: p.label }))} preselected={[...missing]}
+          papers={present.filter((p) => p.checkId).map((p) => ({ id: p.checkId!, label: p.label }))} preselected={[...missing]}
         />
       )}
     </div>

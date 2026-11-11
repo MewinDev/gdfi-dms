@@ -124,7 +124,8 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   await form.getByLabel("Remarks", { exact: true }).fill("The borrower brings the second ID on Monday.");
   await form.getByRole("button", { name: "Save remarks" }).click();
   await expect(row).toHaveAttribute("data-state", "missing", { timeout: 15_000 });
-  await expect(ready.getByText("Papers 5 of 5")).toBeVisible();
+  // Answered, so the papers check is met, but the missing paper is not counted as received.
+  await expect(ready.getByText("Papers 4 of 5 received · 1 missing with remarks")).toBeVisible();
   await expect(why).toHaveText("Answer the funds question");
 
   // Ready-check link for funds highlights its part.

@@ -6,7 +6,7 @@ import { pickLtoOffice } from "./helpers";
 /**
  * Missing papers with reasons, on the production build (npm run e2e:groups), one width at a time:
  * the LA marks a paper Missing, Send is blocked naming it, the LA writes the reason and remarks and
- * sends; the DP sees "Missing papers and reasons" and cannot return the file for it; a file through
+ * sends; the DP sees it in "Review the papers" (no card) and cannot return the file for it; a file through
  * the vault gate shows "Complete with exceptions"; Monitoring has "Has missing papers". Screenshots go
  * to docs/screenshots/missing-papers/. The console must stay clean (no React key warnings).
  */
@@ -56,7 +56,7 @@ async function openNotary(page: Page) {
   return notary;
 }
 
-test("LA marks a paper Missing: Send blocked naming it, remarks saved, sent; DP sees the card and cannot return for it", async ({ page }) => {
+test("LA marks a paper Missing: Send blocked naming it, remarks saved, sent; DP sees it in the list and cannot return for it", async ({ page }) => {
   const clean = watchConsole(page);
   const notary = await openNotary(page);
   for (const item of REQUIRED) await notary.getByLabel(item).check();
@@ -110,18 +110,21 @@ test("LA marks a paper Missing: Send blocked naming it, remarks saved, sent; DP 
   await noSideways(page);
   clean();
 
-  // DP: the card, then accept; the return offers every paper but the missing one.
+  // DP: the paper in Review the papers (no card on top), then accept; the return offers every paper but the missing one.
   await signInAs(page, "dp");
   // Test setup: the job goes to the test processor (the Send panel pre-selects the recommended one).
   const testDp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
   const job = await db.dpAssignment.update({ where: { id: (await db.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id } })).id }, data: { dpUserId: testDp.id } });
   await page.goto(`/jobs/${job.id}`);
-  const card = page.locator("[data-missing-papers-card]");
-  await expect(card).toContainText(MISSING);
-  await expect(card).toContainText("Borrower to submit later");
-  await expect(card).toContainText("The borrower brings the second ID on Monday.");
-  await expect(card).toContainText("Test Loan Associate");
-  await shot(page, "dp-missing-papers-card");
+  await expect(page.locator("[data-missing-papers-card]")).toHaveCount(0);
+  const missingRow = page.getByRole("region", { name: "Review the papers" }).locator('[data-missing-paper="MISSING"]');
+  await expect(missingRow).toContainText(MISSING);
+  await expect(missingRow.locator("[data-missing-chip]")).toHaveText("Missing");
+  await expect(missingRow).toContainText("Borrower to submit later");
+  await expect(missingRow).toContainText("The borrower brings the second ID on Monday.");
+  await expect(missingRow).toContainText("Test Loan Associate");
+  await expect(missingRow.getByRole("checkbox")).toHaveCount(0);
+  await shot(page, "dp-missing-papers-in-review");
   await noSideways(page);
   await page.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Work on it" })).toBeVisible();

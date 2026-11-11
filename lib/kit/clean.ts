@@ -141,7 +141,7 @@ export const CLEAN_POOL: PoolLoan[] = [
   P(38, "147", "Lourdes Dizon", "Mandaluyong (Luzon 1).", { amount: 300_000 }),
   P(39, "155", "Mauricio Reyes", "Libis (Luzon 1), released 2 business days ago.", { daysAgo: 2, amount: 290_000 }),
   // Missing papers with reasons (Antipolo)
-  P(41, "101", "Ruperto Alonzo", "Missing papers: mark a required Notary paper Missing, try to Send (it names the paper: \"Add remarks for: ...\"), write a reason and remarks, then Send. As DP 1, the paper is in \"Missing papers and reasons\" and cannot be named in a return.", { amount: 395_000 }),
+  P(41, "101", "Ruperto Alonzo", "Missing papers: mark a required Notary paper Missing, try to Send (it names the paper: \"Add remarks for: ...\"), write a reason and remarks, then Send. As DP 1, the paper is in \"Review the papers\" as an amber Missing row (no tick box) and cannot be named in a return.", { amount: 395_000 }),
   P(42, "101", "Soledad Bernal", "Missing papers, optional paper: on Notary tick \"Include in this file\" for Valid ID of co-maker, mark it Missing with remarks; an optional paper left unticked needs nothing.", { amount: 385_000 }),
   P(43, "101", "Teofilo Cabral", "Missing papers through the vault gate: Refinancing above ₱500,000 (EDST and Notary). Send Notary with a paper Missing (with remarks), finish it; the loan file shows \"Complete with exceptions\" until the paper is Received.", { amount: 650_000 }),
   P(44, "101", "Ursula Dimaculangan", "Ticked Present but not there: tick every Notary paper and send it to DP 1; as DP 1, at Accept mark one paper not received: the Return to LA still works for a paper the LA ticked Present.", { amount: 375_000 }),
