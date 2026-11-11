@@ -172,6 +172,18 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 | Print labels, the labels warning, "Labels printed" chips, "Labels are on all papers" at Accept, the Print labels permission | Removed |
 | Archiving and Warehousing QR code (vault, box, part, specific numbers) | Not built |
 
+### Find a loan (11 November 2026)
+
+14. **Find a loan, compact.** As **LA Angono**, open `/search` and look at the page: the search row, the sample loans, then search an Angono PN that asks the two questions (Auto Financing). Try **Open loan file** before answering, then answer both. Do it on a phone too.
+15. **Outside your branches.** As **LA Angono**, type an Alaminos PN (GD390...) in the search box and wait for the suggestions. Then type a PN that is not in MyLoans: any Angono PN from the list with its last four digits changed to 9999.
+16. **The result follows the box.** Search any PN, then change one character in the box, or pick a sample loan.
+
+### MyLoans account details (11 November 2026)
+
+17. **Find a loan, account details.** As **LA Angono**, find any Angono PN from the list above and read the card: the chips and the two rows of details.
+18. **More loan details.** Open that loan file, then open **More loan details** under Loan at a glance.
+19. **Feed quality (Admin).** As **Admin**, open Settings, MyLoans sync and read **Account details missing**. Then find an Angono PN on Find a loan as Admin.
+
 ## If the sign-in page keeps coming back
 
 Your browser still has the sign-in of an account from before a reset. Open a private window, or clear the cookies for `localhost:3000` (in Chrome: the lock icon left of the address, then Cookies and site data, then delete), and sign in again.

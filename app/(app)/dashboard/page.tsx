@@ -38,7 +38,7 @@ export default async function HomePage() {
     listLoans(user, { tab: "all" }),
     getHolidaySet(),
     prisma.notification.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 3, include: { loan: { select: { borrowerName: true } } } }),
-    loadSampleCards(),
+    loadSampleCards(user),
   ]);
   const cards = rows.map((r) => cardFor(r, holidays));
   const need = cards.filter((c) => c.group === "need");

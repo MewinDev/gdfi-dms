@@ -107,7 +107,7 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   await expect(page).toHaveURL(/dashboard/);
   await expect(page.getByRole("navigation", { name: "Main" }).filter({ visible: true }).getByRole("link", { name: /Settings/ })).toHaveCount(0);
   await page.goto("/search?q=GD1012026901001");
-  await expect(page.getByRole("main").getByText("Loan found")).toBeVisible(); // allowed: Find a loan
+  await expect(page.getByRole("main").getByText("Source: MyLoans")).toBeVisible(); // allowed: Find a loan
   await expect(page.getByRole("main").getByText("Your role does not allow opening loan files.")).toBeVisible(); // refused: open
   await expect(page.getByRole("main").getByRole("button", { name: "Open loan file" })).toBeDisabled();
   const settings = await page.goto("/admin/settings");

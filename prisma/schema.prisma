@@ -633,6 +633,27 @@ model Loan {
   releasedAt          DateTime
   sourceStatus        String
 
+  /// The account details as MyLoans gave them when the file was opened (docs/myloans/field-map.md); minor
+  /// changes (area, division, company) update them, the rest change only when Admin applies a review.
+  /// Kept as text, exactly as given. Never used for access: branchId above (the DMS branch) is.
+  source             String    @default("MyLoans")
+  productCode        String?
+  sourceBranchCode   String?
+  sourceBranchName   String?
+  sourceAreaId       String?
+  sourceAreaName     String?
+  sourceDivisionId   String?
+  sourceDivisionName String?
+  sourceCompanyId    String?
+  sourceCompanyName  String?
+  /// MyLoans TransactionStatusId and its name ("Loan Released" for 12).
+  sourceStatusId     String?
+  sourceStatusName   String?
+  /// MyLoans TransactionIsActive.
+  sourceIsActive     Boolean?
+  /// MyLoans SourceUpdatedAt: the latest update of any part of the loan there.
+  sourceUpdatedAt    DateTime?
+
   retrievedAt DateTime
   openedAt    DateTime @default(now())
   openedById  String
@@ -704,6 +725,8 @@ model LoanSourceSnapshot {
   loan        Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
   retrievedAt DateTime @default(now())
   adapter     String // mock | live
+  /// Where the copy came from (one source today). The full answer is in payload; the compared fields in tracked.
+  source      String   @default("MyLoans")
   payload     Json
   /// Field-level differences against the previous snapshot (null for the first).
   changes     Json?

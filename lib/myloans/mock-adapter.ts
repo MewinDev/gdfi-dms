@@ -1,6 +1,7 @@
 import { refuseInProduction } from "@/lib/env";
 import { cleanPn } from "@/lib/pn/format";
 import { mockRecords } from "./mock-data";
+import { completeSample } from "./mock-account";
 import type { ListBranchesOptions, MyLoansAdapter, MyLoansBranches, MyLoansChanged, MyLoansHit, MyLoansLookup, MyLoansRecord, MyLoansSearch, SourceCapabilities } from "./types";
 import type { MyLoansBranchRow } from "@/lib/branches/file";
 import { BUILTIN_BRANCHES } from "@/lib/branches/builtin";
@@ -51,10 +52,14 @@ export class MockMyLoansAdapter implements MyLoansAdapter {
 
   private async withOverride(r: MyLoansRecord): Promise<MyLoansRecord> {
     const over = (await this.opts.overrides?.())?.[r.pn];
-    if (!over) return r;
+    if (!over) return completeSample(r);
     const { changedAt: _ignored, ...fields } = over;
     void _ignored;
-    return { ...r, ...fields };
+    // A status change without its own id and name: the sample's id and name follow the new status.
+    const statusMoved = fields.status !== undefined && fields.statusId === undefined && fields.statusName === undefined;
+    const merged: MyLoansRecord = { ...r, ...fields };
+    if (statusMoved) { delete merged.statusId; delete merged.statusName; }
+    return completeSample(merged);
   }
 
   async getByPn(pn: string): Promise<MyLoansLookup> {

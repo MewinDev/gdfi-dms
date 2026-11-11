@@ -8,6 +8,7 @@ import { getMyLoansAdapter, type MyLoansRecord } from "@/lib/myloans";
 import { getPnFormat, parsePn, pnHeadline } from "@/lib/pn";
 import { reportUnknownBranchCode, resolveLoanBranch } from "./branches";
 import { runDataCheck, type DataCheckField } from "@/lib/myloans/data-check";
+import { accountColumns } from "@/lib/myloans/account";
 import {
   classifyProductName,
   evaluateLoanRules,
@@ -221,6 +222,8 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
           totalReleasedAmount: new Prisma.Decimal(check.normalized.totalReleasedAmount),
           releasedAt: startOfBusinessDay(check.normalized.releaseDate),
           sourceStatus: rec.status ?? "",
+          // The account details as MyLoans gave them (docs/myloans/field-map.md).
+          ...accountColumns(rec),
           retrievedAt: lookup.retrievedAt,
           openedById: user.id,
           classification: outcome.classification,

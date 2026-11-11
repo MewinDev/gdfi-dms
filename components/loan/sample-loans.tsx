@@ -31,6 +31,7 @@ function fillSearch(pn: string): boolean {
  */
 export function SampleLoans({ title, intro, samples, compact = false, row = false, id }: { title: string; intro: string; samples: SampleCard[]; compact?: boolean; row?: boolean; id: string }) {
   const [picked, setPicked] = useState<string | null>(null);
+  const [shown, setShown] = useState(false); // phone only (the slim list)
   const router = useRouter();
   // Home has no search box: open My loans with the PN already in its box (nothing is searched).
   const pick = (pn: string) => {
@@ -116,36 +117,34 @@ export function SampleLoans({ title, intro, samples, compact = false, row = fals
     );
   }
 
-  // Find a loan: a heading row and a grid of sample cards (no outer card).
+  // Find a loan: one slim row of chips (PN, name, branch). What each sample tests is in the tooltip.
+  // On a phone the list folds away under one "Show" button.
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <h2 id={id} className="text-lg font-bold text-navy">{title}</h2>
+    <section aria-labelledby={id} className="flex flex-col gap-2" data-samples-slim>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <h2 id={id} className="text-sm font-bold text-navy">{title}</h2>
         {pill}
-        <p className="w-full text-sm text-ink-2 lg:w-auto">{intro}</p>
+        <button type="button" onClick={() => setShown((v) => !v)} aria-expanded={shown} aria-controls={`${id}-list`} className="ml-auto inline-flex min-h-9 items-center rounded-lg px-2 text-[13px] font-semibold text-navy underline underline-offset-2 sm:hidden">
+          {shown ? "Hide" : `Show ${samples.length}`}
+        </button>
+        <p className="w-full text-[13px] text-ink-2 sm:w-auto" aria-live="polite">{picked ? "PN added to the search box. Press Find loan." : intro}</p>
       </div>
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
+      <ul id={`${id}-list`} className={`${shown ? "flex" : "hidden"} flex-col gap-1.5 sm:flex sm:flex-row sm:flex-wrap`}>
         {samples.map((s) => {
           const on = picked === s.pn;
           return (
-            <li key={s.pn}>
+            <li key={s.pn} className="min-w-0">
               <button
                 type="button"
                 aria-pressed={on}
                 onClick={() => pick(s.pn)}
-                className={`flex h-full w-full min-h-11 flex-col gap-2.5 rounded-2xl border px-[22px] py-5 text-left transition-colors ${on ? "border-2 border-navy bg-fill-soft px-[21px] py-[19px]" : "border-[rgb(12_35_64/0.14)] bg-white hover:bg-fill"}`}
+                title={`${s.tests} ${s.loanType} · ${s.amountText}`}
+                className={`flex min-h-10 w-full min-w-0 items-center gap-2 rounded-full border px-3.5 text-left text-[13px] transition-colors sm:w-auto ${on ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.16)] bg-white text-navy hover:bg-fill"}`}
               >
-                <span className="flex w-full items-center justify-between gap-3">
-                  <span className="text-base font-bold text-navy">{s.pn}</span>
-                  {chip(s)}
-                </span>
-                <span className="text-[15px] font-semibold text-navy">{s.name}</span>
-                <span className="text-[13px] leading-relaxed text-ink-2">
-                  {s.branch} · {s.loanType} · {s.amountText}
-                  <br />
-                  {s.tests}
-                </span>
-                {on && pickedNote}
+                <span className="font-mono text-[13px] font-bold">{s.pn}</span>
+                <span className="min-w-0 truncate font-semibold">{s.name}</span>
+                <span className={`shrink-0 ${on ? "text-white/80" : "text-ink-2"}`}>{s.branch}</span>
+                {s.opened && <span className={`shrink-0 text-xs font-semibold ${on ? "text-white" : "text-ok-fg"}`}>· Opened</span>}
               </button>
             </li>
           );

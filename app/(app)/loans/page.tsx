@@ -64,7 +64,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   const rows = perTab[tabs.findIndex((t) => t.key === f.tab)];
   const counts = Object.fromEntries(tabs.map((t, i) => [t.key, perTab[i].length]));
   return la
-    ? <LaList f={f} sp={sp} rows={rows} branches={branches} counts={counts} />
+    ? <LaList user={user} f={f} sp={sp} rows={rows} branches={branches} counts={counts} />
     : <AdminList f={f} rows={rows} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)} />;
 }
 
@@ -102,8 +102,8 @@ function ResultLine({ count, chips, clearHref, extra }: { count: number; chips: 
 // Loan Associate: compact search, the sample loans in one row, then the loan files
 // ---------------------------------------------------------------------------
 
-async function LaList({ f, sp, rows, branches, counts }: { f: LoanListFilters; sp: SP; rows: LoanRow[]; branches: { id: string; name: string }[]; counts: Record<string, number> }) {
-  const [holidays, samples] = await Promise.all([getHolidaySet(), loadSampleCards()]);
+async function LaList({ user, f, sp, rows, branches, counts }: { user: CurrentUser; f: LoanListFilters; sp: SP; rows: LoanRow[]; branches: { id: string; name: string }[]; counts: Record<string, number> }) {
+  const [holidays, samples] = await Promise.all([getHolidaySet(), loadSampleCards(user)]);
   let cards = rows.map((r) => cardFor(r, holidays));
   if (sp.group === "waiting") cards = cards.filter((c) => c.group === "wait");
   cards = sortByUrgency(cards);
