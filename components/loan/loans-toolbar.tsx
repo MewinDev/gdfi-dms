@@ -14,7 +14,7 @@ import type { FilterField } from "@/lib/ui/loan-filters";
 export function LoansToolbar({
   search, filters, resultCount,
 }: {
-  search: { action: string; defaultValue?: string; autoFocus?: boolean; hidden?: Record<string, string | undefined>; buttonLabel?: string; required?: boolean; suggest?: { exactOnly: boolean } };
+  search: { action: string; defaultValue?: string; autoFocus?: boolean; hidden?: Record<string, string | undefined>; buttonLabel?: string; required?: boolean; suggest?: boolean };
   filters: { fields: FilterField[]; hidden: Record<string, string | undefined>; activeCount: number; clearHref: string };
   /** Loan files the current filters show (the panel starts from this). */
   resultCount: number;
@@ -28,8 +28,8 @@ export function LoansToolbar({
           <label htmlFor="find-loan" className="sr-only">Find a loan</label>
           {search.suggest ? (
             <LiveFindInput
-              defaultValue={search.defaultValue} autoFocus={search.autoFocus} required={search.required ?? true} exactOnly={search.suggest.exactOnly}
-              placeholder={search.suggest.exactOnly ? "Whole PN, or CIN or CIF" : "PN, borrower name, CIN or CIF"}
+              defaultValue={search.defaultValue} autoFocus={search.autoFocus} required={search.required ?? true}
+              placeholder="PN, borrower name, CIN or CIF"
               className="h-12 w-full min-w-0 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
             />
           ) : (

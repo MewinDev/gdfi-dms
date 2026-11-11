@@ -22,7 +22,7 @@ import {
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { recomputeStage } from "./stage";
 import { getSetting } from "@/lib/settings";
-import { linkOnOpen, refreshLoan, refreshOnOpen, sameBorrowerLoans, suggestOnOpen } from "./source-sync";
+import { linkOnOpen, refreshLoan, sameBorrowerLoans, suggestOnOpen } from "./source-sync";
 import { hashTracked, trackedOf } from "@/lib/myloans/changes";
 import { UserError } from "./errors";
 
@@ -31,7 +31,8 @@ import { UserError } from "./errors";
 // ---------------------------------------------------------------------------
 
 export type PnLookupResult =
-  | { kind: "existing"; pn: string; refreshed: boolean; refreshMessage?: string }
+  /** Saved in the DMS and in the person's branches: Find a loan shows "Already in the DMS" (no MyLoans call here). */
+  | { kind: "existing"; pn: string }
   | { kind: "invalid"; message: string; part?: string }
   | { kind: "not_found"; pn: string; message: string }
   | { kind: "unavailable"; pn: string; message: string }
@@ -99,17 +100,15 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   if (!checked.ok) return { kind: "invalid", message: checked.message, part: checked.part };
   const pn = checked.pn;
 
-  // Existing Loan File: open it and refresh from MyLoans. Rules never run again.
+  // The DMS first: a saved loan file is handled from the DMS, with no MyLoans call (the stale refresh
+  // runs later, in the background, from the "Already in the DMS" card). Rules never run again.
   const existing = await prisma.loan.findUnique({ where: { pn }, select: { id: true, branchId: true } });
   if (existing) {
     if (!inScope(user, existing.branchId)) {
       // Do not reveal another branch's Loan File.
       return { kind: "refused", pn, field: "branch", fieldLabel: "Branch", message: "Outside your branch access.", record: emptyRecord(pn) };
     }
-    // Refreshed only when the copy is older than the setting (Settings > MyLoans sync).
-    const loan = await prisma.loan.findUniqueOrThrow({ where: { id: existing.id }, select: { id: true, lastCheckedAt: true, retrievedAt: true } });
-    const r = await refreshOnOpen(loan);
-    return { kind: "existing", pn, refreshed: !r || r.ok, refreshMessage: r && !r.ok ? r.message : undefined };
+    return { kind: "existing", pn };
   }
 
   const lookup = await getMyLoansAdapter().getByPn(pn);
@@ -165,16 +164,20 @@ export interface OpenLoanInput {
   orcrStatus?: OrcrStatus | null;
 }
 
-export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Promise<{ pn: string; alreadyOpen: boolean }> {
+/**
+ * One loan file per PN (Loan.pn is unique). alreadyOpen: the file exists; byOther: someone else opened it
+ * (for example two Loan Associates pressing Open loan file on the same new PN at the same moment).
+ */
+export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Promise<{ pn: string; alreadyOpen: boolean; byOther?: boolean }> {
   if (!can(user, PERMISSIONS.LOANS_OPEN)) throw new UserError("Your role does not allow opening loan files.");
   const checked = await pnOf(input.pn);
   if (!checked.ok) throw new UserError(checked.message, "pn");
   const pn = checked.pn;
 
-  const already = await prisma.loan.findUnique({ where: { pn }, select: { branchId: true } });
+  const already = await prisma.loan.findUnique({ where: { pn }, select: { branchId: true, openedById: true } });
   if (already) {
     if (!inScope(user, already.branchId)) throw new UserError("Outside your branch access.", "branch");
-    return { pn, alreadyOpen: true };
+    return { pn, alreadyOpen: true, byOther: already.openedById !== user.id };
   }
 
   // Never trust the preview: call MyLoans again and re-run the Data Check on the server.
@@ -291,8 +294,9 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      // Someone else opened it a moment ago.
-      return { pn, alreadyOpen: true };
+      // Someone else opened it a moment ago: land on that file.
+      const won = await prisma.loan.findUnique({ where: { pn }, select: { openedById: true } });
+      return { pn, alreadyOpen: true, byOther: won?.openedById !== user.id };
     }
     throw e;
   }

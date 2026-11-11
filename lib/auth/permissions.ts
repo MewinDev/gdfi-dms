@@ -177,7 +177,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     key: "loans", label: "Loans", items: [
       { key: P.LOANS_VIEW, label: "See loan files", help: "Open and read loan files, Home and Updates. Which branches depends on the person's Branch access.", can: "see loan files", where: "Loans, Loan File, Home, Updates", was: "loans:view" },
-      { key: P.LOANS_SEARCH, label: "Find a loan", help: "Search MyLoans by PN, CIN or CIF and see the preview.", requires: [P.LOANS_VIEW], can: "find loans", where: "Find loan, Search", was: "loans:search" },
+      { key: P.LOANS_SEARCH, label: "Find a loan", help: "Search the loan files in the DMS, and look up a full PN in MyLoans to see the preview.", requires: [P.LOANS_VIEW], can: "find loans", where: "Find loan, Search", was: "loans:search" },
       { key: P.LOANS_OPEN, label: "Open a loan file", help: "Start a new loan file from a MyLoans loan.", requires: [P.LOANS_SEARCH], can: "open new loan files", where: "Search, Open loan file", was: "loans:open" },
       { key: P.LOANS_EXPORT, label: "Export loans (CSV)", help: "Download the loan list as a spreadsheet file.", requires: [P.LOANS_VIEW], can: "export the loan list", where: "Loans, Export", was: "loans:export", hidden: true },
       { key: P.RULES_OVERRIDE, label: "Change an automatic result", help: "Supervisor override of the classification and transactions, with a reason.", requires: [P.LOANS_VIEW], can: "override automatic results", where: "Loan File, Change an automatic result", was: "rules:override" },

@@ -15,6 +15,8 @@ export const SETTING_DEFAULTS = {
   "myloans.mockExtra": [] as MyLoansRecord[],
   /** MyLoans sync: refresh a loan when it is opened if its copy is older than this (minutes; 0 = always). */
   "myloans.refreshOnOpenMinutes": 15 as number,
+  /** MyLoans sync: when Find a loan shows a saved loan, refresh it in the background if last checked more than this many hours ago (0 = never). */
+  "myloans.refreshOnFindHours": 4 as number,
   /** MyLoans sync: background refresh every this many minutes (active loans only). */
   "myloans.backgroundMinutes": 60 as number,
   /** MyLoans sync: background refresh only Mon to Sat, 7:00 AM to 7:00 PM PHT, holidays skipped. */

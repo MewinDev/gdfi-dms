@@ -42,7 +42,8 @@ import { financeIds, nextNumber } from "./funds";
  */
 
 type Mode = "MANUAL" | "AUTOMATIC" | "SIMULATED";
-export type Trigger = "open" | "button" | "background" | "simulator";
+/** find: the background refresh after Find a loan shows a saved loan (Settings > MyLoans sync, "When a saved loan is found"). */
+export type Trigger = "open" | "button" | "background" | "simulator" | "find";
 export type RefreshResult =
   | { ok: true; outcome: "none" | "minor" | "review"; category: ChangeCategory; checkedAt: Date }
   | { ok: false; message: string; checkedAt: Date };
@@ -908,6 +909,7 @@ export async function runSyncNow(u: CurrentUser) {
 const minutes = (label: string, min: number, max: number) => z.coerce.number({ message: `Enter ${label}.` }).int("Whole minutes.").min(min, `At least ${min}.`).max(max, `At most ${max.toLocaleString("en-PH")}.`);
 export const syncSettingsSchema = z.object({
   refreshOnOpenMinutes: z.coerce.number({ message: "Enter minutes (0 means always)." }).int("Whole minutes.").min(0, "0 or more.").max(1440, "At most 1,440 (a day)."),
+  refreshOnFindHours: z.coerce.number({ message: "Enter hours (0 means never)." }).int("Whole hours.").min(0, "0 or more.").max(720, "At most 720 (30 days).").default(4),
   backgroundMinutes: z.coerce.number({ message: "Enter minutes." }).int("Whole minutes.").min(5, "At least 5 minutes.").max(1440, "At most 1,440 (a day)."),
   businessHoursOnly: z.boolean(),
   maxPerRun: z.coerce.number({ message: "Enter a number." }).int("A whole number.").min(1, "At least 1.").max(500, "At most 500 a run."),
@@ -926,11 +928,12 @@ export async function saveSyncSettings(u: CurrentUser, raw: unknown) {
   const d = p.data;
   await prisma.$transaction(async (tx) => {
     const before = {
-      refreshOnOpenMinutes: await getSetting("myloans.refreshOnOpenMinutes", tx), backgroundMinutes: await getSetting("myloans.backgroundMinutes", tx),
+      refreshOnOpenMinutes: await getSetting("myloans.refreshOnOpenMinutes", tx), refreshOnFindHours: await getSetting("myloans.refreshOnFindHours", tx), backgroundMinutes: await getSetting("myloans.backgroundMinutes", tx),
       businessHoursOnly: await getSetting("myloans.businessHoursOnly", tx), maxPerRun: await getSetting("myloans.maxPerRun", tx), pauseMs: await getSetting("myloans.pauseMs", tx),
       tierMinutes: await getSetting("myloans.tierMinutes", tx), hourlyCeiling: await getSetting("myloans.hourlyCeiling", tx), replacementWindowDays: await getSetting("myloans.replacementWindowDays", tx),
     };
     await setSetting("myloans.refreshOnOpenMinutes", d.refreshOnOpenMinutes, tx);
+    await setSetting("myloans.refreshOnFindHours", d.refreshOnFindHours, tx);
     await setSetting("myloans.backgroundMinutes", d.backgroundMinutes, tx);
     await setSetting("myloans.businessHoursOnly", d.businessHoursOnly, tx);
     await setSetting("myloans.maxPerRun", d.maxPerRun, tx);

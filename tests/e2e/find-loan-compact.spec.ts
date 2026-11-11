@@ -31,7 +31,7 @@ test("empty page: title, one search row, slim samples (one line each, details in
   await signIn(page, "la");
   await page.goto("/search");
   await expect(main(page).getByRole("heading", { level: 1, name: "Find a loan" })).toBeVisible();
-  await expect(main(page).getByText("Looked up in MyLoans. Nothing is saved until you open the loan file.")).toBeVisible();
+  await expect(main(page).getByText("Loan files in the DMS first. A full PN not opened here yet is looked up in MyLoans. Nothing is saved until you open the loan file.")).toBeVisible();
   const box = visibleSearchBox(page);
   await expect(box).toHaveAttribute("placeholder", "PN, CIN or CIF");
   await expect(box).toBeFocused();
@@ -185,17 +185,18 @@ test("the result box clears as soon as the PN in the box changes or a sample is 
   await expect(result).toHaveCount(0);
 });
 
-test("the dropdown says Outside your branches for a PN of another branch; No match only when not found", async ({ page }) => {
+test("the dropdown never asks MyLoans: a whole PN not saved gets the quiet hint, wherever it is", async ({ page }) => {
+  // The rest of the dropdown (saved loans, Outside your branches, nothing for random text) is in
+  // find-loan-local-first.spec.ts.
   await signIn(page, "la");
   await page.goto("/search");
   const box = visibleSearchBox(page);
-  await box.fill("GD3902026901007"); // Alaminos: in MyLoans, not in the LA's branches
-  await expect(page.locator("[data-find-outside]")).toHaveText("Outside your branches. You can only open loans of your branches.");
-  await expect(page.locator("[data-find-empty]")).not.toContainText("No match");
-  await shot(page, "dropdown-outside");
-  await box.fill("GD1012026999999"); // not in MyLoans
-  await expect(page.locator("[data-find-empty]")).toHaveText("No match in MyLoans.");
-  await expect(page.locator("[data-find-outside]")).toHaveCount(0);
+  for (const pn of ["GD3902026901007", "GD1012026999999"]) { // Alaminos in MyLoans; not in MyLoans at all
+    await box.fill(pn);
+    await expect(page.locator("[data-find-unsaved]")).toHaveText("Not opened in the DMS yet. Press Find loan to look it up in MyLoans.");
+    await expect(page.locator("[data-find-outside]")).toHaveCount(0);
+  }
+  await shot(page, "dropdown-unsaved");
 });
 
 test("samples: an Angono Loan Associate sees no Antipolo sample", async ({ page }) => {

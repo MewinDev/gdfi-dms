@@ -78,7 +78,7 @@ export async function syncSettingsAction(_prev: ActionState, fd: FormData): Prom
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
     await saveSyncSettings(u, {
-      refreshOnOpenMinutes: str(fd, "refreshOnOpenMinutes"), backgroundMinutes: str(fd, "backgroundMinutes"),
+      refreshOnOpenMinutes: str(fd, "refreshOnOpenMinutes"), refreshOnFindHours: str(fd, "refreshOnFindHours"), backgroundMinutes: str(fd, "backgroundMinutes"),
       businessHoursOnly: fd.get("businessHoursOnly") === "on", maxPerRun: str(fd, "maxPerRun"), pauseMs: str(fd, "pauseMs"),
       tierA: str(fd, "tierA"), tierB: str(fd, "tierB"), tierC: str(fd, "tierC"), hourlyCeiling: str(fd, "hourlyCeiling"), replacementWindowDays: str(fd, "replacementWindowDays"),
     });

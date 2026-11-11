@@ -7,11 +7,13 @@ import { runSyncNowAction, syncSettingsAction } from "@/app/actions/source";
 import { SAVED_EVENT } from "./settings-modal";
 
 const runNow = announcing(runSyncNowAction);
+const FIND_LABEL = "When a saved loan is found, refresh it from MyLoans if last checked more than this many hours ago";
 
 export interface SyncRunRow { when: string; trigger: string; mode: string; status: string; due: number; calls: number; saved: number; avgMs: number; maxMs: number; errors: number; ms: number; updated: number; changes: number; cap: number; hour: string }
 
 export interface SyncCardData {
   refreshOnOpenMinutes: number;
+  refreshOnFindHours: number;
   backgroundMinutes: number;
   businessHoursOnly: boolean;
   maxPerRun: number;
@@ -109,7 +111,7 @@ export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: 
         <section aria-label="Sync settings (read only)" data-sync-settings-readonly>
           <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
             {([
-              ["Refresh when opened if older than (minutes)", d.refreshOnOpenMinutes], ["Background run every (minutes)", d.backgroundMinutes],
+              ["Refresh when opened if older than (minutes)", d.refreshOnOpenMinutes], [FIND_LABEL, d.refreshOnFindHours], ["Background run every (minutes)", d.backgroundMinutes],
               ["Work in progress: check every (minutes)", d.tierA], ["Not yet sent: check every (minutes)", d.tierB], ["Finished, not closed: check every (minutes)", d.tierC],
               ["Loans per run (at most)", d.maxPerRun], ["Pause between calls (milliseconds)", d.pauseMs], ["Calls to MyLoans per hour (at most)", d.hourlyCeiling],
               ["Replacement: released within (days)", d.replacementWindowDays], ["Business hours only", d.businessHoursOnly ? "Yes" : "No"],
@@ -120,6 +122,7 @@ export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: 
       ) : (
       <form id={formId} data-track-dirty action={action} className="grid gap-4 sm:grid-cols-2">
         {field("refreshOnOpenMinutes", "Refresh when opened if older than (minutes)", "0 means every time a loan file is opened.", d.refreshOnOpenMinutes)}
+        {field("refreshOnFindHours", FIND_LABEL, "Runs once in the background after Find a loan shows the saved loan; it never delays opening it. 0 means never.", d.refreshOnFindHours)}
         {field("backgroundMinutes", "Background run every (minutes)", "How often the sync runs; each loan is checked by its tier below.", d.backgroundMinutes)}
         {field("tierA", "Work in progress: check every (minutes)", "Sent or in process, cash out, a change under review.", d.tierA)}
         {field("tierB", "Not yet sent: check every (minutes)", "Checking papers, ready to send.", d.tierB)}
@@ -132,7 +135,7 @@ export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: 
           <input type="checkbox" name="businessHoursOnly" defaultChecked={d.businessHoursOnly} className="mt-0.5 h-5 w-5 accent-[var(--navy)]" />
           <span><span className="block text-[15px] font-semibold">Business hours only</span><span className="block text-[13px] text-ink-2">Mon to Sat, 7:00 AM to 7:00 PM, Philippine time. Holidays are skipped.</span></span>
         </label>
-        {state && !state.ok && !["refreshOnOpenMinutes", "backgroundMinutes", "maxPerRun", "pauseMs", "tierA", "tierB", "tierC", "hourlyCeiling", "replacementWindowDays"].includes(state.field ?? "") && <div className="sm:col-span-2"><FormMessage state={state} /></div>}
+        {state && !state.ok && !["refreshOnOpenMinutes", "refreshOnFindHours", "backgroundMinutes", "maxPerRun", "pauseMs", "tierA", "tierB", "tierC", "hourlyCeiling", "replacementWindowDays"].includes(state.field ?? "") && <div className="sm:col-span-2"><FormMessage state={state} /></div>}
       </form>
       )}
     </div>
