@@ -129,8 +129,7 @@ test("messages: one compact line each, the PN, and Try again", async ({ page }) 
   const clean = watchConsole(page);
   await signIn(page, "la");
   const cases: [string, string, string][] = [
-    ["not-found", "GD1012026999999", "We could not find this loan in MyLoans."],
-    ["not-released", "GD1652026901008", "This loan is not released yet."],
+    ["not-found", "GD1012026999999", "No loan with this PN was found in MyLoans."],
     ["outside-branches", "GD3902026901007", "This loan is outside your branches."],
     ["needs-details", "GD1652026901010", "Some loan details in MyLoans need fixing first."],
   ];
@@ -139,7 +138,11 @@ test("messages: one compact line each, the PN, and Try again", async ({ page }) 
     const n = main(page).locator("[data-find-problem]");
     await expect(n).toContainText(title);
     await expect(n.locator("[data-notice-pn]")).toHaveText(pn);
-    await expect(n.getByText(/Nothing was saved\./)).toBeVisible();
+    // No row in MyLoans: one sentence, shown once.
+    if (name === "not-found") {
+      await expect(n.getByText("No loan with this PN was found in MyLoans.")).toHaveCount(1);
+      await expect(n).not.toContainText("PN not found");
+    } else await expect(n.getByText(/Nothing was saved\./)).toBeVisible();
     await expect(n.getByRole("link", { name: "Try again" })).toBeVisible();
     // At most about two lines of text (more only on a phone).
     const h = (await n.boundingBox())!.height;
@@ -167,11 +170,11 @@ test("the result box clears as soon as the PN in the box changes or a sample is 
   await box.pressSequentially("3"); // the same PN again: its result may show again
   await expect(result).toContainText("Ana Villanueva");
 
-  // An error box too.
+  // A status card too.
   await page.goto("/search?q=GD1652026901008");
-  await expect(main(page).locator("[data-find-problem]")).toBeVisible();
+  await expect(main(page).locator("[data-find-status]")).toBeVisible();
   await box.fill("GD1652026901004");
-  await expect(main(page).locator("[data-find-problem]")).toHaveCount(0);
+  await expect(main(page).locator("[data-find-status]")).toHaveCount(0);
   await box.press("Enter");
   await expect(page).toHaveURL(/q=GD1652026901004/);
   await expect(result).toContainText("Ramon Garcia");

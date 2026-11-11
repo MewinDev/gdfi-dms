@@ -3,10 +3,11 @@
 import { useActionState, useId } from "react";
 import { FormMessage, SubmitButton } from "@/components/form-status";
 import { announcing } from "@/components/ui/live-toast";
-import { runSyncNowAction, syncSettingsAction } from "@/app/actions/source";
+import { pauseMyLoansAction, runSyncNowAction, syncSettingsAction } from "@/app/actions/source";
 import { SAVED_EVENT } from "./settings-modal";
 
 const runNow = announcing(runSyncNowAction);
+const pauseIt = announcing(pauseMyLoansAction);
 const FIND_LABEL = "When a saved loan is found, refresh it from MyLoans if last checked more than this many hours ago";
 
 export interface SyncRunRow { when: string; trigger: string; mode: string; status: string; due: number; calls: number; saved: number; avgMs: number; maxMs: number; errors: number; ms: number; updated: number; changes: number; cap: number; hour: string }
@@ -28,6 +29,26 @@ export interface SyncCardData {
   lines: { label: string; value: string; bad?: boolean }[];
   tiers: { A: number; B: number; C: number };
   runs: SyncRunRow[];
+  /** Admin's "Pause MyLoans calls". */
+  paused: boolean;
+}
+
+/** "Pause MyLoans calls" (myloans:manage): the automatic paths make no call; a person's Refresh and Find loan still do. */
+function PauseSwitch({ paused, canManage }: { paused: boolean; canManage: boolean }) {
+  const [state, action] = useActionState(pauseIt, null);
+  return (
+    <form action={action} className={`flex flex-wrap items-center gap-3 rounded-xl border px-3 py-2 ${paused ? "border-bad-fg/50 bg-bad-bg" : "border-line"}`} data-myloans-pause={paused ? "on" : "off"}>
+      <input type="hidden" name="paused" value={paused ? "off" : "on"} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-bold text-navy">Pause MyLoans calls: {paused ? "On" : "Off"}</p>
+        <p className="text-[13px] text-ink-2">{paused
+          ? "MyLoans calls are paused by Admin. The background run, the refresh when a saved loan is found and the refresh when a loan file is opened make no call. Refresh from MyLoans and Find loan for a new PN still work."
+          : "When on, the background run and the automatic refreshes make no call to MyLoans. Refresh from MyLoans and Find loan for a new PN still work."}</p>
+      </div>
+      {canManage && <SubmitButton className={paused ? "btn-secondary" : "btn-ghost"}>{paused ? "Turn MyLoans calls back on" : "Pause MyLoans calls"}</SubmitButton>}
+      <div className="basis-full empty:hidden"><FormMessage state={state} /></div>
+    </form>
+  );
 }
 
 /** Settings > System > MyLoans sync: health, the last runs, active loans per tier, and the settings. */
@@ -53,6 +74,7 @@ export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: 
   return (
     <div className="flex flex-col gap-5" data-myloans-sync>
       <p className={`rounded-xl px-3 py-2 text-[15px] font-bold ${tone}`} data-sync-health>{d.health}</p>
+      <PauseSwitch paused={d.paused} canManage={canManage} />
       <dl className="grid gap-x-4 gap-y-2 rounded-xl bg-fill p-3 text-sm sm:grid-cols-2" data-sync-status>
         {d.lines.map((l) => (
           <div key={l.label} className="flex min-w-0 justify-between gap-3 border-b border-line/60 pb-1 sm:block sm:border-0">

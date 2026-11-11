@@ -7,9 +7,10 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, strOrNull, type ActionState } from "@/lib/action";
 import {
   applySourceChange, askCashBack, closeAsCancelled, copyReusablePapers, keepCurrent, linkFromRelated, linkReplacement, moveCashToNewPn,
-  runSyncNow, saveSyncSettings, simulateSourceChange, SIM_SOURCE_KINDS, type SimSourceKind,
+  runSyncNow, saveSyncSettings, setMyLoansPaused, simulateSourceChange, SIM_SOURCE_KINDS, type SimSourceKind,
 } from "@/lib/services/source-sync";
 import { UserError } from "@/lib/services/errors";
+import { acceptBorrowerCorrection, keepBorrowerCurrent } from "@/lib/services/borrower-review";
 
 async function revalidateItem(id: string) {
   const it = await prisma.sourceChange.findUnique({ where: { id }, select: { loan: { select: { pn: true, replacedByPn: true, replacesPn: true } } } });
@@ -50,6 +51,28 @@ export async function sourceDecisionAction(_prev: ActionState, fd: FormData): Pr
   });
 }
 
+/** Borrower details correction: Accept the correction or Keep current (source:review_borrower, the loan's branch). */
+export async function borrowerDecisionAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const u = await requirePermission(PERMISSIONS.SOURCE_REVIEW_BORROWER);
+    const id = str(fd, "changeId");
+    const what = str(fd, "$decision");
+    let msg: string;
+    if (what === "accept") {
+      await acceptBorrowerCorrection(u, id, str(fd, "note"));
+      msg = "Correction accepted. The loan shows the MyLoans details now.";
+    } else if (what === "keep") {
+      await keepBorrowerCurrent(u, id, str(fd, "note"));
+      msg = "Kept the DMS details.";
+    } else {
+      throw new UserError("Pick what to do.");
+    }
+    await revalidateItem(id);
+    revalidatePath("/loans");
+    return msg;
+  });
+}
+
 /** Related loans: link an unusual case by hand (confirmation and a note). */
 export async function linkRelatedAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
@@ -84,6 +107,17 @@ export async function syncSettingsAction(_prev: ActionState, fd: FormData): Prom
     });
     revalidatePath("/admin/settings");
     return "Saved.";
+  });
+}
+
+/** Pause MyLoans calls on or off (myloans:manage). */
+export async function pauseMyLoansAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const u = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
+    const on = str(fd, "paused") === "on";
+    await setMyLoansPaused(u, on);
+    revalidatePath("/admin/settings");
+    return on ? "MyLoans calls are paused." : "MyLoans calls are back on.";
   });
 }
 

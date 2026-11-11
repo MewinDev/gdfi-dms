@@ -189,7 +189,6 @@ test("messages: same edges as the page; icon, text and Try again centred", async
   await signIn(page, "la");
   const cases: [string, string, string][] = [
     ["not-found", "GD1012026999999", "[data-find-problem]"],
-    ["not-released", "GD1652026901008", "[data-find-problem]"],
     ["outside-branches", "GD3902026901007", "[data-find-problem]"],
     ["needs-details", "GD1652026901010", "[data-find-problem]"],
     ["wrong-pn", "GD10120269010", "[data-pn-error]"],

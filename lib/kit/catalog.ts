@@ -163,7 +163,7 @@ export const KIT_LOANS: KitLoan[] = [
   L(2040, "TAT late (late reason needed)", "TAT", { borrower: "Noel Fajardo", daysAgo: 4 }),
 
   // MyLoans.
-  L(2041, "MyLoans change: minor (name and address)", "MyLoans", { borrower: "Ofelia Santiago" }),
+  L(2041, "MyLoans change: borrower details (name, address, contact)", "MyLoans", { borrower: "Ofelia Santiago" }),
   L(2042, "MyLoans change: material (amount)", "MyLoans", { borrower: "Pedro Ilagan" }),
   L(2043, "MyLoans change: status (cancelled)", "MyLoans", { borrower: "Rosario Dela Rosa" }),
   L(2044, "MyLoans: replaced by a new PN", "MyLoans", { borrower: "Samuel Javier" }),

@@ -44,18 +44,19 @@ export interface Tracked {
   isActive: string | null;
 }
 export type TrackedKey = keyof Tracked;
-export type FieldKind = "minor" | "material" | "status" | "replacement";
+/** borrower: the borrower's own details (name, address, contact number, CIF, CIN): a review of its own. */
+export type FieldKind = "minor" | "borrower" | "material" | "status" | "replacement";
 
 export const FIELDS: Record<TrackedKey, { label: string; kind: FieldKind }> = {
-  borrowerName: { label: "Borrower name", kind: "minor" },
-  address: { label: "Address", kind: "minor" },
-  contactNo: { label: "Contact number", kind: "minor" },
+  borrowerName: { label: "Name", kind: "borrower" },
+  address: { label: "Address", kind: "borrower" },
+  contactNo: { label: "Contact number", kind: "borrower" },
   plateNo: { label: "Plate number", kind: "minor" },
   engineNo: { label: "Engine number", kind: "minor" },
   chassisNo: { label: "Chassis number", kind: "minor" },
   make: { label: "Make", kind: "minor" },
-  cin: { label: "CIN", kind: "minor" },
-  cif: { label: "CIF", kind: "minor" },
+  cin: { label: "CIN", kind: "borrower" },
+  cif: { label: "CIF", kind: "borrower" },
   status: { label: "Status", kind: "status" },
   loanType: { label: "Loan type", kind: "material" },
   productName: { label: "Product name", kind: "material" },
@@ -117,10 +118,9 @@ export function hashTracked(t: Tracked): string {
 }
 
 export interface FieldChange { field: TrackedKey; label: string; kind: FieldKind; was: string | number | null; now: string | number | null }
-export type ChangeCategory = "NONE" | "MINOR" | "MATERIAL" | "STATUS" | "REPLACEMENT";
-
-/** Released is the only status a working loan should have. */
-export const isReleased = (status: string | null | undefined) => (status ?? "").toUpperCase() === "RELEASED";
+export type ChangeCategory = "NONE" | "MINOR" | "BORROWER" | "MATERIAL" | "STATUS" | "REPLACEMENT";
+/** The borrower details fields (the "Borrower details" class), in the order the review shows them. */
+export const BORROWER_KEYS = ["borrowerName", "address", "contactNo", "cif", "cin"] as const satisfies readonly TrackedKey[];
 
 /**
  * What changed between two copies, and one category: Replacement (a replaces-PN link appears),
@@ -137,7 +137,8 @@ export function detectChanges(previous: Tracked | null, current: Tracked): { cat
     changes.some((c) => c.kind === "replacement" && c.now) ? "REPLACEMENT"
       : has("status") ? "STATUS"
         : has("material") ? "MATERIAL"
-          : changes.length ? "MINOR" : "NONE";
+          : has("borrower") ? "BORROWER"
+            : changes.length ? "MINOR" : "NONE";
   return { category, changes };
 }
 

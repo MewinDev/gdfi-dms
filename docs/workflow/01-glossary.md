@@ -2,7 +2,7 @@
 
 The key words for the workflow. Use exactly these in screens, emails and reports.
 
-Last updated: 11 November 2026 (PHT)
+Last updated: 12 November 2026 (PHT)
 
 | Word | Meaning | Who | Effect on the clock |
 |---|---|---|---|
@@ -38,7 +38,7 @@ Last updated: 11 November 2026 (PHT)
 | **Availability** | Free places over capacity, rounded, with the numbers: "60% · 4 of 10 in use". Available from 40%, Busy from 1% to 39%, Full at 0%, On leave (counts as 0%; shown disabled in the Send panel). Shown on the Monitoring page and beside each processor in the Send panel. | System | None |
 | **Overdue** | An open job whose current step is past its due date (the same late rule as the TAT chips). Counted on the Monitoring page as of now. | System | The clock keeps counting |
 | **LTO advisory** | A warning about an LTO office (System down, Office closed, Long queue, Other) with remarks, filed by a DP from a job at an LTO stage or by Operations. Active until resolved with remarks; shown on the office choice, the DP job and the Monitoring page. Never blocks anything and is not in the Journey. | DP, Operations Monitor | None |
-| **MyLoans change** | MyLoans data differs from the saved copy. Minor changes update silently; the rest need Admin review. A loan moved to another branch in MyLoans is a material change: Admin sees the old and new branch and who gains or loses sight of it, and the loan's branch changes only when Admin applies it. | System, Admin | None |
+| **MyLoans change** | MyLoans data differs from the saved copy. Minor changes (area, division, company) update silently; borrower details (name, address, contact number, CIF, CIN) are a "MyLoans correction" reviewed by the branch supervisor or approver; the rest need Admin review. A loan moved to another branch in MyLoans is a material change: Admin sees the old and new branch and who gains or loses sight of it, and the loan's branch changes only when Admin applies it. | System, Admin | None |
 | **PN** | The promissory note number, the loan's key: GD + branch code (3 digits) + year (4 digits) + 9 (the MyLoans system) + running number (5 digits), for example GD1012026900001 (15 characters). The rules are an Admin setting (Settings, System, PN format; the check can be switched off). Spaces, dashes and dots are removed first, so a pasted "gd 101-2026-9-00001" works. A wrong PN shows "This does not look like a PN. Example: GD1012026900001" and the part that is wrong ("The year is in the future"), and never reaches MyLoans. Always shown as stored, in monospace. | Everyone | None |
 | **Branch code** | The 3-digit MyLoans code of a branch (100 to 999, unique; Antipolo is 101). A branch without one shows "Code needed" (codes are never guessed). Loans, users and everything else point at a branch by its internal id, so a rename or a code fix breaks nothing. | Admin | None |
 | **Division** | A MyLoans business line: Branch Division, Car Financing Division, Truck Financing Division, REM Division, Brand New Car Division, REF Division. Not a region. | Admin | None |

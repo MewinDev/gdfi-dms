@@ -14,7 +14,7 @@ export const SETTING_DEFAULTS = {
   /** Mock-only: extra source loans (a replacement PN made by the simulator). */
   "myloans.mockExtra": [] as MyLoansRecord[],
   /** MyLoans sync: refresh a loan when it is opened if its copy is older than this (minutes; 0 = always). */
-  "myloans.refreshOnOpenMinutes": 15 as number,
+  "myloans.refreshOnOpenMinutes": 60 as number,
   /** MyLoans sync: when Find a loan shows a saved loan, refresh it in the background if last checked more than this many hours ago (0 = never). */
   "myloans.refreshOnFindHours": 4 as number,
   /** MyLoans sync: background refresh every this many minutes (active loans only). */
@@ -32,6 +32,10 @@ export const SETTING_DEFAULTS = {
   "myloans.hourlyCeiling": 600 as number,
   /** MyLoans sync: average answer slower than this (ms) halves the per-run cap. */
   "myloans.slowMs": 2000 as number,
+  /** Admin: "Pause MyLoans calls". On: the background run, the stale refresh and refresh on open make no call. */
+  "myloans.paused": false as boolean,
+  /** Admin data check: loans refused because MyLoans has no borrower name at all (the latest 50). */
+  "myloans.noNameLoans": [] as { pn: string; branch: string | null; at: string }[],
   /** MyLoans sync: the feed cursor, the adaptive cap and the last 10 runs. */
   "myloans.state": { cursor: null, cap: null, runs: [] } as { cursor: string | null; cap: number | null; runs: import("@/lib/services/source-sync").RunStat[] },
   /** MyLoans sync: the last background run (Run now included). */

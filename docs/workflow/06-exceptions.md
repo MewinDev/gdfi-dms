@@ -2,7 +2,7 @@
 
 Missing papers, holds, problems, changes after sending, Pasuyo and MyLoans changes.
 
-Last updated: 10 November 2026 (PHT)
+Last updated: 12 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -31,17 +31,19 @@ flowchart TD
   V1 --> V2["Found, then verified again. Forward stays blocked until all papers are complete"]:::dp
   X -->|"DP needs another processor to continue"| PS["Pasuyo: choose Return the cash or Hand the balance over"]:::dp
   X -->|"MyLoans data changed"| Y1{"Kind of change"}
-  Y1 -->|Minor| Y2["Updated automatically, noted in the Journey"]:::sys
+  Y1 -->|"Area, division, company"| Y2["Updated automatically, noted in the Journey"]:::sys
+  Y1 -->|"Borrower name, address, contact, CIF, CIN"| Y7["Branch supervisor or approver reviews: Accept the correction, or Keep current with a note. Nothing blocked"]:::admin
   Y1 -->|"Amount, product, loan type"| Y3["Admin reviews: Apply, or Keep current with a note"]:::admin
   Y1 -->|"Cancelled or not released"| Y4["Admin closes as cancelled after cash is returned"]:::admin
-  Y1 -->|"New PN, same details, old PN ended"| Y5["Admin links as replacement after confirming no payment"]:::admin
+  Y1 -->|"New PN, same CIF, old PN cancelled"| Y5["Suggested only. Admin links as replacement with a note after confirming no payment"]:::admin
   Y1 -->|"New PN, new application"| Y6["Shown in Related loans: no alert, no link"]:::sys
-  Z["Loan File: Missing papers row. Monitoring: Has missing papers. Open items: holds, problems and MyLoans changes"]:::sys
+  Z["Loan File: Missing papers row. Monitoring: Has missing papers. Open items: holds, problems, MyLoans changes and MyLoans corrections"]:::sys
   M1 -.-> Z
   H1 -.-> Z
   P1 -.-> Z
   V1 -.-> Z
   Y3 -.-> Z
+  Y7 -.-> Z
   classDef la fill:#dbe8fb,stroke:#3b5a8a,color:#14213a
   classDef dp fill:#fdecc8,stroke:#c98512,color:#14213a
   classDef prob fill:#fbe0dc,stroke:#b3261e,color:#14213a

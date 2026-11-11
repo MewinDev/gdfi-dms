@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { refreshFoundLoanAction } from "@/app/actions/loan";
 import { Avatar, ToneChip } from "@/components/ui/basics";
+import { BORROWER_CHIP } from "@/lib/ui/borrower-chip";
 
 export interface SavedLoanCardData {
   pn: string;
@@ -20,6 +21,8 @@ export interface SavedLoanCardData {
   closed: boolean;
   replacedByPn: string | null;
   stale: boolean;
+  /** MyLoans corrected the borrower's details: waiting for review (nothing blocked). */
+  borrowerChanged?: boolean;
 }
 
 /**
@@ -63,6 +66,7 @@ export function SavedLoanCard({ d }: { d: SavedLoanCardData }) {
           {d.holds.map((h) => <li key={h}><ToneChip tone="hold">On hold: {h}</ToneChip></li>)}
           {d.problems > 0 && <li><ToneChip tone="bad">{d.problems} problem{d.problems === 1 ? "" : "s"}</ToneChip></li>}
           {changed && <li data-saved-changed><ToneChip tone="bad">MyLoans changed</ToneChip></li>}
+          {d.borrowerChanged && <li data-saved-borrower><ToneChip tone="wait">{BORROWER_CHIP}</ToneChip></li>}
         </ul>
       </div>
       <dl className="mt-4 grid grid-cols-12 gap-x-6 gap-y-4">

@@ -1,6 +1,7 @@
 import { businessDaysAgo } from "@/lib/time";
 import type { MyLoansRecord } from "./types";
 import { buildPn } from "@/lib/pn/format";
+import { releasedStatus, statusFromId } from "./status";
 
 /**
  * Seeded MyLoans records (prompt section 9). Release dates are relative to today so the TAT
@@ -17,7 +18,8 @@ export function mockRecords(now: Date = new Date()): MyLoansRecord[] {
     borrowerName: "",
     branchName: "Antipolo",
     branchCode: "101",
-    status: "RELEASED",
+    // Every row has the MyLoans status id and name (TransactionStatusId, TransactionStatusName).
+    ...statusFromId(releasedStatus().statusId, releasedStatus().statusName),
     loanType: "New",
     productName: "Auto Financing",
     totalReleasedAmount: 400_000,
@@ -34,9 +36,15 @@ export function mockRecords(now: Date = new Date()): MyLoansRecord[] {
     base(5, { borrowerName: "Liza Mendoza", productName: "Auto Finance", totalReleasedAmount: 600_000, releaseDate: d(0) }),
     base(6, { borrowerName: "Pedro Bautista", loanType: "Renewal", productName: "", totalReleasedAmount: 800_000, releaseDate: d(1) }),
     base(7, { borrowerName: "Carmen Aquino", branchName: "Alaminos", branchCode: "390", totalReleasedAmount: 400_000 }),
-    base(8, { borrowerName: "Roberto Cruz", branchName: "Angono", branchCode: "165", status: "PENDING", totalReleasedAmount: 400_000 }),
+    base(8, { borrowerName: "Roberto Cruz", branchName: "Angono", branchCode: "165", ...statusFromId(8, "Check Prepared"), totalReleasedAmount: 400_000 }),
     base(9, { borrowerName: "Elena Ramos", branchName: "Angono", branchCode: "165", loanType: "Restructured", totalReleasedAmount: 400_000 }),
     base(10, { borrowerName: "Manuel Torres", branchName: "Angono", branchCode: "165", totalReleasedAmount: 0 }),
     base(11, { borrowerName: "Teresa Flores", branchName: "Angono", branchCode: "165", totalReleasedAmount: 400_000, releaseDate: null }),
+    // Other MyLoans statuses (lib/myloans/status.ts): Find a loan shows a status card, never a loan file.
+    base(12, { borrowerName: "Gloria Navarro", branchName: "Angono", branchCode: "165", ...statusFromId(11, "For Approval (Loan Released)"), releaseDate: null }),
+    base(13, { borrowerName: "Andres Lim", ...statusFromId(14, "Cancelled") }),
+    base(14, { borrowerName: "Rosa Dizon", branchName: "Angono", branchCode: "165", ...statusFromId(49, "Check Assignment (Transaction)"), releaseDate: null }),
+    // A bad row: 15 to 19 are disbursement-check records, never a loan. Find a loan says no loan was found.
+    base(15, { borrowerName: "Check Record Only", branchName: "Angono", branchCode: "165", ...statusFromId(15, "Disbursement check (sample)") }),
   ];
 }

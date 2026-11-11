@@ -46,7 +46,9 @@ export function mapLoan(raw: unknown): MyLoansRecord | null {
   const r = raw as Record<string, unknown>;
   const pn = s(r.PNNo ?? r.pnNumber ?? r.pn);
   if (!pn) return null;
-  // Status: the id (TransactionStatusId) and, once MyLoans adds it, the name (TransactionStatusName: TO CONFIRM).
+  // Status: the id (TransactionStatusId) and the name (TransactionStatusName = COALESCE(description, name) of
+  // MyLoans' TransactionStatuses), the name passed straight through. Statuses 15 to 19 are disbursement-check
+  // records that the MyLoans view excludes; the adapter wrapper treats one as "no loan" (resilience.ts).
   const st = r.TransactionStatusId !== undefined && r.TransactionStatusId !== null
     ? statusFromId(r.TransactionStatusId, r.TransactionStatusName)
     : { status: s(r.status), statusId: null, statusName: s(r.TransactionStatusName) };

@@ -201,6 +201,52 @@ describe("Pressing Find loan", () => {
   });
 });
 
+describe("Find loan on a PN MyLoans has not released: a status card, never a loan file", () => {
+  const CASES = [
+    { pn: "GD1652026901008", statusKind: "before_release", statusName: "Check Prepared", borrowerName: "Roberto Cruz", branchName: "Angono" },
+    { pn: "GD1652026901012", statusKind: "before_release", statusName: "For Approval (Loan Released)", borrowerName: "Gloria Navarro", branchName: "Angono" },
+    { pn: "GD1652026901014", statusKind: "before_release", statusName: "Check Assignment (Transaction)", borrowerName: "Rosa Dizon", branchName: "Angono" },
+    { pn: "GD1012026901013", statusKind: "cancelled", statusName: "Cancelled", borrowerName: "Andres Lim", branchName: "Antipolo" },
+  ] as const;
+  const noCopy = async (pn: string) => {
+    expect(await prisma.loan.count({ where: { pn } })).toBe(0);
+    expect(await prisma.loanSourceSnapshot.count({ where: { loan: { pn } } })).toBe(0);
+  };
+
+  for (const c of CASES) {
+    it(`${c.pn} (${c.statusName}): the card with the real name; one call; nothing saved; Open refuses`, async () => {
+      expect(await lookupPn(la, c.pn)).toEqual({ kind: "status", pn: c.pn, statusKind: c.statusKind, statusName: c.statusName, borrowerName: c.borrowerName, branchName: c.branchName });
+      expect(callCount()).toBe(1);
+      // The card shown again (a reload within the short cache time): no second call.
+      await lookupPn(la, c.pn);
+      expect(callCount()).toBe(1);
+      await noCopy(c.pn);
+      await expect(openLoanFile(la, { pn: c.pn, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" })).rejects.toThrow(/Not yet released/);
+      await noCopy(c.pn);
+    });
+  }
+
+  it("status 15 (a disbursement-check record) and a PN with no row: 'No loan with this PN was found in MyLoans.'", async () => {
+    for (const pn of ["GD1652026901015", "GD1012026999999"]) {
+      expect(await lookupPn(la, pn)).toEqual({ kind: "not_found", pn, message: "No loan with this PN was found in MyLoans." });
+      await expect(openLoanFile(la, { pn })).rejects.toThrow();
+      await noCopy(pn);
+    }
+  });
+
+  it("outside the person's branches: the outside message and none of the loan's details", async () => {
+    const r = await lookupPn(angonoOnly, "GD1012026901013");
+    expect(r).toMatchObject({ kind: "refused", field: "branch", message: "Outside your branch access.", record: { borrowerName: "", branchName: null, status: null } });
+    await noCopy("GD1012026901013");
+  });
+
+  it("typing a non-released PN makes no call (it is not saved: only the quiet hint)", async () => {
+    await typeOut(la, "GD1652026901008");
+    expect(await suggestLoans(la, "GD1652026901008")).toEqual({ kind: "unsaved", pn: "GD1652026901008" });
+    expect(callCount()).toBe(0);
+  });
+});
+
 describe("One loan file per PN", () => {
   it("two Loan Associates press Open loan file on the same new PN at the same moment: one file; the second lands on it", async () => {
     vi.restoreAllMocks();

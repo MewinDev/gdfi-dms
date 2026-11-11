@@ -1,6 +1,6 @@
 # Manual Test Kit: answers
 
-Last updated: 11 November 2026 (PHT)
+Last updated: 12 November 2026 (PHT)
 
 What each PN of the [Manual Test Kit](MANUAL-TEST-KIT.md) is and what it is good for. Look here only if you get stuck: the point is to find it out by searching and opening the PN.
 
@@ -142,7 +142,7 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 ### Find a loan (11 November 2026)
 
 14. **Find a loan, compact.** The title with one small grey line beside it, one search row (the placeholder "PN, CIN or CIF"; input and Find loan the same height; on a phone the button is full width under the input) and, in test mode, the sample loans as one slim row (PN, name, branch; what each tests is in its tooltip; on a phone folded under **Show 3**). Only the samples of your branches are listed. The loan shows in one card: the name, the PN and the chips on one row, the four facts, the two questions side by side (stacked on a phone) and **Open loan file**, greyed with "Pick both answers to continue" beside it. The focus is on the first question and the arrow keys move inside it. No "Please pick one to continue." until you press Open loan file; then it shows under the question still empty. Under the buttons: "Next: we set up the loan file, you check the papers, then send them to a processor." Nothing scrolls sideways.
-15. **Outside your branches.** Typing calls nothing: no one has opened these PNs, so the dropdown only shows the quiet hint "Not opened in the DMS yet. Press Find loan to look it up in MyLoans." Pressing Find loan on the Alaminos PN shows the one-line message "This loan is outside your branches." with the PN and **Try again**. The PN that is not in MyLoans shows "We could not find this loan in MyLoans."
+15. **Outside your branches.** Typing calls nothing: no one has opened these PNs, so the dropdown only shows the quiet hint "Not opened in the DMS yet. Press Find loan to look it up in MyLoans." Pressing Find loan on the Alaminos PN shows the one-line message "This loan is outside your branches." with the PN and **Try again**. The PN that is not in MyLoans shows one sentence, once: "No loan with this PN was found in MyLoans."
 16. **The result follows the box.** The card or message goes away as soon as the PN in the box changes or a sample is picked; it never shows a different PN than the one in the box.
 
 ### MyLoans account details (11 November 2026)
@@ -161,3 +161,16 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 25. **Refresh when found (Admin).** "When a saved loan is found, refresh it from MyLoans if last checked more than this many hours ago", 4 by default; 0 means never. It runs once, in the background, after the "Already in the DMS" card shows (it never delays opening the loan), skips closed and cancelled loans and waits when the hourly limit is reached. A change it finds shows **MyLoans changed** on the card and goes to the usual MyLoans review.
 26. **Two people, one PN.** Only one loan file is made. The first person lands on it as usual ("Loan file opened"); the second lands on the same loan file with "This loan file was just opened by someone in your branch."
 27. **Without GD.** The opened one shows the **Already in the DMS** card with the PN written with GD. The other shows the hint while typing, then the usual MyLoans card with GD in front of the PN; no "must start with GD" message.
+
+### MyLoans status (12 November 2026)
+
+28. **Not released, cancelled, not a loan.** The DMS accepts only MyLoans status 12 (Loan Released). GD1652026901008 shows a card, not a loan file: "This loan is not released yet. MyLoans status: Check Prepared." with the PN, the borrower (Roberto Cruz), the branch (Angono) and the status name, **Try again**, and no **Open loan file**. GD1652026901012 says "For Approval (Loan Released)" and GD1652026901014 "Check Assignment (Transaction)" the same way. GD1652026901015 is a disbursement-check record (status 15), not a loan: only "No loan with this PN was found in MyLoans." GD1012026901013 (as LA Antipolo) says "This loan was cancelled in MyLoans." with Andres Lim and Antipolo. Nothing is saved for any of them, and the dropdown never calls MyLoans. Nothing scrolls sideways.
+29. **Cancelled, outside your branches.** "This loan is outside your branches." with the PN only: no name, branch or status.
+
+### MyLoans sync check (12 November 2026)
+
+30. **Borrower details.** No silent update: the loan keeps the old name with the chip "MyLoans changed borrower details, waiting for review" (loan file, My loans, Home, the "Already in the DMS" card) and a "MyLoans corrections" row in Open items. LA Angono sees old and new side by side (the differing characters marked), "Waiting for review by your supervisor", and no buttons. Send, Accept and funds still work. The Branch Supervisor has it on Home ("MyLoans corrections to review"); **Accept the correction** needs a note of 5 to 500 characters, updates the name, address and contact number, and adds one Journey line "Borrower details corrected: Name: old → new; ...". **Keep current** keeps the DMS details; Refresh from MyLoans then finds no change (the same value does not alert again). The notification and email name the fields only, never the values.
+31. **Amount and branch.** Mortgage shows "MyLoans changed this loan. Admin is reviewing." on Send; Notary is not held. LA Angono sees "Waiting for Admin to review." and "Amount changed" with no amounts. Keep current without a note says to write a short note. The branch review shows "Branch: Antipolo → Angono" with who gains and loses access; until Admin applies, LA Antipolo still has the loan and LA Angono does not; after Apply it is the other way round.
+32. **Pause MyLoans calls.** The card says "Paused by Admin: MyLoans calls are paused", the switch is red, Run now is refused with "MyLoans calls are paused by Admin.", and the run history shows Paused. The loan file shows "MyLoans calls are paused by Admin"; Refresh from MyLoans still works. Finance cannot change the switch. Every change is in the audit log.
+33. **Area name.** The area name changes on the loan (More loan details) by itself, one Journey line "MyLoans updated the loan's area", no review, no notification, no email.
+

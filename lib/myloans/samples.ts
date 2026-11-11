@@ -24,11 +24,15 @@ export const DATA_CHECK_PNS: { pn: string; tests: string }[] = [
   { pn: "GD1012026901005", tests: "\"Auto Finance\" is not the word Financing, so Refinancing. Not a mortgage." },
   { pn: "GD1012026901006", tests: "Blank product name defaults to Refinancing. Mortgage." },
   { pn: "GD3902026901007", tests: "Other branch (Alaminos): refused, outside your branches." },
-  { pn: "GD1652026901008", tests: "Not released yet in MyLoans: refused." },
+  { pn: "GD1652026901008", tests: "MyLoans status 8, Check Prepared: the not-released card, no Open button." },
   { pn: "GD1652026901009", tests: "Loan type Restructured: refused, must be New or Renewal." },
   { pn: "GD1652026901010", tests: "Amount 0: refused, must be above 0." },
   { pn: "GD1652026901011", tests: "Missing release date: refused." },
-  { pn: "GD1012026999999", tests: "Not in MyLoans: \"PN not found\"." },
+  { pn: "GD1652026901012", tests: "MyLoans status 11, For Approval (Loan Released): the not-released card." },
+  { pn: "GD1012026901013", tests: "Cancelled in MyLoans (status 14): the cancelled card." },
+  { pn: "GD1652026901014", tests: "MyLoans status 49, Check Assignment (Transaction): the not-released card." },
+  { pn: "GD1652026901015", tests: "A disbursement-check record (status 15), not a loan: \"No loan with this PN was found\"." },
+  { pn: "GD1012026999999", tests: "Not in MyLoans: \"No loan with this PN was found\"." },
 ];
 
 function withRecords(list: { pn: string; tests: string }[], now: Date): SampleLoan[] {

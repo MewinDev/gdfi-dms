@@ -888,15 +888,15 @@ async function syncStatusLine(): Promise<{ main: string; extra: string }> {
 async function syncCardData(): Promise<SyncCardData> {
   const s = await syncStatus();
   const last = s.lastRun;
-  const [onOpen, onFind, every, hours, max, pause, tiers, window] = await Promise.all([
+  const [onOpen, onFind, every, hours, max, pause, tiers, window, paused, noName] = await Promise.all([
     getSetting("myloans.refreshOnOpenMinutes"), getSetting("myloans.refreshOnFindHours"), getSetting("myloans.backgroundMinutes"), getSetting("myloans.businessHoursOnly"), getSetting("myloans.maxPerRun"), getSetting("myloans.pauseMs"),
-    getSetting("myloans.tierMinutes"), getSetting("myloans.replacementWindowDays"),
+    getSetting("myloans.tierMinutes"), getSetting("myloans.replacementWindowDays"), getSetting("myloans.paused"), getSetting("myloans.noNameLoans"),
   ]);
   const how = (t: string) => (t === "run_now" ? "Run now" : t === "cron" ? "Scheduled" : "Console");
   const feed = feedQualityLine(await accountFeedQuality());
   return {
     refreshOnOpenMinutes: onOpen, refreshOnFindHours: onFind, backgroundMinutes: every, businessHoursOnly: hours, maxPerRun: max, pauseMs: pause,
-    tierA: tiers.A, tierB: tiers.B, tierC: tiers.C, hourlyCeiling: s.ceiling, replacementWindowDays: window,
+    tierA: tiers.A, tierB: tiers.B, tierC: tiers.C, hourlyCeiling: s.ceiling, replacementWindowDays: window, paused,
     mode: s.mode === "live" ? "Live" : "Mock", search: s.capabilities.search, changedSince: s.capabilities.changedSince, health: s.health, tiers: s.tiers,
     lines: [
       { label: "Mode", value: s.mode === "live" ? "Live (MyLoans API)" : "Mock (sample loans)" },
@@ -912,6 +912,8 @@ async function syncCardData(): Promise<SyncCardData> {
       { label: "This hour", value: `${s.hourCalls} of ${s.ceiling} calls` , bad: s.hourCalls >= s.ceiling },
       // Feed quality: the 15 MyLoans account items missing or empty across loan files (docs/myloans/field-map.md).
       { label: "Account details missing", value: feed.value, bad: feed.bad },
+      // Refused at Find a loan / Open loan file: MyLoans has neither a personal name nor a company name.
+      { label: "No borrower name in MyLoans (not opened)", value: noName.length ? noName.slice(0, 10).map((x) => `${x.pn}${x.branch ? ` (${x.branch})` : ""}`).join(", ") + (noName.length > 10 ? ` and ${noName.length - 10} more` : "") : "None", bad: noName.length > 0 },
       { label: "Last error", value: last?.error ?? (s.breaker.open ? "MyLoans did not answer several times; paused for a minute." : "None"), bad: !!last?.error || s.breaker.open },
     ],
     runs: s.runs.map((r) => ({

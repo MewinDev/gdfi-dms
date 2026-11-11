@@ -66,7 +66,7 @@ test("Admin: Show data-check test PNs; starting over is the Test kit, which is n
   await page.goto("/loans");
   const extra = page.getByRole("region", { name: "Data-check samples" });
   await expect(extra.getByText("GD1012026999999")).toBeVisible();
-  await expect(extra.getByText(/Not released yet/)).toBeVisible();
+  await expect(extra.getByText(/Check Prepared: the not-released card/)).toBeVisible();
 
   // Turn it back off
   await page.context().clearCookies();

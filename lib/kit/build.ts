@@ -373,7 +373,7 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     "GD1012026902072": async () => {
       const l = await loan("GD1012026902072");
       await simulateSourceChange(u.admin, l.id, "branch");
-      const item = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: l.id, state: "OPEN" } });
+      const item = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: l.id, state: "OPEN", category: { not: "BORROWER" } } });
       await applySourceChange(u.admin, item.id, { note: "The borrower now pays at Angono; MyLoans moved the account." });
     },
     // Last: an overdue advance blocks the processor's next request (as it should), so it comes after the others.

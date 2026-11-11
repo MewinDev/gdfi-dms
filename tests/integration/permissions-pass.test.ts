@@ -73,7 +73,7 @@ describe("the migration gives every role the new ticks for what it could already
     for (const s of statements) await prisma.$executeRawUnsafe(s);
     // Later migrations' role steps run after it, as on a real database (20261119090005_expense_kinds adds the expense-kind ticks).
     // (20261119090006_decisions_batch adds "Print liquidation report" and takes "Move a hold" from Finance.)
-    for (const later of ["20261119090005_expense_kinds", "20261119090006_decisions_batch", "20261119090007_funds_per_type", "20261119090008_funds_edit_split", "20261119090009_missing_papers"]) {
+    for (const later of ["20261119090005_expense_kinds", "20261119090006_decisions_batch", "20261119090007_funds_per_type", "20261119090008_funds_edit_split", "20261119090009_missing_papers", "20261119090012_borrower_details"]) {
       const sqlLater = readFileSync(path.join("prisma", "migrations", later, "migration.sql"), "utf8");
       for (const s of sqlLater.split(/;\s*\n/).map((x) => x.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim()).filter((x) => x.startsWith('UPDATE "Role"'))) await prisma.$executeRawUnsafe(s);
     }

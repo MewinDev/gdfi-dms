@@ -81,7 +81,7 @@ export async function refreshLoanAction(_prev: ActionState, fd: FormData): Promi
     const r = await refreshFromMyLoans(user, loanId);
     revalidateLoan(await pnOfLoan(loanId));
     if (!r.ok) throw new UserError(`${r.message} Work continues on the last copy.`);
-    return r.changed ? "Changes found: review." : r.minor ? "MyLoans updated small details (name or address). No review needed." : "No changes.";
+    return r.changed ? "Changes found: review." : r.minor ? "MyLoans updated small details (area, division or company). No review needed." : "No changes.";
   });
 }
 

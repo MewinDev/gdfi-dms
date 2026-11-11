@@ -85,8 +85,10 @@ async function branchMoveFor(loan: { id: string; pn: string; branchId: string },
 }
 
 export async function reviewFor(user: CurrentUser, loanId: string): Promise<ReviewData | null> {
-  const item = await prisma.sourceChange.findFirst({ where: { loanId, state: "OPEN" }, include: { loan: true } });
-  if (!item) return null;
+  const found = await prisma.sourceChange.findFirst({ where: { loanId, state: "OPEN", category: { not: "BORROWER" } }, include: { loan: true } });
+  if (!found) return null;
+  // The Admin item only (Borrower details has its own review: lib/services/borrower-review.ts).
+  const item = { ...found, category: found.category as ReviewData["category"] };
   const seesAmounts = can(user, PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
   const changes = item.changes as unknown as FieldChange[];
   const p = item.proposed as unknown as Proposed;

@@ -191,13 +191,13 @@ describe("Snapshot retention", () => {
     expect(await kinds()).toEqual(["BASE"]);
     await refreshLoan(loan.id, { actor: SYSTEM_ACTOR, mode: "MANUAL", trigger: "button" });
     expect(await kinds()).toEqual(["BASE"]); // unchanged: not stored
-    await change({ address: "1 First St" });
-    await change({ address: "2 Second St" });
+    await change({ areaName: "Area 1 First St" });
+    await change({ areaName: "Area 2 Second St" });
     expect(await kinds()).toEqual(["BASE", "MINOR"]);
     await change({ totalReleasedAmount: 1_020_000 });
-    await change({ address: "3 Third St" });
+    await change({ areaName: "Area 3 Third St" });
     await change({ status: "CANCELLED" });
-    await change({ address: "4 Fourth St" });
+    await change({ areaName: "Area 4 Fourth St" });
     expect(await kinds()).toEqual(["BASE", "MATERIAL", "STATUS", "MINOR"]);
   });
 });

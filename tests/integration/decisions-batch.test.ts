@@ -210,7 +210,8 @@ describe("B. Built-in Branch Supervisor; Finance no longer moves holds (the migr
       await tx.$executeRawUnsafe(insertSup);
       const made = await tx.role.findUniqueOrThrow({ where: { key: "SUP" } });
       expect(made).toMatchObject({ name: "Branch Supervisor", builtIn: true, branchAccess: "ASSIGNED", active: true });
-      expect([...made.permissions].sort()).toEqual([...ROLE_DEFAULTS.SUP.permissions].sort());
+      // This migration's role, plus what later migrations add (20261119090012_borrower_details: source:review_borrower).
+      expect([...made.permissions, PERMISSIONS.SOURCE_REVIEW_BORROWER].sort()).toEqual([...ROLE_DEFAULTS.SUP.permissions].sort());
       // A second run adds nothing.
       await tx.$executeRawUnsafe(insertSup);
       expect(await tx.role.count({ where: { name: "Branch Supervisor" } })).toBe(1);

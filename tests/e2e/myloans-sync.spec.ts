@@ -70,7 +70,8 @@ test("Settings: the MyLoans sync card (health, run statistics, tiers, last runs,
   await expect(d.locator("[data-sync-status]")).toContainText("Never");
   await expect(d.locator("[data-sync-tiers]")).toContainText("B: Not yet sent");
   await d.getByRole("button", { name: "Run now" }).click();
-  await expect(d.getByText(/^Checked 1 loan: 0 with changes, 1 call to MyLoans\.$/)).toBeVisible();
+  // 0 or 1 call: the answer Find loan just got may still be in the short cache (shared, not asked again).
+  await expect(d.getByText(/^Checked 1 loan: 0 with changes, [01] calls? to MyLoans\.$/)).toBeVisible();
   await expect(d.locator("[data-sync-status]")).toContainText("Run now, due loans");
   await expect(d.locator("[data-sync-status]")).toContainText("1 / 1");
   await expect(d.locator("[data-sync-runs]").getByRole("row")).toHaveCount(2);
@@ -198,6 +199,18 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   await expect(page.locator("[data-preview-warnings]")).toContainText(`replaces ${PN}`);
   await shot(page, "find-loan-replacement-preview");
   await openPn(page, newPn);
+  // Only a suggestion: nothing is linked until Admin presses Link as replacement (with a note).
+  await expect(page.locator("[data-replaces]")).toHaveCount(0);
+  await signInAs(page, "admin");
+  await page.goto(`/loans/${PN}?tab=todo&review=1`);
+  const rev = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
+  await expect(rev.locator("[data-candidates]")).toContainText(newPn);
+  await rev.locator("[data-confirm-no-payment] input").check();
+  await rev.getByLabel("Note (required)").fill("Same unit, new PN from MyLoans");
+  await rev.getByRole("button", { name: "Link as replacement" }).click();
+  await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: newPn } })).replacesPn).toBe(PN);
+  await signInAs(page, "la");
+  await page.goto(`/loans/${newPn}`);
   await expect(page.locator("[data-replaces]")).toHaveText(`Replaces ${PN}`);
   await expect(page.locator("[data-related-loans]")).toContainText(PN);
   await shot(page, "replacement-new-file");

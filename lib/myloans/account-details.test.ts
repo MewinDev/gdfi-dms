@@ -93,10 +93,10 @@ describe("change classes of the account details", () => {
     expect(cls({ statusName: "Loan Released (posted)" })).toBe("STATUS");
     expect(cls({ isActive: false })).toBe("STATUS");
   });
-  it("the existing classes stay: borrower, CIN and CIF Minor; amount and branch Material", () => {
-    expect(FIELDS.borrowerName.kind).toBe("minor");
-    expect(FIELDS.cin.kind).toBe("minor");
-    expect(FIELDS.cif.kind).toBe("minor");
+  it("borrower name, address, contact number, CIN and CIF are Borrower details (12 November 2026); amount and branch Material; area Minor", () => {
+    for (const k of ["borrowerName", "address", "contactNo", "cin", "cif"] as const) expect(FIELDS[k].kind, k).toBe("borrower");
+    for (const k of ["areaName", "divisionName", "companyName"] as const) expect(FIELDS[k].kind, k).toBe("minor");
+    expect(cls({ borrowerName: "Someone Else" })).toBe("BORROWER");
     expect(cls({ totalReleasedAmount: 1 })).toBe("MATERIAL");
     expect(cls({ branchName: "Angono", branchCode: "165" })).toBe("MATERIAL");
   });

@@ -23,6 +23,12 @@ export function readStats(): CallStats { return { ...stats, ms: [...stats.ms] };
 /** Tests only. */
 export function resetClient() { inflight.clear(); cache.clear(); hour = { key: "", count: 0 }; beginStats(); }
 
+/** An answer for this PN is in the short cache (reusing it costs no call). */
+export function hasCached(pn: string, now: number = Date.now(), variant?: string) {
+  const hit = cache.get(variant ? `${cleanPn(pn)}|${variant}` : cleanPn(pn));
+  return !!hit && now - hit.at < CACHE_MS;
+}
+
 /** A call made outside lookupPn (the changed-since feed): counted the same way. */
 export function noteCall(ms: number, r: { ok: boolean; retryAfterMs?: number }, now: number = Date.now()) {
   const k = hourKey(now);
@@ -32,9 +38,13 @@ export function noteCall(ms: number, r: { ok: boolean; retryAfterMs?: number }, 
   if (!r.ok) { stats.failed++; if (r.retryAfterMs !== undefined) stats.rateLimited++; }
 }
 
-export async function lookupPn(adapter: MyLoansAdapter, pn: string, o: { fresh?: boolean; now?: () => number } = {}): Promise<MyLoansLookup> {
+/**
+ * variant: kept apart in the short cache (the sample MyLoans passes the simulated change for this PN, so
+ * a simulated change is seen at once instead of after the cache time).
+ */
+export async function lookupPn(adapter: MyLoansAdapter, pn: string, o: { fresh?: boolean; now?: () => number; variant?: string } = {}): Promise<MyLoansLookup> {
   const now = o.now ?? Date.now;
-  const key = cleanPn(pn);
+  const key = o.variant ? `${cleanPn(pn)}|${o.variant}` : cleanPn(pn);
   const hit = cache.get(key);
   if (!o.fresh && hit && now() - hit.at < CACHE_MS) { stats.saved++; return hit.value; }
   const running = inflight.get(key);
@@ -43,7 +53,7 @@ export async function lookupPn(adapter: MyLoansAdapter, pn: string, o: { fresh?:
   const k = hourKey(started);
   hour = hour.key === k ? { key: k, count: hour.count + 1 } : { key: k, count: 1 };
   stats.calls++;
-  const p = adapter.getByPn(key).then((r) => {
+  const p = adapter.getByPn(cleanPn(pn)).then((r) => {
     stats.ms.push(now() - started);
     if (!r.ok && r.reason === "UNAVAILABLE") { stats.failed++; if (r.retryAfterMs !== undefined) stats.rateLimited++; }
     if (r.ok) cache.set(key, { at: now(), value: r });

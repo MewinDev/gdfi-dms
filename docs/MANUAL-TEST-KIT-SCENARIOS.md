@@ -118,10 +118,10 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 
 | PN | Case | Who signs in | What to do | What should happen |
 |---|---|---|---|---|
-| GD1012026902041 | MyLoans change: minor | Admin | Open the loan file and its history. | MyLoans now spells the name with "Jr." and has a new address. The copy was updated by itself; no review needed. |
+| GD1012026902041 | MyLoans change: borrower details | Branch Supervisor | Open the loan file, To do, MyLoans corrections. | MyLoans now spells the name with "Jr." and has a new address and contact number. The loan keeps the old details with the chip "MyLoans changed borrower details, waiting for review"; old and new side by side, the differing characters marked. Accept the correction or Keep current (a note is required). Nothing is blocked. |
 | GD1012026902042 | MyLoans change: material | Admin | MyLoans review: the amount is now 520,000. Apply or Keep current. | Material: the transactions would change (no longer Mortgage). Nothing changes until Admin decides. |
 | GD1012026902043 | MyLoans change: status | Admin | MyLoans review: MyLoans says cancelled. Close as cancelled. | The loan file closes as cancelled, with the reason. |
-| GD1012026902044 | MyLoans: replaced by a new PN | Admin, then LA 1 | Review shows GD1012026909100 replacing it. LA 1: Find GD1012026909100 and open it. | GD1012026909100 opens linked to GD1012026902044 as its replacement; the review lists it as the candidate. |
+| GD1012026902044 | MyLoans: replaced by a new PN | Admin, then LA 1 | Review shows GD1012026909100 replacing it. LA 1: Find GD1012026909100 and open it. | GD1012026909100 opens; it is not linked by itself. The review of GD1012026902044 lists it as a possible replacement; Admin presses **Link as replacement** (a note is required) to link them as "Replaces / Replaced by". |
 | GD1012026909100 | The replacement PN (not opened) | LA 1 | Find a loan: GD1012026909100. | The preview says it replaces GD1012026902044 (same borrower). |
 | (none) | Funds types | Admin | Settings > Funds types: CA · Cash advance and FT · Fund transfer, "Proposed, to be confirmed with Finance". Rename one, then look at an old record. | Saving confirms it (Proposed goes). Old records keep the name they had. |
 | (none) | Test kit | Admin | Settings > Test kit: Take backup, then Reset to start (type RESET), then Restore the backup. | Each step says what it did; the reset first saves an automatic backup. |

@@ -125,6 +125,8 @@ export interface SavedLoanCard {
   replacedByPn: string | null;
   /** Older than the "refresh when found" setting: the card asks for one background refresh. */
   stale: boolean;
+  /** MyLoans corrected the borrower's details: waiting for review (nothing blocked). */
+  borrowerChanged: boolean;
 }
 
 const ended = (l: { cancelledAt: Date | null; closedAt: Date | null; archivedAt: Date | null }) => !!(l.cancelledAt || l.closedAt || l.archivedAt);
@@ -146,10 +148,11 @@ export async function savedLoanCard(user: CurrentUser, pn: string, now: Date = n
       openedBy: { select: { name: true } },
       dpAssignments: { select: { status: true, endorsedAt: true, dpUser: { select: { name: true } } }, orderBy: { endorsedAt: "desc" } },
       holds: { where: { resumedAt: null }, select: { reasonName: true, reason: { select: { name: true } } } },
-      _count: { select: { problems: { where: { resolvedAt: null } }, exceptions: { where: { status: "OPEN" } }, sourceChanges: { where: { state: "OPEN" } } } },
+      _count: { select: { problems: { where: { resolvedAt: null } }, exceptions: { where: { status: "OPEN" } }, sourceChanges: { where: { state: "OPEN", category: { not: "BORROWER" } } } } },
     },
   });
   if (!l) return null;
+  const borrowerChanged = (await prisma.sourceChange.count({ where: { loan: { pn }, state: "OPEN", category: "BORROWER" } })) > 0;
   const job = l.dpAssignments.find((a) => liveAssignment(a.status) && a.status !== "CLOSED");
   const problems = l._count.problems + l._count.exceptions;
   const holds = [...new Set(l.holds.map((h) => h.reasonName || h.reason.name))];
@@ -166,6 +169,7 @@ export async function savedLoanCard(user: CurrentUser, pn: string, now: Date = n
     cancelled: l.cancelledAt ? { on: fmtDate(l.cancelledAt), reason: l.cancelReason } : null,
     closed: !!(l.closedAt || l.archivedAt), replacedByPn: l.replacedByPn,
     stale: await isStaleForFind(l, now),
+    borrowerChanged,
   };
 }
 
@@ -181,8 +185,10 @@ export async function refreshFoundLoan(user: CurrentUser, pn: string, now: Date 
     select: { id: true, branchId: true, lastCheckedAt: true, retrievedAt: true, cancelledAt: true, closedAt: true, archivedAt: true },
   });
   if (!l || !inScope(user, l.branchId)) return { called: false, changed: false };
-  const changedNow = async () => (await prisma.sourceChange.count({ where: { loanId: l.id, state: "OPEN" } })) > 0;
+  const changedNow = async () => (await prisma.sourceChange.count({ where: { loanId: l.id, state: "OPEN", category: { not: "BORROWER" } } })) > 0;
   if (!(await isStaleForFind(l, now))) return { called: false, changed: await changedNow() };
+  // Paused by Admin: no call (a person can still press Refresh from MyLoans on the loan file).
+  if (await getSetting("myloans.paused")) return { called: false, changed: await changedNow() };
   const ceiling = await getSetting("myloans.hourlyCeiling");
   if (callsThisHour() >= ceiling || getMyLoansAdapter().breakerState().open) return { called: false, changed: await changedNow() };
   try {
