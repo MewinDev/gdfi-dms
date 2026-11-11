@@ -63,7 +63,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
 | See loan files | Open and read loan files, Home and Updates. Which branches depends on the person's Branch access. | Loans, Loan File, Home, Updates | - | `loans:view` | LA, Admin, DP, Finance, Vault, Digital Records, QA, Approvers, Branch Supervisor |
-| Find a loan | Search MyLoans by PN, CIN or CIF and see the preview. | Find loan, Search | See loan files | `loans:search` | LA, Admin, Branch Supervisor |
+| Find a loan | Search the loan files in the DMS, and look up a full PN in MyLoans to see the preview. | Find loan, Search | See loan files | `loans:search` | LA, Admin, Branch Supervisor |
 | Open a loan file | Start a new loan file from a MyLoans loan. | Search, Open loan file | Find a loan | `loans:open` | LA |
 | Change an automatic result | Supervisor override of the classification and transactions, with a reason. | Loan File, Change an automatic result | See loan files | `rules:override` | Admin |
 

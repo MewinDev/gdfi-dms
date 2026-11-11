@@ -61,6 +61,7 @@ export async function generateMetadata({ params }: { params: Promise<{ pn: strin
 const NOTICES: Record<string, { tone: "ok" | "wait" | "bad"; text: string }> = {
   opened: { tone: "ok", text: "Loan file opened. We set up the work and the list of papers. Start by checking the papers." },
   "already-open": { tone: "wait", text: "This loan already has a loan file, so we opened it as it is." },
+  "just-opened": { tone: "wait", text: "This loan file was just opened by someone in your branch." },
   "refresh-failed": { tone: "bad", text: "MyLoans is not answering right now, so you are seeing the saved copy." },
 };
 

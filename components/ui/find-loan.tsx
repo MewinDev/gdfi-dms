@@ -6,15 +6,16 @@ import { LiveFindInput } from "./live-find-input";
  * same height, no outer card. On a phone the button goes full width under the input.
  * The suggestions dropdown lines up with the search box on the left and the whole row on the right
  * (the box only, on a phone, where the button sits under it).
- * Submits to /search (PN; also CIN, CIF and Document ID). The input has id="find-loan" so the "/"
+ * Submits to /search (PN; also CIN, CIF, a borrower's name and Document ID). Only a full PN not saved
+ * in the DMS is looked up in MyLoans. The input has id="find-loan" so the "/"
  * shortcut and the sample loans can reach it.
  */
 export function FindLoan({
   defaultValue = "", autoFocus = false, action = "/search", hidden = {}, buttonLabel = "Find loan", required = true,
   placeholder = "PN, CIN or CIF", suggest,
 }: {
-  /** Live MyLoans suggestions (Find loan for the Loan Associate). */
-  suggest?: { exactOnly: boolean };
+  /** Suggestions from the DMS while typing (never MyLoans); Find loan for the Loan Associate. */
+  suggest?: boolean;
   defaultValue?: string;
   autoFocus?: boolean;
   action?: string;
@@ -31,7 +32,7 @@ export function FindLoan({
       <div className="relative flex h-12 w-full min-w-0 items-center gap-2.5 rounded-xl border border-line-input bg-white pl-4 pr-3 focus-within:border-navy focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-navy sm:static sm:flex-1" data-find-box>
         <span className="text-navy"><SearchIcon size={18} /></span>
         {suggest ? (
-          <LiveFindInput defaultValue={defaultValue} autoFocus={autoFocus} required={required} exactOnly={suggest.exactOnly} placeholder={placeholder} className={inputCls} panelAlign="row" />
+          <LiveFindInput defaultValue={defaultValue} autoFocus={autoFocus} required={required} placeholder={placeholder} className={inputCls} panelAlign="row" />
         ) : (
           <input id="find-loan" name="q" defaultValue={defaultValue} autoFocus={autoFocus} required={required} autoComplete="off" placeholder={placeholder} className={inputCls} />
         )}

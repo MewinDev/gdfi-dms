@@ -8,6 +8,7 @@ import { listLoans } from "@/lib/services/queries";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, strOrNull, type ActionState } from "@/lib/action";
 import { openLoanFile, refreshFromMyLoans } from "@/lib/services/loan-file";
+import { refreshFoundLoan } from "@/lib/services/find-local";
 import {
   addCustomTransaction,
   assignToDp,
@@ -40,6 +41,22 @@ function revalidateLoan(pn?: string) {
   if (pn) revalidatePath(`/loans/${pn}`);
 }
 
+// --- Find a loan: the background refresh of a saved loan ---------------------
+
+/**
+ * Called once by the "Already in the DMS" card after it is shown. One MyLoans call at most, only when
+ * the saved copy is older than the setting; never blocks opening the loan.
+ */
+export async function refreshFoundLoanAction(pn: string): Promise<{ changed: boolean }> {
+  try {
+    const user = await requirePermission(PERMISSIONS.LOANS_VIEW);
+    const r = await refreshFoundLoan(user, String(pn).slice(0, 40));
+    return { changed: r.changed };
+  } catch {
+    return { changed: false };
+  }
+}
+
 // --- Phase 1: Open Loan File -------------------------------------------------
 
 export async function openLoanFileAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -51,7 +68,7 @@ export async function openLoanFileAction(_prev: ActionState, fd: FormData): Prom
     if (ft && ft !== "UNDERTAKING" && ft !== "NON_UNDERTAKING") throw new UserError("Pick Undertaking or Non-Undertaking.", "financingType");
     if (orcr && orcr !== "TRANSFERRED" && orcr !== "UNTRANSFERRED") throw new UserError("Pick ORCR Transferred or Untransferred.", "orcrStatus");
     const r = await openLoanFile(user, { pn: str(fd, "pn"), financingType: ft as never, orcrStatus: orcr as never });
-    target = `/loans/${r.pn}?tab=transactions${r.alreadyOpen ? "&notice=already-open" : "&notice=opened"}`;
+    target = `/loans/${r.pn}?tab=transactions${r.alreadyOpen ? (r.byOther ? "&notice=just-opened" : "&notice=already-open") : "&notice=opened"}`;
   });
   if (state?.ok && target) redirect(target);
   return state;

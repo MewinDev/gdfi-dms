@@ -13,7 +13,7 @@ import { lookupPn, openLoanFile } from "@/lib/services/loan-file";
 import { applySourceChange, simulateSourceChange } from "@/lib/services/source-sync";
 import { reviewFor } from "@/lib/services/source-review";
 import { savePnFormat } from "@/lib/services/pn-settings";
-import { clearFindCache, findLoans } from "@/lib/myloans/find";
+import { suggestLoans } from "@/lib/services/find-local";
 import { resetClient } from "@/lib/myloans/client";
 import { openedAt } from "@/lib/pn/opened-at";
 import { DEFAULT_PN_FORMAT } from "@/lib/pn/format";
@@ -36,7 +36,6 @@ beforeEach(async () => {
   await setSetting("myloans.mockExtra", []);
   await prisma.branchReview.deleteMany({ where: { kind: "UNKNOWN_CODE" } });
   resetClient();
-  clearFindCache();
 });
 afterAll(async () => {
   await cleanLoans();
@@ -53,10 +52,9 @@ describe("Find loan and the PN check", () => {
     expect(await lookupPn(la, "GD1012027901001")).toEqual({ kind: "invalid", part: "year", message: "This does not look like a PN. Example: GD1012026900001. The year is in the future (2027)." });
     expect(await lookupPn(la, "GD10120269001")).toMatchObject({ kind: "invalid", part: "running", message: expect.stringContaining("The running number must be 5 digits") });
     expect(await lookupPn(la, "GD12026901001")).toMatchObject({ kind: "invalid", part: "branch", message: expect.stringContaining("The branch code must be 3 digits") });
-    const live = await findLoans(la, "GD1012027901001");
-    expect(live).toEqual({ ok: false, exactOnly: false, message: "This does not look like a PN. Example: GD1012026900001. The year is in the future (2027)." });
-    // Still typing part of a PN: searched, not refused.
-    expect((await findLoans(la, "GD101202690")).ok).toBe(true);
+    // Typing searches the DMS only: a wrong PN, or part of one, shows nothing (and calls nothing).
+    expect(await suggestLoans(la, "GD1012027901001")).toEqual({ kind: "none" });
+    expect(await suggestLoans(la, "GD101202690")).toEqual({ kind: "none" });
     expect((await import("@/lib/myloans/client")).callsThisHour()).toBe(before);
     await expect(openLoanFile(la, { pn: "XX1012026901001" })).rejects.toThrow("This does not look like a PN. Example: GD1012026900001. The PN must start with GD, not XX.");
   });

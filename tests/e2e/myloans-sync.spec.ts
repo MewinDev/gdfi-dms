@@ -87,24 +87,27 @@ test("Settings: the MyLoans sync card (health, run statistics, tiers, last runs,
   await setting("myloans.tierMinutes", { A: 60, B: 240, C: 1440 });
 });
 
-test("Find loan: live suggestions from 3 characters, at most 10, no match", async ({ page }) => {
+test("Find loan: suggestions from the DMS from 3 characters, at most 8; nothing for no match", async ({ page }) => {
   await signInAs(page, "la");
+  await openPn(page);
   await page.goto("/loans?find=1");
   const box = page.locator("#find-loan");
   await box.fill("PN");
   await expect(page.locator("[data-find-results]")).toHaveCount(0);
   await box.fill("GD16520269010");
-  const list = page.getByRole("listbox", { name: "MyLoans matches" });
+  const list = page.getByRole("listbox", { name: "Loan files in the DMS" });
   await expect(list.getByRole("option").first()).toBeVisible();
-  expect(await list.getByRole("option").count()).toBeLessThanOrEqual(10);
-  await expect(list.getByRole("option", { name: /GD1652026901003/ })).toContainText("Ana Villanueva");
+  expect(await list.getByRole("option").count()).toBeLessThanOrEqual(8);
+  await expect(list.getByRole("option", { name: new RegExp(PN) })).toContainText("Ana Villanueva");
   await shot(page, "find-loan-search");
   await noSideways(page);
   await box.fill("zzzz-nobody");
-  await expect(page.locator("[data-find-empty]")).toHaveText("No match in MyLoans.");
-  await box.fill("GD1652026901003");
-  await list.getByRole("option", { name: /GD1652026901003/ }).click();
-  await expect(page).toHaveURL(/\/search\?q=GD1652026901003/);
+  await expect(list).toHaveCount(0);
+  await expect(page.locator("[data-find-results]")).toHaveCount(0);
+  await box.fill(PN);
+  await list.getByRole("option", { name: new RegExp(PN) }).click();
+  await expect(page).toHaveURL(new RegExp(`/search\\?q=${PN}`));
+  await expect(page.locator(`[data-find-saved="${PN}"]`)).toBeVisible();
 });
 
 test("Material change: LA sees it read-only (no amounts); Open items group; Admin reviews and applies", async ({ page }) => {

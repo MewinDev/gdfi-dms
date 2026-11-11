@@ -175,7 +175,7 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 ### Find a loan (11 November 2026)
 
 14. **Find a loan, compact.** As **LA Angono**, open `/search` and look at the page: the search row, the sample loans, then search an Angono PN that asks the two questions (Auto Financing). Try **Open loan file** before answering, then answer both. Do it on a phone too.
-15. **Outside your branches.** As **LA Angono**, type an Alaminos PN (GD390...) in the search box and wait for the suggestions. Then type a PN that is not in MyLoans: any Angono PN from the list with its last four digits changed to 9999.
+15. **Outside your branches.** As **LA Angono**, type an Alaminos PN (GD390...) in the search box and press **Find loan**. Then type a PN that is not in MyLoans (any Angono PN from the list with its last four digits changed to 9999) and press **Find loan**.
 16. **The result follows the box.** Search any PN, then change one character in the box, or pick a sample loan.
 
 ### MyLoans account details (11 November 2026)
@@ -183,6 +183,17 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 17. **Find a loan, account details.** As **LA Angono**, find any Angono PN from the list above and read the card: the chips and the two rows of details.
 18. **More loan details.** Open that loan file, then open **More loan details** under Loan at a glance.
 19. **Feed quality (Admin).** As **Admin**, open Settings, MyLoans sync and read **Account details missing**. Then find an Angono PN on Find a loan as Admin.
+
+### Find a loan, local first (11 November 2026)
+
+20. **Typing stays in the DMS.** As **LA Angono**, open one Angono PN from the list (Find loan, answer the questions if asked, **Open loan file**). Go back to **My loans** and type the first 8 characters of that PN in the search box, then part of the borrower's name, then a few random letters. Use the arrow keys and Enter on a row, and Esc.
+21. **Already in the DMS.** On `/search`, type the whole PN of the loan file you opened and press **Find loan**. Read the card, then press **Open loan file**. Try **Cancel** too.
+22. **A full PN not opened yet.** Type the whole PN of another Angono loan from the list that nobody opened yet. Wait for the dropdown, then press **Find loan**.
+23. **Part of a PN or a name, with the button.** Type the first 8 characters of an Angono PN and press **Find loan**. Then type a name nobody has (for example "Zzz Nobody") and press **Find loan**.
+24. **Outside your branches while typing.** As **LA Angono**, type the whole PN of a loan that **LA Antipolo** opened (open one as LA Antipolo first) and wait for the dropdown. Then type part of that borrower's name.
+25. **Refresh when found (Admin).** As **Admin**, open Settings, MyLoans sync and find the setting for a saved loan found on Find a loan. Change it, save, and read it again.
+26. **Two people, one PN.** In two browsers (one private window), sign in as **LA Angono** and **Roving LA**. Both find the same Angono PN that nobody opened yet and answer the questions. Press **Open loan file** in both, as close together as you can.
+27. **Without GD.** Type the PN of a loan file you opened without the GD (the 13 digits only) and press **Find loan**. Then do the same with an Angono PN from the list that nobody opened yet.
 
 ## If the sign-in page keeps coming back
 

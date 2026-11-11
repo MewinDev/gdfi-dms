@@ -16,10 +16,8 @@ import {
 } from "@/lib/services/source-sync";
 import { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "@/lib/services/source-blocks";
 import { reviewFor } from "@/lib/services/source-review";
-import { clearFindCache, findLoans } from "@/lib/myloans/find";
 import { sampleLoans } from "@/lib/myloans/samples";
 import { samplesForUser } from "@/lib/ui/samples";
-import { MockMyLoansAdapter } from "@/lib/myloans/mock-adapter";
 import { resetClient } from "@/lib/myloans/client";
 import { SYSTEM_ACTOR } from "@/lib/audit";
 import { resetLoanData } from "@/lib/test-data/reset-core";
@@ -48,7 +46,6 @@ beforeEach(async () => {
   await setSetting("myloans.state", { cursor: null, cap: null, runs: [] });
   await setSetting("myloans.businessHoursOnly", true);
   resetClient();
-  clearFindCache();
 });
 afterAll(async () => {
   await cleanLoans();
@@ -302,34 +299,11 @@ describe("Replacement PN", () => {
 });
 
 describe("Find loan and the simulator", () => {
-  it("live search: at least 3 characters, at most 10, branch scope, exact-PN-only sources, 25,000 loans without a full scan", async () => {
-    expect(await findLoans(la, "PN")).toEqual({ ok: true, exactOnly: false, hits: [] });
-    const r = await findLoans(la, "PN-000");
-    expect(r.ok && r.hits.length).toBeLessThanOrEqual(10);
-    expect(r.ok && r.hits.every((h) => h.pn.startsWith("PN-000"))).toBe(true);
-    const exact = new MockMyLoansAdapter({ capabilities: { search: false } });
-    expect(await findLoans(la, "GD1652026901003", { adapter: exact })).toMatchObject({ exactOnly: true, hits: [{ pn: "GD1652026901003" }] });
-    expect(await findLoans(la, "Ana Villanueva", { adapter: exact })).toMatchObject({ exactOnly: true, hits: [] });
-    // A PN in MyLoans but outside the LA's branches: no details, only how many were left out.
-    expect(await findLoans(la, "GD3902026901007")).toEqual({ ok: true, exactOnly: false, hits: [], outside: 1 });
-    clearFindCache(); // the cache is keyed by the text, not the source
-    expect(await findLoans(la, "GD3902026901007", { adapter: exact })).toEqual({ ok: true, exactOnly: true, hits: [], outside: 1 });
-    // Not in MyLoans at all: plain "no match".
-    expect(await findLoans(la, "GD1012026999999")).toEqual({ ok: true, exactOnly: false, hits: [] });
-    // The sample loans: only those in the person's branches (all for All branches).
+  it("the sample loans: only those in the person's branches (all for All branches)", async () => {
+    // Find loan itself (typing, the button) is tested in find-local.test.ts.
     const samples = sampleLoans(true);
     expect(samplesForUser(samples, { scopeBranchIds: ["x"], branchNames: ["Angono"], branchCodes: ["165"] }).map((x) => x.pn)).toEqual(["GD1652026901003", "GD1652026901004"]);
     expect(samplesForUser(samples, { scopeBranchIds: null, branchNames: [], branchCodes: [] })).toHaveLength(3);
-    const many = Array.from({ length: 25_000 }, (_, i) => ({
-      pn: `PN-${String(3_000_000 + i)}`, cin: null, cif: null, sourceLoanId: null, borrowerName: `Big ${i}`, branchName: "Angono", branchCode: "165", status: "RELEASED", loanType: "New", productName: "Auto", totalReleasedAmount: 1, releaseDate: "2026-11-02",
-    }));
-    const big = new MockMyLoansAdapter({ records: many });
-    const search = vi.spyOn(big, "search");
-    const res = await findLoans(admin, "Big 1", { adapter: big });
-    expect(res.ok && res.hits.length).toBe(10);
-    expect(search).toHaveBeenCalledWith("Big 1", 10);
-    await findLoans(admin, "Big 1", { adapter: big }); // cached
-    expect(search).toHaveBeenCalledTimes(1);
   });
 
   it("every simulated change works and is labelled; Reset test data clears the copies, changes and simulated source", async () => {

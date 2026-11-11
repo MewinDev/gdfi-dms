@@ -10,7 +10,6 @@ import { STAGE_WORDS } from "@/lib/ui/plain";
 import { cardFor, sortByUrgency } from "@/lib/ui/loan-cards";
 import { LoanCard } from "@/components/ui/loan-card";
 import { LoansToolbar } from "@/components/loan/loans-toolbar";
-import { getMyLoansAdapter } from "@/lib/myloans";
 import { EmptyLoans, LoanTable } from "@/components/loan/loan-table";
 import { activeChips, clearAllHref, listHref, type FilterField } from "@/lib/ui/loan-filters";
 import { isTestMode } from "@/lib/test-mode";
@@ -127,7 +126,7 @@ async function LaList({ user, f, sp, rows, branches, counts }: { user: CurrentUs
     <div className="flex w-full flex-col gap-4">
       <PageHeader title="My loans" help="Find a loan by its number, or open one of your loan files below." />
       <LoansToolbar
-        search={{ action: "/search", defaultValue: sp.fill ?? "", autoFocus: sp.find === "1" || !!sp.fill, buttonLabel: "Find loan", suggest: { exactOnly: !getMyLoansAdapter().capabilities.search } }}
+        search={{ action: "/search", defaultValue: sp.fill ?? "", autoFocus: sp.find === "1" || !!sp.fill, buttonLabel: "Find loan", suggest: true }}
         filters={{ fields, hidden: { tab: f.tab, group: sp.group }, activeCount: chips.length, clearHref: clearAllHref(params) }}
         resultCount={cards.length}
       />

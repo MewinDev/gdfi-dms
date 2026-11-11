@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { can, loanScope, requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getMyLoansAdapter } from "@/lib/myloans";
 import { examplePn, getPnFormat, isPnAttempt, parsePn, pnHeadline } from "@/lib/pn";
 import { lookupPn, type PnLookupResult } from "@/lib/services/loan-file";
+import { completePn, LIST_LIMIT, savedLoanCard, searchSaved } from "@/lib/services/find-local";
+import { SavedLoanCard, type SavedLoanCardData } from "@/components/loan/saved-loan-card";
 import { TRANSACTION_LABEL } from "@/lib/rules";
 import { dayText, peso, stageWords, txnName } from "@/lib/ui/plain";
 import { FindLoan } from "@/components/ui/find-loan";
@@ -39,36 +39,26 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
   // PN: the shared check first (Settings, System, PN format). A wrong PN never reaches MyLoans.
   const fmt = await getPnFormat();
   const parsed = parsePn(q, fmt);
-  const pn = parsed.ok && (parsed.parts || isPnAttempt(q, { ...fmt, enabled: true })) ? parsed.pn : null;
-  const badPn = !doc && !parsed.ok && isPnAttempt(q, fmt) ? parsed.message : null;
+  const pn = doc ? null : await completePn(q);
+  const pnAttempt = !doc && !pn && !parsed.ok && isPnAttempt(q, fmt) ? parsed.message : null;
   let result: PnLookupResult | null = null;
-  // PN: open the existing loan file (refreshed), or look it up in MyLoans
-  if (!doc && pn) {
-    const existing = await prisma.loan.findFirst({ where: { pn, ...loanScope(user) }, select: { pn: true } });
-    if (can(user, PERMISSIONS.LOANS_SEARCH)) {
-      result = await lookupPn(user, pn);
-      if (result.kind === "existing") redirect(`/loans/${result.pn}${result.refreshed ? "?notice=refreshed" : "?notice=refresh-failed"}`);
-    } else if (existing) {
-      redirect(`/loans/${existing.pn}`);
+  let saved: SavedLoanCardData | null = null;
+  // A complete PN: the DMS first, by exact PN. Saved here: "Already in the DMS" (no MyLoans call; a stale
+  // copy is refreshed in the background by the card). Outside the person's branches: said so, no call.
+  // Not saved: exactly one MyLoans lookup, then the preview.
+  if (pn) {
+    if (can(user, PERMISSIONS.LOANS_SEARCH)) result = await lookupPn(user, pn);
+    if (!result || result.kind === "existing") {
+      saved = await savedLoanCard(user, pn);
+      result = null;
     }
   }
 
-  // CIN / CIF / part of a PN, among loan files
-  // Loan files here: prefix first (the PN index), then part of a PN or the borrower's name (trigram indexes); at most 20.
-  const include = { branch: true, documents: { where: { documentId: { not: null } }, orderBy: { documentId: "asc" as const } } };
-  const searchLocal = q && !doc && !badPn && (!result || result.kind === "invalid");
-  const prefix = searchLocal
-    ? await prisma.loan.findMany({
-        where: { ...loanScope(user), OR: [{ pn: { startsWith: q, mode: "insensitive" } }, { cin: { equals: q, mode: "insensitive" } }, { cif: { equals: q, mode: "insensitive" } }, { borrowerName: { startsWith: q, mode: "insensitive" } }] },
-        include, take: 20, orderBy: { pn: "asc" },
-      })
-    : [];
-  const matches = searchLocal && prefix.length < 20 && q.length >= 3
-    ? [...prefix, ...(await prisma.loan.findMany({
-        where: { ...loanScope(user), id: { notIn: prefix.map((l) => l.id) }, OR: [{ pn: { contains: q, mode: "insensitive" } }, { borrowerName: { contains: q, mode: "insensitive" } }] },
-        include, take: 20 - prefix.length, orderBy: { pn: "asc" },
-      }))]
-    : prefix;
+  // Part of a PN, a CIN or CIF, or a name: the DMS only (never MyLoans), at most 20 loan files. Text that
+  // looks like a PN but is not a valid one: the loan files it matches; when none, the PN message as before.
+  const searchLocal = q && !doc && !saved && (!result || result.kind === "invalid");
+  const matches = searchLocal ? await searchSaved(user, q, LIST_LIMIT) : [];
+  const badPn = pnAttempt && matches.length === 0 ? pnAttempt : null;
 
   const samples = await samplesPromise;
   return (
@@ -76,9 +66,9 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
       {/* The same container as My loans and Monitoring: the main area's width and padding. */}
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-[22px] font-bold leading-tight tracking-[-0.01em] text-navy sm:text-2xl">Find a loan</h1>
-        <p className="text-sm text-ink-2">Looked up in MyLoans. Nothing is saved until you open the loan file.</p>
+        <p className="text-sm text-ink-2">Loan files in the DMS first. A full PN not opened here yet is looked up in MyLoans. Nothing is saved until you open the loan file.</p>
       </header>
-      <FindLoan defaultValue={q} autoFocus={!q} suggest={can(user, PERMISSIONS.LOANS_SEARCH) ? { exactOnly: !getMyLoansAdapter().capabilities.search } : undefined} />
+      <FindLoan defaultValue={q} autoFocus={!q} suggest={can(user, PERMISSIONS.LOANS_SEARCH)} />
 
       {samples.samples.length > 0 && (
         <SampleLoans id="find-samples" title="Sample loans" intro="Pick one to put its PN in the box, then press Find loan." samples={samples.samples} />
@@ -107,30 +97,35 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
             </section>
           )}
 
-          {!doc && !badPn && !result && matches.length === 0 && (
-            <Notice tone="mute" role="status" pn={q} title={<>We could not find &ldquo;{q}&rdquo;.</>} q={q}>
-              Type the full PN number, for example {examplePn(fmt)}. You can also use a CIN, CIF or the code printed on a label.
+          {saved && <SavedLoanCard d={saved} />}
+
+          {!doc && !badPn && !result && !saved && matches.length === 0 && (
+            <Notice tone="mute" role="status" pn={q} title="Not found in the DMS." q={q} data={{ "data-find-not-saved": "" }}>
+              {can(user, PERMISSIONS.LOANS_SEARCH) ? <>To look it up in MyLoans, type the full PN, for example {examplePn(fmt)}.</> : "Only the loan files of your branches are searched."}
             </Notice>
           )}
 
-          {matches.map((m) => (
-            <section key={m.id} className="flex flex-col gap-2" aria-label={`Loan file ${m.pn}`}>
-              <Link href={`/loans/${m.pn}`} className="card flex items-center gap-3 px-4 py-3 no-underline hover:bg-hover">
-                <Avatar name={m.borrowerName} size={40} />
-                <span className="min-w-0 flex-1 leading-snug">
-                  <span className="block text-[15px] font-bold">{m.borrowerName}</span>
-                  <span className="block text-sm text-ink-2"><span className="font-mono">{m.pn}</span> · {m.branch.name} · CIN {m.cin}</span>
-                </span>
-                <span className="hidden text-sm font-semibold sm:block">{stageWords(m.stage)}</span>
-                <span className="btn-ghost min-h-10">Open</span>
-              </Link>
-              {m.documents.length > 0 && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {m.documents.map((d) => <DocumentCard key={d.id} d={{ ...d, pn: m.pn }} />)}
-                </div>
-              )}
+          {matches.length > 0 && (
+            <section aria-label="Loan files in the DMS" className="card min-w-0 overflow-hidden" data-find-list>
+              <p className="border-b border-line-soft px-4 py-2 text-[13px] text-ink-2">
+                {matches.length >= LIST_LIMIT ? `The first ${LIST_LIMIT} loan files in the DMS` : `${matches.length} loan file${matches.length === 1 ? "" : "s"} in the DMS`}
+              </p>
+              <ul>
+                {matches.map((m) => (
+                  <li key={m.id} className="border-b border-line-soft last:border-0">
+                    <Link href={`/loans/${m.pn}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 no-underline hover:bg-hover" data-find-list-row={m.pn}>
+                      <span className="mono text-[14px] font-bold text-navy">{m.pn}</span>
+                      <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{m.borrowerName}</span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="chip c-navy h-6 text-xs">{stageWords(m.stage)}</span>
+                        <span className="hidden text-[12px] text-ink-2 sm:inline">{m.branch.name}</span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </section>
-          ))}
+          )}
         </FindResult>
       )}
     </div>
