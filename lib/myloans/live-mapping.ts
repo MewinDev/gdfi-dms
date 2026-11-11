@@ -1,11 +1,14 @@
 import type { MyLoansHit, MyLoansRecord, SourceCapabilities } from "./types";
 import type { MyLoansBranchRow } from "@/lib/branches/file";
+import { composeBorrowerName } from "./borrower-name";
+import { statusFromId } from "./status";
 
 /**
- * MyLoans LIVE MAPPING: the one place to change once the MyLoans team gives the real API.
+ * MyLoans LIVE MAPPING: the one place that knows MyLoans names.
  *
- * EVERYTHING HERE IS A PLACEHOLDER TO CONFIRM. Nothing below was given by MyLoans; do not treat these
- * paths or field names as known. The rest of the DMS uses the normalized MyLoansRecord and does not
+ * The loan fields follow the column aliases the MyLoans team gave (their source query, kept for reference
+ * in docs/myloans/released-loans-source.sql). The paths, the response shapes, the status names and the
+ * branch list are still PLACEHOLDERS TO CONFIRM. The rest of the DMS uses the normalized MyLoansRecord and does not
  * change. The address and key come only from MYLOANS_BASE_URL and MYLOANS_API_KEY (server env).
  */
 export const LIVE_CAPABILITIES: SourceCapabilities = {
@@ -32,27 +35,47 @@ export const LIVE_PATHS = {
 const s = (v: unknown) => (v === undefined || v === null ? null : String(v));
 
 /**
- * TO CONFIRM: field names. Keep raw values (do not coerce or default): the Data Check must see bad
- * data as bad. Returns null when the payload is not a loan.
+ * One released loan as MyLoans gives it. The names are the column aliases of the MyLoans team's source
+ * query (docs/myloans/released-loans-source.sql: the definition of the read-only view behind the API; the
+ * DMS never runs it and never connects to MyLoans' databases). The older placeholder names are read only
+ * when an alias is absent. Keep raw values (do not coerce or default): the Data Check must see bad data
+ * as bad. Never reads BirthDate or TitleId. Returns null when the payload is not a loan.
  */
 export function mapLoan(raw: unknown): MyLoansRecord | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const pn = s(r.pnNumber ?? r.pn);
+  const pn = s(r.PNNo ?? r.pnNumber ?? r.pn);
   if (!pn) return null;
+  // Status: the id (TransactionStatusId) and, once MyLoans adds it, the name (TransactionStatusName: TO CONFIRM).
+  const st = r.TransactionStatusId !== undefined && r.TransactionStatusId !== null
+    ? statusFromId(r.TransactionStatusId, r.TransactionStatusName)
+    : { status: s(r.status), statusId: null, statusName: s(r.TransactionStatusName) };
+  const hasParts = ["FirstName", "MiddleName", "LastName", "Suffix", "BorrowerCompanyName"].some((k) => r[k] !== undefined);
+  const active = r.TransactionIsActive;
   return {
     pn,
-    cin: s(r.cin),
-    cif: s(r.cif),
-    sourceLoanId: s(r.loanId ?? r.id),
-    borrowerName: s(r.borrowerName) ?? "",
-    branchName: s(r.branchName),
-    branchCode: s(r.branchCode),
-    status: s(r.status),
-    loanType: s(r.loanType),
-    productName: s(r.productName),
-    totalReleasedAmount: (r.totalReleasedAmount as number | string | null | undefined) ?? null,
-    releaseDate: s(r.releaseDate)?.slice(0, 10) ?? null,
+    cin: s(r.CIN ?? r.cin),
+    cif: s(r.CIFNo ?? r.cif),
+    sourceLoanId: s(r.ExternalLoanId ?? r.loanId ?? r.id),
+    borrowerName: hasParts
+      ? composeBorrowerName({ first: r.FirstName, middle: r.MiddleName, last: r.LastName, suffix: r.Suffix, company: r.BorrowerCompanyName })
+      : s(r.borrowerName) ?? "",
+    branchName: s(r.BranchName ?? r.branchName),
+    branchCode: s(r.BranchCode ?? r.branchCode),
+    status: st.status,
+    statusId: st.statusId,
+    statusName: st.statusName,
+    isActive: active === undefined || active === null ? null : /^(1|true|yes)$/i.test(String(active)),
+    loanType: s(r.LoanType ?? r.loanType),
+    productName: s(r.ProductName ?? r.productName),
+    productCode: s(r.ProductCode ?? r.productCode),
+    totalReleasedAmount: (r.TotalLoanAmount ?? r.totalReleasedAmount ?? null) as number | string | null,
+    releaseDate: s(r.ReleaseDate ?? r.releaseDate)?.slice(0, 10) ?? null,
+    areaId: s(r.AreaId), areaName: s(r.AreaName),
+    divisionId: s(r.DivisionId), divisionName: s(r.DivisionName),
+    companyId: s(r.CompanyID), companyName: s(r.CompanyName),
+    sourceUpdatedAt: s(r.SourceUpdatedAt),
+    // Not in the source query (field-map question 6): optional until MyLoans says where they are.
     address: s(r.address),
     contactNo: s(r.contactNo),
     previousPn: s(r.previousPn ?? r.replacesPn),

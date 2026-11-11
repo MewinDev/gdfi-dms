@@ -41,6 +41,7 @@ import { defaultCapacity, openJobCounts, processors } from "@/lib/services/monit
 import { availability, leaveText } from "@/lib/monitoring/rules";
 import { DefaultCapacityForm, DpCapacityRow } from "@/components/monitoring/capacity-forms";
 import { syncStatus } from "@/lib/services/source-sync";
+import { accountFeedQuality, feedQualityLine } from "@/lib/services/feed-quality";
 import { MyLoansSyncForm, type SyncCardData } from "@/components/admin/myloans-sync";
 import { SettingsModal } from "@/components/admin/settings-modal";
 import { SettingsList, type ListRow } from "@/components/admin/settings-list";
@@ -892,6 +893,7 @@ async function syncCardData(): Promise<SyncCardData> {
     getSetting("myloans.tierMinutes"), getSetting("myloans.replacementWindowDays"),
   ]);
   const how = (t: string) => (t === "run_now" ? "Run now" : t === "cron" ? "Scheduled" : "Console");
+  const feed = feedQualityLine(await accountFeedQuality());
   return {
     refreshOnOpenMinutes: onOpen, backgroundMinutes: every, businessHoursOnly: hours, maxPerRun: max, pauseMs: pause,
     tierA: tiers.A, tierB: tiers.B, tierC: tiers.C, hourlyCeiling: s.ceiling, replacementWindowDays: window,
@@ -908,6 +910,8 @@ async function syncCardData(): Promise<SyncCardData> {
       { label: "Run time", value: last ? `${last.ms} ms` : "-" },
       { label: "Current cap", value: `${s.cap ?? max} loans a run (at most ${max})` },
       { label: "This hour", value: `${s.hourCalls} of ${s.ceiling} calls` , bad: s.hourCalls >= s.ceiling },
+      // Feed quality: the 15 MyLoans account items missing or empty across loan files (docs/myloans/field-map.md).
+      { label: "Account details missing", value: feed.value, bad: feed.bad },
       { label: "Last error", value: last?.error ?? (s.breaker.open ? "MyLoans did not answer several times; paused for a minute." : "None"), bad: !!last?.error || s.breaker.open },
     ],
     runs: s.runs.map((r) => ({

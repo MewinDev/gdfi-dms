@@ -11,8 +11,9 @@ import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloans";
 import { mapLoan } from "@/lib/myloans/live-mapping";
+import { MINOR_ACCOUNT_COLUMNS, sourceTime } from "@/lib/myloans/account";
 import {
-  detectChanges, hashTracked, proposeEffect, trackedOf, UNSENT,
+  detectChanges, hashTracked, proposeEffect, trackedOf, trackedOfSaved, UNSENT,
   type ChangeCategory, type FieldChange, type Proposed, type Tracked, type TxnNow,
 } from "@/lib/myloans/changes";
 import { isTestMode } from "@/lib/test-mode";
@@ -106,6 +107,22 @@ const words = (cs: { label: string }[]) => {
   return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
 };
 
+/**
+ * "MyLoans updated the borrower's name and address"; organisation fields are the loan's, not the
+ * borrower's: "MyLoans updated the loan's area and division" (an ID and its name count once).
+ */
+function minorSummary(minor: FieldChange[]): string {
+  const org = minor.filter((c) => c.field in MINOR_ACCOUNT_COLUMNS);
+  const own = minor.filter((c) => !(c.field in MINOR_ACCOUNT_COLUMNS));
+  const parts: string[] = [];
+  if (own.length) parts.push(`the borrower's ${words(own).toLowerCase().replace(/^borrower name/, "name")}`);
+  if (org.length) {
+    const names = [...new Set(org.map((c) => c.field.replace(/Id$|Name$/, "")))].map((label) => ({ label }));
+    parts.push(`the loan's ${words(names)}`);
+  }
+  return `MyLoans updated ${parts.join(" and ")}`;
+}
+
 /** Merges a newer detection into the open item: was = first seen, now = latest; unchanged-back rows drop out. */
 function mergeChanges(older: FieldChange[], newer: FieldChange[]): FieldChange[] {
   const out = new Map(older.map((c) => [c.field, { ...c }]));
@@ -144,11 +161,11 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
   await withLoanLock(loan.id, async (tx) => {
     const prev = await tx.loanSourceSnapshot.findFirst({ where: { loanId: loan.id }, orderBy: { retrievedAt: "desc" } });
     const prevRecord = prev ? recordFromPayload(prev.payload) : null;
-    const previous: Tracked | null = (prev?.tracked as Tracked | null) ?? (prevRecord ? trackedOf(prevRecord) : null);
+    const previous: Tracked | null = (prev?.tracked as Tracked | null) ?? (prevRecord ? trackedOfSaved(prevRecord) : null);
     const det = detectChanges(previous, current);
     const tiers = await getSetting("myloans.tierMinutes", tx);
     const t = loan.syncTier === "A" || loan.syncTier === "B" || loan.syncTier === "C" ? loan.syncTier : null;
-    await tx.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: now, retrievedAt: lookup.retrievedAt, sourceCurrent: true, lastRefreshError: null, nextCheckAt: nextCheckAt(now, t, tiers) } });
+    await tx.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: now, retrievedAt: lookup.retrievedAt, sourceCurrent: true, lastRefreshError: null, nextCheckAt: nextCheckAt(now, t, tiers), ...(lookup.record.sourceUpdatedAt ? { sourceUpdatedAt: sourceTime(lookup.record.sourceUpdatedAt) } : {}) } });
     if (det.category === "NONE") {
       // First copy with tracked fields: keep it as the baseline (no new row for an unchanged copy).
       if (!prev || !prev.hash) {
@@ -176,11 +193,13 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
         if (c.field === "borrowerName" && c.now) data.borrowerName = String(c.now);
         if (c.field === "cin") data.cin = c.now === null ? null : String(c.now);
         if (c.field === "cif") data.cif = c.now === null ? null : String(c.now);
+        // Area, division and company: the copy shown under More loan details.
+        if (c.field in MINOR_ACCOUNT_COLUMNS) data[MINOR_ACCOUNT_COLUMNS[c.field as keyof typeof MINOR_ACCOUNT_COLUMNS]] = c.now === null ? null : String(c.now);
       }
       if (Object.keys(data).length) await tx.loan.update({ where: { id: loan.id }, data });
       await writeAudit(tx, {
         actor: SYSTEM_ACTOR, mode, action: "source_minor_updated", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn: loan.pn,
-        summary: `MyLoans updated the borrower's ${words(minor).toLowerCase().replace(/^borrower name/, "name")}`, details: { changes: minor },
+        summary: minorSummary(minor), details: { changes: minor },
       });
     }
     const big = det.changes.filter((c) => c.kind !== "minor");
@@ -358,6 +377,11 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
     const loan = item.loan;
     const data: Prisma.LoanUpdateInput = {
       loanType: next.loanType ?? loan.loanType, productName: next.productName ?? "",
+      // The rest of the material account details, as MyLoans now has them (a copy saved before they were
+      // tracked has none of these keys: the loan keeps its own).
+      ...("productCode" in next ? { productCode: next.productCode } : {}),
+      ...("sourceLoanId" in next ? { sourceLoanId: next.sourceLoanId } : {}),
+      ...(next.branchCode || next.branchName ? { sourceBranchCode: next.branchCode, sourceBranchName: next.branchName } : {}),
       totalReleasedAmount: typeof next.amount === "number" ? new Prisma.Decimal(next.amount / 100) : loan.totalReleasedAmount,
       classification: p.classificationNext!, mortgageResult: p.mortgageNext as never, ruleFired: p.ruleNext,
       financingType: p.classificationNext === "FINANCING" ? (d.financingType ?? loan.financingType) : null,

@@ -19,7 +19,8 @@ export const clearFindCache = () => cache.clear();
 
 export interface FindHit { pn: string; borrowerName: string; status: string | null; releaseDate: string | null; opened: boolean; changed: boolean }
 export type FindResult =
-  | { ok: true; exactOnly: boolean; hits: FindHit[] }
+  /** outside: matches left out because they belong to a branch outside the person's access (no details shown). */
+  | { ok: true; exactOnly: boolean; hits: FindHit[]; outside?: number }
   | { ok: false; exactOnly: boolean; message: string };
 
 export async function findLoans(user: CurrentUser, query: string, opts: { adapter?: MyLoansAdapter; now?: number } = {}): Promise<FindResult> {
@@ -52,14 +53,16 @@ export async function findLoans(user: CurrentUser, query: string, opts: { adapte
     if (!r.ok) return { ok: false, exactOnly, message: r.message };
     rows = r.hits.slice(0, FIND_LIMIT);
   }
+  const found = rows.length;
   rows = rows.filter((r) => !allowed || inBranches({ branchCode: r.branchCode ?? null, branchName: r.branchName }, allowed));
+  const outside = found - rows.length;
   // Which of them are open here (the local PN index), and which have a MyLoans change waiting.
   const local = await prisma.loan.findMany({ where: { pn: { in: rows.map((r) => r.pn) } }, select: { pn: true, sourceChanges: { where: { state: "OPEN" }, select: { id: true } } } });
   const hits = rows.map((r) => {
     const l = local.find((x) => x.pn === r.pn);
     return { pn: r.pn, borrowerName: r.borrowerName, status: r.status, releaseDate: r.releaseDate, opened: !!l, changed: !!l?.sourceChanges.length };
   });
-  const value: FindResult = { ok: true, exactOnly, hits };
+  const value: FindResult = outside > 0 ? { ok: true, exactOnly, hits, outside } : { ok: true, exactOnly, hits };
   cache.set(key, { at: now, value });
   if (cache.size > 500) cache.delete(cache.keys().next().value!);
   return value;

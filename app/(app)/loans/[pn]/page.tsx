@@ -1,3 +1,4 @@
+import { statusLabel } from "@/lib/myloans/status";
 import type { Metadata } from "next";
 import { txnFundsType } from "@/lib/jobs/view";
 import Link from "next/link";
@@ -399,10 +400,28 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
   const deadline = ctx.deadline === today ? `Today, ${dayText(ctx.deadline, { year: false })}` : `${dayText(ctx.deadline, { year: false })}${ctx.pastDay2 ? " (passed)" : ""}`;
   const facts: [string, string][] = [["Type", type], ["Mortgage needed", mortgage], ["OR/CR", orcr], ["Send by", deadline]];
   const snap = loan.snapshots[0];
-  const more: [string, string][] = [
-    ["CIN", loan.cin ?? "-"], ["CIF", loan.cif ?? "-"], ["Source loan ID", loan.sourceLoanId ?? "-"], ["Product name", loan.productName || "(blank)"],
-    ["Loan type", loan.loanType], ["Released on", dayText(loan.releasedAt)], ["Source status", loan.sourceStatus],
-    ["Retrieved at", fmtDateTime(loan.retrievedAt)], ["Opened at", `${fmtDateTime(loan.openedAt)} by ${loan.openedBy.name}`],
+  // The full MyLoans account set, with codes and IDs (docs/myloans/field-map.md): the one everyday place
+  // that shows branch code, area ID, division ID, company ID and status ID.
+  const v = (x: string | null | undefined) => x?.trim() || "-";
+  const pair = (id: string | null, name: string | null) => (id || name ? [id, name].filter(Boolean).join(" · ") : "-");
+  const more: { title: string; rows: [string, React.ReactNode][] }[] = [
+    { title: "Identity", rows: [["PN", <span key="pn" className="mono">{loan.pn}</span>], ["Source loan ID", v(loan.sourceLoanId)], ["CIN", v(loan.cin)], ["CIF", v(loan.cif)]] },
+    { title: "Loan", rows: [
+      ["Borrower name", loan.borrowerName], ["Amount released", peso(Number(loan.totalReleasedAmount))], ["Released on", dayText(loan.releasedAt)],
+      ["Loan type", loan.loanType], ["Product name", loan.productName || "(blank)"], ["Product code", v(loan.productCode)],
+    ] },
+    { title: "Organization", rows: [
+      ["Company", pair(loan.sourceCompanyId, loan.sourceCompanyName)], ["Division", pair(loan.sourceDivisionId, loan.sourceDivisionName)],
+      ["Area", pair(loan.sourceAreaId, loan.sourceAreaName)], ["Branch", pair(loan.sourceBranchCode, loan.sourceBranchName)],
+    ] },
+    { title: "Status", rows: [
+      ["Status ID", v(loan.sourceStatusId)], ["Status name", statusLabel({ statusId: loan.sourceStatusId, statusName: loan.sourceStatusName, status: loan.sourceStatus })],
+      ["Active", loan.sourceIsActive === null ? "-" : loan.sourceIsActive ? "Yes" : "No"],
+    ] },
+    { title: "Source", rows: [
+      ["Source", loan.source], ["Retrieved at", fmtDateTime(loan.retrievedAt)], ["Last checked", loan.lastCheckedAt ? fmtDateTime(loan.lastCheckedAt) : "-"],
+      ["Last updated in MyLoans", loan.sourceUpdatedAt ? fmtDateTime(loan.sourceUpdatedAt) : "-"], ["Opened at", `${fmtDateTime(loan.openedAt)} by ${loan.openedBy.name}`],
+    ] },
   ];
   return (
     <section aria-labelledby="glance" className="card flex flex-col gap-3 p-4 sm:p-5">
@@ -415,23 +434,34 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
           </div>
         ))}
       </dl>
-      {/* Always shown (no collapse). */}
-      <div className="border-t border-line pt-2" data-more-loan-details>
-        <h3 className="text-sm font-semibold text-navy">More loan details</h3>
-        <dl className="mt-2 flex flex-col gap-2 text-sm">
-          {more.map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-3 border-b border-line/60 pb-1.5">
-              <dt className="text-ink-2">{k}</dt>
-              <dd className="text-right">{v}</dd>
-            </div>
+      {/* Collapsed: the full set from MyLoans, grouped, two compact columns. */}
+      <details className="group @container border-t border-line pt-2" data-more-loan-details>
+        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold text-navy [&::-webkit-details-marker]:hidden">
+          More loan details
+          <span aria-hidden="true" className="text-ink-2 transition-transform group-open:rotate-180">▾</span>
+        </summary>
+        {/* Two columns when the panel is wide enough (its own width, not the screen's); one in the narrow side column. */}
+        <div className="mt-2 grid gap-x-6 gap-y-3 text-sm @[34rem]:grid-cols-2">
+          {more.map((g) => (
+            <section key={g.title} aria-label={g.title} className="min-w-0" data-more-group={g.title}>
+              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-2">{g.title}</h4>
+              <dl className="flex flex-col gap-1">
+                {g.rows.map(([k, val]) => (
+                  <div key={k} className="grid grid-cols-[minmax(6.5rem,40%)_minmax(0,1fr)] gap-x-3 border-b border-line/60 pb-1">
+                    <dt className="text-ink-2">{k}</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere] text-right">{val}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
           ))}
-          <div className="pt-1">
-            <dt className="text-ink-2">Rule that fired</dt>
-            <dd className="mt-0.5">{loan.ruleFired}</dd>
+          <div className="@[34rem]:col-span-2">
+            <p className="text-ink-2">Rule that fired</p>
+            <p className="mt-0.5">{loan.ruleFired}</p>
+            <p className="mt-1 text-xs text-ink-2">MyLoans copy saved {fmtDateTime(snap?.retrievedAt)} ({snap?.adapter ?? "-"}).</p>
           </div>
-          <div className="pt-1 text-xs text-ink-2">MyLoans copy saved {fmtDateTime(snap?.retrievedAt)} ({snap?.adapter ?? "-"}).</div>
-        </dl>
-      </div>
+        </div>
+      </details>
       {can(user, PERMISSIONS.RULES_OVERRIDE) && (
         <OverrideForm loanId={loan.id} current={{ classification: loan.classification, financingType: loan.financingType, orcrStatus: loan.orcrStatus, mortgage: loan.mortgageResult }} />
       )}

@@ -17,6 +17,8 @@ import {
 import { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "@/lib/services/source-blocks";
 import { reviewFor } from "@/lib/services/source-review";
 import { clearFindCache, findLoans } from "@/lib/myloans/find";
+import { sampleLoans } from "@/lib/myloans/samples";
+import { samplesForUser } from "@/lib/ui/samples";
 import { MockMyLoansAdapter } from "@/lib/myloans/mock-adapter";
 import { resetClient } from "@/lib/myloans/client";
 import { SYSTEM_ACTOR } from "@/lib/audit";
@@ -308,6 +310,16 @@ describe("Find loan and the simulator", () => {
     const exact = new MockMyLoansAdapter({ capabilities: { search: false } });
     expect(await findLoans(la, "GD1652026901003", { adapter: exact })).toMatchObject({ exactOnly: true, hits: [{ pn: "GD1652026901003" }] });
     expect(await findLoans(la, "Ana Villanueva", { adapter: exact })).toMatchObject({ exactOnly: true, hits: [] });
+    // A PN in MyLoans but outside the LA's branches: no details, only how many were left out.
+    expect(await findLoans(la, "GD3902026901007")).toEqual({ ok: true, exactOnly: false, hits: [], outside: 1 });
+    clearFindCache(); // the cache is keyed by the text, not the source
+    expect(await findLoans(la, "GD3902026901007", { adapter: exact })).toEqual({ ok: true, exactOnly: true, hits: [], outside: 1 });
+    // Not in MyLoans at all: plain "no match".
+    expect(await findLoans(la, "GD1012026999999")).toEqual({ ok: true, exactOnly: false, hits: [] });
+    // The sample loans: only those in the person's branches (all for All branches).
+    const samples = sampleLoans(true);
+    expect(samplesForUser(samples, { scopeBranchIds: ["x"], branchNames: ["Angono"], branchCodes: ["165"] }).map((x) => x.pn)).toEqual(["GD1652026901003", "GD1652026901004"]);
+    expect(samplesForUser(samples, { scopeBranchIds: null, branchNames: [], branchCodes: [] })).toHaveLength(3);
     const many = Array.from({ length: 25_000 }, (_, i) => ({
       pn: `PN-${String(3_000_000 + i)}`, cin: null, cif: null, sourceLoanId: null, borrowerName: `Big ${i}`, branchName: "Angono", branchCode: "165", status: "RELEASED", loanType: "New", productName: "Auto", totalReleasedAmount: 1, releaseDate: "2026-11-02",
     }));
@@ -335,5 +347,51 @@ describe("Find loan and the simulator", () => {
     expect(await prisma.loanSourceSnapshot.count()).toBe(0);
     expect(await getSetting("myloans.mockOverrides")).toEqual({});
     expect(await getSetting("myloans.mockExtra")).toEqual([]);
+  });
+});
+
+describe("MyLoans account details (docs/myloans/field-map.md)", () => {
+  it("a loan opened from the sample MyLoans stores all 15 items, and the snapshot keeps them", async () => {
+    const { loan } = await open();
+    expect(loan).toMatchObject({
+      pn: PN, sourceLoanId: "ML-202600003", cin: "CIN-771003", cif: "CIF-551003", borrowerName: "Ana Villanueva", loanType: "Renewal",
+      productName: "Auto Financing", productCode: "AF-001", sourceBranchCode: "165", sourceBranchName: "Angono",
+      sourceAreaId: "1", sourceAreaName: "LUZON 1 (NGMA + RIZAL)", sourceDivisionId: "1", sourceDivisionName: "Branch Division",
+      sourceCompanyId: "1", sourceCompanyName: "Global Dominion Financing Inc.", sourceStatusId: "12", sourceStatusName: "Loan Released",
+      sourceIsActive: true, source: "MyLoans",
+    });
+    expect(Number(loan.totalReleasedAmount)).toBe(1_000_000);
+    expect(loan.releasedAt).toBeInstanceOf(Date);
+    expect(loan.sourceUpdatedAt).toBeInstanceOf(Date);
+    const snap = await prisma.loanSourceSnapshot.findFirstOrThrow({ where: { loanId: loan.id } });
+    expect(snap.source).toBe("MyLoans");
+    expect(snap.tracked).toMatchObject({ sourceLoanId: "ML-202600003", productCode: "AF-001", areaId: "1", areaName: "LUZON 1 (NGMA + RIZAL)", divisionId: "1", companyId: "1", companyName: "Global Dominion Financing Inc.", statusId: "12", statusName: "Loan Released", isActive: "Yes" });
+    expect((snap.payload as { loan: Record<string, unknown> }).loan).toMatchObject({ divisionName: "Branch Division", sourceUpdatedAt: expect.any(String) });
+  });
+
+  it("a changed area name is Minor: the copy is updated, no review, plain words", async () => {
+    const { loan } = await open();
+    await change(PN, { areaName: "LUZON 1 - RIZAL" });
+    expect(await refreshLoan(loan.id, sys)).toMatchObject({ ok: true, outcome: "minor", category: "MINOR" });
+    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).sourceAreaName).toBe("LUZON 1 - RIZAL");
+    expect(await prisma.sourceChange.count({ where: { loanId: loan.id } })).toBe(0);
+    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_minor_updated", loanId: loan.id } })).summary).toBe("MyLoans updated the loan's area");
+  });
+
+  it("a changed product code is Material; Apply stores it", async () => {
+    const { loan } = await open();
+    await change(PN, { productCode: "AF-002" });
+    expect(await refreshLoan(loan.id, sys)).toMatchObject({ ok: true, outcome: "review", category: "MATERIAL" });
+    const it1 = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: loan.id } });
+    expect((it1.changes as { field: string }[]).map((c) => c.field)).toEqual(["productCode"]);
+    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).productCode).toBe("AF-001"); // unchanged until Admin applies
+    await applySourceChange(admin, it1.id, { note: "MyLoans corrected the product code." });
+    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).productCode).toBe("AF-002");
+  });
+
+  it("a status ID change is Status", async () => {
+    const { loan } = await open();
+    await change(PN, { statusId: "13", statusName: "Status 13" });
+    expect(await refreshLoan(loan.id, sys)).toMatchObject({ ok: true, outcome: "review", category: "STATUS" });
   });
 });

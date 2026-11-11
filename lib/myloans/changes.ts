@@ -28,6 +28,20 @@ export interface Tracked {
   /** The loan's CURRENT branch code in MyLoans (the PN's code only says where it was opened). */
   branchCode: string | null;
   previousPn: string | null;
+  // The account details added with docs/myloans/field-map.md. A copy saved before them has none of these
+  // keys, so their first appearance is not a change (detectChanges skips keys the previous copy lacks).
+  sourceLoanId: string | null;
+  productCode: string | null;
+  areaId: string | null;
+  areaName: string | null;
+  divisionId: string | null;
+  divisionName: string | null;
+  companyId: string | null;
+  companyName: string | null;
+  statusId: string | null;
+  statusName: string | null;
+  /** "Yes" or "No" (TransactionIsActive). */
+  isActive: string | null;
 }
 export type TrackedKey = keyof Tracked;
 export type FieldKind = "minor" | "material" | "status" | "replacement";
@@ -50,6 +64,17 @@ export const FIELDS: Record<TrackedKey, { label: string; kind: FieldKind }> = {
   branchName: { label: "Branch", kind: "material" },
   branchCode: { label: "Branch code", kind: "material" },
   previousPn: { label: "Replaces PN", kind: "replacement" },
+  sourceLoanId: { label: "Source loan ID", kind: "material" },
+  productCode: { label: "Product code", kind: "material" },
+  areaId: { label: "Area ID", kind: "minor" },
+  areaName: { label: "Area", kind: "minor" },
+  divisionId: { label: "Division ID", kind: "minor" },
+  divisionName: { label: "Division", kind: "minor" },
+  companyId: { label: "Company ID", kind: "minor" },
+  companyName: { label: "Company", kind: "minor" },
+  statusId: { label: "Status ID", kind: "status" },
+  statusName: { label: "Status name", kind: "status" },
+  isActive: { label: "Active in MyLoans", kind: "status" },
 };
 const KEYS = Object.keys(FIELDS) as TrackedKey[];
 
@@ -67,7 +92,23 @@ export function trackedOf(r: MyLoansRecord): Tracked {
     loanType: txt(r.loanType), productName: txt(r.productName),
     amount: n !== null ? Math.round(n * 100) : txt(r.totalReleasedAmount),
     releaseDate: txt(r.releaseDate)?.slice(0, 10) ?? null, branchName: txt(r.branchName), branchCode: txt(r.branchCode), previousPn: txt(r.previousPn)?.toUpperCase() ?? null,
+    sourceLoanId: txt(r.sourceLoanId), productCode: txt(r.productCode),
+    areaId: txt(r.areaId), areaName: txt(r.areaName), divisionId: txt(r.divisionId), divisionName: txt(r.divisionName),
+    companyId: txt(r.companyId), companyName: txt(r.companyName),
+    statusId: txt(r.statusId), statusName: txt(r.statusName), isActive: r.isActive === undefined || r.isActive === null ? null : r.isActive ? "Yes" : "No",
   };
+}
+
+const ACCOUNT_KEYS = ["productCode", "areaId", "areaName", "divisionId", "divisionName", "companyId", "companyName", "statusId", "statusName", "isActive"] as const;
+
+/**
+ * Tracked fields of a copy saved before they were tracked (an old snapshot's payload): the account
+ * details that copy never had are left out, so they do not count as changed.
+ */
+export function trackedOfSaved(r: MyLoansRecord): Tracked {
+  const t = trackedOf(r);
+  for (const k of ACCOUNT_KEYS) if (r[k] === undefined) delete (t as Partial<Tracked>)[k];
+  return t;
 }
 
 /** Same values, same hash (key order fixed). */

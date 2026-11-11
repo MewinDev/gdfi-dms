@@ -31,7 +31,28 @@ export interface MyLoansRecord {
   previousPn?: string | null;
   /** Optional: has a payment been made on this PN? undefined when MyLoans has no such field. */
   paymentRecorded?: boolean | null;
+
+  // ---- The account details MyLoans gives (docs/myloans/field-map.md). Kept as MyLoans gave them. ----
+  /** MyLoans product code (Transactions.product_code). */
+  productCode?: string | null;
+  /** MyLoans organisation ids and names at the time of the answer (never used for access). */
+  areaId?: string | null;
+  areaName?: string | null;
+  divisionId?: string | null;
+  divisionName?: string | null;
+  companyId?: string | null;
+  companyName?: string | null;
+  /** MyLoans TransactionStatusId (12 = Loan Released) and its name; `status` above is the DMS word for it. */
+  statusId?: string | null;
+  statusName?: string | null;
+  /** MyLoans TransactionIsActive. */
+  isActive?: boolean | null;
+  /** The latest update of any part of the loan in MyLoans (SourceUpdatedAt, ISO). */
+  sourceUpdatedAt?: string | null;
 }
+
+/** Where the account details come from. One source today. */
+export const SOURCE_NAME = "MyLoans";
 
 export type FailReason = "NOT_FOUND" | "UNAVAILABLE";
 

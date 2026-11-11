@@ -46,7 +46,7 @@ test("Find loan: a wrong PN says which part is wrong and never asks MyLoans; a p
   await expect(err.locator("[data-pn-part]")).toHaveText("The running number must be 5 digits (this one has 3).");
   await shot(page, "find-loan-wrong-pn");
   await page.goto(`/search?q=${encodeURIComponent("gd 101-2026-9-01001")}`);
-  await expect(page.getByText("GD1012026901001").first()).toBeVisible();
+  await expect(page.locator("[data-find-preview]").getByText("GD1012026901001")).toBeVisible(); // the result, not a (folded) sample chip
   await expect(page.locator("[data-pn-error]")).toHaveCount(0);
 });
 

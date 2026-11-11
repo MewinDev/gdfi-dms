@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { fmtDate } from "@/lib/time";
 
 interface Hit { pn: string; borrowerName: string; status: string | null; releaseDate: string | null; opened: boolean; changed: boolean }
-type Result = { ok: true; exactOnly: boolean; hits: Hit[] } | { ok: false; exactOnly: boolean; message: string };
+type Result = { ok: true; exactOnly: boolean; hits: Hit[]; outside?: number } | { ok: false; exactOnly: boolean; message: string };
 
 const MIN = 3;
 
@@ -24,8 +24,12 @@ const DEBOUNCE_MS = 300;
  * With exact-PN-only sources it says so and still finds a whole PN.
  */
 export function LiveFindInput({
-  defaultValue = "", autoFocus, required, placeholder, className, exactOnly,
-}: { defaultValue?: string; autoFocus?: boolean; required?: boolean; placeholder: string; className: string; exactOnly: boolean }) {
+  defaultValue = "", autoFocus, required, placeholder, className, exactOnly, panelAlign,
+}: {
+  defaultValue?: string; autoFocus?: boolean; required?: boolean; placeholder: string; className: string; exactOnly: boolean;
+  /** "row": the panel takes the edges of the nearest positioned parent (Find a loan's search box or row). */
+  panelAlign?: "row";
+}) {
   const [q, setQ] = useState(defaultValue);
   const [state, setState] = useState<{ kind: "idle" } | { kind: "loading" } | { kind: "done"; r: Result }>({ kind: "idle" });
   const [open, setOpen] = useState(false);
@@ -65,11 +69,13 @@ export function LiveFindInput({
   let status = "";
   if (state.kind === "loading") status = "Looking in MyLoans…";
   else if (state.kind === "done" && !state.r.ok) status = state.r.message;
+  // Found in MyLoans, but in a branch outside the person's access: say so (the same as Find loan says).
+  else if (state.kind === "done" && hits.length === 0 && state.r.ok && (state.r.outside ?? 0) > 0) status = "Outside your branches. You can only open loans of your branches.";
   else if (state.kind === "done" && hits.length === 0) status = exactOnly ? "No match. MyLoans here finds the whole PN only, for example GD1012026901001." : "No match in MyLoans.";
   else if (hits.length) status = `${hits.length} match${hits.length === 1 ? "" : "es"} in MyLoans.`;
 
   return (
-    <div ref={box} className="relative min-w-0 flex-1">
+    <div ref={box} className={`${panelAlign ? "" : "relative "}min-w-0 flex-1`}>
       <input
         id="find-loan" name="q" value={q} autoFocus={autoFocus} required={required} autoComplete="off" placeholder={placeholder}
         role="combobox" aria-expanded={showPanel && hits.length > 0} aria-controls={listId} aria-autocomplete="list"
@@ -87,13 +93,13 @@ export function LiveFindInput({
       />
       <p id={`${uid}-status`} role="status" aria-live="polite" className="sr-only">{showPanel ? status : ""}</p>
       {showPanel && state.kind !== "idle" && (
-        <div className="absolute left-[-18px] right-[-18px] top-[calc(100%+10px)] z-40 overflow-hidden rounded-xl border border-line bg-white shadow-lg sm:left-[-20px] sm:right-0" data-find-results>
+        <div className={`absolute z-40 overflow-hidden rounded-xl border border-line bg-white shadow-lg ${panelAlign ? "-left-px -right-px top-[calc(100%+8px)] sm:left-0 sm:right-0" : "left-[-18px] right-[-18px] top-[calc(100%+10px)] sm:left-[-20px] sm:right-0"}`} data-find-results>
           {state.kind === "loading" && (
             <p className="flex items-center gap-2 px-4 py-3 text-sm text-ink-2" data-find-loading>
               <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-navy" /> Looking in MyLoans…
             </p>
           )}
-          {state.kind === "done" && hits.length === 0 && <p className="px-4 py-3 text-sm text-ink-2" data-find-empty>{status}</p>}
+          {state.kind === "done" && hits.length === 0 && <p className="px-4 py-3 text-sm text-ink-2" data-find-empty data-find-outside={state.r.ok && state.r.outside ? "" : undefined}>{status}</p>}
           {hits.length > 0 && (
             <ul id={listId} role="listbox" aria-label="MyLoans matches" className="max-h-[360px] overflow-y-auto">
               {hits.map((h, i) => (
