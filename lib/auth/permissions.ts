@@ -98,7 +98,7 @@ export const PERMISSIONS = {
   MYLOANS_VIEW: "myloans:view", // see "MyLoans · Last checked" on a loan file
   LOANS_REFRESH: "loans:refresh", // Refresh from MyLoans on a loan file
   SOURCE_REVIEW: "myloans:review", // decide MyLoans changes: Apply, Keep current, Close as cancelled, replacement PNs (was source:review)
-  SOURCE_REVIEW_BORROWER: "source:review_borrower", // decide MyLoans corrections of the borrower's details (loans in the person's branches)
+  SOURCE_REVIEW_BORROWER: "myloans:review_borrower", // decide MyLoans corrections of the borrower's details (loans in the person's branches)
   SOURCE_MANAGE: "myloans:manage", // MyLoans sync settings (was source:manage)
   MYLOANS_SYNC: "myloans:sync", // run the bulk sync now (Run now)
   // Branches and access
@@ -135,6 +135,8 @@ export const SPLIT_PERMISSIONS: Record<string, Permission[]> = {
 export const RENAMED_PERMISSIONS: Record<string, Permission> = {
   "source:review": PERMISSIONS.SOURCE_REVIEW,
   "source:manage": PERMISSIONS.SOURCE_MANAGE,
+  // Migration 20261119090013_myloans_shared_limits (the only place the old key may appear outside the migrations).
+  "source:review_borrower": PERMISSIONS.SOURCE_REVIEW_BORROWER,
   "settings:branches": PERMISSIONS.BRANCHES_MANAGE,
 };
 
@@ -261,7 +263,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.MYLOANS_VIEW, label: "See when MyLoans was last checked", help: "Show \"MyLoans · Last checked\" on a loan file.", requires: [P.LOANS_VIEW], can: "see when MyLoans was last checked", where: "Loan File, top strip", was: "loans:view" },
       { key: P.LOANS_REFRESH, label: "Refresh a loan from MyLoans", help: "The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now.", requires: [P.MYLOANS_VIEW], view: P.MYLOANS_VIEW, can: "refresh a loan from MyLoans", where: "Loan File, Refresh from MyLoans", was: "none (shown to everyone who sees the loan file)" },
       { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
-      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches; when nobody in the branch has this tick, Admin reviews it.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new (borrower details used to update without a review)" },
+      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches; when nobody in the branch has this tick, Admin reviews it.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
       { key: P.SOURCE_MANAGE, label: "Change MyLoans sync settings", help: "How often loans are checked against MyLoans and the business hours.", can: "change MyLoans sync settings", where: "Settings, MyLoans sync", was: "source:manage" },
       { key: P.MYLOANS_SYNC, label: "Run the MyLoans sync now", help: "The Run now button: check every open loan against MyLoans at once.", can: "run the MyLoans sync now", where: "Settings, MyLoans sync, Run now", was: "source:manage" },
     ],

@@ -17,6 +17,9 @@ export async function asUser(email: string): Promise<CurrentUser> {
 export async function cleanLoans() {
   await prisma.$transaction((tx) => resetLoanData(tx), { timeout: 60_000 });
   await setSetting("myloans.simulateUnavailable", false);
+  // The shared MyLoans hourly count and circuit breaker (every instance): a clean hour for each test.
+  await prisma.$executeRaw`DELETE FROM "MyLoansCallHour"`;
+  await prisma.$executeRaw`DELETE FROM "MyLoansBreaker"`;
 }
 
 /** Test helper: the DP works every stage of a job in order (Start, evidence, Finish; Check and verify ticks every paper). */

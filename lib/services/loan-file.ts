@@ -8,7 +8,7 @@ import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloan
 import { getPnFormat, parsePn, pnHeadline } from "@/lib/pn";
 import { reportUnknownBranchCode, resolveLoanBranch } from "./branches";
 import { inBranches, runDataCheck, type DataCheckField } from "@/lib/myloans/data-check";
-import { callsThisHour, hasCached, lookupPn as cachedLookup } from "@/lib/myloans/client";
+import { hasCached, lookupPn as cachedLookup } from "@/lib/myloans/client";
 import { recordStatusKind, statusLabel, type StatusKind } from "@/lib/myloans/status";
 import { accountColumns } from "@/lib/myloans/account";
 import {
@@ -123,12 +123,14 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   // cache time (a reload of the status card) reuses this answer instead of asking again. It counts toward
   // the hourly limit; when the limit or the circuit breaker stops it, the person is told MyLoans is busy
   // (never "not found").
+  // The count is shared by every instance and reserved in one atomic step (lib/myloans/client.ts).
   const adapter = getMyLoansAdapter();
-  const stopped = callsThisHour() >= (await getSetting("myloans.hourlyCeiling")) || adapter.breakerState().open;
+  const ceiling = await getSetting("myloans.hourlyCeiling");
+  const stopped = (await adapter.breakerState()).open;
   // The sample MyLoans: a simulated change to this PN is a new answer (not hidden by the cache).
   const variant = myLoansMode() === "mock" ? `find:${JSON.stringify([(await getSetting("myloans.mockOverrides"))[pn] ?? null, (await getSetting("myloans.mockExtra")).find((r) => r.pn === pn) ?? null])}` : undefined;
-  const lookup = stopped && !hasCached(pn, Date.now(), variant) ? null : await cachedLookup(adapter, pn, { variant });
-  if (!lookup || (!lookup.ok && lookup.reason === "UNAVAILABLE" && adapter.breakerState().open)) {
+  const lookup = stopped && !hasCached(pn, Date.now(), variant) ? null : await cachedLookup(adapter, pn, { variant, ceiling });
+  if (!lookup || (!lookup.ok && (lookup.limited || (lookup.reason === "UNAVAILABLE" && (await adapter.breakerState()).open)))) {
     return { kind: "unavailable", pn, message: MYLOANS_BUSY, busy: true };
   }
   if (!lookup.ok) {

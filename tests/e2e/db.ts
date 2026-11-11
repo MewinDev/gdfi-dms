@@ -18,6 +18,9 @@ export async function resetLoans() {
   for (const key of ["myloans.simulateUnavailable", "samples.showDataCheck"]) {
     await db.setting.upsert({ where: { key }, create: { key, value: false }, update: { value: false } });
   }
+  // The shared MyLoans hourly count and circuit breaker: a clean hour for each test.
+  await db.$executeRaw`DELETE FROM "MyLoansCallHour"`;
+  await db.$executeRaw`DELETE FROM "MyLoansBreaker"`;
 }
 
 /** A Alaminos loan file, to prove an LA cannot open another branch's file by URL. */

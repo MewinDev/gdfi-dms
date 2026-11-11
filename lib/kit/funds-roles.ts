@@ -12,7 +12,7 @@ const fin = (t: "CA" | "FT"): Permission[] => [
     ? [P.FUNDS_CA_VIEW, P.FUNDS_CA_APPROVE, P.FUNDS_CA_RELEASE, P.FUNDS_CA_SETTLE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_CHANGE_TYPE, P.FUNDS_CA_PRINT]
     : [P.FUNDS_FT_VIEW, P.FUNDS_FT_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_FT_SETTLE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_CHANGE_TYPE, P.FUNDS_FT_PRINT]),
 ];
-// Approvers review the borrower detail corrections too (source:review_borrower is on for every funds approver).
+// Approvers review the borrower detail corrections too (myloans:review_borrower is on for every funds approver).
 const appr = (t: "CA" | "FT"): Permission[] => [
   P.LOANS_VIEW, P.FUNDS_KINDS_VIEW, P.SOURCE_REVIEW_BORROWER,
   ...(t === "CA" ? [P.FUNDS_CA_VIEW, P.FUNDS_CA_APPROVE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_PRINT] : [P.FUNDS_FT_VIEW, P.FUNDS_FT_APPROVE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_PRINT]),

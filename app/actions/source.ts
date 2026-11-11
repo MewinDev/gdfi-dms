@@ -35,7 +35,7 @@ export async function sourceDecisionAction(_prev: ActionState, fd: FormData): Pr
       await closeAsCancelled(u, id, str(fd, "note"));
       msg = "Closed as cancelled.";
     } else if (what === "cash") {
-      await askCashBack(u, id);
+      await askCashBack(u, id, str(fd, "note"));
       msg = "Asked the processor to return the cash. Finance confirms it.";
     } else if (what === "link") {
       await linkReplacement(u, id, { newPn: str(fd, "newPn"), note: str(fd, "note"), confirmNoPayment: fd.get("confirmNoPayment") === "on", overrideNote: str(fd, "overrideNote") });
@@ -51,7 +51,7 @@ export async function sourceDecisionAction(_prev: ActionState, fd: FormData): Pr
   });
 }
 
-/** Borrower details correction: Accept the correction or Keep current (source:review_borrower, the loan's branch). */
+/** Borrower details correction: Accept the correction or Keep current (myloans:review_borrower, the loan's branch). */
 export async function borrowerDecisionAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.SOURCE_REVIEW_BORROWER);

@@ -22,7 +22,7 @@ import { businessDate, isBusinessDay, startOfBusinessDay } from "@/lib/time";
 import { advanceBalance, peso } from "@/lib/funds/rules";
 import { MORTGAGE_THRESHOLDS, type FinancingType, type OrcrStatus } from "@/lib/rules";
 import { recomputeStage } from "./stage";
-import { beginStats, callsThisHour, lookupPn, noteCall, readStats } from "@/lib/myloans/client";
+import { beginStats, callStore, callsThisHour, countCall, DbCallStore, lookupPn, noteCall, readStats } from "@/lib/myloans/client";
 import { jitteredPause, nextCap, nextCheckAt } from "@/lib/myloans/tiers";
 import { SETTING_DEFAULTS, type SettingValue } from "@/lib/settings";
 import type { MyLoansAdapter, MyLoansLookup } from "@/lib/myloans/types";
@@ -47,7 +47,8 @@ type Mode = "MANUAL" | "AUTOMATIC" | "SIMULATED";
 export type Trigger = "open" | "button" | "background" | "simulator" | "find";
 export type RefreshResult =
   | { ok: true; outcome: "none" | "minor" | "review"; category: ChangeCategory; checkedAt: Date; borrower?: boolean }
-  | { ok: false; message: string; checkedAt: Date };
+  /** limited: no call was made (hourly limit, breaker, or the shared count could not be written); the loan is left as it is. */
+  | { ok: false; message: string; checkedAt: Date; limited?: boolean };
 
 const OPEN_JOB = ["PENDING_ACCEPTANCE", "ACCEPTED"] as const;
 const OUT_ADVANCE = ["REQUESTED", "APPROVED", "RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"] as const;
@@ -140,12 +141,14 @@ const RANK: Record<string, number> = { MATERIAL: 1, STATUS: 2, REPLACEMENT: 3 };
  * Asks MyLoans for one loan and records what changed. Minor changes update the copy; material,
  * status and replacement changes open (or update) the loan's one review item. Nothing else changes.
  */
-export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mode; trigger: Trigger; now?: Date; lookup?: MyLoansLookup }): Promise<RefreshResult> {
+export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mode; trigger: Trigger; now?: Date; lookup?: MyLoansLookup; ceiling?: number }): Promise<RefreshResult> {
   const now = opts.now ?? new Date();
   const loan = await prisma.loan.findUnique({ where: { id: loanId } });
   if (!loan) throw new UserError("Loan File not found.");
   // The background run passes what it already got; otherwise one shared call (coalesced; the button asks fresh).
-  const lookup = opts.lookup ?? await lookupPn(getMyLoansAdapter(), loan.pn, { fresh: opts.trigger === "button" || opts.trigger === "simulator" });
+  const lookup = opts.lookup ?? await lookupPn(getMyLoansAdapter(), loan.pn, { fresh: opts.trigger === "button" || opts.trigger === "simulator", ceiling: opts.ceiling });
+  // No call was made (the shared count said no): nothing about the loan changes.
+  if (!lookup.ok && lookup.limited) return { ok: false, message: lookup.message, checkedAt: now, limited: true };
   if (!lookup.ok) {
     // An outage never blocks work: the last copy stays, with "MyLoans did not answer".
     await prisma.$transaction(async (tx) => {
@@ -325,7 +328,9 @@ async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Ex
 function needReview(u: CurrentUser) {
   if (!can(u, PERMISSIONS.SOURCE_REVIEW)) throw new UserError("Only Admin reviews MyLoans changes. Your view is read-only.");
 }
-const noteSchema = z.string().trim().min(3, "Write a short note (at least 3 characters).").max(500, "Keep the note under 500 characters.");
+/** Every review decision: a note of 5 to 500 characters (the same rule as the borrower details review). */
+export const REVIEW_NOTE_MIN = 5;
+const noteSchema = z.string().trim().min(REVIEW_NOTE_MIN, "Write a short note (at least 5 characters).").max(500, "Keep the note under 500 characters.");
 function noteOf(raw: unknown) {
   const p = noteSchema.safeParse(raw ?? "");
   if (!p.success) throw new UserError(p.error.issues[0].message, "note");
@@ -502,9 +507,10 @@ export async function closeAsCancelled(u: CurrentUser, id: string, raw: unknown)
   });
 }
 
-/** Return the cash: asks the processor for a normal cash return that Finance confirms. Nothing moves by itself. */
-export async function askCashBack(u: CurrentUser, id: string) {
+/** Return the cash: asks the processor for a normal cash return that Finance confirms. Nothing moves by itself. A note is required, like every review decision. */
+export async function askCashBack(u: CurrentUser, id: string, rawNote?: unknown) {
   needReview(u);
+  const note = noteOf(rawNote);
   return withLoanLock(await lockedItem(u, id), async (tx) => {
     const item = await openItem(tx, id, u);
     const cash = await outstandingCash(tx, item.loanId);
@@ -517,7 +523,7 @@ export async function askCashBack(u: CurrentUser, id: string) {
         email: { event: "cash_returned", amountCents: c.cents, vars: { number: c.number, who: u.name, status: "cash back asked", reason: `${item.loan.pn} is cancelled in MyLoans. Return {amount}`.replace("{amount}", "the balance") } },
       });
     }
-    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "source_cash_back_asked", entityType: "SourceChange", entityId: id, loanId: item.loanId, pn: item.loan.pn, summary: `Admin ${u.name} asked for the cash back on ${listWords(cash.map((c) => c.number))} before closing` });
+    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "source_cash_back_asked", entityType: "SourceChange", entityId: id, loanId: item.loanId, pn: item.loan.pn, summary: `Admin ${u.name} asked for the cash back on ${listWords(cash.map((c) => c.number))} before closing. Note: ${note}`, details: { note, advances: cash.map((c) => ({ number: c.number, released: !c.notReleased })) } });
   });
 }
 
@@ -552,7 +558,7 @@ async function linkCore(tx: Tx, u: CurrentUser, oldPn: string, newPn: string, ra
   const pay = paymentEvidence(rel.paymentRecorded);
   const override = String(raw.overrideNote ?? "").trim();
   const confirmed = raw.confirmNoPayment === true || raw.confirmNoPayment === "on";
-  if (pay.known && pay.recorded && override.length < 3) throw new UserError(`Payment recorded in MyLoans on ${old.pn}. A replacement needs no payment on the old PN: write an override note to link anyway.`, "overrideNote");
+  if (pay.known && pay.recorded && override.length < REVIEW_NOTE_MIN) throw new UserError(`Payment recorded in MyLoans on ${old.pn}. A replacement needs no payment on the old PN: write an override note to link anyway.`, "overrideNote");
   if (!pay.known && !confirmed) throw new UserError("Tick \"I confirmed no payment was made on the old PN\".", "confirmNoPayment");
   const evidence = pay.known
     ? (pay.recorded ? `Payment recorded in MyLoans; linked by ${u.name} with an override: ${override}` : `No payment recorded in MyLoans (checked by ${u.name})`)
@@ -825,7 +831,7 @@ export async function runMyLoansSync(o: SyncOptions) {
   if (await getSetting("myloans.paused")) {
     const run: RunStat = {
       at: now.toISOString(), trigger: o.trigger, mode: "poll", status: "paused", due: 0, checked: 0, calls: 0, saved: 0, avgMs: 0, maxMs: 0, errors: 0, ms: 0,
-      updated: 0, changes: 0, cap: s.state.cap ?? s.max, hourCalls: callsThisHour(), ceiling: s.ceiling, ok: true, failed: 0, error: PAUSED_BY_ADMIN, byAdmin: true,
+      updated: 0, changes: 0, cap: s.state.cap ?? s.max, hourCalls: await callsThisHour(), ceiling: s.ceiling, ok: true, failed: 0, error: PAUSED_BY_ADMIN, byAdmin: true,
     };
     await setSetting("myloans.state", { ...s.state, runs: [run, ...s.state.runs].slice(0, 10) });
     await writeAudit(prisma as unknown as Tx, { actor: o.trigger === "run_now" && o.actor ? o.actor : SYSTEM_ACTOR, mode: o.trigger === "run_now" ? "MANUAL" : "AUTOMATIC", action: "myloans_sync_run", entityType: "Setting", entityId: "myloans.lastRun", summary: `MyLoans sync skipped: ${PAUSED_BY_ADMIN}`, details: { trigger: o.trigger, paused: true } });
@@ -867,7 +873,12 @@ async function runLocked(o: SyncOptions, s: Awaited<ReturnType<typeof syncSettin
   };
   const mode: "feed" | "poll" = adapter.capabilities.changedSince && cursor ? "feed" : "poll";
 
-  if (callsThisHour() >= s.ceiling) {
+  // The shared hourly count: old hours are not kept.
+  const shared = callStore();
+  if (shared instanceof DbCallStore) await shared.prune(now.getTime()).catch(() => null);
+  if ((await callsThisHour()) >= s.ceiling) {
+    paused = true;
+  } else if (mode === "feed" && !(await countCall({ ceiling: s.ceiling }))) {
     paused = true;
   } else if (mode === "feed") {
     // One call: what changed since the cursor (minus an overlap, so nothing is missed)?
@@ -892,14 +903,15 @@ async function runLocked(o: SyncOptions, s: Awaited<ReturnType<typeof syncSettin
       lastErr = feed.message;
     }
   } else {
-    const budget = Math.max(0, Math.min(cap, s.ceiling - callsThisHour()));
+    const budget = Math.max(0, Math.min(cap, s.ceiling - (await callsThisHour())));
     const list = budget ? await prisma.$queryRaw<{ id: string; pn: string; syncTier: string | null }[]>(dueQuery(now, budget)) : [];
     due = list.length;
     const hashes = await latestHashes(list.map((l) => l.id));
     for (const [i, l] of list.entries()) {
       if (i > 0 && s.pause > 0) await sleep(jitteredPause(s.pause, rnd()));
-      if (callsThisHour() >= s.ceiling) { paused = true; break; }
-      const r = await lookupPn(adapter, l.pn);
+      // Reserved in one atomic step against the shared count: the limit holds across instances.
+      const r = await lookupPn(adapter, l.pn, { ceiling: s.ceiling });
+      if (!r.ok && r.limited) { paused = true; break; }
       if (r.ok) {
         if (hashTracked(trackedOf(r.record)) !== hashes.get(l.id)) await apply(l.id, r);
         rows.push({ id: l.id, next: nextFor(l.syncTier, true), ok: true, err: null });
@@ -922,7 +934,7 @@ async function runLocked(o: SyncOptions, s: Awaited<ReturnType<typeof syncSettin
   const run: RunStat = {
     at: now.toISOString(), trigger: o.trigger, mode, status: paused ? "paused" : trouble ? "slowed" : "healthy",
     due, checked: rows.length, calls: st.calls, saved: st.saved, avgMs, maxMs, errors: st.failed, ms: Date.now() - t0,
-    updated, changes, cap, hourCalls: callsThisHour(), ceiling: s.ceiling,
+    updated, changes, cap, hourCalls: await callsThisHour(), ceiling: s.ceiling,
     ok: st.failed === 0, failed: rows.filter((r) => !r.ok).length, error: lastErr,
   };
   const state = { cursor, cap: paused ? cap : nextCap(cap, s.max, trouble), runs: [run, ...s.state.runs].slice(0, 10) };
@@ -1002,8 +1014,8 @@ export async function syncStatus() {
     prisma.loan.groupBy({ by: ["syncTier"], where: { syncTier: { not: null } }, _count: { _all: true } }),
   ]);
   const last = state.runs[0] ?? null;
-  const breaker = adapter.breakerState();
-  const hourCalls = callsThisHour();
+  const breaker = await adapter.breakerState();
+  const hourCalls = await callsThisHour();
   const health = (await getSetting("myloans.paused")) ? "Paused by Admin: MyLoans calls are paused"
     : hourCalls >= ceiling || (last?.status === "paused" && !last.byAdmin) ? "Paused: hourly limit reached"
     : breaker.open || last?.status === "slowed" ? "Slowed down: MyLoans is answering slowly" : "Healthy";

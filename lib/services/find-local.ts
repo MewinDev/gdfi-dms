@@ -190,11 +190,14 @@ export async function refreshFoundLoan(user: CurrentUser, pn: string, now: Date 
   // Paused by Admin: no call (a person can still press Refresh from MyLoans on the loan file).
   if (await getSetting("myloans.paused")) return { called: false, changed: await changedNow() };
   const ceiling = await getSetting("myloans.hourlyCeiling");
-  if (callsThisHour() >= ceiling || getMyLoansAdapter().breakerState().open) return { called: false, changed: await changedNow() };
+  if ((await callsThisHour()) >= ceiling || (await getMyLoansAdapter().breakerState()).open) return { called: false, changed: await changedNow() };
+  let called = true;
   try {
-    await refreshLoan(l.id, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "find", now });
+    // The ceiling is reserved again atomically: two instances cannot both slip past it.
+    const r = await refreshLoan(l.id, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "find", now, ceiling });
+    if (!r.ok && r.limited) called = false;
   } catch {
     // An outage never blocks work: the card stays as it is.
   }
-  return { called: true, changed: await changedNow() };
+  return { called, changed: await changedNow() };
 }

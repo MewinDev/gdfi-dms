@@ -98,7 +98,10 @@ export function SourceReviewSheet({ review, open, onClose }: { review: ReviewDat
             <h3 id={`${uid}-repl`} className="text-[15px] font-bold text-navy">Possible replacement</h3>
             <p className="text-[13px] text-ink-2">Same borrower (CIN or CIF), this PN ended in MyLoans and the details match. A replacement is the same loan under a new PN; it is only allowed when no payment was made on this PN.</p>
             <ul className="flex flex-col gap-0.5 text-[14px]" data-candidates>
-              {review.candidates.map((c) => <li key={c.pn}><strong>{c.text}</strong>{c.matched ? <span className="block text-[13px] text-ink-2">Matches: {c.matched}</span> : null}</li>)}
+              {review.candidates.map((c) => (
+                <li key={c.pn}><strong>{c.text}</strong>{c.matched ? <span className="block text-[13px] text-ink-2">Matches: {c.matched}</span> : null}
+                  {c.differentBranch && <span className="mt-0.5 block rounded-lg bg-wait-bg px-2 py-1 text-[13px] font-semibold text-wait-fg" data-different-branch>{c.differentBranch}</span>}</li>
+              ))}
             </ul>
             {review.canReview && (
               <>
@@ -119,7 +122,7 @@ export function SourceReviewSheet({ review, open, onClose }: { review: ReviewDat
                 )}
                 {review.payment.known && review.payment.recorded && (
                   <div>
-                    <label htmlFor={`${uid}-ov`} className="label">Override note (required to link anyway)</label>
+                    <label htmlFor={`${uid}-ov`} className="label">Override note (required to link anyway, at least 5 characters)</label>
                     <textarea id={`${uid}-ov`} name="overrideNote" rows={2} maxLength={300} className="input" />
                   </div>
                 )}
@@ -139,7 +142,8 @@ export function SourceReviewSheet({ review, open, onClose }: { review: ReviewDat
             )}
             <div>
               <label htmlFor={`${uid}-note`} className="label">Note (required)</label>
-              <textarea id={`${uid}-note`} name="note" rows={2} maxLength={500} className="input" aria-invalid={state?.field === "note"} placeholder="For example: client confirmed by phone" />
+              <textarea id={`${uid}-note`} name="note" rows={2} maxLength={500} className="input" aria-invalid={state?.field === "note"} aria-describedby={`${uid}-note-h`} placeholder="For example: client confirmed by phone" />
+              <p id={`${uid}-note-h`} className="help">5 to 500 characters.</p>
             </div>
             {err && <p role="alert" className="rounded-xl bg-bad-bg px-3 py-2 text-[14px] font-semibold text-bad-fg" data-source-error>{err}</p>}
             {state?.ok && <FormMessage state={state} />}
@@ -147,6 +151,9 @@ export function SourceReviewSheet({ review, open, onClose }: { review: ReviewDat
               <SheetCancel />
               <SubmitButton className="btn-ghost" name="$decision" value="keep">Keep current</SubmitButton>
               {!material && review.candidates.length > 0 && !review.replacedByPn && <SubmitButton className="btn-secondary" name="$decision" value="link">Link as replacement</SubmitButton>}
+              {!material && !review.replacedByPn && review.candidates.some((c) => c.differentBranch) && (
+                <p className="basis-full text-right text-[13px] font-semibold text-wait-fg" data-link-branch-note>{review.candidates.filter((c) => c.differentBranch).map((c) => `${c.pn}: ${c.differentBranch}`).join(" · ")}. You can still link it.</p>
+              )}
               {material ? <SubmitButton name="$decision" value="apply">Apply changes</SubmitButton> : <SubmitButton name="$decision" value="close">Close as cancelled</SubmitButton>}
             </div>
           </>

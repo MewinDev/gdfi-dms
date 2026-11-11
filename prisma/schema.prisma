@@ -748,7 +748,7 @@ enum SourceChangeCategory {
   STATUS
   REPLACEMENT
   /// Borrower details (name, address, contact number, CIF, CIN): decided by the branch supervisors and
-  /// approvers (source:review_borrower), apart from the Admin item. One open item of each per loan.
+  /// approvers (myloans:review_borrower), apart from the Admin item. One open item of each per loan.
   BORROWER
 }
 
@@ -1929,4 +1929,20 @@ model LtoAdvisory {
 
   @@index([ltoOfficeId, resolvedAt])
   @@index([resolvedAt])
+}
+
+/// MyLoans calls in one clock hour (UTC "2026-11-12T06"), shared by every server instance, the cron
+/// endpoint and the console script. Each call adds one with a single atomic statement.
+model MyLoansCallHour {
+  hour      String   @id
+  calls     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+/// The MyLoans circuit breaker, shared by every instance: consecutive failures and, when open, until when.
+model MyLoansBreaker {
+  id        String    @id @default("myloans")
+  failures  Int       @default(0)
+  openUntil DateTime?
+  updatedAt DateTime  @updatedAt
 }

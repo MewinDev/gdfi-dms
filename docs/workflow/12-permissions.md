@@ -151,7 +151,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | See when MyLoans was last checked | Show "MyLoans · Last checked" on a loan file. | Loan File, top strip | See loan files | `myloans:view` | LA, Admin, DP, Finance, Vault, Digital Records, QA, Approvers, Branch Supervisor |
 | Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | LA, Admin, DP, Vault, Digital Records, QA, Branch Supervisor |
 | Review MyLoans changes | Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin |
-| Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches; when nobody in the branch has this tick, Admin reviews it. | Loan File, To do, MyLoans corrections; Home | See loan files | `source:review_borrower` | Admin, Finance, Branch Supervisor |
+| Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches; when nobody in the branch has this tick, Admin reviews it. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, Finance, Branch Supervisor |
 | Change MyLoans sync settings | How often loans are checked against MyLoans and the business hours. | Settings, MyLoans sync | - | `myloans:manage` | Admin |
 | Run the MyLoans sync now | The Run now button: check every open loan against MyLoans at once. | Settings, MyLoans sync, Run now | - | `myloans:sync` | Admin |
 
@@ -259,7 +259,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | See when MyLoans was last checked | Loan File, top strip | loans:view | `myloans:view` | Split or renamed |
 | Refresh a loan from MyLoans | Loan File, Refresh from MyLoans | none (shown to everyone who sees the loan file) | `loans:refresh` | **Gap, closed** |
 | Review MyLoans changes | Loan File, Open items, MyLoans changes | source:review (also Admin by role name) | `myloans:review` | **Gap, closed** |
-| Review borrower detail corrections | Loan File, To do, MyLoans corrections; Home | new (borrower details used to update without a review) | `source:review_borrower` | Split or renamed |
+| Review borrower detail corrections | Loan File, To do, MyLoans corrections; Home | new on 12 November 2026 (before that, borrower details updated without a review) | `myloans:review_borrower` | Split or renamed |
 | Change MyLoans sync settings | Settings, MyLoans sync | source:manage | `myloans:manage` | Split or renamed |
 | Run the MyLoans sync now | Settings, MyLoans sync, Run now | source:manage | `myloans:sync` | Split or renamed |
 | See branches | Settings, Branches | settings:branches or source:manage | `branches:view` | Split or renamed |

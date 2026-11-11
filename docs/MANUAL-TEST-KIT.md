@@ -209,6 +209,10 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 32. **Pause MyLoans calls.** As **Admin**, Settings, MyLoans sync: press **Pause MyLoans calls**, then **Run now**. Open a loan file. Then turn MyLoans calls back on. As **Finance**, look for the same switch.
 33. **Area name.** As Admin, simulate "Correct the area name (minor)" on any loan and open its Journey tab.
 
+34. **Return the cash and notes.** On a loan with cash out, as Admin simulate "Set the loan cancelled", open the review and press **Return the cash** without a note, then with a 4-character note, then with a longer one. Try **Keep current** on another review with a 4-character note.
+35. **Replacement at another branch.** As Admin, on a cancelled Angono loan whose borrower has a new loan at Antipolo (Related loans), open the review or the Link form and read it before linking.
+36. **This hour.** Run `npm run myloans:sync` in PowerShell, then open Settings, MyLoans sync and read "This hour".
+
 ## If the sign-in page keeps coming back
 
 Your browser still has the sign-in of an account from before a reset. Open a private window, or clear the cookies for `localhost:3000` (in Chrome: the lock icon left of the address, then Cookies and site data, then delete), and sign in again.

@@ -48,14 +48,14 @@ afterAll(async () => {
 
 describe("Find loan and the PN check", () => {
   it("a wrong PN is refused in plain words and never reaches MyLoans", async () => {
-    const before = (await import("@/lib/myloans/client")).callsThisHour();
+    const before = await (await import("@/lib/myloans/client")).callsThisHour();
     expect(await lookupPn(la, "GD1012027901001")).toEqual({ kind: "invalid", part: "year", message: "This does not look like a PN. Example: GD1012026900001. The year is in the future (2027)." });
     expect(await lookupPn(la, "GD10120269001")).toMatchObject({ kind: "invalid", part: "running", message: expect.stringContaining("The running number must be 5 digits") });
     expect(await lookupPn(la, "GD12026901001")).toMatchObject({ kind: "invalid", part: "branch", message: expect.stringContaining("The branch code must be 3 digits") });
     // Typing searches the DMS only: a wrong PN, or part of one, shows nothing (and calls nothing).
     expect(await suggestLoans(la, "GD1012027901001")).toEqual({ kind: "none" });
     expect(await suggestLoans(la, "GD101202690")).toEqual({ kind: "none" });
-    expect((await import("@/lib/myloans/client")).callsThisHour()).toBe(before);
+    expect(await (await import("@/lib/myloans/client")).callsThisHour()).toBe(before);
     await expect(openLoanFile(la, { pn: "XX1012026901001" })).rejects.toThrow("This does not look like a PN. Example: GD1012026900001. The PN must start with GD, not XX.");
   });
 

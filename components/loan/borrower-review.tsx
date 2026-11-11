@@ -95,7 +95,8 @@ export function BorrowerReviewSheet({ review, open, onClose }: { review: Borrowe
           <>
             <div>
               <label htmlFor={`${uid}-note`} className="label">Note (required)</label>
-              <textarea id={`${uid}-note`} name="note" rows={2} maxLength={500} className="input" aria-invalid={state?.field === "note"} placeholder="For example: checked the borrower's valid ID" />
+              <textarea id={`${uid}-note`} name="note" rows={2} maxLength={500} className="input" aria-invalid={state?.field === "note"} aria-describedby={`${uid}-note-h`} placeholder="For example: checked the borrower's valid ID" />
+              <p id={`${uid}-note-h`} className="help">5 to 500 characters.</p>
             </div>
             {err && <p role="alert" className="rounded-xl bg-bad-bg px-3 py-2 text-[14px] font-semibold text-bad-fg" data-borrower-error>{err}</p>}
             {state?.ok && <FormMessage state={state} />}
