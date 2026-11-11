@@ -14,7 +14,7 @@ import { UserError, NotInScopeError } from "./errors";
  * "Borrower details" (name, address, contact number, CIF, CIN): MyLoans corrects the borrower, a person
  * decides. Never a silent update and never a block on Send, Accept or funds. One open item per loan (apart
  * from the Admin item for amount, status and replacement); a newer correction updates it and keeps the
- * earlier one in its history. Decided by the people with source:review_borrower in the loan's branch
+ * earlier one in its history. Decided by the people with myloans:review_borrower in the loan's branch
  * (supervisors, approvers), or by Admin when the branch has nobody with the tick.
  */
 
@@ -201,7 +201,7 @@ export async function borrowerItemsForAdmin(): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Decisions (source:review_borrower, the loan's branch in the person's access)
+// Decisions (myloans:review_borrower, the loan's branch in the person's access)
 // ---------------------------------------------------------------------------
 
 const noteSchema = z.string().trim().min(5, "Write a short note (at least 5 characters).").max(500, "Keep the note under 500 characters.");

@@ -58,7 +58,8 @@ export type FailReason = "NOT_FOUND" | "UNAVAILABLE";
 
 export type MyLoansLookup =
   | { ok: true; record: MyLoansRecord; raw: unknown; adapter: "mock" | "live"; retrievedAt: Date }
-  | { ok: false; reason: FailReason; message: string; retryAfterMs?: number };
+  /** limited: no call was made (the hourly limit, the circuit breaker, or the shared count could not be written). */
+  | { ok: false; reason: FailReason; message: string; retryAfterMs?: number; limited?: true };
 
 /** One row of a search result (never more than the limit asked for). */
 export interface MyLoansHit { pn: string; borrowerName: string; status: string | null; releaseDate: string | null; branchName: string | null; branchCode?: string | null }

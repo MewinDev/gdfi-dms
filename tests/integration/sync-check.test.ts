@@ -24,7 +24,7 @@ import { acceptBorrowerCorrection, borrowerReviewFor, borrowerToDo, keepBorrower
 import { refreshFoundLoan, savedLoanCard } from "@/lib/services/find-local";
 import { listLoans } from "@/lib/services/queries";
 import { setUserBranches } from "@/lib/services/access";
-import { callsThisHour, noteCall, resetClient } from "@/lib/myloans/client";
+import { callsThisHour, countCall, resetClient } from "@/lib/myloans/client";
 import { SYSTEM_ACTOR } from "@/lib/audit";
 import type { MyLoansRecord } from "@/lib/myloans/types";
 import { POST as cronPost } from "@/app/api/cron/myloans-sync/route";
@@ -468,14 +468,14 @@ describe("11. Refresh paths, the pause switch, limits", () => {
 
   it("Find a loan for an unsaved PN: the hourly limit or the circuit breaker gives 'MyLoans is busy', never 'not found'", async () => {
     await setSetting("myloans.hourlyCeiling", 10);
-    for (let i = callsThisHour(); i < 10; i++) noteCall(1, { ok: true });
+    for (let i = await callsThisHour(); i < 10; i++) await countCall();
     spy();
     expect(await lookupPn(la, "GD1652026901004")).toEqual({ kind: "unavailable", pn: "GD1652026901004", message: MYLOANS_BUSY, busy: true });
     expect(count()).toBe(0);
     resetClient();
     await setSetting("myloans.hourlyCeiling", 600);
-    const a = getMyLoansAdapter() as unknown as { breakerState: () => { open: boolean } };
-    vi.spyOn(a, "breakerState").mockReturnValue({ open: true } as never);
+    const a = getMyLoansAdapter() as unknown as { breakerState: () => Promise<{ open: boolean }> };
+    vi.spyOn(a, "breakerState").mockResolvedValue({ open: true } as never);
     expect(await lookupPn(la, "GD1012026999999")).toMatchObject({ kind: "unavailable", busy: true, message: MYLOANS_BUSY });
   });
 
@@ -517,7 +517,7 @@ describe("13. Chips and lists", () => {
 });
 
 describe("Permissions: the new tick", () => {
-  it("source:review_borrower is on for the Branch Supervisor, Admin and the funds approvers; never by role name", async () => {
+  it("myloans:review_borrower is on for the Branch Supervisor, Admin and the funds approvers; never by role name", async () => {
     const roles = await prisma.role.findMany({ where: { key: { in: ["SUP", "ADMIN", "FIN", "LA", "DP"] } } });
     const has = (k: string) => roles.find((r) => r.key === k)!.permissions.includes(PERMISSIONS.SOURCE_REVIEW_BORROWER);
     expect(["SUP", "ADMIN", "FIN"].map(has)).toEqual([true, true, true]);

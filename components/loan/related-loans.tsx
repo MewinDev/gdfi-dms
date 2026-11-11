@@ -63,6 +63,7 @@ function LinkSheet({ loanId, row, onClose }: { loanId: string; row: RelatedRow; 
         <input type="hidden" name="otherPn" value={row.pn} />
         <p className="rounded-xl bg-fill px-3 py-2 text-[13px]">{row.newPn} replaces {row.oldPn}: the same loan under a new PN, only when no payment was made on {row.oldPn}. {row.tag === "ADDITIONAL" ? "The system sees this as an additional unit: link it only for an unusual case you have checked." : ""}</p>
         {row.reason && <p className="text-[13px] text-ink-2">{row.reason}</p>}
+        {row.differentBranch && <p className="rounded-xl bg-wait-bg px-3 py-2 text-[14px] font-semibold text-wait-fg" data-different-branch>{row.differentBranch}. You can still link it.</p>}
         {row.payment.known ? (
           <p className={`rounded-xl px-3 py-2 text-[14px] font-semibold ${row.payment.recorded ? "bg-bad-bg text-bad-fg" : "bg-ok-bg text-ok-fg"}`}>{row.payment.text}</p>
         ) : (
@@ -72,9 +73,9 @@ function LinkSheet({ loanId, row, onClose }: { loanId: string; row: RelatedRow; 
           </label>
         )}
         {row.payment.recorded && (
-          <div><label htmlFor={`${uid}-ov`} className="label">Override note (required to link anyway)</label><textarea id={`${uid}-ov`} name="overrideNote" rows={2} maxLength={300} className="input" /></div>
+          <div><label htmlFor={`${uid}-ov`} className="label">Override note (required to link anyway, at least 5 characters)</label><textarea id={`${uid}-ov`} name="overrideNote" rows={2} maxLength={300} className="input" /></div>
         )}
-        <div><label htmlFor={`${uid}-n`} className="label">Note (required)</label><textarea id={`${uid}-n`} name="note" rows={2} maxLength={500} className="input" placeholder="Why this is a replacement" /></div>
+        <div><label htmlFor={`${uid}-n`} className="label">Note (required)</label><textarea id={`${uid}-n`} name="note" rows={2} maxLength={500} className="input" aria-describedby={`${uid}-n-h`} placeholder="Why this is a replacement" /><p id={`${uid}-n-h`} className="help">5 to 500 characters.</p></div>
         {state && !state.ok && <FormMessage state={state} />}
         <div className="flex justify-end gap-2"><SheetCancel /><SubmitButton>Link as replacement</SubmitButton></div>
       </form>

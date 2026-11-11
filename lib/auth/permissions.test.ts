@@ -84,7 +84,8 @@ describe("can() for each seeded role matches the previous behaviour", () => {
   it("old key names still grant their new key (stored before the migration)", () => {
     expect([...effectivePermissions({ permissions: ["source:review", "source:manage", "settings:branches"] })].sort())
       .toEqual([P.SOURCE_REVIEW, P.SOURCE_MANAGE, P.BRANCHES_MANAGE].sort());
-    expect(Object.keys(RENAMED_PERMISSIONS).sort()).toEqual(["settings:branches", "source:manage", "source:review"]);
+    expect(Object.keys(RENAMED_PERMISSIONS).sort()).toEqual(["settings:branches", "source:manage", "source:review", ["source", "review_borrower"].join(":")].sort());
+    expect(RENAMED_PERMISSIONS[["source", "review_borrower"].join(":")]).toBe(P.SOURCE_REVIEW_BORROWER);
     expect(normalizePermissions(["settings:branches"])).toEqual([P.BRANCHES_VIEW, P.BRANCHES_MANAGE].filter((k) => ALL_PERMISSIONS.includes(k)).sort((a, b) => ALL_PERMISSIONS.indexOf(a) - ALL_PERMISSIONS.indexOf(b)));
   });
 

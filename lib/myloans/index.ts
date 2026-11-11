@@ -1,7 +1,7 @@
 import { getSetting } from "@/lib/settings";
 import { HttpMyLoansAdapter } from "./http-adapter";
 import { MockMyLoansAdapter } from "./mock-adapter";
-import { ResilientAdapter } from "./resilience";
+import { DbBreakerStore, ResilientAdapter } from "./resilience";
 import { sampleBranchRows } from "@/lib/branches/kit-file";
 import type { MyLoansAdapter } from "./types";
 
@@ -13,7 +13,7 @@ export const myLoansMode = (): "mock" | "live" => ((process.env.MYLOANS_MODE ?? 
 let cached: { mode: string; adapter: ResilientAdapter } | null = null;
 
 /** MYLOANS_MODE=mock (default) or live, wrapped with retries, Retry-After and the circuit breaker. */
-export function getMyLoansAdapter(): MyLoansAdapter & { breakerState(): { failures: number; open: boolean } } {
+export function getMyLoansAdapter(): MyLoansAdapter & { breakerState(): Promise<{ failures: number; open: boolean }> } {
   const mode = myLoansMode();
   if (cached?.mode === mode) return cached.adapter;
   const inner: MyLoansAdapter = mode === "live"
@@ -26,7 +26,8 @@ export function getMyLoansAdapter(): MyLoansAdapter & { breakerState(): { failur
         branchChanges: () => getSetting("myloans.mockBranches"),
       });
   // The mock answers at once: no waiting between retries.
-  cached = { mode, adapter: new ResilientAdapter(inner, mode === "mock" ? { retries: 0, breakAfter: 1_000_000 } : {}) };
+  // The breaker is shared by every instance (database), like the hourly count (lib/myloans/client.ts).
+  cached = { mode, adapter: new ResilientAdapter(inner, { ...(mode === "mock" ? { retries: 0, breakAfter: 1_000_000 } : {}), breaker: new DbBreakerStore() }) };
   return cached.adapter;
 }
 

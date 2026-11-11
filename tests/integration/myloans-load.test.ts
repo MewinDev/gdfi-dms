@@ -11,7 +11,7 @@ import { setSetting, getSetting } from "@/lib/settings";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { dueQuery, refreshLoan, runMyLoansSync } from "@/lib/services/source-sync";
 import { MockMyLoansAdapter, type MockOverride } from "@/lib/myloans/mock-adapter";
-import { callsThisHour, noteCall, resetClient } from "@/lib/myloans/client";
+import { callsThisHour, countCall, resetClient } from "@/lib/myloans/client";
 import { hashTracked, trackedOf } from "@/lib/myloans/changes";
 import type { MyLoansAdapter, MyLoansRecord } from "@/lib/myloans/types";
 import { SYSTEM_ACTOR } from "@/lib/audit";
@@ -95,7 +95,9 @@ describe("25,000 loans in MyLoans and in the DMS", () => {
     expect(r).toMatchObject({ ran: true, mode: "poll", due: 50, checked: 50, calls: 50, changes: 0, updated: 0 });
     expect(getByPn).toHaveBeenCalledTimes(50);
     expect(ms).toBeLessThan(10_000);
-    expect(statements).toBeLessThanOrEqual(12);
+    // A bounded number for the run, plus one atomic statement per MyLoans call for the shared hourly count
+    // (migration 20261119090013_myloans_shared_limits: the limit holds across instances).
+    expect(statements).toBeLessThanOrEqual(16 + 50);
     expect(await prisma.loanSourceSnapshot.count()).toBe(snapshotsBefore); // nothing changed: nothing written but the batch
     expect(await prisma.loan.count({ where: { lastCheckedAt: { not: null } } })).toBe(50);
     const plan = (await prisma.$queryRaw<Record<string, string>[]>(Prisma.sql`EXPLAIN ${dueQuery(new Date(), 50)}`)).map((x) => Object.values(x)[0]).join("\n");
@@ -157,13 +159,13 @@ describe("Tiers, adaptive cap, hourly ceiling, one runner", () => {
     await setSetting("myloans.hourlyCeiling", 10);
     await openLoanFile(la, { pn: "GD1652026901003", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     await seed(5);
-    for (let i = 0; i < 10; i++) noteCall(5, { ok: true });
+    for (let i = await callsThisHour(); i < 10; i++) await countCall();
     const r = await runMyLoansSync({ trigger: "cron", force: true, adapter: source(5) });
     expect(r).toMatchObject({ ran: true, status: "paused", calls: 0, checked: 0 });
     const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" } });
-    const before = callsThisHour();
+    const before = await callsThisHour();
     expect(await refreshLoan(loan.id, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "open" })).toMatchObject({ ok: true });
-    expect(callsThisHour()).toBe(before + 1);
+    expect(await callsThisHour()).toBe(before + 1);
   });
 
   it("advisory lock: two overlapping runs, only one proceeds", async () => {

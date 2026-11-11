@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { jitteredPause, nextCap, nextCheckAt, tierOf } from "./tiers";
-import { beginStats, callsThisHour, lookupPn, readStats, resetClient } from "./client";
+import { beginStats, callsThisHour, lookupPn, MemoryCallStore, readStats, resetClient, setCallStore } from "./client";
 import type { MyLoansAdapter, MyLoansLookup } from "./types";
 
 describe("Tiers", () => {
@@ -42,7 +42,8 @@ describe("Tiers", () => {
 });
 
 describe("Shared calls", () => {
-  beforeEach(() => resetClient());
+  // The shared count lives in the database; this unit test keeps it in memory.
+  beforeEach(() => { resetClient(); setCallStore(new MemoryCallStore()); });
   const slow = (calls: string[], ms = 30): MyLoansAdapter => ({
     name: "mock", capabilities: { search: false, changedSince: false },
     getByPn: async (pn): Promise<MyLoansLookup> => {
@@ -64,6 +65,6 @@ describe("Shared calls", () => {
     expect(readStats()).toMatchObject({ calls: 1, saved: 5 });
     await lookupPn(a, "GD1652026901003", { fresh: true }); // Refresh from MyLoans: a fresh call
     expect(calls.length).toBe(2);
-    expect(callsThisHour()).toBe(2);
+    expect(await callsThisHour()).toBe(2);
   });
 });

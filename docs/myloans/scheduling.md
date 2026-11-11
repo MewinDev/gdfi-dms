@@ -157,13 +157,13 @@ $$);
 1. **Last run.** Settings > System > MyLoans sync, line "Last run": the time, how it ran ("Scheduled" for the endpoint, "Console" for `npm run myloans:sync`, "Run now" for the button) and the mode ("changed-since feed" or "due loans"). During business hours it should move about every `myloans.backgroundMinutes`.
 2. **Last runs table.** The last 10 runs, newest first. Column "Result": **Healthy**, **Slowed down** (MyLoans was slow, rate limited, or failed; the cap is halved) or **Paused** (the hourly limit was reached; with the new switch, also "Pause MyLoans calls").
 3. **The health line** at the top of the card: "Healthy", "Slowed down: MyLoans is answering slowly" or "Paused: hourly limit reached".
-4. **Calls this hour.** Line "This hour": "N of 600 calls". It shows red at the ceiling. This count is kept in the web server's memory: it starts at 0 after a restart, and it does not include calls made by `npm run myloans:sync` (a separate process).
+4. **Calls this hour.** Line "This hour": "N of 600 calls". It shows red at the ceiling. This count is **shared**: it is kept in the database (table `MyLoansCallHour`, one row per clock hour), so every server instance, the cron endpoint and `npm run myloans:sync` add to the same "This hour", and a restart does not reset it. Each call adds one with a single atomic statement, so two calls at the same moment cannot both slip past the limit. If the database cannot be reached for the count, no call is made and Find loan says "MyLoans is busy, please try again in a few minutes." The circuit breaker (5 failures in a row, 60 seconds) is shared the same way (table `MyLoansBreaker`).
 5. **The audit log.** What is audited:
-   - `myloans_sync_run`: only **Run now** on the card ("<name> ran the MyLoans sync: N checked, N with changes, N calls").
+   - `myloans_sync_run`: every run. Run now as the person ("<name> ran the MyLoans sync: N checked, N with changes, N calls"), the schedule as "The schedule ran ...", the console script as "The console script ran ...", and a run skipped because MyLoans calls are paused ("MyLoans sync skipped: MyLoans calls are paused by Admin.").
+   - `myloans_paused`: Pause MyLoans calls turned on or off, with who and when.
    - `myloans_sync_settings`: the sync settings were saved.
-   - Per loan, from any refresh, scheduled ones included (actor System, mode Automatic): `source_minor_updated`, `source_change_detected`, `replacement_linked`.
+   - Per loan, from any refresh, scheduled ones included (actor System, mode Automatic): `source_minor_updated`, `source_change_detected`, `replacement_suggested`.
    - `source_refreshed` and `source_refresh_failed`: only the Refresh button on a loan file (and the simulator).
-   - **A scheduled run or a console run writes no audit row of its own.** Its record is the Last runs table. A run that found no changes leaves nothing in the audit log.
 6. **"Last checked" on loan files.** On a loan file: "MyLoans · Last checked 2:10 PM" (and "Last checked" under the MyLoans details). Pick an active loan nobody has opened recently (opening it refreshes it too) and see the time move after its tier's interval. With the changed-since feed, only loans that MyLoans says changed are touched.
 7. **The tier counts** ("Active loans by how often they are checked") show how many loans are in A, B and C. If all are 0, no run has anything to check.
 
@@ -191,8 +191,7 @@ $$);
 ## Notes
 
 - **`npm run myloans:sync` is forced.** The brief assumed the console script keeps the "every N minutes" and business-hours checks. It does not (`force: true` in `scripts/myloans-sync.ts`), and it does not run the daily branch list. Run now is forced too. Only the endpoint keeps every setting.
-- **"Paused" today means the hourly limit.** In the code at the time of writing, a run is "paused" only when the hourly ceiling is reached. The "Pause MyLoans calls" switch (`myloans.paused`) is being added in a separate change and will also show "Paused".
-- **Refresh on open default.** `lib/settings.ts` still says 15 minutes at the time of writing; the same separate change makes it 60 for new setups. A database that already saved a value keeps it.
-- **The hourly count and the circuit breaker are per process.** They live in memory (`lib/myloans/client.ts`, `lib/myloans/resilience.ts`). For the console script, each run starts at 0, so the ceiling limits only that one run.
-- **No audit row for scheduled runs.** Only Run now writes `myloans_sync_run`.
+- **"Paused" in the run history** means either the hourly limit or Admin's "Pause MyLoans calls" (the health line says which).
+- **Refresh on open default** is 60 minutes for new setups (it was 15); a database that already saved a value keeps it.
+- **The hourly count and the circuit breaker are shared** by every instance (database tables `MyLoansCallHour` and `MyLoansBreaker`, migration 20261119090013_myloans_shared_limits). The 60-second answer cache and the joining of simultaneous asks for one PN stay per process.
 - **Saturday.** The sync's business hours include Saturday; the email reminders' business days (`isBusinessDay`) are Mon to Fri only.

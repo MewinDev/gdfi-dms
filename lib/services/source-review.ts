@@ -30,7 +30,7 @@ export interface ReviewData {
   canReview: boolean;
   needsPicks: boolean;
   /** Same borrower (CIN or CIF), ended here and the details match: possible replacements to link. */
-  candidates: { pn: string; text: string; matched: string }[];
+  candidates: { pn: string; text: string; matched: string; differentBranch: string | null }[];
   /** No payment on the old PN: MyLoans' evidence when it has a payments field (known), else the Admin confirms. */
   payment: { known: boolean; recorded: boolean; text: string | null };
   replacedByPn: string | null;
@@ -96,6 +96,7 @@ export async function reviewFor(user: CurrentUser, loanId: string): Promise<Revi
   const cash = item.category === "MATERIAL" ? [] : await outstandingCash(prisma, loanId);
   const same = item.category === "MATERIAL" ? [] : await replacementCandidates(prisma, item.loan);
   const oldCopy = item.category === "MATERIAL" ? null : (await relatedLoans(prisma, item.loan)).find((r) => r.oldPn === item.loan.pn);
+  const branchNames = new Map((await prisma.branch.findMany({ where: { id: { in: [item.loan.branchId, ...same.map((r) => r.loan.branchId)] } }, select: { id: true, name: true } })).map((b) => [b.id, b.name]));
   const newLoan = item.loan.replacedByPn ? await prisma.loan.findUnique({ where: { pn: item.loan.replacedByPn }, select: { id: true } }) : null;
   return {
     id: item.id,
@@ -113,6 +114,7 @@ export async function reviewFor(user: CurrentUser, loanId: string): Promise<Revi
     candidates: same.map((r) => ({
       pn: r.loan.pn, matched: r.relation?.matched.join(", ") ?? "",
       text: `Possible replacement: ${r.loan.pn} · released ${fmtDateTime(r.loan.releasedAt).replace(/,? \d+:\d+.*$/, "")}`,
+      differentBranch: differentBranch(branchNames.get(item.loan.branchId), branchNames.get(r.loan.branchId), item.loan.branchId, r.loan.branchId),
     })),
     payment: paymentEvidence(oldCopy?.paymentRecorded ?? (await paymentOf(item.loanId))),
     replacedByPn: item.loan.replacedByPn,
@@ -122,6 +124,11 @@ export async function reviewFor(user: CurrentUser, loanId: string): Promise<Revi
     simulated: item.simulated,
     branchMove: item.category === "MATERIAL" ? await branchMoveFor(item.loan, changes) : null,
   };
+}
+
+/** "Different branch: Antipolo → Angono" when the old and new loans are at different branches (shown, never a block). */
+export function differentBranch(oldName: string | undefined, newName: string | undefined, oldId: string, newId: string): string | null {
+  return oldId === newId ? null : `Different branch: ${oldName ?? "?"} → ${newName ?? "?"}`;
 }
 
 /** Copy reusable papers: the options for the new loan file (Admin), or none. */
@@ -136,6 +143,8 @@ export interface RelatedRow {
   tag: "REPLACES" | "REPLACED_BY" | "POSSIBLE" | "ADDITIONAL"; tagText: string; reason: string | null;
   /** Admin: link by hand (same confirmation, plus a note). */
   canLink: boolean; payment: { known: boolean; recorded: boolean; text: string | null }; oldPn: string; newPn: string;
+  /** The old and new loans are at different branches (a line in the Link confirmation; never a block). */
+  differentBranch: string | null;
 }
 const TAG_TEXT = { REPLACES: "Replaces this loan", REPLACED_BY: "Replaced by this loan", POSSIBLE: "Possible replacement", ADDITIONAL: "Additional" } as const;
 
@@ -144,6 +153,7 @@ export async function relatedPanel(user: CurrentUser, loan: Parameters<typeof re
   const seesAmounts = can(user, PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
   const canReview = can(user, PERMISSIONS.SOURCE_REVIEW);
   const visible = all.filter((r) => inScope(user, r.loan.branchId));
+  const names = new Map((await prisma.branch.findMany({ where: { id: { in: [loan.branchId, ...visible.map((r) => r.loan.branchId)] } }, select: { id: true, name: true } })).map((b) => [b.id, b.name]));
   const status = (s: string | null) => (s ?? "No status").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
   return {
     hidden: all.length - visible.length,
@@ -153,6 +163,10 @@ export async function relatedPanel(user: CurrentUser, loan: Parameters<typeof re
       tag: r.tag, tagText: TAG_TEXT[r.tag], reason: r.relation ? r.relation.reason : null,
       canLink: canReview && (r.tag === "POSSIBLE" || r.tag === "ADDITIONAL") && !loan.replacesPn && !loan.replacedByPn && !r.loan.replacesPn && !r.loan.replacedByPn,
       payment: paymentEvidence(r.paymentRecorded), oldPn: r.oldPn, newPn: r.newPn,
+      // Old → new, whichever of the two is the old one.
+      differentBranch: r.oldPn === loan.pn
+        ? differentBranch(names.get(loan.branchId), names.get(r.loan.branchId), loan.branchId, r.loan.branchId)
+        : differentBranch(names.get(r.loan.branchId), names.get(loan.branchId), r.loan.branchId, loan.branchId),
     })),
   };
 }
