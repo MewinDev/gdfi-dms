@@ -24,7 +24,7 @@ The first place that has a value wins:
 This order is the same everywhere:
 
 - **Next.js** (`npm run dev`, `npm run build`, `npm start`) loads the files itself.
-- **Prisma CLI** (`generate`, `migrate dev`, `migrate deploy`, `studio`, `db seed`) gets them through `prisma.config.ts`, which uses `lib/env/load-files.ts` (unit-tested: the shell wins, then `.env.local`, then `.env`). When that file exists, Prisma no longer reads `.env` by itself.
+- **Prisma CLI** (`generate`, `migrate diff`, `migrate deploy`, `studio`, `db seed`) gets them through `prisma.config.ts`, which uses `lib/env/load-files.ts` (unit-tested: the shell wins, then `.env.local`, then `.env`). When that file exists, Prisma no longer reads `.env` by itself.
   - Migrations connect through `DIRECT_URL`, the app through `DATABASE_URL`. If they name different databases (for example you set only `DATABASE_URL` in the shell for a scratch database, and `DIRECT_URL` still comes from `.env.local`), Prisma commands refuse to start. To point a command at another database, set **both** in the shell.
 - **Console scripts** (`npm run db:seed`, `db:seed:reference`, `email:test`, `email:reminders`, `myloans:sync`) use `tsx --env-file-if-exists=.env --env-file-if-exists=.env.local`, where the later file wins. They also run the startup check.
 - **Vitest** (`vitest.config.mts`) uses the same order (a value set in the shell is kept, not replaced by a file's), with three exceptions:
@@ -63,8 +63,8 @@ The automated tests follow the stricter rule above (test database only, no overr
 Not guarded by this rule, and why:
 
 - `npm run db:seed` and `db:seed:reference` only add missing rows (and refresh the built-in role names); they delete nothing. Production needs `db:seed:reference`, and the seed already refuses test users when `APP_ENV=production`.
-- `npm run db:migrate` (`prisma migrate dev`) asks before resetting a database that has drifted.
-- `npm run db:deploy` applies new migrations only.
+- `npm run db:migrate` is the same as `db:deploy` (`prisma migrate dev` is not used in this project).
+- `npm run db:deploy` runs `migrate:check`, applies new migrations only, then checks again.
 - **Reset test data** is gone from Settings: starting over is the Manual Test Kit's Reset (below).
 
 ## The Manual Test Kit
@@ -92,7 +92,9 @@ The branch list runs once a day at about 02:00 PHT through the existing cron end
 
 ## Migration names
 
-Until 19 November 2026, create every migration with `npx prisma migrate dev --create-only --name <name>`, then rename the new folder to the next number after the latest one (`20261119090001`, `20261119090002`, and so on) before applying it. Never leave Prisma's automatic date name. From 20 November 2026 this rule no longer applies.
+Never use `prisma migrate dev` in this project (not even `--create-only`: twice it left a stray folder with Prisma's own date name, and `migrate deploy` then dropped the two loan-search trigram indexes). Create a migration only with `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`, save it in a folder named with the next number after the latest one (`20261119090011_<name>`, then `20261119090012_<name>`, and so on), and remove the trigram "drop index" lines (`Loan_pn_trgm_idx`, `Loan_borrowerName_trgm_idx`) from the SQL. Apply it with `npm run db:deploy`.
+
+`npm run migrate:check` (`lib/db/migration-check.ts`, unit-tested) fails when a folder does not match `<14 digits>_<lower-case name>`, the list is not strictly increasing (each new folder is the previous number plus one; a folder dated among the older ones that is not one of them is a stray), or the connected database applied them out of order, has a waiting folder that sorts before the last applied one, or is missing `Loan_pn_trgm_idx` / `Loan_borrowerName_trgm_idx`. It runs before and after `migrate deploy` in `npm run db:deploy`, `db:migrate` (now the same as `db:deploy`), `db:reset`, `db:create-test` and the kit rebuild (the folder check runs before anything is emptied).
 
 After every migration, print the folder list of `prisma/migrations/` in order and the output of `npx prisma migrate status`, and check the new one is last. `lib/db/migrations.test.ts` checks every folder name (a 14-digit timestamp and a name), that names are unique, and, when a local database is reachable, that it applied them in name order.
 

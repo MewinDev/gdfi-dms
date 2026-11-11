@@ -2,7 +2,7 @@
 
 How a released loan moves from the MyLoans lookup to the vault gate.
 
-Last updated: 8 November 2026 (PHT)
+Last updated: 10 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -12,7 +12,7 @@ flowchart TD
   S1 -->|"Fails: field named, nothing saved"| S1b["LA or MyLoans owner fixes the data, searches again"]:::la
   S1b --> S1
   S1 -->|Passes| S2["Automatic rules 1 to 4: classification, Mortgage or not, transactions created"]:::sys
-  S2 --> L1["LA checks the papers, asks for missing ones, answers the funds question"]:::la
+  S2 --> L1["LA checks the papers, marks missing ones with a reason and remarks, answers the funds question"]:::la
   L1 --> L2{"Which transaction?"}
   L2 -->|"EDST: no processor"| L3["LA records the EDST reference"]:::la
   L3 --> DONE1["EDST completed"]:::sys

@@ -116,7 +116,7 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
             <Avatar name={m.borrowerName} />
             <span className="min-w-0 flex-1 leading-snug">
               <span className="block text-base font-bold">{m.borrowerName}</span>
-              <span className="block text-sm text-ink-2"><span className="font-mono">{m.pn}</span> · {m.branch.code ? `${m.branch.name} (${m.branch.code})` : m.branch.name} · CIN {m.cin}</span>
+              <span className="block text-sm text-ink-2"><span className="font-mono">{m.pn}</span> · {m.branch.name} · CIN {m.cin}</span>
             </span>
             <span className="hidden text-sm font-semibold sm:block">{stageWords(m.stage)}</span>
             <span className="btn-ghost">Open</span>
@@ -240,7 +240,7 @@ function WhatHappensNext() {
   const steps = [
     "We set up the loan file and decide which documents are needed.",
     "You check the papers in your hands against the list.",
-    "You print the labels and send the package to a processor.",
+    "You send the package to a processor.",
   ];
   return (
     <aside aria-labelledby="whn" className="card bg-fill p-6">

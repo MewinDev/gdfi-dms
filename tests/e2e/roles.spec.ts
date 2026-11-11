@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
 import { signIn } from "./helpers";
+import { ROLE_DEFAULTS } from "../../lib/auth/permissions";
+
+/** The seed creates one built-in role per ROLE_DEFAULTS entry (prisma/seed.ts); no custom roles. */
+const SEEDED_ROLES = Object.keys(ROLE_DEFAULTS).length;
 
 const dialog = (page: Page) => page.locator("dialog#settings-modal");
 /** A tick in the role editor, by its technical name. */
@@ -19,7 +23,7 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   await signIn(page, "admin");
   await page.goto("/admin/settings");
   const card = page.getByRole("region", { name: "People and access" });
-  await expect(card.getByRole("link", { name: /^Roles and access/ })).toContainText(/9 roles · 0 custom/);
+  await expect(card.getByRole("link", { name: /^Roles and access/ })).toContainText(`${SEEDED_ROLES} roles · 0 custom`);
   await card.getByRole("link", { name: /^Roles and access/ }).click();
   await expect(page).toHaveURL(/open=roles/);
 
@@ -47,11 +51,14 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   await tickOf(page, "loans:search").uncheck();
   await expect(dialog(page).locator("[data-also-note]")).toHaveText("Also unticked: Open a loan file (it needs Find a loan).");
   await expect(tickOf(page, "loans:open")).not.toBeChecked();
-  await expect(dialog(page).getByText("1 of 5 ticked")).toBeVisible(); // Loans: only See loan files is ticked now
+  await expect(dialog(page).getByText("1 of 4 ticked")).toBeVisible(); // Loans: only See loan files is ticked now (Export loans is hidden while CSV exports are off)
   await tickOf(page, "loans:open").check();
   await expect(dialog(page).locator("[data-also-note]")).toHaveText("Also ticked: Find a loan (needed by Open a loan file).");
   await tickOf(page, "loans:open").uncheck();
   await expect(tickOf(page, "loans:search")).toBeChecked();
+  // Loan Associate can see Settings, Expense kinds ("See expense kinds", since b829f40). Untick it so this
+  // role has no Settings tick at all: then Settings is refused below.
+  await tickOf(page, "funds:kinds_view").uncheck();
 
   // Removing ticks asks first (the confirm window lists them).
   await dialog(page).getByRole("button", { name: "Save" }).click();
@@ -62,6 +69,7 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   expect(role.permissions).toContain("loans:search");
   expect(role.permissions).not.toContain("loans:open");
   expect(role.permissions).not.toContain("processing:send");
+  expect(role.permissions).not.toContain("funds:kinds_view");
   expect(await db.auditLog.count({ where: { entityId: role.id } })).toBe(2); // duplicated, then saved
 
   // Back link → list shows the custom role.
@@ -87,7 +95,7 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   // Branch access: Selected, then tick Antipolo in the tree (the search opens the nodes that match).
   await add.getByRole("radio", { name: "Selected" }).check();
   await add.getByPlaceholder("Find a branch by name or code").fill("101");
-  await add.getByLabel("Antipolo (101)").check();
+  await add.getByLabel("Antipolo", { exact: true }).check();
   await add.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 

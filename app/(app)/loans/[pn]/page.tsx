@@ -13,7 +13,7 @@ import { advisoryWarnings } from "@/lib/services/lto-advisories";
 import { availability, leaveText } from "@/lib/monitoring/rules";
 import { JOURNEY_STEP_COUNT, dayText, deadlineChip, liveAssignment, peso, plainMessage, progressStep, stageWords, timeAgo, txnName } from "@/lib/ui/plain";
 import { Banner, ToneChip } from "@/components/ui/basics";
-import { AlertIcon, PauseIcon, PrinterIcon } from "@/components/ui/icons";
+import { AlertIcon, PauseIcon } from "@/components/ui/icons";
 import { PageTop } from "@/components/loan/page-top";
 import { openedAt } from "@/lib/pn/opened-at";
 import { Stepper } from "@/components/ui/stepper";
@@ -45,6 +45,8 @@ import { holdDays, problemDays } from "@/lib/workflow/tat";
 import { sendBlockReason } from "@/lib/services/source-blocks";
 import { refreshOnOpen } from "@/lib/services/source-sync";
 import { relatedPanel, reviewFor, reusableFor, type ReviewData } from "@/lib/services/source-review";
+import { COMPLETE_WITH_EXCEPTIONS, VAULT_STAGES, missingPapersOf } from "@/lib/services/papers";
+import type { PaperTools } from "@/components/loan/paper-row";
 import { RelatedLoansCard } from "@/components/loan/related-loans";
 import { CopyReusablePapers, SourceReviewEntry } from "@/components/loan/source-review";
 
@@ -89,7 +91,6 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
   const notice = sp.notice ? NOTICES[sp.notice] : undefined;
 
   const dl = deadlineChip(ctx.tat, ctx.holidays);
-  const labelsPending = loan.documents.filter((d) => d.documentId && d.stage === "AT_BRANCH" && !d.labelPrintedAt);
   const step = progressStep(loan.stage);
   const tabs = [
     { key: "todo", label: "To do" },
@@ -117,13 +118,9 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
         title={workTxn ? "Check documents" : "Loan File"}
         subtitle={workTxn
           ? <>{txnName(workTxn.type.code, workTxn.type.name)} · {loan.borrowerName} · <span className="mono" data-pn>{loan.pn}</span></>
-          : <>{loan.borrowerName} · <span className="mono" data-pn>{loan.pn}</span> · {loan.branch.name}{loan.branch.code ? ` (${loan.branch.code})` : ""} · {peso(Number(loan.totalReleasedAmount))} · {loan.loanType}</>}
+          : <>{loan.borrowerName} · <span className="mono" data-pn>{loan.pn}</span> · {loan.branch.name} · {peso(Number(loan.totalReleasedAmount))} · {loan.loanType}</>}
         note={!workTxn && opened ? <span className={opened.differs ? "font-semibold text-navy" : undefined}>{opened.text}</span> : undefined}
-        right={workTxn
-          ? (can(user, PERMISSIONS.LABELS_PRINT) && loan.documents.some((d) => d.documentId)
-              ? <Link href={`${base}/labels`} className="btn-ghost btn-sm hidden sm:inline-flex">Print all labels</Link>
-              : null)
-          : dl && <ToneChip tone={dl.tone}>{dl.text}</ToneChip>}
+        right={workTxn ? null : dl && <ToneChip tone={dl.tone}>{dl.text}</ToneChip>}
       />
 
       {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
@@ -146,10 +143,10 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
         <>
           {review && <SourceReviewEntry review={review} />}
           {copySources.map((c) => <CopyReusablePapers key={c.pn} loanId={loan.id} oldPn={c.pn} mode={c.options[0].mode} options={c.options} />)}
-          <TodoTab loan={loan} ctx={ctx} user={user} labelsPending={labelsPending.length} step={step} related={<RelatedLoansCard loanId={loan.id} rows={related.rows} hidden={related.hidden} />} />
+          <TodoTab loan={loan} ctx={ctx} user={user} step={step} related={<RelatedLoansCard loanId={loan.id} rows={related.rows} hidden={related.hidden} />} />
         </>
       )}
-      {tab === "documents" && <DocumentsTab loan={loan} la={can(user, PERMISSIONS.LABELS_PRINT)} papers={sp.papers} />}
+      {tab === "documents" && <DocumentsTab loan={loan} papers={sp.papers} />}
       {tab === "journey" && <JourneyTab loan={loan} user={user} params={{ journey: sp.journey, show: sp.show, txn: sp.txn, flag: sp.flag, order: sp.order, log: sp.log, sys: sp.sys, na: sp.na, scope: sp.scope }} />}
     </div>
   );
@@ -162,7 +159,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
 interface NextStep {
   title: string;
   help: string;
-  primary?: { label: string; href: string; print?: boolean };
+  primary?: { label: string; href: string };
   secondary?: { label: string; href: string };
   /** Every open transaction is on hold: the usual step button is shown as a secondary (outline) button. */
   waiting?: boolean;
@@ -177,11 +174,11 @@ const isOpenTxn = (t: { status: string }) => !["COMPLETED", "CANCELLED"].include
  * transaction is on hold, the card says "Waiting for a resume" and keeps the usual step as a
  * secondary button.
  */
-function nextStep(loan: LoanDetail, labelsPending: number): NextStep {
+function nextStep(loan: LoanDetail): NextStep {
   const held = new Set(loan.transactions.filter((t) => openHold(t.holds)).map((t) => t.id));
   const open = loan.transactions.filter(isOpenTxn);
   if (open.length > 0 && open.every((t) => held.has(t.id))) {
-    const usual = stepFor(loan, labelsPending, new Set());
+    const usual = stepFor(loan, new Set());
     const btn = usual.primary ?? usual.secondary;
     return {
       title: "Waiting for a resume",
@@ -190,10 +187,10 @@ function nextStep(loan: LoanDetail, labelsPending: number): NextStep {
       waiting: true,
     };
   }
-  return stepFor(loan, labelsPending, held);
+  return stepFor(loan, held);
 }
 
-function stepFor(loan: LoanDetail, labelsPending: number, held: ReadonlySet<string>): NextStep {
+function stepFor(loan: LoanDetail, held: ReadonlySet<string>): NextStep {
   const base = `/loans/${loan.pn}`;
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED" && !held.has(t.id));
   const name = (t: Txn) => txnName(t.type.code, t.type.name);
@@ -205,14 +202,6 @@ function stepFor(loan: LoanDetail, labelsPending: number, held: ReadonlySet<stri
       help: ticked ? "Keep going. Tick each paper you are holding; we save as you tick." : "Tick each paper you are holding. We save as you tick.",
       primary: { label: ticked ? "Continue checking" : "Start checking", href: `${base}?tab=todo&tx=${forChecklist.type.code}` },
       txnId: forChecklist.id,
-    };
-  }
-  if (labelsPending > 0 && ["For checklist", "No DP assignment required", "Opened"].includes(loan.stage)) {
-    return {
-      title: `Print and attach the ${labelsPending} label${labelsPending === 1 ? "" : "s"}`,
-      help: "Every paper in the package gets its own label. Stick each label on its paper so it can be scanned wherever it goes.",
-      primary: { label: `Print ${labelsPending} label${labelsPending === 1 ? "" : "s"}`, href: `${base}/labels?ids=${loan.documents.filter((d) => d.documentId && d.stage === "AT_BRANCH" && !d.labelPrintedAt).map((d) => d.id).join(",")}`, print: true },
-      secondary: { label: "Review documents first", href: `${base}?tab=documents` },
     };
   }
   const returned = live.find((t) => t.status === "RETURNED");
@@ -241,9 +230,9 @@ function stepFor(loan: LoanDetail, labelsPending: number, held: ReadonlySet<stri
   return { title: "Nothing for you right now", help: `This loan is ${stageWords(loan.stage).toLowerCase()}.` };
 }
 
-async function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; labelsPending: number; step: number; related: React.ReactNode }) {
+async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; step: number; related: React.ReactNode }) {
   const la = can(user, PERMISSIONS.CHECKLIST_TICK);
-  const ns = nextStep(loan, labelsPending);
+  const ns = nextStep(loan);
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
   const opens = openItemsFor(loan, ctx.holidays);
   const problems = loan.exceptions.filter((e) => e.status === "OPEN");
@@ -255,8 +244,10 @@ async function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan
   }).map(async (x) => ({ ...x, transfer: await transferFor(user, loan, x.h.id) })));
   const missingTxns = live
     .filter((t) => ["FOR_CHECKLIST", "READY", "RETURNED"].includes(t.status) && t.checks.some((c) => !c.checked))
-    .filter((t) => !loan.exceptions.some((e) => e.transactionId === t.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN"))
-    .map((t) => ({ id: t.id, name: txnName(t.type.code, t.type.name), href: `${base}?tab=todo&tx=${t.type.code}&ask=missing` }));
+    .map((t) => ({ id: t.id, name: txnName(t.type.code, t.type.name), href: `${base}?tab=todo&tx=${t.type.code}` }));
+  // Missing papers (derived from the paper rows): one short row, only when there is at least one.
+  const missingPapers = missingPapersOf(live).filter((m) => m.state === "MISSING");
+  const today = businessDate(now);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_352px] xl:items-start">
@@ -282,6 +273,27 @@ async function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan
                   {la && e.type !== "LEGAL_DOCS_COMPLETION" && <div className="shrink-0 [&_button]:min-h-11 sm:[&_button]:min-h-9"><FixProblem exceptionId={e.id} /></div>}
                 </li>
               ))}
+            </ul>
+          </section>
+        )}
+
+        {missingPapers.length > 0 && (
+          <section aria-labelledby="missing-h" className="rounded-xl border border-act-line bg-act-bg px-3 py-2 sm:px-3.5" data-missing-papers>
+            <h2 id="missing-h" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-act-fg">
+              Missing papers ({missingPapers.length})
+              {VAULT_STAGES.includes(loan.stage) && <span className="chip c-act h-6 px-2 text-xs" data-complete-with-exceptions>{COMPLETE_WITH_EXCEPTIONS}</span>}
+            </h2>
+            <ul className="mt-1 flex flex-col gap-0.5 text-[13px] text-ink">
+              {missingPapers.map((m) => {
+                const t = live.find((x) => x.id === m.transactionId)!;
+                const days = m.at ? Math.max(0, daysBetween(businessDate(m.at), today)) : 0;
+                return (
+                  <li key={m.checkId} className="flex flex-wrap gap-x-1.5">
+                    <Link href={`${base}?tab=todo&tx=${t.type.code}`} className="font-semibold text-navy">{m.label}</Link>
+                    <span className="text-ink-2">· {txnName(t.type.code, t.type.name)} · {m.reason ?? "No reason yet"} · {days === 0 ? "since today" : `${days} day${days === 1 ? "" : "s"}`}</span>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
@@ -313,7 +325,7 @@ async function TodoTab({ loan, ctx, user, labelsPending, step, related }: { loan
             <div className="flex shrink-0 flex-col gap-1 sm:items-end">
               {ns.primary && (
                 <Link href={ns.primary.href} className="btn-gold min-h-11 w-full px-4 text-sm sm:min-h-9 sm:w-auto">
-                  {ns.primary.print && <PrinterIcon size={18} />} {ns.primary.label}
+                  {ns.primary.label}
                 </Link>
               )}
               {ns.secondary && <Link href={ns.secondary.href} className={ns.waiting ? "btn-ghost btn-sm sm:min-h-9" : "link inline-flex min-h-11 items-center text-sm sm:min-h-8"}>{ns.secondary.label}</Link>}
@@ -440,7 +452,6 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
     openJobCounts(),
     advisoryWarnings(),
   ]);
-  const labelDocs = loan.documents.filter((d) => d.transactionId === t.id && d.documentId);
   const lastLto = loan.transactions.flatMap((x) => x.dpAssignments).filter((a) => a.ltoOfficeId).sort((a, b) => b.endorsedAt.getTime() - a.endorsedAt.getTime())[0]?.ltoOfficeId ?? null;
   // Sent back (declined or returned): a new round. The processor is chosen again: nothing pre-selected.
   const previous = undefined as { dpBranchId: string; dpUserId: string } | undefined;
@@ -469,8 +480,6 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
     fundsKinds: t.fundsKinds,
     suggestedKinds: [...new Set(t.type.caRules.map((r) => r.kind))],
     kindChoices: await flagKindChoices(t.fundsKinds),
-    labelsHref: labelDocs.length ? `/loans/${loan.pn}/labels?ids=${labelDocs.map((d) => d.id).join(",")}` : null,
-    labelsPrinted: labelDocs.length > 0 && labelDocs.every((d) => d.labelPrintedAt),
     next: nextAfter(loan, t),
     sourceBlock: await sendBlockReason(prisma, loan.id, t.type.code),
     // Returned with papers handed over: the LA confirms them back first.
@@ -499,7 +508,7 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
   const checklist = checklistStatusOf(selected.checks);
   // The ordered next steps (lib/workflow/next-steps.ts): the card, the status word, the checklist markers
   // and the Open items filter all come from here. The latest Return to LA and the papers it named too.
-  const facts = nextStepsInputOf(selected, loan, sb?.kind ?? null, { done: checklist.requiredDone, total: checklist.requiredTotal });
+  const facts = nextStepsInputOf(selected, loan, sb?.kind ?? null, { done: checklist.expectedDone, total: checklist.expectedTotal });
   const steps = getNextSteps(facts.input);
   const lastReturn = facts.lastReturn;
   const named = selected.checks.filter((c) => facts.namedIds.includes(c.id));
@@ -520,9 +529,14 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
   const locked = hold ? lockedMessage(hold.raisedByLabel, hold.raisedAt, hold.ownerLabel) : null;
   // The round chip: the LA, and whoever may change an automatic result (a supervisor).
   const round = la || can(user, PERMISSIONS.RULES_OVERRIDE) ? roundChip(selected.dpAssignments) : null;
-  // The missing-paper pop-up may also put it on hold (waiting on borrower) for the person who does the work.
-  const canHold = ownsTxn(user, loan, selected) && can(user, PERMISSIONS.HOLDS_RAISE) && !openHold(selected.holds);
-  const openMissing = loan.exceptions.some((e) => e.transactionId === selected.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN");
+  // Missing papers: the reasons (Settings), who may mark them and who may receive them (permissions, branch).
+  const papers: PaperTools = {
+    reasons: await prisma.missingPaperReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
+    canMark: can(user, PERMISSIONS.PAPERS_MARK_MISSING) && inScope(user, loan.branchId),
+    canReceive: can(user, PERMISSIONS.PAPERS_RECEIVE_LATE) && inScope(user, loan.branchId),
+    sentBefore: selected.dpAssignments.length > 0,
+    today: businessDate(new Date()),
+  };
   const problems = selected.problems.filter((x) => !x.resolvedAt);
   // A custom transaction done by the LA (no processor) is finished with "Mark as done".
   const laCustom = can(user, PERMISSIONS.TXN_COMPLETE) && !selected.type.builtIn && !selected.type.requiresDp && ["FOR_CHECKLIST", "READY", "RETURNED"].includes(selected.status);
@@ -550,6 +564,13 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       requested: requested.has(c.id),
       requestedInfo: requested.has(c.id) ? requestedInfo : undefined,
       returned: returnedIds.has(c.id) ? returnedTag : undefined,
+      missing: c.missingState,
+      reasonId: c.missingReasonId,
+      reasonName: c.missingReason?.name ?? null,
+      remarks: c.missingRemarks,
+      missingInfo: c.missingByLabel && c.missingAt ? `${c.missingByLabel} · ${fmtDateTime(c.missingAt)}` : null,
+      receivedText: c.receivedLateOn ? `Received ${dayText(c.receivedLateOn)}${c.receivedLateBy ? ` · ${c.receivedLateBy}` : ""}` : null,
+      included: c.includedInFile,
     }));
 
   // Where the last step's button goes: the Send panel (or EDST) in the work card, or Mark as done.
@@ -583,7 +604,7 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
       note: facts.note, findings: sb.findings, forSender, senderName: sb.senderName,
     } : undefined,
     missing: otherMissing ? { papers: missingItem!.papers.length ? missingItem!.papers : [missingItem!.reason], lineIds: missingItem!.lineIds, who: askedText(missingItem!) } : undefined,
-    tick: { done: checklist.requiredDone, total: checklist.requiredTotal, lineIds: checklist.missing.flatMap((m) => m.lineIds) },
+    tick: { done: checklist.expectedDone, total: checklist.expectedTotal, lineIds: [...checklist.missing, ...checklist.needsRemarks].flatMap((m) => m.lineIds) },
     finish: finishTarget ? { targetId: finishTarget, edst: selected.type.code === "EDST", markDone: laCustom } : undefined,
   };
 
@@ -637,8 +658,7 @@ async function WorkView({ loan, ctx, user, selected, review }: { loan: LoanDetai
         lines={lines}
         editable={la && (["FOR_CHECKLIST", "READY", "RETURNED"].includes(selected.status) || (selected.status === "ASSIGNED" && a?.status === "PENDING_ACCEPTANCE" && can(user, PERMISSIONS.DP_SEND)))}
         canAct={la}
-        openMissingRequest={openMissing}
-        canHold={canHold}
+        papers={papers}
         round={round}
         assignmentText={jobCard ? null : assignmentText}
         edstReference={selected.edstReference}
@@ -683,8 +703,8 @@ async function LaHoldStrip({ txn, user }: { txn: Txn; user: CurrentUser }) {
 // Documents
 // ===========================================================================
 
-function DocumentsTab({ loan, la, papers }: { loan: LoanDetail; la: boolean; papers?: string }) {
-  const labelled = loan.documents.filter((d) => d.documentId);
+function DocumentsTab({ loan, papers }: { loan: LoanDetail; papers?: string }) {
+  const withId = loan.documents.filter((d) => d.documentId);
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
   const base = `/loans/${loan.pn}`;
   const filter = papersFilterOf(papers);
@@ -693,27 +713,19 @@ function DocumentsTab({ loan, la, papers }: { loan: LoanDetail; la: boolean; pap
     const all = loan.documents.filter((d) => d.transactionId === t.id);
     const shown = filterPapers(all, filter);
     if (!all.length || !shown.length) return [];
-    const ids = all.filter((d) => d.documentId).map((d) => d.id);
     return [{
       id: t.id, code: t.type.code, name: txnName(t.type.code, t.type.name), count: countText(all),
-      print: la && ids.length ? { href: `${base}/labels?ids=${ids.join(",")}`, n: ids.length } : null,
       openOnPhone: all.some((d) => d.stage === "AT_BRANCH"),
       rows: shown.map((d) => ({
         id: d.id, label: d.label, original: d.originality === "ORIGINAL",
         code: d.documentId, short: d.documentId ? shortCode(d.documentId, loan.pn) : null,
         where: whereOf(d), custody: custodyLine(d),
-        printHref: d.documentId && la ? `${base}/labels?ids=${d.id}` : null,
       })),
     }];
   });
   return (
     <div className="@container flex min-w-0 flex-col gap-3" data-documents-tab data-papers={filter}>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-ink-2">{labelled.length} of {loan.documents.length} papers are in your hands and have a label code.</p>
-        {la && labelled.length > 0 && (
-          <Link href={`${base}/labels`} className="btn-gold w-full sm:w-auto" data-print-all><PrinterIcon size={20} /> Print all labels</Link>
-        )}
-      </div>
+      <p className="text-sm text-ink-2">{withId.length} of {loan.documents.length} papers have a Document ID.</p>
       <div role="group" aria-label="Show papers" className="inline-flex self-start overflow-hidden rounded-lg border border-line-strong" data-papers-filter>
         {PAPERS_FILTERS.map((f) => (
           <Link key={f.key} href={`${base}?tab=documents${f.key === "all" ? "" : `&papers=${f.key}`}`} scroll={false} aria-current={filter === f.key ? "true" : undefined}
@@ -753,7 +765,7 @@ function statusOf(loan: LoanDetail, t: Txn, ctx: Ctx, opens: OpenItem[]): TxnSta
   const h = openHold(t.holds);
   return txnStatus({
     code: t.type.code, requiresDp: t.type.requiresDp, status: t.status,
-    requiredDone: c.requiredDone, requiredTotal: c.requiredTotal, tickedAny: t.checks.some((x) => x.checked),
+    requiredDone: c.expectedDone, requiredTotal: c.expectedTotal, tickedAny: t.checks.some((x) => x.checked || !!x.missingState),
     edstReference: t.edstReference,
     returnedForPapers: t.status === "RETURNED" && !!back?.returnReasonId ? (back.returnReason?.name ?? "Papers needed") : null,
     sentBack: sentBack(t.status, t.dpAssignments)?.kind ?? null,
@@ -784,6 +796,11 @@ function openItemsFor(loan: LoanDetail, holidays: ReadonlySet<string>): OpenItem
       stillMissing: checklistStatusOf(t.checks).missing,
     };
   }), holidays);
+}
+
+/** Calendar days from one YYYY-MM-DD to another (Philippine dates). */
+function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 }
 
 /** "Asked by Ana Cruz · Nov 10, 2026, 9:05 AM PHT · from Borrower": the date and time, so the turnaround time can be read exactly. */

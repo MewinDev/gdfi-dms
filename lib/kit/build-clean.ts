@@ -42,7 +42,7 @@ export function poolRecords(today: string, holidays: ReadonlySet<string>): MyLoa
 
 /**
  * Builds the CLEAN kit on an empty, migrated and seeded database: the real branch list, the sign-in
- * accounts (with the kit's own roles and the two approver bands), the 40 PNs in the sample MyLoans and
+ * accounts (with the kit's own roles and the two approver bands), the 44 PNs in the sample MyLoans and
  * nothing else. No loan file, transaction, funds, hold, job, notification, email, review item or Journey
  * entry; the audit log is cleared down to one "kit started" line.
  */

@@ -8,7 +8,7 @@ import { businessDate, fmtDate, isBusinessDay } from "@/lib/time";
 import { getHolidaySet } from "@/lib/settings";
 import { peso } from "@/lib/funds/rules";
 import {
-  dpByDay, dpDrill, dpMonitor, filterOptions, measured, ltoByDay, ltoDrill, ltoMonitor, monitorHref, parseMonitorQuery,
+  dpByDay, dpDrill, dpMonitor, filterOptions, measured, missingPapersCount, missingPapersMonitor, ltoByDay, ltoDrill, ltoMonitor, monitorHref, parseMonitorQuery,
   type Avg, type ByDay, type DpGroup, type DpMonitor, type DpRow, type DrillJob, type LtoDrillJob, type LtoGroup, type LtoMonitor, type LtoRow, type MonitorQuery, type MonitorSearch,
 } from "@/lib/services/monitoring";
 import {
@@ -16,7 +16,7 @@ import {
 } from "@/lib/monitoring/rules";
 import type { AdvisoryView } from "@/lib/services/lto-advisories";
 import { ToneChip } from "@/components/ui/basics";
-import { ChevronDownIcon, ChevronRightIcon, DownloadIcon, WarningIcon } from "@/components/ui/icons";
+import { ChevronDownIcon, ChevronRightIcon, WarningIcon } from "@/components/ui/icons";
 import { FilterBar } from "@/components/monitoring/filter-bar";
 import { MonitoringSkeleton } from "@/components/monitoring/skeleton";
 import { RouteSheet } from "@/components/monitoring/route-sheet";
@@ -43,15 +43,13 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
   const q = parseMonitorQuery(sp, user, today);
   // The checks above run before anything is sent (a refused tab is a real 404); the numbers then stream in
   // behind a skeleton (keyed by the query, so a new range or filter shows the skeleton again).
-  const [opts, holidays] = await Promise.all([filterOptions(user), getHolidaySet()]);
-  const csv = `/api/monitoring/csv${monitorHref(q, { open: null, hide: null }).replace("/monitoring", "")}`;
+  const [opts, holidays, missingCount] = await Promise.all([filterOptions(user), getHolidaySet(), missingPapersCount(user, q)]);
   const day = q.view === "day";
   // The date range keeps every other filter (and drops an open drill-down).
   const keep = Object.fromEntries(new URLSearchParams(monitorHref(q, { range: null, from: null, to: null, open: null, ...(day ? {} : { dp: null, office: null }) }).split("?")[1] ?? ""));
   const changed = !!(q.areaId || q.branchId || q.typeCode || (day && (q.dpId || q.officeId)) || q.range.preset !== DEFAULT_PRESET);
   const resetHref = changed ? `/monitoring?tab=${q.tab}${day ? "&view=day" : ""}` : null;
   const recent = ymdAdd(today, -800);
-  const csvLink = (cls: string) => <Link href={csv} prefetch={false} className={cls} data-csv><DownloadIcon size={18} /> Download CSV</Link>;
 
   return (
     <div className="dense flex w-full flex-col gap-4" data-monitoring={q.tab}>
@@ -62,7 +60,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
             Philippine time · business days · {HOLD_NOTE.toLowerCase()} · <a href="#how-counted" className="text-ink-2 no-underline hover:text-navy hover:underline">How is this counted?</a>
           </p>
         </div>
-        {csvLink("btn-ghost btn-sm hidden self-center sm:inline-flex")}
       </header>
       <div className="flex flex-wrap items-center gap-2">
         <nav aria-label="Monitoring" className="seg seg-navy">
@@ -73,6 +70,12 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
           <Link href={monitorHref(q, { view: null, open: null })} className="seg-item" aria-current={q.view === "totals" ? "page" : undefined}>Totals</Link>
           <Link href={monitorHref(q, { view: "day", open: null })} className="seg-item" aria-current={day ? "page" : undefined}>By day</Link>
         </div>
+        {/* A filter (as of now): the loan files with a paper marked Missing. No alerts and no emails. */}
+        <Link href={monitorHref(q, { missing: q.missing ? null : "1", open: null })} aria-pressed={q.missing}
+          className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-semibold no-underline sm:min-h-9 ${q.missing ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-navy hover:bg-fill"}`} data-missing-filter>
+          Has missing papers
+          <span className={`tabular-nums text-xs ${q.missing ? "text-white/80" : missingCount ? "text-act-fg" : "text-ink-2"}`} data-missing-count>{missingCount}</span>
+        </Link>
       </div>
       <FilterBar
         tab={q.tab} view={q.view} preset={q.range.preset} from={q.range.from} to={q.range.to} today={today} area={q.areaId ?? ""} branch={q.branchId ?? ""} type={q.typeCode ?? ""}
@@ -80,7 +83,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
         areas={opts.areas} branches={opts.branches} types={opts.types}
         who={day ? (q.tab === "dp" ? { name: "dp", label: "Processor", value: q.dpId ?? "", options: opts.dps } : { name: "office", label: "LTO office", value: q.officeId ?? "", options: opts.offices }) : null}
       />
-      {csvLink("btn-ghost btn-sm w-full sm:hidden")}
       {q.range.error && <p role="alert" className="rounded-xl border border-bad-line bg-bad-bg px-4 py-2 text-[15px] text-bad-fg">{q.range.error} Showing {q.range.label} instead.</p>}
       <Suspense key={monitorHref(q)} fallback={<MonitoringSkeleton />}>
         <Body user={user} q={q} now={now} holidays={holidays} offices={opts.offices.filter((x) => x.active)} />
@@ -92,12 +94,49 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
 
 /** The tiles and tables of the tab, with the page time (the data work of the page) under them. */
 async function Body({ user, q, now, holidays, offices }: { user: CurrentUser; q: MonitorQuery; now: Date; holidays: ReadonlySet<string>; offices: { id: string; name: string }[] }) {
-  const { value, ms } = await measured(() => (q.tab === "dp" ? DpTab({ user, q, now, holidays }) : LtoTab({ user, q, now, holidays, offices })));
+  const { value, ms } = await measured(() => (q.missing ? MissingTab({ user, q, now }) : q.tab === "dp" ? DpTab({ user, q, now, holidays }) : LtoTab({ user, q, now, holidays, offices })));
   return (
     <>
       {value}
       <p className="order-last text-[12px] text-ink-2" data-page-time data-ms={ms}>Page built in {ms} ms.</p>
     </>
+  );
+}
+
+/**
+ * "Has missing papers": each loan file with a paper marked Missing, which papers and how many days
+ * (as of now; the date range does not apply). Area, Branch and Transaction filters apply.
+ */
+async function MissingTab({ user, q, now }: { user: CurrentUser; q: MonitorQuery; now: Date }) {
+  const rows = await missingPapersMonitor(user, q, now);
+  const papers = rows.reduce((n, r) => n + r.papers.length, 0);
+  return (
+    <section aria-labelledby="missing-list-h" className="card flex flex-col gap-2 p-3 sm:p-4" data-missing-list>
+      <h2 id="missing-list-h" className="flex flex-wrap items-baseline gap-x-2 text-[17px] font-bold text-navy">
+        Loan files with missing papers <span className="text-[13px] font-normal text-ink-2">{rows.length} file{rows.length === 1 ? "" : "s"} · {papers} paper{papers === 1 ? "" : "s"} · as of now</span>
+      </h2>
+      {rows.length === 0 ? <p className="text-sm text-ink-2" data-missing-empty>No paper is marked Missing.</p> : (
+        <ul className="flex flex-col divide-y divide-line">
+          {rows.map((r) => (
+            <li key={r.loanId} className="flex flex-col gap-1 py-2" data-missing-loan={r.pn}>
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                {r.href ? <Link href={r.href} className="mono font-semibold text-navy">{r.pn}</Link> : <span className="mono font-semibold">{r.pn}</span>}
+                <span className="text-[13px] text-ink-2">{r.borrower} · {r.branch} · {r.stage}</span>
+              </p>
+              <ul className="flex flex-col gap-0.5 text-[13px]">
+                {r.papers.map((p, i) => (
+                  <li key={`${p.label}-${i}`} className="flex flex-wrap gap-x-1.5">
+                    <span className="font-semibold text-ink">{p.label}</span>
+                    <span className="text-ink-2">· {p.txnName} · {p.reason ?? "No reason yet"} ·</span>
+                    <span className={p.days > 0 ? "font-semibold text-act-fg" : "text-ink-2"} data-days={p.days}>{p.days === 0 ? "since today" : `${p.days} day${p.days === 1 ? "" : "s"} missing`}</span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

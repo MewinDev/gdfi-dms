@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, visibleSearchBox } from "./helpers";
+import { signIn, visibleSearchBox, watchConsole } from "./helpers";
 
 /**
  * The real PN format, branch codes and areas from MyLoans, the Branch review and branch access.
@@ -50,27 +50,32 @@ test("Find loan: a wrong PN says which part is wrong and never asks MyLoans; a p
   await expect(page.locator("[data-pn-error]")).toHaveCount(0);
 });
 
-test("Loan File: Opened at Antipolo (101), now at Angono (165) after a MyLoans branch change", async ({ page }) => {
+test("Loan File: Opened at Antipolo, now at Angono after a MyLoans branch change (names, no codes)", async ({ page }) => {
+  const clean = watchConsole(page);
   await signIn(page, "la");
   await page.goto("/search?q=GD1012026901001");
   await page.getByRole("button", { name: /Open loan file/ }).click();
   await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
-  await expect(page.locator("[data-opened-at]")).toHaveText("Opened at Antipolo (101)");
+  await expect(page.locator("[data-opened-at]")).toHaveText("Opened at Antipolo");
   // MyLoans now says Angono (165); Admin applies it in the MyLoans review.
   const over = { "GD1012026901001": { branchName: "Angono", branchCode: "165", changedAt: new Date().toISOString() } };
   await db.setting.upsert({ where: { key: "myloans.mockOverrides" }, create: { key: "myloans.mockOverrides", value: over }, update: { value: over } });
   await page.context().clearCookies();
   await signIn(page, "admin");
-  await db.loan.update({ where: { pn: "GD1012026901001" }, data: { retrievedAt: new Date(0), lastCheckedAt: new Date(0) } });
   await page.goto("/loans/GD1012026901001");
+  // Refresh from MyLoans asks MyLoans afresh. A refresh on open may reuse the answer the server kept for
+  // up to a minute (lib/myloans/client.ts), and an earlier spec in the same server may have just asked
+  // for this PN, before the branch change was set.
+  await page.getByRole("button", { name: "Refresh from MyLoans" }).click();
   await page.locator("[data-source-entry]").getByRole("button", { name: "Review" }).click();
   const sheet = page.locator('[data-source-review="MATERIAL"]');
-  await expect(sheet.locator("[data-branch-move]")).toContainText("Branch: Antipolo (101) → Angono (165)");
+  await expect(sheet.locator("[data-branch-move]")).toContainText("Branch: Antipolo → Angono");
   await shot(page, "branch-change-review");
   await sheet.getByLabel("Note (required)").fill("MyLoans moved the account to Angono.");
   await sheet.getByRole("button", { name: "Apply changes" }).click();
-  await expect(page.locator("[data-opened-at]")).toHaveText("Opened at Antipolo (101), now at Angono (165)");
+  await expect(page.locator("[data-opened-at]")).toHaveText("Opened at Antipolo, now at Angono");
   await shot(page, "loan-opened-at-now-at");
+  clean();
 });
 
 // ---------------------------------------------------------------------------------------------------

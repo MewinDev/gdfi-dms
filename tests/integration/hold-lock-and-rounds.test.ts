@@ -8,7 +8,8 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { ADMIN_PERMISSIONS, PERMISSIONS, ROLE_DEFAULTS } from "@/lib/auth/permissions";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { assignToDp, confirmPapersBack, laSetFundsFlag, recordEdst, requestMissingDocuments, saveChecklist } from "@/lib/services/workflow";
+import { assignToDp, confirmPapersBack, laSetFundsFlag, recordEdst, saveChecklist } from "@/lib/services/workflow";
+import { markPaperMissing } from "@/lib/services/papers";
 import { acceptJob, declineJob } from "@/lib/services/jobs";
 import { addProcessorNote, changeProcessor, pullBack } from "@/lib/services/sent-changes";
 import { laChangeLtoOffice } from "@/lib/services/lto";
@@ -90,7 +91,7 @@ describe("Part 1. Hold owner and full lock (per transaction)", () => {
     const loan = await open();
     await expect(saveChecklist(la, { transactionId: notary.id, checkedIds: [], newOthers: [] })).rejects.toThrow(locked); // untick
     await expect(saveChecklist(la, { transactionId: notary.id, checkedIds: notary.checks.filter((c) => c.checked).map((c) => c.id), newOthers: ["Barangay clearance"] })).rejects.toThrow(locked); // add a paper
-    await expect(requestMissingDocuments(la, { transactionId: notary.id, checkIds: [notary.checks[0].id], note: "Need it", askedFrom: "BORROWER" })).rejects.toThrow(locked);
+    await expect(markPaperMissing(la, { checkId: notary.checks[0].id })).rejects.toThrow(locked);
     await expect(laSetFundsFlag(la, { transactionId: notary.id, needed: true, kinds: ["NOTARY_FEE"] })).rejects.toThrow(locked);
     await expect(assignToDp(la, {
       transactionId: notary.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: (await prisma.ltoOffice.findFirstOrThrow({ where: { active: true } })).id,
@@ -121,13 +122,13 @@ describe("Part 1. Hold owner and full lock (per transaction)", () => {
       () => changeProcessor(la, txn.id, { dpUserId: dp.id, reason: "Change it" }),
       () => addProcessorNote(la, txn.id, { note: "Please call me first" }),
       () => laChangeLtoOffice(la, txn.id, { ltoOfficeId: office.id, note: "Closer office" }),
-      () => acceptJob(dp, job.id, true),
+      () => acceptJob(dp, job.id),
       () => declineJob(dp, job.id, { reasons: ["No capacity"], remarks: "Full this week" }),
     ]) await expect(step()).rejects.toThrow(locked);
     // "Add details" and Resume stay for the holder only.
     await expect(addHoldDetails(la, id, "Adding something")).rejects.toThrow();
     await resumeHold(dp, id, "A processor is free now");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("ACCEPTED");
   });
 });
@@ -215,7 +216,7 @@ describe("Part 4. Decline and Return to LA go back to the specific Loan Associat
 
   it("return to LA: findings required (5 to 500); back to the sender only; send again; the Journey has both rounds", async () => {
     const { txn, job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const reason = (await prisma.returnReason.findUniqueOrThrow({ where: { code: "MISSING" } })).id;
     const check = (await txnOf("NOTARY")).checks.find((c) => c.required)!;
     await expect(returnToLa(dp, job.id, { reasonId: reason, checkIds: [check.id], note: "abcd" })).rejects.toThrow("Write 5 to 500 characters.");
@@ -243,7 +244,7 @@ describe("Part 4. Decline and Return to LA go back to the specific Loan Associat
 
   it("a held transaction cannot be declined or returned: the lock comes first", async () => {
     const { txn, job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const id = await raiseHold(dp, { transactionId: txn.id, reasonId: (await reasonOf("FUNDS")).id, note: "Waiting for the LTO fee" });
     const reason = (await prisma.returnReason.findUniqueOrThrow({ where: { code: "OTHER" } })).id;
     await expect(returnToLa(dp, job.id, { reasonId: reason, note: "Needs the PPSR first" })).rejects.toThrow(await lockOf(id, "Test Document Processor"));

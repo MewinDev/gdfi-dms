@@ -224,7 +224,7 @@ describe("2. Inactive sending LA: every active LA of the branch sees it (in-app,
 describe("3. Return to LA: papers handed over and confirmed back", () => {
   it("send again waits for the LA to confirm; Not received raises a Problem naming the paper", async () => {
     const { txn, job } = await send("NOTARY");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const withDp = await prisma.documentItem.findMany({ where: { transactionId: txn.id, stage: "WITH_DP" } });
     expect(withDp.length).toBeGreaterThan(1);
     const reason = (await prisma.returnReason.findUniqueOrThrow({ where: { code: "OTHER" } })).id;
@@ -252,7 +252,7 @@ describe("3. Return to LA: papers handed over and confirmed back", () => {
 describe("4. Finance actions on a held transaction", () => {
   it("blocks request, approve, release, top-up and carry-over; allows receipts, returns, confirm, close and exceptions", async () => {
     const { txn, job } = await send("MORTGAGE", la, "YES", ["LTO_FEE"]);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const hold = async () => raiseHold(dp, { transactionId: txn.id, reasonId: await reasonId("FUNDS"), note: "Waiting for the LTO fee schedule" });
     const locked = async (holdId: string) => `Locked: on hold by Test Document Processor since ${fmtDateTime((await prisma.hold.findUniqueOrThrow({ where: { id: holdId } })).raisedAt)}.`;
     const line = [{ transactionId: txn.id, kind: "LTO_FEE", cents: 150000, overMaxReason: "Integration test" }];

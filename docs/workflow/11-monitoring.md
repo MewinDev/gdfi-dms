@@ -2,7 +2,7 @@
 
 How the Monitoring page counts processors (DPs) and LTO offices, and how LTO advisories work.
 
-Last updated: 9 November 2026 (PHT)
+Last updated: 11 November 2026 (PHT)
 
 The page is **Monitoring** in the sidebar, for people with `monitor:dp` (tab **DPs**) or `monitor:lto` (tab **LTO offices**). A monitor sees counts, times and PN lists only: a PN opens the loan file only for someone who may see loan files in that branch, and amounts show only with `journey:view_amounts`. The person's branch access applies; the Operations Monitor role sees all branches.
 
@@ -11,8 +11,9 @@ The page is **Monitoring** in the sidebar, for people with `monitor:dp` (tab **D
 The page is calm on purpose: the numbers are the same as before, only the layout changed (9 November 2026, design pass).
 
 - **The top.** The title says the dates in words ("Monitoring: 11 Oct to 9 Nov 2026"); the grey line under it says Philippine time, business days and that times include time on hold. Two pairs of tabs (DPs or LTO offices; Totals or By day) use the same navy pill.
-- **The date range.** One button with the range in words opens the presets (Today, Yesterday, This week, Last 7 days, Last 30 days, This month, Last month, Custom) and a two-month calendar (one month on a phone). Two clicked days make a Custom range; the picker says how many days and business days. Future days cannot be picked. Over 92 days, By day shows one row per week, and the picker says so. Apply keeps the range in the address (`range`, or `range=custom&from=…&to=…`), so the title, Download CSV and By day follow it and a shared link shows the same days. Esc or Cancel closes it.
-- **Filters.** Area, Branch and Transaction sit in one row with the gold Apply; **Reset** appears only when something is not at its default. On a phone they fold into a **Filters** button (with a count) that opens a bottom sheet; the date button stays next to it, and Download CSV moves under them.
+- **The date range.** One button with the range in words opens the presets (Today, Yesterday, This week, Last 7 days, Last 30 days, This month, Last month, Custom) and a two-month calendar (one month on a phone). Two clicked days make a Custom range; the picker says how many days and business days. Future days cannot be picked. Over 92 days, By day shows one row per week, and the picker says so. Apply keeps the range in the address (`range`, or `range=custom&from=…&to=…`), so the title and By day follow it and a shared link shows the same days. Esc or Cancel closes it.
+- **Has missing papers.** The button beside the tabs shows how many loan files have a paper marked Missing (as of now, in the person's branches and the Area, Branch and Transaction filters; the dates do not apply). Pressed (`missing=1` in the address), the page lists those loan files, each paper with its transaction, reason and how many days it has been missing (calendar days, Philippine time), longest first. A PN opens the loan file for someone who may see it. There are no alerts and no emails for missing papers.
+- **Filters.** Area, Branch and Transaction sit in one row with the gold Apply; **Reset** appears only when something is not at its default. On a phone they fold into a **Filters** button (with a count) that opens a bottom sheet; the date button stays next to it.
 - **Tiles.** Big navy number, small label, one grey line; "As of now" marks today's counts. **Overdue** turns soft red and **On hold** soft amber only above 0. On a phone Overdue and Average availability come first.
 - **The tables.** Each Area is a light navy band with its processor count and a chevron to fold it; branches are plain grey lines under it. Zero is a light grey 0; Overdue above 0 is red, On hold above 0 amber. An average shows "-" alone when no job finished. Availability is a small usage bar (jobs in use out of capacity; green Available, amber Busy, red Full, grey On leave) with "60%" and "2 of 5 in use". A branch subtotal shows only when the branch has more than one processor; the Area subtotal always shows. Click a name to open the processor's (or office's) jobs.
 - **Widths.** 1024 px and wider: every column. 640 to 1023 px: Processor, Assigned, In process, On hold, Overdue, Availability and Status; **Details** under the name opens Declined, Returned and the three averages. Phones: one card per processor (or office, or day) with the four main numbers, the usage bar and **More**. The page never scrolls sideways.
@@ -34,8 +35,8 @@ Screenshots (1440, 820 and 390 px) are in `docs/screenshots/monitoring-design/`:
 - **Philippine time** for every date and time.
 - **Dates filter**: Today, Yesterday, Last 7 days, Last 30 days (the default), This month, Last month, or Custom (From and To, both days included, no future dates, To not before From). The chosen dates are in the heading ("9 Nov to 9 Nov 2026"). Finished jobs, averages, declines, returns, transactions at an office and advisories resolved use these dates.
 - **As of now**: assigned, in process, on hold, overdue, availability and "at the LTO now" are always today's state, whatever the dates.
-- **Area, Branch and transaction** filters apply to every count (a job belongs to the loan's branch; the Area filter keeps the jobs of any branch in that Area). Branches are listed as "Name (code)", for example "Antipolo (101)", only those in the person's access; branches hidden from the DMS are not offered. A processor is listed when **any** of their branches is in the Area or is the Branch picked.
-- **Totals / By day**: By day shows, for each day (each week, Monday to Sunday, when the range is over 92 days), what happened that day. The CSV follows the view on screen.
+- **Area, Branch and transaction** filters apply to every count (a job belongs to the loan's branch; the Area filter keeps the jobs of any branch in that Area). Branches are listed by name only, for example "Antipolo", only those in the person's access; branches hidden from the DMS are not offered. A processor is listed when **any** of their branches is in the Area or is the Branch picked.
+- **Totals / By day**: By day shows, for each day (each week, Monday to Sunday, when the range is over 92 days), what happened that day.
 
 ## DP monitor
 
@@ -60,19 +61,19 @@ A job passed to a second processor (Pasuyo) counts for the second processor once
 
 **Grouping: Area, then Branch.** The Area is the MyLoans Area of the processor's branches (for example "LUZON 1 (NGMA + RIZAL)").
 
-- A processor whose branches are all in one Area is under that Area, and inside it under their branch ("Antipolo (101)"), or under one line naming all their branches when they have several in that Area ("Angono (165) · Antipolo (101)"; more than three: "5 branches").
+- A processor whose branches are all in one Area is under that Area, and inside it under their branch ("Antipolo"), or under one line naming all their branches when they have several in that Area ("Angono · Antipolo"; more than three: "5 branches").
 - A processor with branches in more than one Area is under the group **Several areas** (shown last).
 - Every branch of the processor shows as a chip on their row.
 - Each processor is in exactly one Area group and one branch line, so nobody is counted twice: the branch subtotals add up to the Area subtotal, and the Area subtotals add up to the totals.
 - Each Area has a subtotal (and each branch line too when the Area has more than one); an Area can be collapsed. By day groups by Area the same way.
 
-**Example.** Rico and Joy work only at Antipolo (101), Paolo and Grace only at Angono (165), and the test DP at both; all three branches are in LUZON 1 (NGMA + RIZAL). The Area LUZON 1 (NGMA + RIZAL) has three lines: "Angono (165)" (Paolo, Grace), "Angono (165) · Antipolo (101)" (the test DP) and "Antipolo (101)" (Rico, Joy). A processor of Antipolo (101) and Alaminos (390, LUZON 3 NORTH) is under Several areas, once. Filtering on LUZON 3 NORTH keeps that processor (one of their branches is there) and Ben of Alaminos, and only the jobs of LUZON 3 NORTH loans.
+**Example.** Rico and Joy work only at Antipolo (101), Paolo and Grace only at Angono (165), and the test DP at both; all three branches are in LUZON 1 (NGMA + RIZAL). The Area LUZON 1 (NGMA + RIZAL) has three lines: "Angono" (Paolo, Grace), "Angono · Antipolo" (the test DP) and "Antipolo" (Rico, Joy). A processor of Antipolo (101) and Alaminos (390, LUZON 3 NORTH) is under Several areas, once. Filtering on LUZON 3 NORTH keeps that processor (one of their branches is there) and Ben of Alaminos, and only the jobs of LUZON 3 NORTH loans.
 
 **Example.** DP 2 finished two jobs in the last 30 days. Job A was sent on Monday, accepted on Tuesday and finished the next Monday: time to accept 1 day, processing 4 days, total 5 days. Job B was sent, accepted and finished within two days: 0, 1 and 1. The row shows "Avg time to accept 0.5 days · 2 jobs", "Avg processing 2.5 days · 2 jobs", "Avg total 3 days · 2 jobs". DP 2 has 8 open jobs and the default capacity: "20% · 8 of 10 in use", Busy.
 
 **Drill-down:** a processor's open jobs (PN, transaction, status, age in business days since sent, due date) and the declined and returned of the period.
 
-**CSV:** follows the view and the filters. Totals have the columns Area, Branch, Processor and Branch codes, then the counts, with a subtotal row per branch line (when the Area has more than one) and per Area.
+**CSV:** switched off for now (11 November 2026): there is no Download CSV on this page.
 
 **Send panel:** each processor shows the availability chip and "{open} of {capacity}". Full processors stay selectable with a warning; a processor on leave is shown disabled. Sending to a processor on leave is also refused on the server.
 

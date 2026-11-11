@@ -13,18 +13,18 @@ import { checkLockout } from "./lockout";
  * be made active again. Existing loan files, transactions and history keep it and its name.
  */
 export type StatusKind =
-  | "branch" | "transactionType" | "documentType" | "checklistRule" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "user" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "processingStage" | "fundsType" | "expenseKind";
+  | "branch" | "transactionType" | "documentType" | "checklistRule" | "loanType" | "ltoOffice" | "caRule" | "holiday" | "user" | "approvalBand" | "problemReason" | "holdReason" | "returnReason" | "missingReason" | "processingStage" | "fundsType" | "expenseKind";
 
-export const STATUS_KINDS: StatusKind[] = ["expenseKind", "branch", "transactionType", "documentType", "checklistRule", "loanType", "ltoOffice", "caRule", "holiday", "user", "approvalBand", "problemReason", "holdReason", "returnReason", "processingStage", "fundsType"];
+export const STATUS_KINDS: StatusKind[] = ["expenseKind", "branch", "transactionType", "documentType", "checklistRule", "loanType", "ltoOffice", "caRule", "holiday", "user", "approvalBand", "problemReason", "holdReason", "returnReason", "missingReason", "processingStage", "fundsType"];
 
 const NOUN: Record<StatusKind, string> = {
   branch: "Branch", transactionType: "Transaction type", documentType: "Document type", checklistRule: "Checklist item",
-  loanType: "Loan type", ltoOffice: "LTO office", caRule: "Cash-advance rule", holiday: "Holiday", user: "User", approvalBand: "Approval band", problemReason: "Problem reason", holdReason: "Hold reason", returnReason: "Return reason", processingStage: "Processing stage", fundsType: "Funds type", expenseKind: "Expense kind",
+  loanType: "Loan type", ltoOffice: "LTO office", caRule: "Cash-advance rule", holiday: "Holiday", user: "User", approvalBand: "Approval band", problemReason: "Problem reason", holdReason: "Hold reason", returnReason: "Return reason", missingReason: "Missing paper reason", processingStage: "Processing stage", fundsType: "Funds type", expenseKind: "Expense kind",
 };
 
 /** Lists the app needs at least one active row of. */
 const NEEDS_ONE: Partial<Record<StatusKind, string>> = {
-  branch: "branch", approvalBand: "approval band", problemReason: "problem reason", holdReason: "hold reason", returnReason: "return reason", fundsType: "funds type", loanType: "loan type", documentType: "document type", ltoOffice: "LTO office", transactionType: "transaction type",
+  branch: "branch", approvalBand: "approval band", problemReason: "problem reason", holdReason: "hold reason", returnReason: "return reason", missingReason: "missing paper reason", fundsType: "funds type", loanType: "loan type", documentType: "document type", ltoOffice: "LTO office", transactionType: "transaction type",
 };
 
 /** Loan file stages that count as "open" (not closed, archived or disposed). */
@@ -44,6 +44,7 @@ async function loadRow(kind: StatusKind, id: string): Promise<(Row & { builtIn?:
     case "problemReason": { const r = await prisma.problemReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
     case "holdReason": { const r = await prisma.holdReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
     case "returnReason": { const r = await prisma.returnReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
+    case "missingReason": { const r = await prisma.missingPaperReason.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name }; }
     case "fundsType": { const r = await prisma.fundsType.findUnique({ where: { id } }); return r && { id, active: r.active, label: `${r.name} (${r.code})` }; }
     case "expenseKind": { const r = await prisma.expenseKind.findUnique({ where: { id } }); return r && { id, active: r.active, label: r.name, builtIn: r.builtIn }; }
     case "processingStage": { const r = await prisma.processingStage.findUnique({ where: { id }, include: { type: true } }); return r && { id, active: r.active, label: `${r.type.name} · ${r.name}` }; }
@@ -64,6 +65,7 @@ async function activeCount(kind: StatusKind): Promise<number> {
     case "problemReason": return prisma.problemReason.count({ where: { active: true } });
     case "holdReason": return prisma.holdReason.count({ where: { active: true } });
     case "returnReason": return prisma.returnReason.count({ where: { active: true } });
+    case "missingReason": return prisma.missingPaperReason.count({ where: { active: true } });
     case "fundsType": return prisma.fundsType.count({ where: { active: true } });
     default: return Number.POSITIVE_INFINITY;
   }
@@ -147,6 +149,10 @@ export async function inactiveEffect(kind: StatusKind, id: string): Promise<stri
       const n = await prisma.dpAssignment.count({ where: { returnReasonId: id } });
       return `Used by ${n} return${n === 1 ? "" : "s"}. They keep it. It will not be offered for new returns. Make inactive?`;
     }
+    case "missingReason": {
+      const n = await prisma.checklistCheck.count({ where: { missingReasonId: id } });
+      return `Used by ${n} missing paper${n === 1 ? "" : "s"}. They keep it. It will not be offered when a paper is marked Missing. Make inactive?`;
+    }
     case "processingStage": {
       const st = await prisma.processingStage.findUniqueOrThrow({ where: { id }, include: { type: true } });
       if (st.kind === "VERIFY") return `Check and verify will no longer be the last stage of new ${st.type.name} jobs: the processor could forward without ticking every paper as received back and complete. Jobs already started keep it. Make inactive?`;
@@ -189,6 +195,7 @@ export async function setRowActive(user: CurrentUser, kind: StatusKind, id: stri
       case "problemReason": await tx.problemReason.update({ where: { id }, data }); break;
       case "holdReason": await tx.holdReason.update({ where: { id }, data }); break;
       case "returnReason": await tx.returnReason.update({ where: { id }, data }); break;
+      case "missingReason": await tx.missingPaperReason.update({ where: { id }, data }); break;
       case "fundsType": await tx.fundsType.update({ where: { id }, data }); break;
       case "expenseKind": await tx.expenseKind.update({ where: { id }, data }); break;
       case "processingStage": await tx.processingStage.update({ where: { id }, data }); break;

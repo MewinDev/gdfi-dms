@@ -86,7 +86,7 @@ test("Users: search, filters, Add and Edit pop-ups, and the roles pop-up", async
   await add.getByRole("button", { name: "Save" }).click();
   await expect(add.locator("[data-access-error]")).toHaveText("Pick at least one branch: Loan Associate works on loan files."); // error beside the field
   await add.getByPlaceholder("Find a branch by name or code").fill("Angono");
-  await add.getByLabel("Angono (165)").check();
+  await add.getByLabel("Angono", { exact: true }).check();
   await expect(add.locator("[data-access-summary]")).toHaveText("1 branch, 1 branch in total");
   await add.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

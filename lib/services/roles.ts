@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import {
-  PERMISSION_GROUPS, PERMISSIONS, ROLE_DEFAULTS, normalizePermissions, permissionLabel, type Permission,
+  VISIBLE_PERMISSION_GROUPS, PERMISSIONS, ROLE_DEFAULTS, normalizePermissions, permissionLabel, type Permission,
 } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { checkLockout } from "./lockout";
@@ -35,7 +35,7 @@ export const ROLE_SCHEMA = z.object({
 
 type RoleRow = NonNullable<Awaited<ReturnType<typeof prisma.role.findUnique>>>;
 
-/** Plain diff for the audit row: "added Print labels; removed Add a transaction". */
+/** Plain diff for the audit row: "added Mark as done; removed Add a transaction". */
 export function permissionDiff(before: Iterable<string>, after: Iterable<string>) {
   const b = new Set(before);
   const a = new Set(after);
@@ -237,7 +237,7 @@ export async function accessMatrixCsv(): Promise<string> {
   const cols = roles.map((r) => `${r.name}${r.active ? "" : " (inactive)"}`);
   const header = ["area", "permission", "key", ...cols];
   const rows: Record<string, string>[] = [];
-  for (const g of PERMISSION_GROUPS) {
+  for (const g of VISIBLE_PERMISSION_GROUPS) {
     for (const item of g.items) {
       const row: Record<string, string> = { area: g.label, permission: item.label, key: item.key };
       roles.forEach((r, i) => { row[cols[i]] = effectivePermissions(r).has(item.key as Permission) ? "Yes" : "No"; });

@@ -8,7 +8,7 @@ import { peso } from "@/lib/funds/rules";
 import { outstandingCash, reusablePapers, recordFromPayload } from "./source-sync";
 import { relatedLoans, replacementCandidates } from "./related-loans";
 import { paymentEvidence } from "@/lib/myloans/relation";
-import { branchLabel, resolveLoanBranch } from "./branches";
+import { resolveLoanBranch } from "./branches";
 import { openedAt } from "@/lib/pn/opened-at";
 
 /** The loan's payments as its latest MyLoans copy says (undefined: no payments field). */
@@ -76,7 +76,7 @@ async function branchMoveFor(loan: { id: string; pn: string; branchId: string },
   const jobs = await prisma.dpAssignment.findMany({ where: { loanId: loan.id, status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] } }, select: { assignedBy: { select: { name: true } }, receivingLa: { select: { name: true } } } });
   const opened = await openedAt(loan.pn, { name: was.name, code: was.code });
   return {
-    from: branchLabel(was), to: to ? branchLabel(to) : `${next.branchName ?? "?"}${next.branchCode ? ` (${next.branchCode})` : ""}`, known: !!to,
+    from: was.name, to: to ? to.name : `${next.branchName ?? "?"}${next.branchCode ? ` (${next.branchCode})` : ""}`, known: !!to,
     openedAt: opened ? opened.text.replace(/, now at .*/, "") : null,
     seeBefore: before.length, seeAfter: after.length,
     gain: after.filter((u) => !b.has(u.id)).map((u) => u.name).sort(), lose: before.filter((u) => !a.has(u.id)).map((u) => u.name).sort(),

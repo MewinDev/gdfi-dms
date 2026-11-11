@@ -74,8 +74,7 @@ describe("Funds flag (LA)", () => {
     expect(t.fundsKinds).toEqual(["LTO_FEE", "TRANSPORT"]);
     expect(await prisma.auditLog.count({ where: { action: "funds_flag_changed", entityId: txn.id } })).toBe(1);
 
-    await expect(acceptJob(dp, job.id, false)).rejects.toThrow(/Labels are on all papers/);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     await expect(laSetFundsFlag(la, { transactionId: txn.id, needed: false, kinds: [] })).rejects.toThrow(/already accepted/);
   });
 });
@@ -83,7 +82,7 @@ describe("Funds flag (LA)", () => {
 describe("At the LTO, attempts and problems", () => {
   it("blocks attempts until Funded; then Not processed opens a problem, Done resolves it; attempts are append-only", async () => {
     const { txn, job } = await send("MORTGAGE", { needed: "YES", kinds: ["LTO_FEE"] });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     expect(await funds(txn.id)).toBe("NEEDED");
     await expect(logAttempt(dp, job.id, { date: today(), result: "DONE" })).rejects.toThrow(LTO_BLOCK_MESSAGE);
 
@@ -123,7 +122,7 @@ describe("At the LTO, attempts and problems", () => {
 
   it("Complete, forward to a named LA, and the real Phase 5 receive", async () => {
     const { txn, job } = await send("NOTARY", { needed: "NO" });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     await logAttempt(dp, job.id, { date: today(), result: "DONE" });
     await expect(completeJob(dp, job.id, {})).rejects.toThrow(/Finish every stage first\. Next: Notarization/);
     await workStages(dp, job.id, { name: "Atty. Uy", docNo: "12", pageNo: "3", bookNo: "IV", series: "2026" });
@@ -140,7 +139,7 @@ describe("At the LTO, attempts and problems", () => {
 describe("Cash advances", () => {
   it("above the maximum needs a typed reason; approving less needs a note; Admin and the DP cannot approve or release", async () => {
     const { txn, job } = await send("MORTGAGE", { needed: "YES", kinds: ["LTO_FEE"] });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const rule = await prisma.cashAdvanceRule.findFirst({ where: { transactionType: { code: "MORTGAGE" }, kind: "LTO_FEE", active: true } });
     if (rule) {
       const max = Math.round(Number(rule.maxAmount) * 100);
@@ -165,7 +164,7 @@ describe("Cash advances", () => {
 
   it("a denied advance makes the job Denied (No funds) with an exception", async () => {
     const { txn, job } = await send("MORTGAGE", { needed: "YES", kinds: ["LTO_FEE"] });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 100000 }] });
     await expect(decideAdvance(fin, r.id, { approve: false })).rejects.toThrow(/why it is denied/);
     await decideAdvance(fin, r.id, { approve: false, note: "No budget" });
@@ -175,11 +174,11 @@ describe("Cash advances", () => {
 
   it("an overdue advance blocks new requests until Finance grants a one-time exception", async () => {
     const a = await send("MORTGAGE", { needed: "YES", kinds: ["LTO_FEE"] });
-    await acceptJob(dp, a.job.id, true);
+    await acceptJob(dp, a.job.id);
     const { advanceId } = await fund(a.txn.id, "LTO_FEE", 100000);
     await prisma.cashAdvance.update({ where: { id: advanceId }, data: { liquidationDueAt: new Date(Date.now() - 86_400_000) } });
     const b = await send("PPSR", { needed: "YES", kinds: ["PPSR_FEE"] });
-    await acceptJob(dp, b.job.id, true);
+    await acceptJob(dp, b.job.id);
     await expect(requestAdvance(dp, { lines: [{ transactionId: b.txn.id, kind: "PPSR_FEE", cents: 50000 }] })).rejects.toThrow(/overdue/);
     await expect(grantException(dp, dp.id, "")).rejects.toThrow(/does not allow granting/);
     await grantException(fin, dp.id, "Weekend LTO trip");
@@ -189,7 +188,7 @@ describe("Cash advances", () => {
 
   it("top-up approves only the extra; receipts liquidate; the stage gate opens when settled", async () => {
     const { txn, job } = await send("MORTGAGE", { needed: "YES", kinds: ["LTO_FEE"] });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const { advanceId, lineId } = await fund(txn.id, "LTO_FEE", 100000);
     const topId = await requestTopUp(dp, lineId, 20000, "Extra annotation fee");
     await decideTopUp(fin, topId, true, null, "");

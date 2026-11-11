@@ -1,21 +1,30 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice, signIn } from "./helpers";
+import { pickLtoOffice, signIn, watchConsole } from "./helpers";
 
 /**
  * "Send to a Document Processor" on Check documents: the ready check, the reason beside the locked
- * Send button, funds (nothing pre-selected, kinds only for Needs funds, suggested kinds), processor
- * cards (recommended pre-selected, Show all, keyboard, another branch), the late reason, and the
- * Processor job card only after sending. Screenshots go to SHOTS_DIR when it is set.
+ * Send button (papers to tick, then remarks for a paper marked Missing, then funds, the processor and
+ * the LTO office), funds (nothing pre-selected, kinds only for Needs funds, suggested kinds), processor
+ * cards (recommended pre-selected, Show all, keyboard, another branch), the late reason, no labels to
+ * print, and the Processor job card only after sending (the transaction list shows one status word,
+ * "Sent to DP"; who it went to is in the job card). Screenshots go to SHOTS_DIR when it is set.
+ * The browser console must stay clean.
  */
 const EXTRA_DP = "zz.dp.extra@gdfi.ph";
 
+// Antipolo's usual LTO office (seeded) is pre-selected on Notary. These tests start with none, so the
+// "No LTO office chosen" check shows; it is put back after each test (lto.spec.ts covers the pre-selection).
+let usualLto: string | null = null;
 test.beforeEach(async () => {
   await resetLoans();
   await db.user.deleteMany({ where: { email: EXTRA_DP } });
+  usualLto = (await db.branch.findUniqueOrThrow({ where: { code: "101" } })).usualLtoOfficeId;
+  await db.branch.update({ where: { code: "101" }, data: { usualLtoOfficeId: null } });
 });
 test.afterEach(async () => {
   await db.user.deleteMany({ where: { email: EXTRA_DP } });
+  await db.branch.update({ where: { code: "101" }, data: { usualLtoOfficeId: usualLto } });
 });
 
 async function shot(page: Page, name: string) {
@@ -41,6 +50,9 @@ async function openNotary(page: Page) {
 }
 
 const REQUIRED = ["Promissory Note", "Disclosure Statement", "Chattel Mortgage (for notarization)", "Valid IDs of borrower (2)", "Deed of Sale"];
+/** The main test marks this one Missing (with a reason and remarks) and ticks the last one. */
+const MISSING = REQUIRED[3];
+const LAST = REQUIRED[4];
 
 test("Not ready → ready: ready check, the reason beside Send in order, funds, processors, keyboard; no job card until sent", async ({ page }) => {
   // A fourth processor in the loan's branch, so "Show all" has something to show.
@@ -48,6 +60,7 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   const dpRole = await db.role.findUniqueOrThrow({ where: { key: "DP" } });
   await db.user.create({ data: { email: EXTRA_DP, name: "Zed Extra", roleId: dpRole.id, branches: { create: { branchId: loanBranch.id } } } });
 
+  const clean = watchConsole(page);
   const notary = await openNotary(page);
   const why = notary.locator('[id^="send-why-"]');
   const send = notary.getByRole("button", { name: /^Send to / });
@@ -63,6 +76,9 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   // No Processor job card, TAT chip or Raise a problem before sending.
   await expect(page.getByRole("region", { name: "Notary: job" })).toHaveCount(0);
   await expect(notary.getByRole("button", { name: "Raise a problem" })).toHaveCount(0);
+  // Labels are gone: nothing to print, before or after the papers are ticked.
+  await expect(notary.getByRole("link", { name: /Print labels/ })).toHaveCount(0);
+  await expect(notary.getByText(/Labels not printed/)).toHaveCount(0);
 
   // Funds: nothing pre-selected; kinds only for Needs funds.
   await expect(notary.getByRole("radio", { name: "Needs funds" })).not.toBeChecked();
@@ -92,7 +108,22 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
 
   for (const item of REQUIRED.slice(0, 3)) await notary.getByLabel(item).check();
   await expect(why).toHaveText("Tick 2 more required papers");
-  for (const item of REQUIRED.slice(3)) await notary.getByLabel(item).check();
+
+  // A paper marked Missing still locks Send until its reason and remarks are saved; a paper not yet
+  // answered comes first.
+  const row = notary.locator("[data-paper-row]", { has: page.getByText(MISSING, { exact: true }) });
+  await row.getByRole("button", { name: "Missing", exact: true }).click();
+  await expect(row).toHaveAttribute("data-state", "missing-no-remarks");
+  await expect(why).toHaveText("Tick 1 more required paper");
+  await notary.getByLabel(LAST).check();
+  await expect(ready.getByRole("button", { name: /Papers 4 of 5/ })).toBeVisible();
+  await expect(why).toHaveText(`Add remarks for: ${MISSING}`);
+  await expect(send).toBeDisabled();
+  const form = row.locator("[data-remarks-form]");
+  await form.locator("[data-reason-chips] label", { hasText: "Borrower to submit later" }).click();
+  await form.getByLabel("Remarks", { exact: true }).fill("The borrower brings the second ID on Monday.");
+  await form.getByRole("button", { name: "Save remarks" }).click();
+  await expect(row).toHaveAttribute("data-state", "missing", { timeout: 15_000 });
   await expect(ready.getByText("Papers 5 of 5")).toBeVisible();
   await expect(why).toHaveText("Answer the funds question");
 
@@ -143,8 +174,8 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   await expect(page.getByRole("status").filter({ hasText: "Notary sent. Next: EDST" })).toBeVisible();
   await expect(page).toHaveURL(/tx=EDST/);
   const notaryEntry = page.locator("[data-txn=NOTARY]").filter({ visible: true }).first();
-  // The list row is short; who it was sent to is in the detail (the job card below).
-  await expect(notaryEntry).toContainText("Waiting for the DP to accept");
+  // The list row has one status word; who it was sent to is in the detail (the job card below).
+  await expect(notaryEntry).toContainText("Sent to DP");
   await notaryEntry.click();
   await expect(page).toHaveURL(/tx=NOTARY/);
   // The panel is replaced by the Processor job card.
@@ -155,6 +186,11 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   await expect(notary.getByRole("heading", { name: "Send to a Document Processor" })).toHaveCount(0);
   await shot(page, "send-after");
   await noSideways(page);
+  // The paper sent as Missing is listed on the loan file with its reason.
+  await page.goto("/loans/GD1012026901001");
+  await expect(page.locator("[data-missing-papers]")).toContainText(MISSING);
+  await expect(page.locator("[data-missing-papers]")).toContainText("Borrower to submit later");
+  clean();
 });
 
 test("Late: the late reason appears only when past the send date and is needed to send", async ({ page }) => {

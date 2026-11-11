@@ -79,7 +79,6 @@ const TATS: { key: string; phase: number; step: string; label: string; businessD
   { key: "P1_OPEN", phase: 1, step: "1.4", label: "Open Loan File", businessDays: 0, note: "Same day" },
   { key: "P2_AUTO", phase: 2, step: "2.6", label: "Automatic classification and transactions", businessDays: 2, note: "Inside Day 2" },
   { key: "P3_CHECKLIST", phase: 3, step: "3.1", label: "Checklist complete", businessDays: 2, note: "Day 2 from release" },
-  { key: "P3_LABELS", phase: 3, step: "3.2", label: "Document IDs and QR labels", businessDays: 0, note: "Same day" },
   { key: "P3_EDST", phase: 3, step: "3.3", label: "EDST entry", businessDays: 1 },
   { key: "P3_CA", phase: 3, step: "3.4", label: "Cash advance request", businessDays: 0, note: "Before assignment" },
   { key: "P3_CA_RELEASE", phase: 3, step: "3.5", label: "Cash advance release", businessDays: 1, note: "Per Finance policy" },
@@ -131,6 +130,11 @@ const HOLD_REASONS = [
 /** Why a processor returns an accepted job to the LA (papers needed). */
 const RETURN_REASONS = [
   ["MISSING", "Missing paper"], ["WRONG", "Wrong or unclear paper"], ["OTHER-TXN", "Needs another transaction first"], ["OTHER", "Other"],
+] as const;
+
+/** Why a paper is missing (Settings > Missing paper reasons). Remarks are always required as well. Same as migration 20261119090009. */
+const MISSING_REASONS = [
+  ["LATER", "Borrower to submit later"], ["NOT_ISSUED", "Not yet issued by the agency"], ["LOST", "Lost or unavailable"], ["NOT_APPLICABLE", "Not applicable to this loan"], ["OTHER", "Other"],
 ] as const;
 
 const HOLIDAYS_2026 = [
@@ -199,6 +203,7 @@ async function main() {
   for (const t of SEEDED_FUNDS_TYPES) await prisma.fundsType.upsert({ where: { code: t.code }, create: { ...t, proposed: true }, update: {} });
   // Return reasons
   for (const [i, [code, name]] of RETURN_REASONS.entries()) await prisma.returnReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
+  for (const [i, [code, name]] of MISSING_REASONS.entries()) await prisma.missingPaperReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
   // Approval bands, per funds type: one default band each, any amount, Finance (placeholders, not confirmed).
   for (const t of SEEDED_FUNDS_TYPES) {
     if ((await prisma.approvalBand.count({ where: { fundsTypeId: t.id } })) > 0) continue;

@@ -63,7 +63,7 @@ async function main() {
 
   const label = core.variantLabel(variant);
   const contents = variant === "clean"
-    ? "migrations, settings and master data, the branches, the sign-in accounts and 40 PNs in the sample MyLoans; no loan files"
+    ? "migrations, settings and master data, the branches, the sign-in accounts and 44 PNs in the sample MyLoans; no loan files"
     : "migrations, settings and master data, sample accounts and the scenario loans";
   const sheet = variant === "clean" ? "docs/MANUAL-TEST-KIT.md" : "docs/MANUAL-TEST-KIT-SCENARIOS.md";
   switch (cmd) {

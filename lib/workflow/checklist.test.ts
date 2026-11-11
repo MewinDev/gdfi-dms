@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checklistStatus, stillNeededText, type CheckLine } from "./checklist";
+import { addRemarksText, blockText, checklistStatus, remarksProblem, stillNeededText, type CheckLine } from "./checklist";
 
 const line = (id: string, over: Partial<CheckLine> = {}): CheckLine => ({ id, label: id, checked: false, required: true, group: null, active: true, ...over });
 
@@ -48,5 +48,57 @@ describe("checklistStatus", () => {
     const s = checklistStatus([line("x", { group: "G", required: false }), line("y", { group: "G", required: false })]);
     expect(s.complete).toBe(true);
     expect(s.optionalTotal).toBe(2);
+  });
+});
+
+describe("missing papers with reasons", () => {
+  const base = () => [
+    line("Deed of Sale"),
+    line("Valid ID"),
+    line("Co-maker ID", { required: false }),
+    line("OR/CR", { group: "Vehicle registration" }),
+    line("CR only", { group: "Vehicle registration" }),
+  ];
+
+  it("a missing paper without remarks blocks and is named; with remarks it is an exception and the file goes on", () => {
+    const lines = base().map((l) => ({ ...l, checked: ["OR/CR"].includes(l.id), missing: ["Deed of Sale", "Valid ID"].includes(l.id) ? "MISSING" as const : null }));
+    let s = checklistStatus(lines);
+    expect(s.complete).toBe(false);
+    expect(s.missing).toEqual([]);
+    expect(addRemarksText(s.needsRemarks)).toBe("Add remarks for: Deed of Sale, Valid ID");
+    expect(blockText(s)).toBe("Add remarks for: Deed of Sale, Valid ID.");
+    s = checklistStatus(lines.map((l) => ({ ...l, remarksSaved: true })));
+    expect(s.complete).toBe(true);
+    expect(s.exceptions.map((m) => m.name)).toEqual(["Deed of Sale", "Valid ID"]);
+    expect([s.requiredDone, s.requiredTotal]).toEqual([3, 3]);
+  });
+
+  it("an optional paper not included is ignored; included it is expected like a required one", () => {
+    const present = (l: CheckLine) => ({ ...l, checked: l.required });
+    expect(checklistStatus(base().map(present)).complete).toBe(true);
+    const included = base().map(present).map((l) => (l.id === "Co-maker ID" ? { ...l, included: true } : l));
+    expect(checklistStatus(included).missing.map((m) => m.name)).toEqual(["Co-maker ID"]);
+    expect(checklistStatus(included.map((l) => (l.id === "Co-maker ID" ? { ...l, missing: "MISSING" as const } : l))).needsRemarks.map((m) => m.name)).toEqual(["Co-maker ID"]);
+    expect(checklistStatus(included.map((l) => (l.id === "Co-maker ID" ? { ...l, missing: "MISSING" as const, remarksSaved: true } : l))).complete).toBe(true);
+  });
+
+  it("a pick-one group is answered by one present line, or by a missing line with remarks", () => {
+    const g = (over: Record<string, Partial<CheckLine>>) => checklistStatus(base().map((l) => ({ ...l, checked: ["Deed of Sale", "Valid ID"].includes(l.id), ...(over[l.id] ?? {}) })));
+    expect(g({}).missing.map((m) => m.name)).toEqual(["Vehicle registration (OR/CR or CR only)"]);
+    expect(g({ "CR only": { missing: "MISSING" } }).needsRemarks.map((m) => m.name)).toEqual(["CR only"]);
+    expect(g({ "CR only": { missing: "MISSING", remarksSaved: true } }).complete).toBe(true);
+  });
+
+  it("received late counts as present", () => {
+    const s = checklistStatus(base().map((l) => ({ ...l, checked: l.required || false, missing: l.id === "Valid ID" ? "RECEIVED_LATE" as const : null })));
+    expect(s.complete).toBe(true);
+    expect(s.exceptions).toEqual([]);
+  });
+
+  it("remarks are 5 to 500 characters", () => {
+    expect(remarksProblem("abcd")).toMatch(/at least 5/);
+    expect(remarksProblem("abcde")).toBeNull();
+    expect(remarksProblem("x".repeat(500))).toBeNull();
+    expect(remarksProblem("x".repeat(501))).toMatch(/500 characters or fewer/);
   });
 });

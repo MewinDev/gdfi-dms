@@ -15,7 +15,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png` });
 }
 
-const LA_TICKS = ["loans:view", "loans:search", "loans:open", "checklist:tick", "labels:print", "transactions:add", "transactions:complete", "processing:send", "processing:accept_returns", "funds:flag", "problems:raise", "problems:resolve", "holds:raise", "holds:resolve", "myloans:view"];
+const LA_TICKS = ["loans:view", "loans:search", "loans:open", "checklist:tick", "transactions:add", "transactions:complete", "processing:send", "processing:accept_returns", "funds:flag", "problems:raise", "problems:resolve", "holds:raise", "holds:resolve", "myloans:view"];
 
 async function noRefreshUser() {
   const branch = await db.branch.findUniqueOrThrow({ where: { code: "101" } });

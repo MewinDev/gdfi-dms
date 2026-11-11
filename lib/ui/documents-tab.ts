@@ -11,7 +11,6 @@ export interface PaperLike {
   custodianLabel: string;
   since: Date;
   documentId: string | null;
-  labelPrintedAt?: Date | null;
 }
 
 /** The filter above the cards (?papers=with-you). */
@@ -44,15 +43,14 @@ const once = (s: string) => s.replace(/\b(LA|DP)\s+\1\b/g, "$1");
 
 /**
  * The custody sentence for the row's details line and tooltip, in Philippine time (not "ago"):
- * "LA 1 (LA, Antipolo) at the Antipolo branch, since Nov 10, 12:10 AM", plus when the label was printed.
+ * "LA 1 (LA, Antipolo) at the Antipolo branch, since Nov 10, 12:10 AM."
  */
 export function custodyLine(d: PaperLike): string {
   if (d.stage === "EXPECTED") return "Not with you yet: it is on the checklist and has not been ticked.";
   const place = d.stage === "AT_BRANCH"
     ? `at the ${d.location || "branch"}`
     : d.location ? `· ${once(d.location)}` : "";
-  const printed = d.documentId ? (d.labelPrintedAt ? ` Label printed ${fmtShort(d.labelPrintedAt)}.` : " Label not printed yet.") : "";
-  return `${once(d.custodianLabel)}${place ? ` ${place}` : ""}, since ${fmtShort(d.since)}.${printed}`;
+  return `${once(d.custodianLabel)}${place ? ` ${place}` : ""}, since ${fmtShort(d.since)}.`;
 }
 
 /** "6 of 7 with you". */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { focusTargetOf, OPEN_GROUPS, OPEN_WORD, openItemsOf, titleChipOf, type OpenTxnInput } from "./open-items";
 import { holdSchema, resumeSchema } from "@/lib/services/holds";
-import { missingSchema, requestedCheckIds } from "@/lib/services/workflow";
+import { requestedCheckIds } from "@/lib/services/workflow";
 
 const at = (s: string) => new Date(`${s.replace(" ", "T")}:00+08:00`);
 const none = new Set<string>();
@@ -57,10 +57,7 @@ describe("Server rules for the pop-ups", () => {
     expect(resumeSchema.safeParse({ note: "  ok " }).success).toBe(false);
     expect(resumeSchema.safeParse({ note: "Borrower signed" }).success).toBe(true);
   });
-  it("missing paper: at least one paper; asked from is optional and one of Borrower, Branch, Other", () => {
-    expect(missingSchema.safeParse({ transactionId: "t", checkIds: [] }).error?.issues[0].message).toBe("Pick at least one paper.");
-    expect(missingSchema.safeParse({ transactionId: "t", checkIds: ["c1"], askedFrom: "BANK" }).success).toBe(false);
-    expect(missingSchema.parse({ transactionId: "t", checkIds: ["c1"] })).toMatchObject({ askedFrom: null, note: "" });
+  it("missing-paper requests (the processor's return) name their papers by row", () => {
     expect(requestedCheckIds({ checkIds: ["c1"] })).toEqual(["c1"]);
     expect(requestedCheckIds({ missing: ["OR/CR"] })).toBeNull();
   });

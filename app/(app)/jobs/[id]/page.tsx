@@ -10,7 +10,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canSeeJob, LTO_BLOCK_MESSAGE, lineTotals, loadAssignment, ltoBlocked } from "@/lib/services/jobs";
 import { heldFor } from "@/lib/services/pasuyo";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
-import { businessDate, fmtShort } from "@/lib/time";
+import { businessDate, fmtDateTime, fmtShort } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
 import { flagKindChoices, kindNames, lineKindText } from "@/lib/services/expense-kinds";
 import { doneTat, openHold, openProblem, txnFunds, txnTat } from "@/lib/jobs/view";
@@ -19,7 +19,7 @@ import { problemDays } from "@/lib/workflow/tat";
 import { dayText, txnName } from "@/lib/ui/plain";
 import { PageTop } from "@/components/loan/page-top";
 import { Banner, PageHeader, ToneChip } from "@/components/ui/basics";
-import { FundsChip, LabelsChip, TatChip } from "@/components/jobs/chips";
+import { FundsChip, TatChip } from "@/components/jobs/chips";
 import { AttemptTimeline } from "@/components/jobs/timeline";
 import {
   AttemptForm, CompleteForm, ForwardForm, FundsFlagForm, OutsideControlToggle, RaiseProblemForm, ResolveProblemForm, ReviewForm,
@@ -38,6 +38,8 @@ import { updatesBeforeAccept } from "@/lib/services/sent-changes";
 import { LiveAnnouncer, LiveToast } from "@/components/ui/live-toast";
 import { receiverWhere } from "@/lib/services/jobs";
 import { stageRows, verifiablePapers } from "@/lib/services/job-stages";
+import { missingPapersOf } from "@/lib/services/papers";
+import { returnablePapers } from "@/lib/services/return-to-la";
 import { currentIndex, stepStates, type StepState } from "@/lib/stages/rules";
 import { stepClock, tatChip } from "@/lib/workflow/tat";
 import {
@@ -70,6 +72,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       include: {
         type: true,
         documents: { orderBy: { createdAt: "asc" } },
+        checks: { include: { rule: true, missingReason: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
         advanceLines: { include: { advance: true } },
         attempts: { orderBy: { createdAt: "desc" }, include: { reason: true, dpUser: { select: { name: true } }, spends: true } },
         problems: { orderBy: { raisedAt: "desc" }, include: { reason: true } },
@@ -124,6 +127,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       ])
     : [[], [], []];
   const returnHeldCents = returnHeld.reduce((x, h) => x + h.balance, 0);
+  // Missing papers the LA marked with a reason and remarks: shown as exceptions, never a reason to return.
+  const missingPapers = missingPapersOf([t]);
+  const exceptionIds = new Set(t.checks.filter((c) => c.missingState === "MISSING").map((c) => c.id));
   // Where the processor takes it (types that need LTO processing, or an office given at Send).
   const atLto = t.type.needsLto || !!a.ltoOffice;
   const canChangeLto = atLto && working && !a.processing;
@@ -134,8 +140,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const officeAdvisories = a.ltoOfficeId ? await activeAdvisories(user, [a.ltoOfficeId], now) : [];
   // What the LA changed since sending (shown to the processor until they accept).
   const updates = a.status === "PENDING_ACCEPTANCE" ? await updatesBeforeAccept(a) : null;
-  const docs = t.documents.filter((d) => d.documentId);
-  const labels = !!t.labelsPrintedAt || (docs.length > 0 && docs.every((d) => d.labelPrintedAt));
+  // The papers that went to the processor (a paper marked Missing keeps its old Document ID but stays expected).
+  const docs = t.documents.filter((d) => d.documentId && d.stage !== "EXPECTED" && !(d.checkId && exceptionIds.has(d.checkId)));
   const kinds = t.fundsKinds.map((k) => names.get(k) ?? k).join(", ");
   const pDays = problemDays(t.problems, holidays, now);
   const incomplete = t.status === "IN_PROCESS" ? await prisma.loanException.findFirst({ where: { transactionId: t.id, type: "INCOMPLETE_PACKAGE", status: "OPEN" }, orderBy: { raisedAt: "desc" } }) : null;
@@ -191,7 +197,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       <section aria-label="Status" className="flex flex-wrap items-center gap-2">
         <span className="md:hidden"><TatChip data={tat} /></span>
         <FundsChip status={funds} />
-        {docs.length > 0 && <LabelsChip printed={labels} />}
         {a.secondaryDpUser && <ToneChip tone="wait">Pasuyo</ToneChip>}
         {t.attempts.length > 0 && <ToneChip tone="mute">{t.attempts.length} attempt{t.attempts.length === 1 ? "" : "s"}</ToneChip>}
         {pDays > 0 && <ToneChip tone={problem ? "bad" : "mute"}>Problem time {pDays} day{pDays === 1 ? "" : "s"}</ToneChip>}
@@ -228,6 +233,24 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         Sent to <strong className="text-ink">{a.dpUser.name}</strong>
         {a.secondaryDpUser && <>, with a second processor (Pasuyo) <strong className="text-ink">{a.secondaryDpUser.name}</strong></>}.
       </p>
+
+      {missingPapers.length > 0 && (
+        <section aria-labelledby="missing-papers-h" className="rounded-xl border border-act-line bg-act-bg px-3 py-2.5 sm:px-4" data-missing-papers-card>
+          <h2 id="missing-papers-h" className="text-[15px] font-bold text-act-fg">Missing papers and reasons ({missingPapers.filter((m) => m.state === "MISSING").length})</h2>
+          <p className="text-[13px] text-ink-2">Marked Missing by the Loan Associate, with remarks. They go through as exceptions: not a reason to return the file.</p>
+          <ul className="mt-1.5 flex flex-col divide-y divide-line overflow-hidden rounded-lg border border-line-soft bg-white">
+            {missingPapers.map((m) => (
+              <li key={m.checkId} className="flex flex-col gap-0.5 px-3 py-2 text-[13px]" data-missing-paper={m.state}>
+                <p className="flex flex-wrap items-center gap-x-2"><span className="text-[14px] font-semibold text-ink">{m.label}</span>
+                  {m.state === "RECEIVED_LATE" && <span className="rounded-md bg-ok-bg px-1.5 py-0.5 text-xs font-semibold text-ok-fg">Received {m.receivedOn ? dayText(m.receivedOn) : ""}</span>}
+                </p>
+                <p className="text-ink"><span className="font-semibold">{m.reason ?? "No reason"}</span>{m.remarks ? ` · ${m.remarks}` : ""}</p>
+                <p className="text-ink-2">{m.by ?? "The Loan Associate"}{m.at ? ` · ${fmtDateTime(m.at)}` : ""}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {incomplete && (
         <section aria-label="Package incomplete" className="flex flex-col gap-1 rounded-[14px] border-2 border-act-fg/50 bg-act-bg p-4 text-act-fg" data-package-incomplete>
@@ -315,11 +338,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <ReviewForm
               assignmentId={a.id} laName={a.assignedBy.name}
               returnReasons={can(user, PERMISSIONS.JOBS_RETURN_TO_LA) ? await prisma.returnReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, code: true } }) : []}
-              papers={(docs.length ? docs : t.documents).map((d) => ({ checkId: d.checkId, label: d.label, original: d.originality === "ORIGINAL", documentId: d.documentId, labelPrinted: !!d.labelPrintedAt }))}
+              papers={(docs.length ? docs : t.documents.filter((d) => !(d.checkId && exceptionIds.has(d.checkId)))).map((d) => ({ checkId: d.checkId, label: d.label, original: d.originality === "ORIGINAL", documentId: d.documentId }))}
             />
           ) : (
             <>
-              <PaperList docs={docs.length ? docs : t.documents} />
+              <PaperList docs={docs.length ? docs : t.documents.filter((d) => !(d.checkId && exceptionIds.has(d.checkId)))} />
               <p className="text-sm text-ink-2">Waiting for {a.dpUser.name} to accept.</p>
             </>
           )}
@@ -341,7 +364,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                 {canReturn && (
                   <ReturnToLaForm
                     assignmentId={a.id} laName={a.assignedBy.name} reasons={returnReasons}
-                    papers={papers.map((c) => ({ id: c.id, label: c.rule?.label ?? c.otherLabel ?? "Other paper" }))}
+                    papers={returnablePapers(papers).map((c) => ({ id: c.id, label: c.rule?.label ?? c.otherLabel ?? "Other paper" }))}
                     heldText={returnHeldCents > 0 ? peso(returnHeldCents) : null}
                     handover={t.documents.filter((d) => d.stage === "WITH_DP").map((d) => ({ id: d.id, label: d.label }))}
                   />
@@ -434,14 +457,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   );
 }
 
-function PaperList({ docs }: { docs: { id: string; label: string; documentId: string | null; labelPrintedAt: Date | null; originality: string }[] }) {
+function PaperList({ docs }: { docs: { id: string; label: string; documentId: string | null; originality: string }[] }) {
   return (
     <ul className="flex flex-col rounded-xl border border-line">
       {docs.map((d) => (
         <li key={d.id} className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 last:border-0">
           <span className="min-w-0 flex-1 text-[15px]">{d.label} <span className="tag">{d.originality === "ORIGINAL" ? "Original" : "Copy"}</span></span>
           {d.documentId && <span className="mono text-xs text-ink-2">{d.documentId}</span>}
-          <span className={`chip ${d.labelPrintedAt ? "c-ok" : "c-act"}`}>{d.labelPrintedAt ? "Label printed" : "Label not printed"}</span>
         </li>
       ))}
     </ul>

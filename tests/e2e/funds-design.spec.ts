@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
+import { openFundsDetails } from "./helpers";
 
 /**
  * Funds page design pass: tabs with count pills, the one-line summary, the type filter and the search,
@@ -143,7 +144,7 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
   if (width(page) === 820) {
     await expect(ca.locator(".fl-for")).toBeHidden();
     await expect(page.locator(".fl-head")).toContainText("Amount");
-    await ca.getByRole("button", { name: "Show details of CA-2026-7001" }).click();
+    await openFundsDetails(ca);
     await expect(ca.locator(".fl-for")).toBeVisible();
     await shot(page, "details-open", ca);
   }
@@ -242,7 +243,7 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
   const out = row(page, "FT-2026-7004");
   await expect(out.locator("[data-amount]")).toHaveText("₱1,500.00");
   await expect(page.locator("[data-funds-summary]")).toHaveText("1 request · ₱1,500.00 total");
-  if (width(page) === 820) await out.getByRole("button", { name: "Show details of FT-2026-7004" }).click();
+  if (width(page) === 820) await openFundsDetails(out);
   await expect(out.locator("[data-released]")).toHaveText("₱2,500.00");
   await expect(out.locator("[data-liquidated]")).toHaveText("₱1,000.00");
   await expect(out.locator("[data-balance]")).toHaveText("₱1,500.00");
@@ -251,7 +252,7 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
   await expect(out.locator(".fl-status")).toContainText("Liquidation overdue");
   await noSideways(page);
   if (width(page) === 390) {
-    await out.getByRole("button", { name: "Show details of FT-2026-7004" }).click();
+    await openFundsDetails(out);
     await expect(out.getByText("OR-5521", { exact: false })).toBeVisible();
     await shot(page, "card-more", out);
   }

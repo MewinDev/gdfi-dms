@@ -15,8 +15,9 @@ export const PERMISSIONS = {
   LOANS_EXPORT: "loans:export", // export loans (CSV)
   RULES_OVERRIDE: "rules:override", // change an automatic result (Supervisor override)
   // Transactions and papers
-  CHECKLIST_TICK: "checklist:tick", // tick papers, ask for missing papers, report and resolve problems
-  LABELS_PRINT: "labels:print", // print QR labels
+  CHECKLIST_TICK: "checklist:tick", // tick papers, report and resolve problems
+  PAPERS_MARK_MISSING: "papers:mark_missing", // mark a paper Missing, with a reason and remarks (Check papers)
+  PAPERS_RECEIVE_LATE: "papers:receive_late", // mark a missing paper Received, with the date it arrived
   TXN_ADD: "transactions:add", // add a custom transaction to a loan file
   TXN_COMPLETE: "transactions:complete", // EDST reference, mark a custom transaction as done
   // Send to DP and returns
@@ -86,6 +87,7 @@ export const PERMISSIONS = {
   SETTINGS_PROBLEM_REASONS: "settings:problem_reasons",
   HOLDS_MANAGE: "holds:manage", // Settings > Hold reasons (Admin only by default; was settings:hold_reasons)
   SETTINGS_RETURN_REASONS: "settings:return_reasons",
+  SETTINGS_MISSING_REASONS: "settings:missing_reasons", // Settings > Missing paper reasons
   STAGES_MANAGE: "stages:manage", // Settings > Processing stages (Admin only by default)
   FUNDS_TYPES_MANAGE: "fundtypes:manage", // Settings > Funds types (Admin only by default)
   SETTINGS_IMPORT: "settings:import", // Import / Export (with the permission for that list)
@@ -156,6 +158,12 @@ export interface PermissionDef {
   was: string;
   /** A sub-heading inside the group (Funds: "Cash advance", "Fund transfer"). */
   subgroup?: string;
+  /**
+   * Not shown for now: its feature is switched off (the CSV exports, 11 November 2026). The key stays on
+   * the roles that have it and in the role defaults, so turning the feature back on needs no migration;
+   * the role editor, "In plain words", the access matrix and the permissions doc leave it out.
+   */
+  hidden?: boolean;
 }
 export interface PermissionGroup {
   key: string;
@@ -171,14 +179,15 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.LOANS_VIEW, label: "See loan files", help: "Open and read loan files, Home and Updates. Which branches depends on the person's Branch access.", can: "see loan files", where: "Loans, Loan File, Home, Updates", was: "loans:view" },
       { key: P.LOANS_SEARCH, label: "Find a loan", help: "Search MyLoans by PN, CIN or CIF and see the preview.", requires: [P.LOANS_VIEW], can: "find loans", where: "Find loan, Search", was: "loans:search" },
       { key: P.LOANS_OPEN, label: "Open a loan file", help: "Start a new loan file from a MyLoans loan.", requires: [P.LOANS_SEARCH], can: "open new loan files", where: "Search, Open loan file", was: "loans:open" },
-      { key: P.LOANS_EXPORT, label: "Export loans (CSV)", help: "Download the loan list as a spreadsheet file.", requires: [P.LOANS_VIEW], can: "export the loan list", where: "Loans, Export", was: "loans:export" },
+      { key: P.LOANS_EXPORT, label: "Export loans (CSV)", help: "Download the loan list as a spreadsheet file.", requires: [P.LOANS_VIEW], can: "export the loan list", where: "Loans, Export", was: "loans:export", hidden: true },
       { key: P.RULES_OVERRIDE, label: "Change an automatic result", help: "Supervisor override of the classification and transactions, with a reason.", requires: [P.LOANS_VIEW], can: "override automatic results", where: "Loan File, Change an automatic result", was: "rules:override" },
     ],
   },
   {
     key: "papers", label: "Transactions and papers", items: [
-      { key: P.CHECKLIST_TICK, label: "Tick papers", help: "Tick the papers in hand, ask for missing papers, report and resolve problems.", requires: [P.LOANS_VIEW], can: "tick papers", where: "Loan File, To do and Papers", was: "checklist:tick" },
-      { key: P.LABELS_PRINT, label: "Print labels", help: "Print the QR labels for ticked papers.", requires: [P.CHECKLIST_TICK], can: "print labels", where: "Loan File, Labels", was: "labels:print" },
+      { key: P.CHECKLIST_TICK, label: "Tick papers", help: "Tick the papers in hand, report and resolve problems.", requires: [P.LOANS_VIEW], can: "tick papers", where: "Loan File, To do and Papers", was: "checklist:tick" },
+      { key: P.PAPERS_MARK_MISSING, label: "Mark a paper Missing", help: "On Check papers: mark a paper Missing with a reason and remarks, so the file can still be sent. Edits after sending are kept in the history.", requires: [P.CHECKLIST_TICK], can: "mark papers missing", where: "Loan File, Check papers", was: "none (a missing paper blocked Send; the LA asked for it with checklist:tick)" },
+      { key: P.PAPERS_RECEIVE_LATE, label: "Receive a missing paper", help: "Mark a missing paper Received, with the date it arrived. The reason and remarks stay in the history.", requires: [P.LOANS_VIEW], can: "receive missing papers", where: "Loan File, Check papers and Missing papers", was: "none (new)" },
       { key: P.TXN_ADD, label: "Add a transaction", help: "Add a custom transaction type to a loan file.", requires: [P.CHECKLIST_TICK], can: "add transactions", where: "Loan File, Add a transaction", was: "transactions:add" },
       { key: P.TXN_COMPLETE, label: "Mark as done", help: "Record the EDST reference, and mark custom transactions done.", requires: [P.CHECKLIST_TICK], can: "mark transactions done", where: "Loan File, EDST and Mark as done", was: "transactions:complete" },
       { key: P.PROBLEMS_RAISE, label: "Raise a problem", help: "Open a problem on a transaction the person works on.", requires: [P.LOANS_VIEW], can: "raise problems", where: "Loan File, Job", was: "problems:raise" },
@@ -214,14 +223,14 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.FUNDS_KINDS_VIEW, label: "See expense kinds", help: "See Settings, Expense kinds: what a cash advance or fund transfer can be for, and each kind's amount.", can: "see expense kinds", where: "Settings, Expense kinds", was: "none (the kinds were fixed in code)" },
       { key: P.FUNDS_KINDS_MANAGE, label: "Add and manage expense kinds", help: "Add, rename, reorder or switch off expense kinds and set their amount; \"+ Add new kind\" on the funds screens; change a fixed amount on one request.", requires: [P.FUNDS_KINDS_VIEW], view: P.FUNDS_KINDS_VIEW, can: "add and manage expense kinds", where: "Settings, Expense kinds; Funds, To approve; My funds", was: "none (the kinds were fixed in code)" },
       { key: P.JOURNEY_VIEW_AMOUNTS, label: "See cash amounts in the Journey", help: "Show peso amounts in a loan's Journey. Without it, the Journey shows the funds status only.", requires: [P.LOANS_VIEW], can: "see cash amounts in the Journey", where: "Loan File, Journey; LTO monitor amounts", was: "journey:view_amounts" },
-      { key: P.FUNDS_CA_VIEW, label: "See cash advances", help: "The Funds page for cash advances: every request in the person's branches, the counts, the CSV and the receipts.", requires: [P.LOANS_VIEW], can: "see cash advances", where: "Funds, Funds export, Receipts", was: "funds:view_all", subgroup: "Cash advance" },
+      { key: P.FUNDS_CA_VIEW, label: "See cash advances", help: "The Funds page for cash advances: every request in the person's branches, the counts and the receipts.", requires: [P.LOANS_VIEW], can: "see cash advances", where: "Funds, Receipts", was: "funds:view_all", subgroup: "Cash advance" },
       { key: P.FUNDS_CA_APPROVE, label: "Approve cash advances", help: "Approve or deny cash advances (and their top-ups and carry-overs) within the approval bands of this type.", requires: [P.FUNDS_CA_VIEW], can: "approve cash advances", where: "Funds, To approve", was: "funds:approve", subgroup: "Cash advance" },
       { key: P.FUNDS_CA_RELEASE, label: "Release cash advances", help: "Release the approved money (and approved top-ups) of cash advances.", requires: [P.FUNDS_CA_VIEW], can: "release cash advances", where: "Funds, To release", was: "funds:release", subgroup: "Cash advance" },
       { key: P.FUNDS_CA_SETTLE, label: "Settle and close cash advances", help: "Confirm returned cash and close cash advances. Told when liquidation is submitted or overdue.", requires: [P.FUNDS_CA_VIEW], can: "settle and close cash advances", where: "Funds, Outstanding", was: "funds:release", subgroup: "Cash advance" },
       { key: P.FUNDS_CA_EDIT_LINES, label: "Edit lines of cash advances", help: "Change or add a line before the request is decided.", requires: [P.FUNDS_CA_VIEW], can: "edit the lines of cash advances", where: "Funds, To approve", was: "funds:approve or funds:release", subgroup: "Cash advance" },
       { key: P.FUNDS_CA_CHANGE_TYPE, label: "Change type of cash advances", help: "Change the type before release, with remarks. Changing into the other type needs that type's Change type tick too.", requires: [P.FUNDS_CA_VIEW], can: "change the type of cash advances", where: "Funds, To approve and To release", was: "funds:release", subgroup: "Cash advance" },
       { key: P.FUNDS_CA_PRINT, label: "Print liquidation report for cash advances", help: "Open and print the liquidation report of cash advances.", requires: [P.FUNDS_CA_VIEW], can: "print liquidation reports for cash advances", where: "Funds, Outstanding and History, Print; the liquidation report page", was: "funds:print", subgroup: "Cash advance" },
-      { key: P.FUNDS_FT_VIEW, label: "See fund transfers", help: "The Funds page for fund transfers: every request in the person's branches, the counts, the CSV and the receipts.", requires: [P.LOANS_VIEW], can: "see fund transfers", where: "Funds, Funds export, Receipts", was: "funds:view_all", subgroup: "Fund transfer" },
+      { key: P.FUNDS_FT_VIEW, label: "See fund transfers", help: "The Funds page for fund transfers: every request in the person's branches, the counts and the receipts.", requires: [P.LOANS_VIEW], can: "see fund transfers", where: "Funds, Receipts", was: "funds:view_all", subgroup: "Fund transfer" },
       { key: P.FUNDS_FT_APPROVE, label: "Approve fund transfers", help: "Approve or deny fund transfers (and their top-ups and carry-overs) within the approval bands of this type.", requires: [P.FUNDS_FT_VIEW], can: "approve fund transfers", where: "Funds, To approve", was: "funds:approve", subgroup: "Fund transfer" },
       { key: P.FUNDS_FT_RELEASE, label: "Release fund transfers", help: "Release the approved money (and approved top-ups) of fund transfers.", requires: [P.FUNDS_FT_VIEW], can: "release fund transfers", where: "Funds, To release", was: "funds:release", subgroup: "Fund transfer" },
       { key: P.FUNDS_FT_SETTLE, label: "Settle and close fund transfers", help: "Confirm returned cash and close fund transfers. Told when liquidation is submitted or overdue.", requires: [P.FUNDS_FT_VIEW], can: "settle and close fund transfers", where: "Funds, Outstanding", was: "funds:release", subgroup: "Fund transfer" },
@@ -232,8 +241,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   },
   {
     key: "monitoring", label: "Monitoring", items: [
-      { key: P.MONITOR_DP, label: "See the DP monitor", help: "Each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only.", can: "see the DP monitor", where: "Monitoring, DPs; its CSV", was: "monitor:dp" },
-      { key: P.MONITOR_LTO, label: "See the LTO monitor", help: "Jobs at each LTO office, time at the LTO and advisories.", can: "see the LTO monitor", where: "Monitoring, LTO offices; its CSV", was: "monitor:lto" },
+      { key: P.MONITOR_DP, label: "See the DP monitor", help: "Each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only.", can: "see the DP monitor", where: "Monitoring, DPs", was: "monitor:dp" },
+      { key: P.MONITOR_LTO, label: "See the LTO monitor", help: "Jobs at each LTO office, time at the LTO and advisories.", can: "see the LTO monitor", where: "Monitoring, LTO offices", was: "monitor:lto" },
       { key: P.LTO_REPORTS_MANAGE, label: "Manage LTO advisories", help: "Resolve or edit any LTO advisory, and file one from the Monitoring page. People with this are told when an advisory is filed.", requires: [P.MONITOR_LTO], view: P.MONITOR_LTO, can: "manage LTO advisories", where: "Monitoring, LTO offices", was: "ltoreports:manage" },
       { key: P.LTO_REPORTS_NOTIFY, label: "Be told about LTO advisories", help: "Get a notification (and an email when emails are on) when an LTO advisory is filed or resolved. Processors are never told.", requires: [P.MONITOR_LTO], can: "be told about LTO advisories", where: "Notifications", was: "none (the Operations Monitor role, by its name)" },
       { key: P.DP_CAPACITY_MANAGE, label: "Set processor capacity and leave", help: "The default number of open jobs, a processor's own capacity, and On leave.", can: "set processor capacity and leave", where: "Settings, Processor capacity", was: "dpcapacity:manage" },
@@ -242,7 +251,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     key: "reports", label: "Reports", items: [
       { key: P.REPORTS_TAT, label: "See the TAT and problems report", help: "Problems and holds by reason, days, overdue counts.", requires: [P.LOANS_VIEW], can: "see the TAT and problems report", where: "Reports, TAT", was: "reports:tat" },
-      { key: P.REPORTS_TAT_EXPORT, label: "Download the TAT report (CSV)", help: "Download the TAT and problems report as a spreadsheet file.", requires: [P.REPORTS_TAT], view: P.REPORTS_TAT, can: "download the TAT report", where: "Reports, TAT, Download CSV", was: "reports:tat + loans:export" },
+      { key: P.REPORTS_TAT_EXPORT, label: "Download the TAT report (CSV)", help: "Download the TAT and problems report as a spreadsheet file.", requires: [P.REPORTS_TAT], view: P.REPORTS_TAT, can: "download the TAT report", where: "Reports, TAT, Download CSV", was: "reports:tat + loans:export", hidden: true },
       { key: P.AUDIT_VIEW, label: "See the audit log", help: "Every automatic decision and user action (the technical log).", can: "see the audit log", where: "Audit log", was: "audit:view" },
     ],
   },
@@ -280,6 +289,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.SETTINGS_PROBLEM_REASONS, label: "Change problem reasons", help: "The reasons a job can be stuck.", can: "change problem reasons", where: "Settings, Problem reasons", was: "settings:problem_reasons" },
       { key: P.HOLDS_MANAGE, label: "Change hold reasons", help: "Add, rename, reorder or switch off the reasons a transaction can be on hold.", can: "change hold reasons", where: "Settings, Hold reasons", was: "holds:manage" },
       { key: P.SETTINGS_RETURN_REASONS, label: "Change return reasons", help: "Why a processor returns a job to the Loan Associate for papers.", can: "change return reasons", where: "Settings, Return reasons", was: "settings:return_reasons" },
+      { key: P.SETTINGS_MISSING_REASONS, label: "Change missing paper reasons", help: "The reasons a Loan Associate can pick when marking a paper Missing.", can: "change missing paper reasons", where: "Settings, Missing paper reasons", was: "none (new)" },
       { key: P.FUNDS_TYPES_MANAGE, label: "Change funds types", help: "Rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off.", can: "change funds types", where: "Settings, Funds types", was: "fundtypes:manage" },
       { key: P.STAGES_MANAGE, label: "Change processing stages", help: "The stages of each transaction type, their evidence and targets.", can: "change processing stages", where: "Settings, Processing stages", was: "stages:manage" },
       { key: P.SETTINGS_SYSTEM, label: "Change system switches", help: "MyLoans test switches, the simulator switch, sample MyLoans changes.", can: "change system switches", where: "Settings, System", was: "settings:system" },
@@ -298,6 +308,9 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
 ];
 
 export const PERMISSION_DEFS: PermissionDef[] = PERMISSION_GROUPS.flatMap((g) => g.items);
+/** The groups as people see them: hidden ticks (a feature switched off for now) left out. */
+export const VISIBLE_PERMISSION_GROUPS: PermissionGroup[] = PERMISSION_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.hidden) })).filter((g) => g.items.length > 0);
+export const isHiddenPermission = (k: string) => !!permissionDef(k)?.hidden;
 export const permissionDef = (k: string) => PERMISSION_DEFS.find((d) => d.key === k);
 export const permissionLabel = (k: string) => permissionDef(k)?.label ?? k;
 /** The View key a Change key pairs with, and the Change keys of a View key. */
@@ -315,7 +328,7 @@ export const SETTINGS_PERMISSIONS: Permission[] = [
  * not do the LA, DP and Finance steps). Only a default: an Admin may tick them on any role.
  */
 export const WORKFLOW_PERMISSIONS: Permission[] = [
-  P.LOANS_OPEN, P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.DP_RECEIVE, P.RETURNS_ACCEPT,
+  P.LOANS_OPEN, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.DP_RECEIVE, P.RETURNS_ACCEPT,
   P.FUNDS_FLAG, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_EXCEPTION,
   P.FUNDS_CA_APPROVE, P.FUNDS_CA_RELEASE, P.FUNDS_CA_SETTLE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_CHANGE_TYPE,
   P.FUNDS_FT_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_FT_SETTLE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_CHANGE_TYPE,
@@ -365,7 +378,7 @@ export function plainWords(keys: Iterable<string>, branchAccess: "ASSIGNED" | "A
   // Where comes from each person (Users, Edit, Branch access); the role only gives the default for new users.
   const where = branchAccess === "ALL" ? "in all branches (the default for new users)" : "in the branches of their own access";
   const lines: string[] = [];
-  for (const g of PERMISSION_GROUPS) {
+  for (const g of VISIBLE_PERMISSION_GROUPS) {
     const yes = g.items.filter((i) => on.has(i.key)).map((i) => i.can);
     if (!yes.length) continue;
     lines.push(`Can ${joinWords(yes)}${g.key === "loans" ? ` ${where}` : ""}.`);
@@ -390,8 +403,8 @@ export const FUNDS_BOTH_TYPES: Permission[] = [
 export const ROLE_DEFAULTS: Record<string, { name: string; description: string; canSignIn: boolean; sortOrder: number; branchAccess: "ASSIGNED" | "ALL"; permissions: Permission[] }> = {
   LA: {
     name: "Loan Associate", canSignIn: true, sortOrder: 1, branchAccess: "ASSIGNED",
-    description: "Finds and opens loan files, checks papers, prints labels, sends to processors.",
-    permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.LABELS_PRINT, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP],
+    description: "Finds and opens loan files, checks papers, sends to processors.",
+    permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING, P.PAPERS_RECEIVE_LATE, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP],
   },
   ADMIN: {
     name: "Admin", canSignIn: true, sortOrder: 2, branchAccess: "ALL",
@@ -455,6 +468,7 @@ export const LIST_PERMISSION: Record<string, Permission> = {
   "funds-types": P.FUNDS_TYPES_MANAGE,
   "expense-kinds": P.FUNDS_KINDS_MANAGE,
   "return-reasons": P.SETTINGS_RETURN_REASONS,
+  "missing-reasons": P.SETTINGS_MISSING_REASONS,
   "processing-stages": P.STAGES_MANAGE,
   system: P.SETTINGS_SYSTEM,
   email: P.EMAIL_MANAGE,
@@ -496,6 +510,7 @@ export const KIND_PERMISSION: Record<string, Permission> = {
   fundsType: P.FUNDS_TYPES_MANAGE,
   expenseKind: P.FUNDS_KINDS_MANAGE,
   returnReason: P.SETTINGS_RETURN_REASONS,
+  missingReason: P.SETTINGS_MISSING_REASONS,
   processingStage: P.STAGES_MANAGE,
   user: P.USERS_EDIT,
   role: P.ROLES_MANAGE,

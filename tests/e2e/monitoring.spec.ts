@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 
 /**
- * Monitoring: the DP and LTO monitors (grouped, drill-downs, filters, CSV), refusals, the Send panel's
+ * Monitoring: the DP and LTO monitors (grouped, drill-downs, filters; no CSV for now), refusals, the Send panel's
  * availability chips with a processor on leave and a Full one, the LTO advisory form on a DP job, the
  * warning on the LTO office choice in Check documents, and the Monitoring group in Roles.
  * Screenshots (1440 and 390): docs/screenshots/monitoring/.
@@ -118,7 +118,7 @@ test.afterAll(async () => {
   await db.ltoOffice.update({ where: { code: "LTO-QC" }, data: { distanceKm: null, suggestedTransportCents: null } });
 });
 
-test("DP monitor: grouped by area then branch, availability, drill-down without loan links, filters and CSV", async ({ page }) => {
+test("DP monitor: grouped by area then branch, availability, drill-down without loan links, filters", async ({ page }) => {
   await signInAs(page, "monitor");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Monitoring:");
   await expect(page.getByText("Includes time on hold").first()).toBeVisible();
@@ -133,14 +133,14 @@ test("DP monitor: grouped by area then branch, availability, drill-down without 
   await expect(row("Joy Navarro")).toContainText("2 of 2 in use");
   await expect(row("Rico Dela Cruz")).toContainText(/On leave\s*until/);
   await expect(row("Test Document Processor")).toContainText("2 of 10 in use");
-  // Area, then Branch: LUZON 1 (NGMA + RIZAL) > Antipolo (101) (Rico, Joy) and Angono (165) · Antipolo (101) (the test DP).
+  // Area, then Branch: LUZON 1 (NGMA + RIZAL) > Antipolo (Rico, Joy) and Angono · Antipolo (the test DP). Names only, no codes.
   await expect(rows.locator('[data-group="LUZON 1 (NGMA + RIZAL)"]').first()).toBeVisible();
-  await expect(rows.locator('[data-group="LUZON 1 (NGMA + RIZAL)"] [data-branch-group="Antipolo (101)"]').first()).toBeVisible();
+  await expect(rows.locator('[data-group="LUZON 1 (NGMA + RIZAL)"] [data-branch-group="Antipolo"]').first()).toBeVisible();
   if (wide(page)) {
     await expect(row("Rico Dela Cruz")).toContainText("2 jobs");
     await expect(rows.locator('[data-subtotal="LUZON 1 (NGMA + RIZAL)"]')).toBeVisible();
-    await expect(rows.locator('[data-branch-subtotal="Antipolo (101)"]')).toBeVisible();
-    await expect(row("Test Document Processor").locator("[data-branch-chips]")).toContainText("Angono (165)");
+    await expect(rows.locator('[data-branch-subtotal="Antipolo"]')).toBeVisible();
+    await expect(row("Test Document Processor").locator("[data-branch-chips]")).toContainText("Angono");
   }
   await noSideways(page);
   await shot(page, "dp-monitor-grouped");
@@ -183,13 +183,10 @@ test("DP monitor: grouped by area then branch, availability, drill-down without 
   await expect(areaRows.locator('[data-dp-row="Ben Ocampo"]')).toBeVisible();
   await expect(areaRows.locator('[data-dp-row="Joy Navarro"]')).toHaveCount(0);
 
-  // By day, then the CSV follows the view.
+  // By day; no Download CSV (CSV exports are off for now).
   await page.goto("/monitoring?tab=dp&view=day&range=7d");
   await expect(page.locator('[data-by-day="day"]')).toBeVisible();
-  const href = (await page.getByRole("link", { name: "Download CSV" }).getAttribute("href"))!;
-  expect(href).toContain("view=day");
-  const csv = await (await page.request.get(href)).text();
-  expect(csv.split("\r\n")[1]).toBe("Group,Day,Assigned,Accepted,Finished,Declined,Returned");
+  await expect(page.getByRole("link", { name: "Download CSV" })).toHaveCount(0);
 });
 
 test("LTO monitor: areas, advisories with the 24-hour prompt, drill-down, no amounts without permission", async ({ page }) => {
@@ -225,12 +222,12 @@ test("LTO monitor: areas, advisories with the 24-hour prompt, drill-down, no amo
   await expect(page.locator('[data-tile="Offices with an active advisory"]')).toContainText("1");
 });
 
-test("Refusals: no monitor permission means not found and a refused CSV; Admin sees amounts and loan links", async ({ page }) => {
+test("Refusals: no monitor permission means not found; the CSV address is gone; Admin sees amounts and loan links", async ({ page }) => {
   await signInAs(page, "la");
   const res = await page.goto("/monitoring");
   expect(res?.status()).toBe(404);
   await expect(page.getByRole("link", { name: "Monitoring" })).toHaveCount(0);
-  expect((await page.request.get("/api/monitoring/csv?tab=dp")).status()).toBe(403);
+  expect((await page.request.get("/api/monitoring/csv?tab=dp")).status()).toBe(404);
   await signInAs(page, "dp");
   expect((await page.goto("/monitoring?tab=lto"))?.status()).toBe(404);
 
@@ -333,7 +330,7 @@ const words = (from: string, to: string) => {
 };
 const focusedDay = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.day ?? null);
 
-test("Design: the date range: keyboard open and close, a preset, then a custom range; title, CSV and table follow", async ({ page }) => {
+test("Design: the date range: keyboard open and close, a preset, then a custom range; title and table follow", async ({ page }) => {
   await signInAs(page, "monitor");
   await page.goto("/monitoring?tab=dp");
   const button = page.locator("[data-date-range-button]");
@@ -359,7 +356,6 @@ test("Design: the date range: keyboard open and close, a preset, then a custom r
   await picker.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(/range=7d/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Monitoring: ${words(ymdBack(phtToday(), 6), phtToday())}`);
-  expect(await page.locator("[data-csv]").first().getAttribute("href")).toContain("range=7d");
   await expect(page.locator("[data-reset]")).toHaveCount(1); // Reset: only when a filter is not at its default
 
   // Custom: two days picked (4 days back to today); the count of days and business days shows.
@@ -376,9 +372,6 @@ test("Design: the date range: keyboard open and close, a preset, then a custom r
   await expect(page).toHaveURL(new RegExp(`range=custom&from=${from}&to=${phtToday()}`));
   const label = words(from, phtToday());
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(`Monitoring: ${label}`);
-  const csv = (await page.locator("[data-csv]").first().getAttribute("href"))!;
-  expect(csv).toContain(`from=${from}`);
-  expect(await (await page.request.get(csv)).text()).toContain(label);
   await expect(layout(page, "dp").locator('[data-dp-row="Test Document Processor"]')).toBeVisible();
   // A refresh keeps it (it is in the URL); By day follows the same range.
   await page.reload();

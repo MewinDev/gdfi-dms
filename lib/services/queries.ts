@@ -20,7 +20,7 @@ const loanDetailInclude = {
     orderBy: { createdAt: "asc" },
     include: {
       type: { include: { caRules: { where: { active: true } } } },
-      checks: { include: { rule: { include: { documentType: true } }, documentItem: true }, orderBy: { createdAt: "asc" } },
+      checks: { include: { rule: { include: { documentType: true } }, documentItem: true, missingReason: { select: { name: true } } }, orderBy: { createdAt: "asc" } },
       dpAssignments: {
         orderBy: { createdAt: "desc" },
         include: { dpUser: { select: { name: true } }, secondaryDpUser: { select: { name: true } }, dpBranch: true, ltoOffice: true, assignedBy: { select: { name: true, active: true } }, receivingLa: { select: { name: true } }, receivingBranch: { select: { name: true } }, returnReason: { select: { name: true } }, stages: { orderBy: { sortOrder: "asc" } } },
@@ -79,8 +79,6 @@ export function whatToDoNow(loan: LoanDetail): TodoItem[] {
     const c = evaluateChecklist(t.checks);
     if (t.status === "FOR_CHECKLIST") items.push({ text: `Complete the ${t.type.name} checklist (${c.missing.length} missing)`, owner: "LA", tab: "transactions" });
   }
-  const unprinted = loan.documents.filter((d) => d.documentId && !d.labelPrintedAt && d.stage !== "EXPECTED").length;
-  if (unprinted) items.push({ text: `Print and attach ${unprinted} QR label(s)`, owner: "LA", tab: "documents" });
   for (const t of live) {
     if (t.status === "READY" && t.type.code === "EDST") items.push({ text: "Enter the account in EDST and record the reference", owner: "LA", tab: "transactions" });
     if ((t.status === "READY" || t.status === "RETURNED") && t.type.requiresDp) items.push({ text: `Assign ${t.type.name} to a DP`, owner: "LA", tab: "transactions" });
@@ -187,7 +185,7 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
     const needsAction = LA_STAGES.includes(l.stage) || l._count.exceptions > 0;
     return {
       id: l.id, pn: l.pn, borrowerName: l.borrowerName, loanType: l.loanType, productName: l.productName,
-      branch: l.branch.code ? `${l.branch.name} (${l.branch.code})` : l.branch.name, branchId: l.branch.id, branchName: l.branch.name, branchCode: l.branch.code, area: l.branch.area?.name ?? "",
+      branch: l.branch.name, branchId: l.branch.id, branchName: l.branch.name, branchCode: l.branch.code, area: l.branch.area?.name ?? "",
       releasedAt: l.releasedAt, amount: Number(l.totalReleasedAmount),
       classification: l.classification, stage: l.stage, tat, nextStep: next,
       // Open problems on jobs count as problems too (red chip on Home and Loans).

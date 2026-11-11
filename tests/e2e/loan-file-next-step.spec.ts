@@ -100,7 +100,6 @@ test("Do this now: returned, confirm in one click, the reason once, hold, proble
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: notary.id }, orderBy: { createdAt: "desc" } });
   await signInAs(page, "dp");
   await page.goto(`/jobs/${job.id}`);
-  await page.getByLabel("Labels are on all papers").check();
   await page.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.locator("[data-stages]")).toBeVisible();
   await page.getByRole("button", { name: "Return to LA: papers needed" }).click();

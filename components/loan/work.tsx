@@ -1,14 +1,10 @@
 "use client";
 
-import { useActionState, useMemo, useRef, useState, useTransition } from "react";
-import { announcing, NowLine, useCloseWhenDone } from "@/components/ui/live-toast";
-import { GuardedSheet, SheetCancel } from "@/components/ui/guarded-sheet";
-import { useSearchParams } from "next/navigation";
-
-const requestMissingAnnounced = announcing(requestMissingAction);
+import { useActionState, useRef, useState, useTransition } from "react";
 import { SendPanel, type SendOptions } from "./send-panel";
+import { PaperRow, type PaperLine, type PaperTools } from "./paper-row";
 import {
-  recordEdstAction, reportProblemAction, requestMissingAction,
+  recordEdstAction, reportProblemAction,
   resolveExceptionAction, saveChecklistAction,
 } from "@/app/actions/loan";
 import { Sheet } from "@/components/ui/sheet";
@@ -23,76 +19,22 @@ type Result = { ok: boolean; message?: string; error?: string; field?: string; m
 // Checklist rows
 // ===========================================================================
 
-export interface Line {
-  id: string;
-  label: string;
-  kind: "REQUIRED" | "ONE_OF" | "OPTIONAL" | "OTHER";
-  group: string | null;
-  originality: "ORIGINAL" | "COPY" | string;
-  checked: boolean;
-  documentId: string | null;
-  /** Copied onto this loan file's line when it was opened. */
-  required: boolean;
-  /** False when the rule was switched off in Settings (then it never counts). */
-  active: boolean;
-  /** Asked for in an open missing-paper request and still not ticked. */
-  requested?: boolean;
-  /** "Asked by Ana Cruz · 2 minutes ago · from Borrower" (shown on hover or focus of the tag). */
-  requestedInfo?: string;
-  /** The DP returned this paper ("Returned: missing paper"): the one marker on its row (the reason itself is in the "Do this now" card). */
-  returned?: string;
-}
+/** One paper of the checklist (components/loan/paper-row.tsx). */
+export type Line = PaperLine;
 
 /** Same rule as the server (lib/workflow/checklist.ts), on the ticks as they are on screen. */
 export function statusFor(lines: Line[], checked: Set<string>): ChecklistStatus {
   return checklistStatus(
-    lines.map((l) => ({
-      id: l.id, label: l.label, checked: checked.has(l.id), required: l.required, active: l.active,
-      group: l.kind === "ONE_OF" ? l.group ?? l.label : null,
-    })),
-  );
-}
-
-function ChecklistRow({ l, on, disabled, onToggle, highlight }: { l: Line; on: boolean; disabled: boolean; onToggle: () => void; highlight: boolean }) {
-  return (
-    <label
-      id={`line-${l.id}`}
-      data-highlight={highlight ? "true" : undefined}
-      title={l.documentId ?? undefined}
-      className={`flex min-h-12 scroll-mt-28 cursor-pointer items-center gap-3 rounded-[10px] border px-3.5 py-1.5 transition-[box-shadow,border-color] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${highlight ? "border-gold shadow-[0_0_0_3px_var(--act-bg)]" : "border-line"} ${on ? "bg-fill-soft" : "bg-white"} ${disabled ? "cursor-default" : "hover:border-navy/40"}`}
-    >
-      <span className={`relative flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border-2 ${on ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.3)] bg-white"}`}>
-        {on && <CheckIcon size={14} strokeWidth={3} />}
-        {/* Real checkbox, transparent, exactly over the drawn box */}
-        <input type="checkbox" className="absolute -inset-0.5 m-0 cursor-pointer opacity-0 disabled:cursor-default" checked={on} disabled={disabled} onChange={onToggle} />
-      </span>
-      <span className="min-w-0 flex-1 leading-snug">
-        <span className={`text-[15px] ${on ? "font-semibold text-ink" : l.required ? "font-semibold text-ink" : "font-medium text-ink-2"}`}>{l.label}</span>
-        {l.documentId && <span className="mono ml-2 text-xs text-ink-2">{l.documentId}</span>}
-        {/* Phone: the returned marker sits under the name so the name keeps its room. */}
-        {l.returned && !on && <span className="mt-0.5 block w-fit rounded-md border border-act-line bg-act-bg px-1.5 py-0.5 text-xs font-semibold text-act-fg sm:hidden" data-returned-marker>{l.returned}</span>}
-      </span>
-      <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-        {l.returned && !on && (
-          <span className="rounded-md border border-act-line bg-act-bg px-1.5 py-0.5 text-xs font-semibold text-act-fg max-sm:hidden" data-returned-marker>{l.returned}</span>
-        )}
-        {l.requested && !on && (
-          <span tabIndex={0} title={l.requestedInfo} aria-label={`Requested. ${l.requestedInfo ?? ""}`} data-requested
-            className="group/req relative rounded-md bg-bad-bg px-1.5 py-0.5 text-xs font-semibold text-bad-fg outline-none focus-visible:outline-2 focus-visible:outline-navy">
-            Requested
-            {l.requestedInfo && (
-              <span role="tooltip" className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 hidden w-max max-w-[240px] whitespace-normal rounded-lg bg-navy px-2.5 py-1.5 text-xs font-medium text-white shadow-lg group-hover/req:block group-focus/req:block">
-                {l.requestedInfo}
-              </span>
-            )}
-          </span>
-        )}
-        {l.required
-          ? <span className="rounded-md bg-act-bg px-1.5 py-0.5 text-xs font-semibold text-act-fg">Required</span>
-          : <span className="rounded-md bg-fill-strong px-1.5 py-0.5 text-xs font-semibold text-ink-2">Optional</span>}
-        <span className="text-xs text-ink-2">{l.originality === "ORIGINAL" ? "Original" : "Copy"}</span>
-      </span>
-    </label>
+    lines.map((l) => {
+      const on = checked.has(l.id);
+      return {
+        id: l.id, label: l.label, checked: on, required: l.required, active: l.active,
+        group: l.kind === "ONE_OF" ? l.group ?? l.label : null,
+        // Ticked on screen wins over a Missing mark not taken back yet (the save takes it back).
+        missing: on && l.missing === "MISSING" ? null : l.missing ?? null,
+        remarksSaved: !!l.remarks, included: !!l.included,
+      };
+    }),
   );
 }
 
@@ -115,11 +57,10 @@ export interface WorkCardProps {
   lines: Line[];
   editable: boolean;
   canAct: boolean; // LA
-  openMissingRequest: boolean;
+  /** Missing papers on this transaction: reasons and what the person may do (null: read only). */
+  papers?: PaperTools | null;
   /** Small chips next to the title for this transaction's open items ("On hold · 1 day"). */
   titleChips?: { id: string; text: string; tone: "bad" | "hold" }[];
-  /** May also put it on hold from the missing-paper pop-up. */
-  canHold?: boolean;
   /** "Round 2" (LA and Admin) after the DP declined or returned it and it was sent again. */
   round?: string | null;
   assignmentText: string | null;
@@ -166,6 +107,14 @@ export function WorkCard(p: WorkCardProps) {
       if (again.current) { again.current = false; run(); }
     });
   };
+  /** A paper was marked Missing or left out of the file: its Present tick is gone (the server did it). */
+  const dropTick = (id: string, gone: boolean) => {
+    if (!gone || !checked.has(id)) return;
+    const next = new Set(checked);
+    next.delete(id);
+    setChecked(next);
+    latest.current = next;
+  };
   const toggle = (id: string) => {
     const next = new Set(checked);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -179,8 +128,10 @@ export function WorkCard(p: WorkCardProps) {
   const required = p.lines.filter((l) => l.required && l.kind !== "ONE_OF");
   const groups = [...new Set(p.lines.filter((l) => l.required && l.kind === "ONE_OF").map((l) => l.group ?? l.label))];
   const optional = p.lines.filter((l) => !l.required);
+  // A pick-one group already met by another paper: nothing is missing, so no Missing button.
+  const groupMet = (l: Line) => l.kind === "ONE_OF" && p.lines.some((x) => x.id !== l.id && x.kind === "ONE_OF" && (x.group ?? x.label) === (l.group ?? l.label) && checked.has(x.id));
   const row = (l: Line) => (
-    <ChecklistRow key={l.id} l={l} on={checked.has(l.id)} disabled={!p.editable} onToggle={() => toggle(l.id)} highlight={highlight.includes(l.id)} />
+    <PaperRow key={l.id} l={l} on={checked.has(l.id)} disabled={!p.editable} onToggle={() => toggle(l.id)} highlight={highlight.includes(l.id)} tools={p.papers ?? null} onMissing={dropTick} groupMet={groupMet(l)} />
   );
 
   const hint = p.code === "EDST" && p.status === "FOR_CHECKLIST" ? "You do this one. Tick the papers first, then enter it in EDST and record the reference here." : null;
@@ -203,7 +154,8 @@ export function WorkCard(p: WorkCardProps) {
             <span className="text-[13px] text-ink-2">{status.requiredDone} of {status.requiredTotal} required{status.optionalTotal > 0 ? ` · ${status.optionalDone} of ${status.optionalTotal} optional` : ""}</span>
           )}
         </div>
-        {complete && status.requiredTotal > 0 && <ToneChip tone="ok" check>All documents checked</ToneChip>}
+        {complete && status.requiredTotal > 0 && status.exceptions.length === 0 && <ToneChip tone="ok" check>All documents checked</ToneChip>}
+        {complete && status.exceptions.length > 0 && <ToneChip tone="act">{status.exceptions.length} missing, with remarks</ToneChip>}
       </div>
 
       <div className="flex flex-col gap-2 sm:px-5 sm:py-4">
@@ -233,9 +185,6 @@ export function WorkCard(p: WorkCardProps) {
               <PlusIcon size={14} /> Add another paper
             </button>
           )}
-          {p.editable && p.canAct && !p.openMissingRequest && p.lines.some((l) => !checked.has(l.id)) && (
-            <AskMissing txnId={p.txnId} name={p.name} canHold={!!p.canHold} lines={p.lines.filter((l) => !checked.has(l.id) && (l.active || l.checked))} />
-          )}
           <span role="status" aria-live="polite" className="ml-auto text-[13px] text-ink-2">
             {savedText && !sendVisible && <span className="inline-flex items-center gap-1"><CheckIcon size={14} />{savedText}</span>}
           </span>
@@ -264,7 +213,7 @@ export function WorkCard(p: WorkCardProps) {
         {sendVisible && p.send && (
           <SendPanel
             txnId={p.txnId} code={p.code} name={p.name} borrower={p.borrower} status={p.status} o={p.send}
-            ready={complete} requiredDone={status.requiredDone} requiredTotal={status.requiredTotal} missing={status.missing}
+            ready={complete} requiredDone={status.requiredDone} requiredTotal={status.requiredTotal} missing={status.missing} needsRemarks={status.needsRemarks}
             waitingForSave={complete && p.status === "FOR_CHECKLIST"} savedText={savedText} goTo={goToLines}
           />
         )}
@@ -280,93 +229,6 @@ function TitleChip({ c, phone = false }: { c: { id: string; text: string; tone: 
       {c.tone === "hold" ? <PauseIcon size={12} strokeWidth={2.6} /> : <AlertIcon size={12} strokeWidth={2.6} />}
       {c.text}
     </span>
-  );
-}
-
-const ASKED_FROM: [string, string][] = [["BORROWER", "Borrower"], ["BRANCH", "Branch"], ["OTHER", "Other"]];
-
-/**
- * Ask for missing paper: pick the papers that have not arrived (required first, optional after; at
- * least one), from whom (optional), a note, and optionally put the transaction on hold (waiting on
- * borrower) through the normal hold rules. Time and who asked are recorded by the server.
- */
-function AskMissing({ txnId, name, lines, canHold }: { txnId: string; name: string; lines: Line[]; canHold: boolean }) {
-  const params = useSearchParams();
-  const [open, setOpen] = useState(() => params.get("ask") === "missing");
-  const [state, action, pending] = useActionState(requestMissingAnnounced, null);
-  const close = useMemo(() => () => setOpen(false), []);
-  useCloseWhenDone(state, close);
-  return (
-    <>
-      <span className="text-ink-2">
-        Missing something?{" "}
-        <button type="button" onClick={() => setOpen(true)} className="inline-flex min-h-11 items-center text-[13px] font-semibold text-navy underline underline-offset-2">Ask for missing paper</button>
-      </span>
-      <GuardedSheet open={open} onClose={close} title="Ask for missing paper">
-        <AskMissingForm txnId={txnId} name={name} lines={lines} canHold={canHold} action={action} state={state} pending={pending} />
-      </GuardedSheet>
-    </>
-  );
-}
-
-function AskMissingForm({ txnId, name, lines, canHold, action, state, pending }: {
-  txnId: string; name: string; lines: Line[]; canHold: boolean; action: (fd: FormData) => void; state: Result; pending: boolean;
-}) {
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [tried, setTried] = useState(false);
-  const required = lines.filter((l) => l.required);
-  const optional = lines.filter((l) => !l.required);
-  const none = (tried && picked.size === 0) || state?.field === "checkIds";
-  const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const box = (l: Line) => (
-    <label key={l.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-line px-3 py-1.5 has-[:checked]:border-navy has-[:checked]:bg-fill">
-      <input type="checkbox" name="checkIds" value={l.id} checked={picked.has(l.id)} onChange={() => toggle(l.id)} className="h-5 w-5 shrink-0 accent-[var(--navy)]" />
-      <span className="min-w-0 flex-1 text-[15px]">{l.label}</span>
-      <span className="text-xs text-ink-2">{l.required ? "Required" : "Optional"}</span>
-    </label>
-  );
-  return (
-    <form action={action} onSubmit={(e) => { if (picked.size === 0) { e.preventDefault(); setTried(true); } }} className="flex flex-col gap-3" noValidate>
-      <input type="hidden" name="transactionId" value={txnId} />
-      <p className="rounded-xl bg-fill px-3 py-2 text-[13px] text-ink" data-purpose>
-        A reminder that a paper was asked for and has not arrived. It does not stop the work and does not pause the turnaround time. It closes by itself when the paper is ticked.
-      </p>
-      <fieldset aria-describedby={none ? `miss-${txnId}-err` : undefined}>
-        <legend className="label">Which papers for {name}?</legend>
-        <div className="flex max-h-[38dvh] flex-col gap-1.5 overflow-y-auto">
-          {required.map(box)}
-          {optional.length > 0 && <p className="pt-1 text-xs font-bold uppercase tracking-[0.06em] text-ink-2">Optional</p>}
-          {optional.map(box)}
-        </div>
-        {none && <p id={`miss-${txnId}-err`} className="mt-1 text-[13px] font-semibold text-bad-fg">Pick at least one paper.</p>}
-      </fieldset>
-      <fieldset>
-        <legend className="label">Asked from (optional)</legend>
-        <div className="flex flex-wrap gap-x-5">
-          {ASKED_FROM.map(([v, l]) => (
-            <label key={v} className="inline-flex min-h-11 items-center gap-2 text-[15px]">
-              <input type="radio" name="askedFrom" value={v} className="h-5 w-5 accent-[var(--navy)]" /> {l}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      <div>
-        <label htmlFor={`note-${txnId}`} className="label">Note (optional)</label>
-        <textarea id={`note-${txnId}`} name="note" rows={2} maxLength={500} className="input" />
-      </div>
-      <NowLine label="Asked now" />
-      {canHold && (
-        <label className="inline-flex min-h-11 items-start gap-2 text-[15px]">
-          <input type="checkbox" name="alsoHold" className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--navy)]" />
-          <span>Also put this transaction on hold (waiting for the client&apos;s papers)<span className="block text-[13px] text-ink-2">A separate On hold. The turnaround time keeps counting.</span></span>
-        </label>
-      )}
-      {state && !state.ok && state.field !== "checkIds" && <p role="alert" className="rounded-xl bg-bad-bg px-4 py-3 text-sm text-bad-fg">{plainMessage(state.error)}</p>}
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-        <SheetCancel />
-        <button type="submit" className="btn-gold" disabled={pending || picked.size === 0}>{pending ? "Sending..." : "Ask for the paper"}</button>
-      </div>
-    </form>
   );
 }
 
@@ -401,12 +263,12 @@ export function ReportProblem({ loanId, missingTxns, compact = false }: { loanId
   const [kind, setKind] = useState<"MISSING_PAPER" | "WRONG_DETAILS" | "OTHER">("MISSING_PAPER");
   const [txn, setTxn] = useState(missingTxns[0]?.id ?? "");
   const [stateB, actionB, pendingB] = useActionState(reportProblemAction, null);
-  const useMissing = kind === "MISSING_PAPER" && missingTxns.length > 0;
+  const useMissing = kind === "MISSING_PAPER";
   const state = stateB;
   const pending = pendingB;
   const done = stateB?.ok;
   const choices: [typeof kind, string, string][] = [
-    ["MISSING_PAPER", "Missing paper", "A paper is not with you yet."],
+    ["MISSING_PAPER", "Missing paper", "Mark it Missing on its checklist, with a reason and remarks."],
     ["WRONG_DETAILS", "Wrong details", "Something in the loan details is not right."],
     ["OTHER", "Something else", "Anything else that stops you."],
   ];
@@ -432,7 +294,7 @@ export function ReportProblem({ loanId, missingTxns, compact = false }: { loanId
                 </label>
               ))}
             </fieldset>
-            {useMissing && (
+            {useMissing && missingTxns.length > 0 && (
               <div>
                 <label htmlFor="rp-txn" className="label">Which part is missing a paper?</label>
                 <select id="rp-txn" value={txn} onChange={(e) => setTxn(e.target.value)} className="input">
@@ -440,9 +302,14 @@ export function ReportProblem({ loanId, missingTxns, compact = false }: { loanId
                 </select>
               </div>
             )}
-            {useMissing ? (
+            {useMissing && missingTxns.length === 0 ? (
+              <div className="flex flex-col gap-3">
+                <p className="rounded-xl bg-fill px-4 py-3 text-[15px] text-ink">Every transaction has been sent. A paper is marked Missing on its checklist while the transaction is with you; the processor returns it if a paper is not there.</p>
+                <button type="button" className="btn-ghost btn-lg" onClick={() => setOpen(false)}>Close</button>
+              </div>
+            ) : useMissing ? (
               <div className="flex flex-col gap-3 sm:flex-row">
-                <a href={missingTxns.find((t) => t.id === txn)?.href ?? "#"} className="btn-gold btn-lg">Choose the papers</a>
+                <a href={missingTxns.find((t) => t.id === txn)?.href ?? "#"} className="btn-gold btn-lg">Go to the papers</a>
                 <button type="button" className="btn-ghost btn-lg" onClick={() => setOpen(false)}>Cancel</button>
               </div>
             ) : (

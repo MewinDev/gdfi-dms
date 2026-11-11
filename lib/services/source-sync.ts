@@ -1,7 +1,7 @@
 import { refuseInProduction } from "@/lib/env";
 import "server-only";
 import { buildPn, getPnFormat, parsePn } from "@/lib/pn";
-import { branchLabel, resolveLoanBranch } from "./branches";
+import { resolveLoanBranch } from "./branches";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
@@ -373,7 +373,7 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
       if (br.id !== loan.branchId) {
         data.branch = { connect: { id: br.id } };
         const was = await tx.branch.findUniqueOrThrow({ where: { id: loan.branchId }, select: { name: true, code: true } });
-        moved = { from: branchLabel(was), to: branchLabel(br) };
+        moved = { from: was.name, to: br.name };
       }
     }
     await tx.loan.update({ where: { id: loan.id }, data });
@@ -980,7 +980,7 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
     if (!to) throw new UserError("There is no other active branch to move it to.");
     over.branchName = to.name;
     over.branchCode = to.code;
-    message = `MyLoans now says the loan is at ${to.name} (${to.code}).`;
+    message = `MyLoans now says the loan is at ${to.name}.`;
   } else {
     const extra = [...(await getSetting("myloans.mockExtra"))];
     let n = 9100;

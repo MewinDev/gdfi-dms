@@ -59,7 +59,7 @@ describe("Journey v2 from the records", () => {
   it("sent, hold and resume, returned with papers back, Round 2, funds, forwarded: the Story lines, the milestones and the strip", async () => {
     await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     const job1 = await send("MORTGAGE", "NO");
-    await acceptJob(dp, job1.id, true);
+    await acceptJob(dp, job1.id);
     const borrower = (await prisma.holdReason.findUniqueOrThrow({ where: { code: "CLIENT-PAPERS" } })).id;
     const holdId = await raiseHold(dp, { transactionId: job1.transactionId, reasonId: borrower, note: "Borrower to bring the OR/CR" });
     await resumeHold(dp, holdId, "Borrower brought it");
@@ -68,7 +68,7 @@ describe("Journey v2 from the records", () => {
     await returnToLa(dp, job1.id, { reasonId: reason, checkIds: [check.id], note: "The ID copy is unreadable", handedOver: await allPapers(job1.transactionId) });
     await confirmPapersBack(la, { transactionId: job1.transactionId, notReceived: [] });
     const job2 = await send("MORTGAGE", "YES", ["LTO_FEE"]);
-    await acceptJob(dp, job2.id, true);
+    await acceptJob(dp, job2.id);
     const adv = await requestAdvance(dp, { lines: [{ transactionId: job2.transactionId, kind: "LTO_FEE", cents: 150000, overMaxReason: "Integration test" }] });
     await decideAdvance(fin, adv.id, { approve: true });
     await releaseAdvance(fin, adv.id, { ref: "VOUCHER-1" });

@@ -453,7 +453,7 @@ export function ReceivePackageForm({ assignmentId, from, papers }: { assignmentI
 // ---------------------------------------------------------------------------
 
 
-export interface ReceivedPaper { checkId: string | null; label: string; original: boolean; documentId: string | null; labelPrinted: boolean }
+export interface ReceivedPaper { checkId: string | null; label: string; original: boolean; documentId: string | null }
 
 /**
  * Review: the processor confirms the papers received (one "Received by the processor" movement each
@@ -464,7 +464,6 @@ export function ReviewForm({ assignmentId, papers = [], laName = "the Loan Assoc
   assignmentId: string; papers?: ReceivedPaper[]; laName?: string; returnReasons?: { id: string; name: string; code: string }[];
 }) {
   const [state, accept] = useActionState(acceptJobAction, null);
-  const [labels, setLabels] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [missing, setMissing] = useState<Set<string>>(new Set());
   const [missingOpen, setMissingOpen] = useState(false);
@@ -482,7 +481,6 @@ export function ReviewForm({ assignmentId, papers = [], laName = "the Loan Assoc
               )}
               <span className="min-w-0 flex-1 text-[15px]">{p.label} <span className="tag">{p.original ? "Original" : "Copy"}</span></span>
               {p.documentId && <span className="mono text-xs text-ink-2">{p.documentId}</span>}
-              <span className={`chip ${p.labelPrinted ? "c-ok" : "c-act"}`}>{p.labelPrinted ? "Label printed" : "Label not printed"}</span>
             </label>
           ))}
         </fieldset>
@@ -491,16 +489,11 @@ export function ReviewForm({ assignmentId, papers = [], laName = "the Loan Assoc
       {missing.size === 0 ? (
         <form action={accept} className="flex flex-col gap-3">
           <Hidden v={{ assignmentId }} />
-          <label className="inline-flex min-h-11 items-center gap-2 text-[15px] font-semibold">
-            <input type="checkbox" name="labels" checked={labels} onChange={(e) => setLabels(e.target.checked)} className="h-5 w-5 accent-[var(--navy)]" />
-            Labels are on all papers
-          </label>
           <FormMessage state={state} />
           <div className="flex flex-wrap gap-2">
-            <SubmitButton disabled={!labels}>Accept</SubmitButton>
+            <SubmitButton>Accept</SubmitButton>
             <button type="button" className="btn-ghost" onClick={() => setDeclining(true)}>Decline</button>
           </div>
-          {!labels && <p className="help">Tick “Labels are on all papers” to accept.</p>}
         </form>
       ) : (
         <div className="flex flex-col gap-2" data-some-missing>

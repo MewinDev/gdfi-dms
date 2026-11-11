@@ -1,6 +1,6 @@
 /**
  * The Manual Test Kit, for real, on the TEST database (gdfi_dms_test) with a scratch folder: the CLEAN
- * kit (the default: accounts, branches, settings, 40 PNs in the sample MyLoans, no work data), then the
+ * kit (the default: accounts, branches, settings, 44 PNs in the sample MyLoans, no work data), then the
  * kit WITH SCENARIOS (--with-scenarios: every sample in the scenarios sheet exists), change data, backup,
  * reset, restore a backup, the out-of-date refusal, dates moved on restore, the last 5 automatic backups.
  * The test database is saved first and put back at the end, so the other tests keep their data.
@@ -52,7 +52,7 @@ afterAll(async () => {
 }, 300_000);
 
 describe("Manual Test Kit on the test database", () => {
-  it("clean kit (the default): accounts, branches and settings, 40 fresh PNs, no work data", async () => {
+  it("clean kit (the default): accounts, branches and settings, 44 fresh PNs, no work data", async () => {
     await fresh();
     const m = await buildBaseline(quiet, { variant: "clean", samples: () => buildClean(quiet) });
     expect(m).toMatchObject({ name: "baseline-clean", kind: "baseline", variant: "clean", loanFiles: 0 });
@@ -100,10 +100,10 @@ describe("Manual Test Kit on the test database", () => {
     expect(await prisma.expenseKind.count()).toBeGreaterThanOrEqual(5);
     expect(await prisma.fundsType.count()).toBeGreaterThanOrEqual(2);
 
-    // The pool: 40 distinct PNs in the real format, found by the sample MyLoans, none opened.
+    // The pool: 44 distinct PNs in the real format, found by the sample MyLoans, none opened.
     const pns = CLEAN_POOL.map((l) => l.pn);
-    expect(pns).toHaveLength(40);
-    expect(new Set(pns).size).toBe(40);
+    expect(pns).toHaveLength(44);
+    expect(new Set(pns).size).toBe(44);
     for (const pn of pns) {
       expect(parsePn(pn).ok, pn).toBe(true);
       expect(/^GD\d{3}20269030\d{2}$/.test(pn), pn).toBe(true); // the new 9-03xxx range
@@ -134,7 +134,7 @@ describe("Manual Test Kit on the test database", () => {
     // The answers file says exactly this.
     expect(outcomes.unknownCode, "777 in the PN, MyLoans says Antipolo").toBe("opened");
     expect((await prisma.loan.findUniqueOrThrow({ where: { pn: "GD7772026903011" }, include: { branch: true } })).branch.code).toBe("101");
-    expect(outcomes.inactive).toBe("Alicia-Inactive (718) is inactive in Settings, so no new loan files can be opened for it.");
+    expect(outcomes.inactive).toBe("Alicia-Inactive is inactive in Settings, so no new loan files can be opened for it.");
     expect(outcomes.luzonExcluded, "LA Luzon 1 at Amang Rodriguez").toBe("Outside your branch access.");
     expect(outcomes.luzonAngono, "LA Luzon 1 at Angono").toBe("opened");
     expect(outcomes.antipoloAtAngono, "LA Antipolo at Angono").toBe("Outside your branch access.");
@@ -255,7 +255,7 @@ describe("Manual Test Kit on the test database", () => {
     expect(businessDate(late.releasedAt)).toBe(shiftBusinessDays(businessDate(new Date()), -4, holidays));
   }, 600_000);
 
-  it("the tester sheet lists the 40 PNs by branch and nothing about them; the answers file covers each one", () => {
+  it("the tester sheet lists the 44 PNs by branch and nothing about them; the answers file covers each one", () => {
     const sheet = readFileSync(path.join("docs", "MANUAL-TEST-KIT.md"), "utf8");
     const inSheet = sheet.match(/\bGD\d{13}\b/g) ?? [];
     expect([...inSheet].sort()).toEqual(CLEAN_POOL.map((l) => l.pn).sort()); // each PN once, no other PN

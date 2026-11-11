@@ -5,7 +5,6 @@ Loans,Open a loan file,loans:open,Yes,No,No,No,No,No,No,No
 Loans,Export loans (CSV),loans:export,No,Yes,No,No,No,No,No,No
 Loans,Change an automatic result,rules:override,No,Yes,No,No,No,No,No,No
 Check documents,Tick papers,checklist:tick,Yes,No,No,No,No,No,No,No
-Check documents,Print labels,labels:print,Yes,No,No,No,No,No,No,No
 Check documents,Add a transaction,transactions:add,Yes,No,No,No,No,No,No,No
 Check documents,Mark as done,transactions:complete,Yes,No,No,No,No,No,No,No
 Processing,Send to a processor,processing:send,Yes,No,No,No,No,No,No,No

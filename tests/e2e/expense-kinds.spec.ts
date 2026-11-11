@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
+import { openFundsDetails } from "./helpers";
 
 /**
  * Expense kinds: Settings > Expense kinds (list, Other explained, add a kind, the suggestions block),
@@ -99,9 +100,12 @@ test("Other needs \"What is this expense?\"; Finance adds a new kind and it is s
 
   await signInAs(page, "fin");
   await page.goto("/funds?tab=approve");
-  await expect(page.getByText("Other: Courier").first()).toBeVisible();
+  const advance = page.locator("[data-advance]", { hasText: "Other: Courier" }).first();
+  // At 820 the lines sit in the row's Details (collapsed); 1440 and 390 show them in the row.
+  if (width(page) === 820) await openFundsDetails(advance);
+  await expect(page.getByText("Other: Courier").filter({ visible: true }).first()).toBeVisible();
   // The line editors sit in the row's "More" menu.
-  await page.locator("[data-advance]", { hasText: "Other: Courier" }).first().getByRole("button", { name: "More actions" }).click();
+  await advance.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("button", { name: "Change Other: Courier" }).click();
   const sheet = dialog(page);
   await sheet.getByRole("button", { name: "+ Add new kind" }).click();

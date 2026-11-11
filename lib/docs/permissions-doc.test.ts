@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ALL_PERMISSIONS } from "@/lib/auth/permissions";
+import { ALL_PERMISSIONS, isHiddenPermission } from "@/lib/auth/permissions";
 import { DOC_FILE, auditMark, withGenerated } from "./permissions-doc";
 
 describe("docs/workflow/12-permissions.md is generated from the code", () => {
@@ -13,7 +13,8 @@ describe("docs/workflow/12-permissions.md is generated from the code", () => {
   });
 
   it("lists every permission in the catalogue and in the audit table", () => {
-    for (const k of ALL_PERMISSIONS) expect(doc.split(`\`${k}\``).length - 1, k).toBeGreaterThanOrEqual(2);
+    // Hidden ticks (a feature switched off for now, such as the CSV exports) are left out of the doc on purpose.
+    for (const k of ALL_PERMISSIONS.filter((x) => !isHiddenPermission(x))) expect(doc.split(`\`${k}\``).length - 1, k).toBeGreaterThanOrEqual(2);
   });
 
   it("marks gaps and splits", () => {

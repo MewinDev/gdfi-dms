@@ -35,7 +35,7 @@ test("header: breadcrumb above, no boxed Back button beside the title, subtitle 
     await expect(crumbs.getByRole("link", { name: "My loans" })).toBeVisible();
     await expect(crumbs.getByText("GD1012026901001")).toHaveAttribute("aria-current", "page");
   }
-  const sub = main.getByText("Maria Santos · GD1012026901001 · Antipolo (101) · ₱450,000 · New");
+  const sub = main.getByText("Maria Santos · GD1012026901001 · Antipolo · ₱450,000 · New");
   const t = (await title.boundingBox())!;
   const s = (await sub.boundingBox())!;
   expect(Math.abs(s.x - t.x)).toBeLessThan(2); // nothing to the left of either

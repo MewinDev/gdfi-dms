@@ -1,14 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { TOAST_KEY } from "./txn-switcher";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { assignToDpAction } from "@/app/actions/loan";
 import { Sheet } from "@/components/ui/sheet";
-import { CheckIcon, CoinsIcon, MapPinIcon, PrinterIcon, TagIcon, UsersIcon, ChecklistIcon, WarningIcon } from "@/components/ui/icons";
+import { CheckIcon, CoinsIcon, MapPinIcon, UsersIcon, ChecklistIcon, WarningIcon } from "@/components/ui/icons";
 import { initials, plainMessage } from "@/lib/ui/plain";
-import type { MissingPaper } from "@/lib/workflow/checklist";
+import { addRemarksText, type MissingPaper } from "@/lib/workflow/checklist";
 import { AVAILABILITY_LABEL, AVAILABILITY_TONE, type AvailabilityStatus } from "@/lib/monitoring/rules";
 import { AdvisoryWarnings } from "@/components/monitoring/advisory-forms";
 
@@ -44,9 +43,6 @@ export interface SendOptions {
   suggestedKinds: string[];
   /** "What are the funds for?": active expense kinds (Settings > Expense kinds), Other last. */
   kindChoices?: [string, string][];
-  /** Print labels for this transaction's papers (null: nothing to print or not allowed). */
-  labelsHref: string | null;
-  labelsPrinted: boolean;
   /** After sending, open the next transaction that needs the LA (null: stay here). */
   next: { href: string; name: string } | null;
   /** A MyLoans change under Admin review holds this transaction ("MyLoans changed this loan. Admin is reviewing."). */
@@ -86,6 +82,8 @@ export interface SendPanelProps {
   requiredDone: number;
   requiredTotal: number;
   missing: MissingPaper[];
+  /** Papers marked Missing whose reason and remarks are not saved yet: Send stays locked, naming them. */
+  needsRemarks?: MissingPaper[];
   /** Ticks are complete but not saved yet (the transaction is still For checklist). */
   waitingForSave: boolean;
   savedText: string | null;
@@ -97,7 +95,7 @@ export const sentKey = (txnId: string) => `dms:sent:${txnId}`;
 
 /**
  * "Send to a Document Processor": a ready check on top, funds (left) and who should do it (right),
- * the late reason when past the send date, labels, and a footer that says what goes where and,
+ * the late reason when past the send date, and a footer that says what goes where and,
  * while Send is locked, the first thing still missing.
  */
 export function SendPanel(p: SendPanelProps) {
@@ -149,7 +147,9 @@ export function SendPanel(p: SendPanelProps) {
   const papersLeft = p.missing.length;
   const reason = o.sourceBlock ? o.sourceBlock
     : o.papersBlock ? o.papersBlock
-    : !p.ready ? `Tick ${papersLeft} more required paper${papersLeft === 1 ? "" : "s"}`
+    : !p.ready && papersLeft > 0 ? `Tick ${papersLeft} more required paper${papersLeft === 1 ? "" : "s"}`
+    : !p.ready && (p.needsRemarks ?? []).length > 0 ? addRemarksText(p.needsRemarks!)
+    : !p.ready ? "Answer every paper"
     : p.waitingForSave ? "Saving your ticks..."
     : !funds ? "Answer the funds question"
     : funds === "YES" && kinds.length === 0 ? "Pick what the funds are for"
@@ -161,7 +161,7 @@ export function SendPanel(p: SendPanelProps) {
     : null;
 
   const go = (part: "papers" | "funds" | "dp" | "second" | "lto") => {
-    if (part === "papers") { p.goTo(p.missing[0]?.lineIds ?? []); return; }
+    if (part === "papers") { p.goTo((p.missing[0] ?? p.needsRemarks?.[0])?.lineIds ?? []); return; }
     const el = document.getElementById(`${part}-${uid}`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
     (el?.matches("select") ? el : el?.querySelector<HTMLElement>("input:not([type=hidden]), button"))?.focus({ preventScroll: true });
@@ -360,16 +360,6 @@ export function SendPanel(p: SendPanelProps) {
           <p className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold text-act-fg"><WarningIcon size={14} /> This is past the send date ({o.deadlineText}).</p>
           <label htmlFor={`late-${uid}`} className="label">Why is this late?</label>
           <textarea id={`late-${uid}`} name="beyondTatReason" required rows={2} maxLength={500} value={late} onChange={(e) => setLate(e.target.value)} className="input" aria-invalid={err?.field === "beyondTatReason"} />
-        </div>
-      )}
-
-      {/* 5. Labels (not required to send) */}
-      {o.labelsHref && (
-        <div className="flex flex-wrap items-center gap-2 text-[13px]">
-          {o.labelsPrinted
-            ? <span className="chip c-ok"><CheckIcon size={14} strokeWidth={2.6} />Labels printed</span>
-            : <span className="chip c-act h-auto min-h-6 whitespace-normal py-0.5"><TagIcon size={14} />Labels not printed yet. Print them before handing over the papers</span>}
-          <Link href={o.labelsHref} className="btn-ghost btn-sm"><PrinterIcon size={16} /> Print labels</Link>
         </div>
       )}
 

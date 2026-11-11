@@ -785,7 +785,6 @@ model LoanTransaction {
   /// Free text kept from older data (e.g. the old cash advance amount).
   fundsNote        String               @default("")
   fundsFlaggedAt   DateTime?
-  labelsPrintedAt  DateTime?
   advanceLines     CashAdvanceLine[]
   attempts         TransactionAttempt[]
   problems         Problem[]
@@ -798,24 +797,47 @@ model LoanTransaction {
 }
 
 model ChecklistCheck {
-  id            String          @id @default(cuid())
-  transactionId String
-  transaction   LoanTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  ruleId        String?
-  rule          ChecklistRule?  @relation(fields: [ruleId], references: [id])
+  id               String              @id @default(cuid())
+  transactionId    String
+  transaction      LoanTransaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  ruleId           String?
+  rule             ChecklistRule?      @relation(fields: [ruleId], references: [id])
   /// For "Others" free-text items.
-  otherLabel    String?
+  otherLabel       String?
   /// Copy of the rule's "required" flag when the loan file was opened.
-  required      Boolean         @default(true)
-  checked       Boolean         @default(false)
-  checkedAt     DateTime?
-  checkedById   String?
-  checkedBy     User?           @relation(fields: [checkedById], references: [id])
-  documentItem  DocumentItem?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  required         Boolean             @default(true)
+  checked          Boolean             @default(false)
+  checkedAt        DateTime?
+  checkedById      String?
+  checkedBy        User?               @relation(fields: [checkedById], references: [id])
+  /// Optional papers only: the LA ticked "Include in this file" (then it is expected like a required paper).
+  /// Off: the paper is ignored (DP does not expect it, cannot return the file for it, needs no remarks).
+  includedInFile   Boolean             @default(false)
+  /// Missing papers (lib/services/papers.ts). Null: Present (checked) or not answered yet (unchecked).
+  /// MISSING: not in hand (checked is false); RECEIVED_LATE: it arrived later (checked is true).
+  /// A CHECK constraint (migration 20261119090009_missing_papers) keeps it consistent with checked.
+  missingState     PaperMissingState?
+  missingReasonId  String?
+  missingReason    MissingPaperReason? @relation(fields: [missingReasonId], references: [id])
+  /// 5 to 500 characters once saved (null until the LA saves them: Send stays blocked).
+  missingRemarks   String?
+  missingAt        DateTime?
+  missingById      String?
+  missingByLabel   String?
+  /// Last time the reason and remarks were saved.
+  remarksAt        DateTime?
+  /// Received late: the date it arrived (YYYY-MM-DD, Philippine time), and who recorded it, when.
+  receivedLateOn   String?
+  receivedLateAt   DateTime?
+  receivedLateById String?
+  receivedLateBy   String?
+  paperEvents      PaperEvent[]
+  documentItem     DocumentItem?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
 
   @@unique([transactionId, ruleId])
+  @@index([missingState])
 }
 
 model DocumentItem {
@@ -838,7 +860,6 @@ model DocumentItem {
   custodianUserId  String?
   location         String             @default("")
   since            DateTime           @default(now())
-  labelPrintedAt   DateTime?
   movements        DocumentMovement[]
   digitalRecords   DigitalRecord[]
   transmittalItems TransmittalItem[]
@@ -856,7 +877,7 @@ model DocumentMovement {
   id               String             @id @default(cuid())
   documentItemId   String
   documentItem     DocumentItem       @relation(fields: [documentItemId], references: [id], onDelete: Cascade)
-  action           String // RECEIVED_AT_BRANCH, LABEL_PRINTED, DISPATCHED, ACKNOWLEDGED, ...
+  action           String // RECEIVED_AT_BRANCH, DISPATCHED_TO_DP, ACKNOWLEDGED_BY_DP, ...
   fromCustodian    String?
   toCustodian      String?
   purpose          String?
@@ -902,8 +923,6 @@ model DpAssignment {
   ltoOffice           LtoOffice?         @relation(fields: [ltoOfficeId], references: [id])
   /// Old per-assignment fund status (kept for history). Funds now follow the transaction flag and its advance lines.
   fundStatus          FundStatus         @default(NOT_REQUIRED)
-  /// The DP ticked "Labels are on all papers" when accepting.
-  labelsConfirmedAt   DateTime?
   returnedAt          DateTime?
   returnReasons       String?
   /// Return to LA (after accepting): why papers are needed (Settings list). Null for a decline or an older return.
@@ -1701,6 +1720,51 @@ model HoldTransfer {
   at        DateTime @default(now())
 
   @@index([holdId])
+}
+
+/// A missing paper's state (Present is ChecklistCheck.checked with no missing state).
+enum PaperMissingState {
+  MISSING
+  RECEIVED_LATE
+}
+
+/**
+ * Why a paper is missing (Settings > Missing paper reasons). Remarks are always required as well.
+ */
+model MissingPaperReason {
+  id              String           @id @default(cuid())
+  code            String           @unique
+  name            String
+  sortOrder       Int              @default(0)
+  active          Boolean          @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  checks          ChecklistCheck[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+/**
+ * The history of a missing paper, append-only (never updated or deleted): marked missing, reason and
+ * remarks saved or edited (old and new text), marked present again (before sending only), received late.
+ */
+model PaperEvent {
+  id         String         @id @default(cuid())
+  checkId    String
+  check      ChecklistCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  loanId     String
+  /// MARKED_MISSING, REMARKS_SAVED, REMARKS_EDITED, CLEARED, RECEIVED_LATE
+  kind       String
+  reasonName String?
+  oldText    String?
+  newText    String?
+  receivedOn String?
+  byId       String?
+  byLabel    String
+  at         DateTime       @default(now())
+
+  @@index([checkId, at])
+  @@index([loanId])
 }
 
 /**

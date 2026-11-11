@@ -5,8 +5,8 @@ import { signIn } from "./helpers";
 /**
  * Check documents: one alert place. No banners on the left; the grouped Open items card (Waiting for
  * papers, On hold, Problems): a missing paper or a returned row is itself the button (Show paper, Open); holds and
- * problems keep their one button (Resume, Open). Ask for missing paper
- * (specific unticked papers, asked from, optional hold), Put on hold (purpose and example), the
+ * problems keep their one button (Resume, Open). An older missing-paper request (the LA now marks a
+ * paper Missing on its row instead), Put on hold (purpose and example), the
  * Requested tag with who and when, title chips, side chips and strip dots. No "Pending" wording.
  * Screenshots go to SHOTS_DIR when it is set. No sideways page scroll.
  */
@@ -50,7 +50,7 @@ async function openPn3(page: Page) {
 /** The title chips of the selected transaction (header row on tablet and desktop, under it on phone). */
 const titleChips = (page: Page) => page.locator("[data-title-chip]").filter({ visible: true });
 
-test("One alert place: the Open items card, the missing-paper and Put on hold pop-ups", async ({ page }) => {
+test("One alert place: the Open items card, an older missing-paper request and the Put on hold pop-up", async ({ page }) => {
   test.setTimeout(240_000);
   await signIn(page, "la");
   await openPn3(page);
@@ -60,28 +60,21 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
   await papers.getByLabel("Disclosure Statement").check();
   await expect(page.getByText("All changes saved").or(page.getByText("Saved just now")).first()).toBeVisible();
 
-  // Ask for missing paper: only unticked papers of Notary, at least one, the hold box off by default.
-  await page.getByRole("button", { name: "Ask for missing paper" }).click();
-  const ask = page.getByRole("dialog", { name: "Ask for missing paper" });
-  await expect(ask.locator("[data-purpose]")).toHaveText(/does not stop the work and does not pause the turnaround time\. It closes by itself when the paper is ticked\./);
-  await expect(ask.getByRole("checkbox", { name: "Disclosure Statement" })).toHaveCount(0);
-  await expect(ask.getByRole("checkbox", { name: "Promissory Note" })).toBeVisible();
-  await expect(ask.locator("[data-now-line]")).toHaveText(/^Asked now: .+ PHT$/);
-  const askBtn = ask.getByRole("button", { name: "Ask for the paper" });
-  await expect(askBtn).toBeDisabled();
-  const alsoHold = ask.getByRole("checkbox", { name: /Also put this transaction on hold/ });
-  await expect(alsoHold).not.toBeChecked();
-  await ask.getByRole("checkbox", { name: "Promissory Note" }).check();
-  await ask.getByRole("radio", { name: "Borrower" }).check();
-  await alsoHold.check();
-  await shot(page, "missing-paper-popup", false);
-  await askBtn.click();
-  await expect(toast(page)).toHaveText(/Missing paper requested: Promissory Note · On hold: Waiting for the client's papers/);
-  await expect(page.locator("[data-live-announcer]").first()).toHaveText(/Missing paper requested: Promissory Note/);
-  // Two separate records: the request and the hold.
+  // The LA no longer asks for a missing paper (it is marked Missing on its row, tests/e2e/missing-papers.spec.ts).
+  await expect(page.getByRole("button", { name: "Ask for missing paper" })).toHaveCount(0);
+  // An older missing-paper request (made before that change) still shows as before, and a hold beside it.
   const notary = await txnOf("NOTARY");
-  expect(await db.loanException.count({ where: { transactionId: notary.id, type: "LEGAL_DOCS_COMPLETION", status: "OPEN" } })).toBe(1);
-  expect(await db.hold.count({ where: { transactionId: notary.id, resumedAt: null } })).toBe(1);
+  const pnote = await db.checklistCheck.findFirstOrThrow({ where: { transactionId: notary.id, rule: { label: "Promissory Note" } } });
+  const la = await db.user.findUniqueOrThrow({ where: { email: "test.la@gdfi.ph" } });
+  await db.loanException.create({
+    data: {
+      loanId: notary.loanId, transactionId: notary.id, type: "LEGAL_DOCS_COMPLETION", reason: "Missing for Notary: Promissory Note. Asked from: Borrower.",
+      details: { checkIds: [pnote.id], missing: ["Promissory Note"], askedFrom: "BORROWER", note: "" }, raisedById: la.id, raisedByLabel: la.name,
+    },
+  });
+  const clientPapers = await db.holdReason.findUniqueOrThrow({ where: { code: "CLIENT-PAPERS" } });
+  await db.hold.create({ data: { loanId: notary.loanId, transactionId: notary.id, reasonId: clientPapers.id, reasonName: clientPapers.name, note: "Missing paper: Promissory Note", raisedById: la.id, raisedByLabel: la.name, ownerId: la.id, ownerLabel: la.name } });
+  await page.reload();
 
   // No banners on the left except the one hold summary (reason and remarks); the Requested tag (who and when), the title chips.
   await expect(page.locator("[data-open-banners]")).toHaveCount(0);
@@ -184,7 +177,7 @@ test("One alert place: the Open items card, the missing-paper and Put on hold po
 
   // The Journey (Story): plain words, no "Pending".
   await page.goto("/loans/GD1652026901003?tab=journey");
-  await expect(page.locator("[data-journey]")).toContainText("asked for a missing paper for Notary: Promissory Note");
+  await expect(page.locator("[data-journey]")).toBeVisible();
   expect(await page.locator("main").innerText()).not.toMatch(/pending/i);
 });
 
@@ -200,18 +193,15 @@ test("Put on hold: pressed with no reason, it says \"Pick a reason\" and saves n
   expect(await db.hold.count()).toBe(0);
 });
 
-test("Ask for missing paper: pressed with no paper, it says \"Pick at least one paper\"; the To do link opens it", async ({ page }) => {
+test("Report a problem, Missing paper: it goes to the papers, where each paper has Missing; no problem card is made", async ({ page }) => {
   await signIn(page, "la");
   await openPn3(page);
-  // "Something wrong?" on the To do tab: Missing paper goes to the pop-up on Check documents.
+  // "Something wrong?" on the To do tab: Missing paper goes to the checklist (marked Missing on its row).
   await page.goto("/loans/GD1652026901003?tab=todo");
   await page.getByRole("button", { name: "Report a problem" }).click();
-  await page.getByRole("link", { name: "Choose the papers" }).click();
-  await expect(page).toHaveURL(/ask=missing/);
-  const ask = page.getByRole("dialog", { name: "Ask for missing paper" });
-  await expect(ask).toBeVisible();
-  await ask.getByRole("button", { name: "Ask for the paper" }).evaluate((b) => { (b as HTMLButtonElement).disabled = false; });
-  await ask.getByRole("button", { name: "Ask for the paper" }).click();
-  await expect(ask.getByText("Pick at least one paper.")).toBeVisible();
-  expect(await db.loanException.count({ where: { type: "LEGAL_DOCS_COMPLETION" } })).toBe(0);
+  await page.getByRole("link", { name: "Go to the papers" }).click();
+  await expect(page).toHaveURL(/tx=/);
+  await expect(page).not.toHaveURL(/ask=missing/);
+  await expect(page.locator("[data-mark-missing]").first()).toBeVisible();
+  expect(await db.loanException.count({ where: { type: { in: ["LEGAL_DOCS_COMPLETION", "MISSING_PAPER"] } } })).toBe(0);
 });

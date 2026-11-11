@@ -13,12 +13,10 @@ import {
   assignToDp,
   completeLaTransaction,
   confirmPapersBack,
-  markLabelsPrinted,
   overrideAutomaticResult,
   reportProblem,
   recordEdst,
   laSetFundsFlag,
-  requestMissingDocuments,
   resolveException,
   saveChecklist,
 } from "@/lib/services/workflow";
@@ -27,12 +25,16 @@ import { UserError } from "@/lib/services/errors";
 import { raiseHold } from "@/lib/services/holds";
 import { addProcessorNote, changeProcessor, pullBack } from "@/lib/services/sent-changes";
 import { laChangeLtoOffice } from "@/lib/services/lto";
+import { markPaperMissing, receiveMissingPaper, saveMissingRemarks, setPaperIncluded, unmarkPaperMissing } from "@/lib/services/papers";
 
 async function pnOfLoan(loanId: string) {
   return (await prisma.loan.findUnique({ where: { id: loanId }, select: { pn: true } }))?.pn;
 }
 async function pnOfTxn(transactionId: string) {
   return (await prisma.loanTransaction.findUnique({ where: { id: transactionId }, select: { loan: { select: { pn: true } } } }))?.loan.pn;
+}
+async function pnOfCheck(checkId: string) {
+  return (await prisma.checklistCheck.findUnique({ where: { id: checkId }, select: { transaction: { select: { loan: { select: { pn: true } } } } } }))?.transaction.loan.pn;
 }
 function revalidateLoan(pn?: string) {
   if (pn) revalidatePath(`/loans/${pn}`);
@@ -83,30 +85,45 @@ export async function saveChecklistAction(_prev: ActionState, fd: FormData): Pro
   });
 }
 
-export async function requestMissingAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+/** Missing papers (lib/services/papers.ts): mark Missing, take it back, remarks, include, received late. */
+export async function markMissingAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.PAPERS_MARK_MISSING);
+    const checkId = str(fd, "checkId");
+    if (fd.get("undo") === "present" || fd.get("undo") === "open") await unmarkPaperMissing(user, { checkId, present: fd.get("undo") === "present" });
+    else await markPaperMissing(user, { checkId });
+    revalidateLoan(await pnOfCheck(checkId));
+    return fd.get("undo") ? "Missing mark taken back." : "Marked Missing. Add the reason and remarks.";
+  });
+}
+
+export async function saveRemarksAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.PAPERS_MARK_MISSING);
+    const checkId = str(fd, "checkId");
+    const r = await saveMissingRemarks(user, { checkId, reasonId: str(fd, "reasonId"), remarks: String(fd.get("remarks") ?? "") });
+    revalidateLoan(await pnOfCheck(checkId));
+    return r.saved ? "Remarks saved." : "No change.";
+  });
+}
+
+export async function includePaperAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const user = await requirePermission(PERMISSIONS.CHECKLIST_TICK);
-    const transactionId = str(fd, "transactionId");
-    const from = str(fd, "askedFrom");
-    const missing = await requestMissingDocuments(user, {
-      transactionId, checkIds: fd.getAll("checkIds").map(String), note: str(fd, "note"),
-      askedFrom: from === "BORROWER" || from === "BRANCH" || from === "OTHER" ? from : null,
-    });
-    let held = "";
-    if (fd.get("alsoHold") === "on") {
-      // A normal hold through the hold rules (permissions, one open hold, audit): a separate record.
-      const reason = await prisma.holdReason.findFirst({ where: { active: true, code: { in: ["CLIENT-PAPERS", "BORROWER"] } }, orderBy: { sortOrder: "asc" } });
-      try {
-        if (!reason) throw new UserError("There is no active hold reason \"Waiting for the client's papers\".");
-        await raiseHold(user, { transactionId, reasonId: reason.id, note: `Missing paper: ${missing.join(", ")}` });
-        held = ` · On hold: ${reason.name}`;
-      } catch (e) {
-        if (!(e instanceof UserError)) throw e;
-        held = ` · Not put on hold: ${e.message}`;
-      }
-    }
-    revalidateLoan(await pnOfTxn(transactionId));
-    return `Missing paper requested: ${missing.join(", ")}${held}`;
+    const checkId = str(fd, "checkId");
+    const r = await setPaperIncluded(user, { checkId, included: fd.get("included") === "on" || fd.get("included") === "true" });
+    revalidateLoan(await pnOfCheck(checkId));
+    return r.included ? "Included in this file." : "Left out of this file.";
+  });
+}
+
+export async function receiveMissingAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.PAPERS_RECEIVE_LATE);
+    const checkId = str(fd, "checkId");
+    const r = await receiveMissingPaper(user, { checkId, receivedOn: str(fd, "receivedOn") });
+    revalidateLoan(await pnOfCheck(checkId));
+    return `Received on ${r.receivedOn}.${r.documentId ? ` Document ID ${r.documentId}.` : ""}`;
   });
 }
 
@@ -197,14 +214,6 @@ export async function assignToDpAction(_prev: ActionState, fd: FormData): Promis
     });
     revalidateLoan(await pnOfTxn(transactionId));
     return "Assigned to DP. The DP has been notified in-app and by email.";
-  });
-}
-
-export async function markLabelsPrintedAction(ids: string[]): Promise<ActionState> {
-  return runAction(async () => {
-    const user = await requirePermission(PERMISSIONS.LABELS_PRINT);
-    await markLabelsPrinted(user, ids);
-    return "Labels marked as printed.";
   });
 }
 

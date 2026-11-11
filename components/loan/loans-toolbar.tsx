@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { countLoansAction } from "@/app/actions/loan";
-import { DownloadIcon, FilterIcon, SearchIcon, XIcon } from "@/components/ui/icons";
+import { FilterIcon, SearchIcon, XIcon } from "@/components/ui/icons";
 import { LiveFindInput } from "@/components/ui/live-find-input";
 import type { FilterField } from "@/lib/ui/loan-filters";
 
@@ -12,11 +12,10 @@ import type { FilterField } from "@/lib/ui/loan-filters";
  * a bottom sheet on tablet and phone. Esc or a click outside closes it without changing anything.
  */
 export function LoansToolbar({
-  search, filters, exportHref, resultCount,
+  search, filters, resultCount,
 }: {
   search: { action: string; defaultValue?: string; autoFocus?: boolean; hidden?: Record<string, string | undefined>; buttonLabel?: string; required?: boolean; suggest?: { exactOnly: boolean } };
   filters: { fields: FilterField[]; hidden: Record<string, string | undefined>; activeCount: number; clearHref: string };
-  exportHref?: string;
   /** Loan files the current filters show (the panel starts from this). */
   resultCount: number;
 }) {
@@ -44,11 +43,6 @@ export function LoansToolbar({
         </div>
       </form>
       <FiltersButton {...filters} resultCount={resultCount} />
-      {exportHref && (
-        <a href={exportHref} className="btn-ghost h-12 shrink-0 gap-2 px-3 sm:px-4" aria-label="Export CSV">
-          <DownloadIcon size={18} /><span className="hidden sm:inline">Export CSV</span>
-        </a>
-      )}
     </div>
   );
 }

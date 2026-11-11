@@ -1,4 +1,4 @@
-import { PERMISSION_GROUPS, ROLE_DEFAULTS, permissionLabel } from "@/lib/auth/permissions";
+import { VISIBLE_PERMISSION_GROUPS as PERMISSION_GROUPS, ROLE_DEFAULTS, permissionLabel } from "@/lib/auth/permissions";
 import { ALLOW_LIST } from "@/lib/auth/permission-scan";
 
 /**

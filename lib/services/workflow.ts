@@ -1,6 +1,4 @@
 import "server-only";
-import { Prisma } from "@prisma/client";
-import { z } from "zod";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds, supervisorUserIds } from "@/lib/notify";
@@ -19,6 +17,7 @@ import { endHoldsOnCompletion } from "./holds";
 import { validFlagKinds } from "./expense-kinds";
 import { checklistStatus, type CheckLine, type ChecklistStatus } from "@/lib/workflow/checklist";
 import { assertNotHeld } from "./locks";
+import { clearMissingCore } from "./papers";
 import { moveDocs } from "./custody";
 import { worksAtWhere } from "@/lib/branches/access";
 
@@ -47,7 +46,10 @@ async function loadTxnInScope(user: CurrentUser, transactionId: string) {
 
 export interface ChecklistCompleteness {
   complete: boolean;
+  /** Expected papers neither Present nor marked Missing. */
   missing: string[];
+  /** Marked Missing without saved remarks ("Add remarks for: ..."). */
+  needsRemarks: string[];
 }
 
 export type CheckRow = {
@@ -57,6 +59,10 @@ export type CheckRow = {
   required: boolean;
   otherLabel?: string | null;
   rule: { kind: "REQUIRED" | "ONE_OF" | "OPTIONAL"; label: string; oneOfGroup: string | null; active: boolean } | null;
+  /** Missing papers (lib/services/papers.ts); absent on rows loaded without them. */
+  missingState?: "MISSING" | "RECEIVED_LATE" | null;
+  missingRemarks?: string | null;
+  includedInFile?: boolean;
 };
 
 /** Loan-file checklist rows as pure lines (see lib/workflow/checklist.ts for the rule). */
@@ -68,6 +74,9 @@ export function toCheckLines(checks: CheckRow[]): CheckLine[] {
     required: c.required,
     group: c.rule?.kind === "ONE_OF" ? c.rule.oneOfGroup ?? c.rule.label : null,
     active: c.rule ? c.rule.active : true,
+    missing: c.missingState ?? null,
+    remarksSaved: !!c.missingRemarks,
+    included: !!c.includedInFile,
   }));
 }
 
@@ -75,10 +84,13 @@ export function checklistStatusOf(checks: CheckRow[]): ChecklistStatus {
   return checklistStatus(toCheckLines(checks));
 }
 
-/** Required papers only; optional lines never block. `missing` holds the plain names. */
+/**
+ * The gate (Send, EDST, Mark as done): every expected paper Present or Missing, and every missing one
+ * with saved remarks. Optional papers count only when included. `missing` and `needsRemarks` hold names.
+ */
 export function evaluateChecklist(checks: CheckRow[]): ChecklistCompleteness {
   const s = checklistStatusOf(checks);
-  return { complete: s.complete, missing: s.missing.map((m) => m.name) };
+  return { complete: s.complete, missing: s.missing.map((m) => m.name), needsRemarks: s.needsRemarks.map((m) => m.name) };
 }
 
 export async function nextDocumentId(tx: Tx, pn: string, code: string): Promise<string> {
@@ -117,7 +129,7 @@ export async function saveChecklist(
     await assertNotHeld(tx, t0.id);
     const txn = await tx.loanTransaction.findUniqueOrThrow({
       where: { id: input.transactionId },
-      include: { loan: { include: { branch: true } }, type: true, checks: { include: { rule: true, documentItem: true } } },
+      include: { loan: { include: { branch: true } }, type: true, checks: { include: { rule: true, documentItem: true, missingReason: true } } },
     });
     // Sent, not accepted yet: the LA (who may send) can still update the papers.
     const sent = txn.status === "ASSIGNED" || txn.status === "IN_PROCESS";
@@ -128,6 +140,14 @@ export async function saveChecklist(
     }
     const wanted = new Set(input.checkedIds);
     const now = new Date();
+    const sentBefore = (await tx.dpAssignment.count({ where: { transactionId: txn.id } })) > 0;
+    // A paper received late stays received; a missing paper ticked Present takes the Missing mark back
+    // (only before the first send: after that it ends only when it is Received, with its remarks kept).
+    for (const c of txn.checks) {
+      const should = wanted.has(c.id);
+      if (c.missingState === "RECEIVED_LATE" && !should) throw new UserError(`${c.rule?.label ?? c.otherLabel} was received late. It stays received.`);
+      if (c.missingState === "MISSING" && should && (sentBefore || job)) throw new UserError(`${c.rule?.label ?? c.otherLabel} was sent as Missing. Mark it Received when it arrives.`);
+    }
     const custodian = `${user.name} (LA, ${txn.loan.branch.name})`;
     const location = `${txn.loan.branch.name} branch`;
     const before = txn.checks.filter((c) => c.checked).map((c) => c.rule?.label ?? c.otherLabel);
@@ -136,9 +156,16 @@ export async function saveChecklist(
     for (const c of txn.checks) {
       const should = wanted.has(c.id);
       if (should === c.checked) continue;
+      if (c.missingState === "MISSING" && should) {
+        // Before the first send: it was there after all (Present), one history row.
+        if (!user.permissions.has(PERMISSIONS.PAPERS_MARK_MISSING)) throw new UserError("Your role does not allow changing a missing paper.");
+        await clearMissingCore(tx, user, { ...c, transaction: txn }, true, now);
+        continue;
+      }
       await tx.checklistCheck.update({
         where: { id: c.id },
-        data: { checked: should, checkedAt: should ? now : null, checkedById: should ? user.id : null },
+        // Ticking an optional paper includes it in the file.
+        data: { checked: should, checkedAt: should ? now : null, checkedById: should ? user.id : null, ...(should && !c.required ? { includedInFile: true } : {}) },
       });
       const doc = c.documentItem;
       if (!doc) continue;
@@ -176,7 +203,7 @@ export async function saveChecklist(
       const label = raw.trim();
       if (!label) continue;
       if (label.length > 120) throw new UserError("Others: keep the description under 120 characters.", "others");
-      const check = await tx.checklistCheck.create({ data: { transactionId: txn.id, otherLabel: label, required: false, checked: true, checkedAt: now, checkedById: user.id } });
+      const check = await tx.checklistCheck.create({ data: { transactionId: txn.id, otherLabel: label, required: false, includedInFile: true, checked: true, checkedAt: now, checkedById: user.id } });
       const documentId = await nextDocumentId(tx, txn.loan.pn, "OTH");
       generated.push(documentId);
       const doc = await tx.documentItem.create({
@@ -192,7 +219,7 @@ export async function saveChecklist(
     const after = fresh.filter((c) => c.checked).map((c) => c.rule?.label ?? c.otherLabel);
     if (job) {
       // While it is with the processor every required paper stays ticked (the same rule as Send).
-      if (!result.complete) throw new UserError("Every required paper must stay ticked while it is with the processor. Pull it back instead.");
+      if (!result.complete) throw new UserError("Every paper of the file must stay ticked while it is with the processor. Pull it back instead.");
       const added = after.filter((x) => !before.includes(x));
       const removed = before.filter((x) => !after.includes(x));
       await tx.loanTransaction.update({ where: { id: txn.id }, data: { checklistSavedAt: now } });
@@ -205,7 +232,7 @@ export async function saveChecklist(
         });
         await notify(tx, { email: { event: "job_changed", transactionId: txn.id, vars: { pn: txn.loan.pn, transaction: txn.type.name, who: user.name, reason: changes.join(", ") } }, userIds: [job.dpUserId, ...(job.secondaryDpUserId ? [job.secondaryDpUserId] : [])], loanId: txn.loanId, title: `${txn.loan.pn}: ${txn.type.name} updated before you accept`, body: `${user.name}: ${changes.join(", ")}.`, link: `/jobs/${job.id}` });
       }
-      return { complete: true, missing: [], generated };
+      return { complete: true, missing: [], needsRemarks: [], generated };
     }
     let status = txn.status;
     if (txn.status === "FOR_CHECKLIST" && result.complete) status = "READY";
@@ -218,10 +245,10 @@ export async function saveChecklist(
     await writeAudit(tx, {
       actor, mode: "MANUAL", action: "checklist_saved", entityType: "LoanTransaction", entityId: txn.id, loanId: txn.loanId, pn: txn.loan.pn,
       journeyStep: result.complete ? "3.1" : null,
-      summary: `Saved ${txn.type.name} checklist: ${after.length} item(s) ticked${result.complete ? ", complete" : `, ${result.missing.length} missing`}`,
+      summary: `Saved ${txn.type.name} checklist: ${after.length} item(s) ticked${result.complete ? ", complete" : `, ${result.missing.length + result.needsRemarks.length} still to answer`}`,
       before: { ticked: before, status: txn.status },
       after: { ticked: after, status },
-      details: { missing: result.missing },
+      details: { missing: result.missing, needsRemarks: result.needsRemarks },
     });
     if (generated.length) {
       await writeAudit(tx, {
@@ -248,7 +275,7 @@ export async function saveChecklist(
       });
     }
     await recomputeStage(tx, txn.loanId);
-    return { complete: result.complete, missing: result.missing, generated };
+    return { complete: result.complete, missing: result.missing, needsRemarks: result.needsRemarks, generated };
   });
 }
 
@@ -256,84 +283,16 @@ export const ASKED_FROM = { BORROWER: "Borrower", BRANCH: "Branch", OTHER: "Othe
 export type AskedFrom = keyof typeof ASKED_FROM;
 
 /**
- * Missing paper: a reminder that specific papers were asked for and have not arrived. It does not stop
- * the work and does not pause the turnaround time; it closes by itself when those papers are ticked.
- * The papers are the transaction's checklist rows (stored by id on the request; their names as shown).
+ * Missing-paper requests (LoanException LEGAL_DOCS_COMPLETION) are made by the processor's Return to LA
+ * only (lib/services/return-to-la.ts). The LA no longer "asks for" a missing paper: the LA marks it
+ * Missing on its row with a reason and remarks (lib/services/papers.ts), and the file goes on.
+ * Older LA requests still close by themselves when the paper is ticked.
  */
-export const missingSchema = z.object({
-  transactionId: z.string().trim().min(1),
-  checkIds: z.array(z.string().trim().min(1)).min(1, "Pick at least one paper."),
-  askedFrom: z.enum(["BORROWER", "BRANCH", "OTHER"]).nullable().default(null),
-  note: z.string().trim().max(500, "Keep the note under 500 characters.").default(""),
-});
 
 /** The checklist rows a missing-paper request asked for (null for older requests that named none). */
 export function requestedCheckIds(details: unknown): string[] | null {
   const ids = (details as { checkIds?: unknown } | null)?.checkIds;
   return Array.isArray(ids) && ids.length ? ids.map(String) : null;
-}
-
-export async function requestMissingDocuments(user: CurrentUser, raw: z.input<typeof missingSchema>) {
-  requireAllowed(user, PERMISSIONS.CHECKLIST_TICK);
-  const parsed = missingSchema.safeParse(raw);
-  if (!parsed.success) { const i = parsed.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
-  const input = parsed.data;
-  const t0 = await loadTxnInScope(user, input.transactionId);
-  return withLoanLock(t0.loanId, async (tx) => {
-    await assertNotHeld(tx, t0.id);
-    const checks = await tx.checklistCheck.findMany({ where: { transactionId: t0.id }, include: { rule: true } });
-    const wanted = [...new Set(input.checkIds)];
-    const rows = wanted.map((id) => checks.find((c) => c.id === id));
-    if (rows.some((c) => !c)) throw new UserError("Pick papers of this transaction only.", "checkIds");
-    if (rows.some((c) => c!.checked)) throw new UserError("That paper is already ticked. Pick papers that have not arrived.", "checkIds");
-    const open = await tx.loanException.findFirst({ where: { transactionId: t0.id, type: "LEGAL_DOCS_COMPLETION", status: "OPEN" } });
-    if (open) throw new UserError("A missing paper is already asked for on this transaction. It closes when the paper is ticked.");
-    const papers = rows.map((c) => c!.rule?.label ?? c!.otherLabel ?? "Other paper");
-    const from = input.askedFrom ? ASKED_FROM[input.askedFrom] : null;
-    const ex = await tx.loanException.create({
-      data: {
-        loanId: t0.loanId, transactionId: t0.id, type: "LEGAL_DOCS_COMPLETION",
-        reason: `Missing for ${t0.type.name}: ${papers.join("; ")}.${from ? ` Asked from: ${from}.` : ""}${input.note ? ` ${input.note}` : ""}`,
-        details: { checkIds: wanted, missing: papers, askedFrom: input.askedFrom, note: input.note } as Prisma.InputJsonValue,
-        raisedById: user.id, raisedByLabel: user.name,
-      },
-    });
-    await writeAudit(tx, {
-      actor: actorOf(user), mode: "MANUAL", action: "exception_raised", entityType: "LoanException", entityId: ex.id, loanId: t0.loanId, pn: t0.loan.pn,
-      summary: `Missing paper asked for ${t0.type.name}: ${papers.join(", ")}${from ? ` (from ${from})` : ""}`, details: { missing: papers, askedFrom: input.askedFrom },
-    });
-    // The other party: the processor working on it, if it is with one.
-    const job = await tx.dpAssignment.findFirst({ where: { transactionId: t0.id, status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] } } });
-    if (job) {
-      await notify(tx, {
-        userIds: [job.dpUserId, ...(job.secondaryDpUserId ? [job.secondaryDpUserId] : [])], loanId: t0.loanId, title: `${t0.loan.pn}: missing paper for ${t0.type.name}`, body: `${user.name} asked for: ${papers.join(", ")}.`, link: `/jobs/${job.id}`,
-        email: { event: "missing_paper", transactionId: t0.id, vars: { pn: t0.loan.pn, transaction: t0.type.name, who: user.name, reason: `Missing: ${papers.join(", ")}.${from ? ` Asked from: ${from}.` : ""}` } },
-      });
-    }
-    return papers;
-  });
-}
-
-export async function markLabelsPrinted(user: CurrentUser, documentItemIds: string[]) {
-  requireAllowed(user, PERMISSIONS.LABELS_PRINT);
-  const docs = await prisma.documentItem.findMany({ where: { id: { in: documentItemIds }, documentId: { not: null } }, include: { loan: true } });
-  if (docs.length === 0) return;
-  for (const d of docs) if (!inScope(user, d.loan.branchId)) throw new NotInScopeError();
-  const loanId = docs[0].loanId;
-  await withLoanLock(loanId, async (tx) => {
-    const now = new Date();
-    for (const d of docs) {
-      await tx.documentItem.update({ where: { id: d.id }, data: { labelPrintedAt: now } });
-      await tx.documentMovement.create({ data: { documentItemId: d.id, action: "LABEL_PRINTED", fromCustodian: d.custodianLabel, toCustodian: d.custodianLabel, actorId: user.id, actorLabel: user.name, location: d.location || null, remarks: "QR label printed and attached" } });
-    }
-    // Labels printed per transaction (shown as a chip; it does not block Send).
-    const txnIds = [...new Set(docs.map((d) => d.transactionId).filter((x): x is string => !!x))];
-    await tx.loanTransaction.updateMany({ where: { id: { in: txnIds }, labelsPrintedAt: null }, data: { labelsPrintedAt: now } });
-    await writeAudit(tx, {
-      actor: actorOf(user), mode: "MANUAL", action: "labels_printed", entityType: "Loan", entityId: loanId, loanId, pn: docs[0].loan.pn,
-      journeyStep: "3.2", summary: `Printed ${docs.length} QR label(s)`, after: { documentIds: docs.map((d) => d.documentId) },
-    });
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +370,7 @@ export async function completeLaTransaction(user: CurrentUser, input: { transact
     if (txn.status === "COMPLETED") throw new UserError(`${t0.type.name} is already done.`);
     if (!["FOR_CHECKLIST", "READY", "RETURNED"].includes(txn.status)) throw new UserError(`${t0.type.name} cannot be marked done now.`);
     const status = evaluateChecklist(txn.checks);
-    if (!status.complete) throw new MissingPapersError(status.missing);
+    if (!status.complete) throw new MissingPapersError(status.missing, status.needsRemarks);
     const now = new Date();
     await tx.loanTransaction.update({ where: { id: txn.id }, data: { status: "COMPLETED", statusSince: now, completedAt: now } });
     await endHoldsOnCompletion(tx, { id: txn.id, loanId: t0.loanId, pn: t0.loan.pn, name: t0.type.name }, false, now);
@@ -498,17 +457,18 @@ export async function refuseMissingPapers(
   txn: { id: string; loanId: string; type: { name: string }; loan: { pn: string } },
   missing: string[],
   mode: "MANUAL" | "SIMULATED",
+  needsRemarks: string[] = [],
 ): Promise<never> {
   const who: Actor = "permissions" in actor ? actorOf(actor) : actor;
   await prisma.$transaction(async (tx) => {
     await writeAudit(tx, {
       actor: who, mode, action: "send_refused_missing_papers", entityType: "LoanTransaction", entityId: txn.id,
       loanId: txn.loanId, pn: txn.loan.pn,
-      summary: `Send refused, missing required papers: ${txn.type.name}`,
-      details: { transaction: txn.type.name, missing },
+      summary: needsRemarks.length && !missing.length ? `Send refused, missing papers without remarks: ${txn.type.name}` : `Send refused, missing required papers: ${txn.type.name}`,
+      details: { transaction: txn.type.name, missing, needsRemarks },
     });
   });
-  throw new MissingPapersError(missing);
+  throw new MissingPapersError(missing, needsRemarks);
 }
 
 /** Papers the processor handed over with a Return to LA, waiting for the LA to confirm them back. */
@@ -571,7 +531,7 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
   if (PRE_SEND.includes(t0.status)) {
     const checks = await prisma.checklistCheck.findMany({ where: { transactionId: t0.id }, include: { rule: true } });
     const status = evaluateChecklist(checks);
-    if (!status.complete) await refuseMissingPapers(user, t0, status.missing, "MANUAL");
+    if (!status.complete) await refuseMissingPapers(user, t0, status.missing, "MANUAL", status.needsRemarks);
   }
 
   const [tats, holidays] = await Promise.all([getTatMap(), getHolidaySet()]);
@@ -618,7 +578,7 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
     if ((await papersToConfirm(tx, txn.id)).length) throw new UserError(PAPERS_BACK_FIRST);
     // Same rule again under the row lock (another tab may have un-ticked a paper meanwhile).
     const completeness = evaluateChecklist(txn.checks);
-    if (!completeness.complete) throw new MissingPapersError(completeness.missing);
+    if (!completeness.complete) throw new MissingPapersError(completeness.missing, completeness.needsRemarks);
     if (txn.status === "FOR_CHECKLIST") throw new UserError(`Save the ${t0.type.name} checklist first, then try again.`);
     const now = new Date();
     const assignment = await tx.dpAssignment.create({
@@ -667,7 +627,7 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
   });
   } catch (e) {
     // The locked transaction rolled back; record the refusal on its own.
-    if (e instanceof MissingPapersError) await refuseMissingPapers(user, t0, e.missing, "MANUAL");
+    if (e instanceof MissingPapersError) await refuseMissingPapers(user, t0, e.missing, "MANUAL", e.needsRemarks);
     throw e;
   }
 }
@@ -777,7 +737,7 @@ export async function overrideAutomaticResult(user: CurrentUser, input: Override
 
 // ---------------------------------------------------------------------------
 // Report a problem (LA). Same pattern as the other exceptions: audited, Supervisor told.
-// "Missing paper" for a transaction uses requestMissingDocuments (Legal Docs Completion).
+// A missing paper is marked on its row (lib/services/papers.ts), not reported here.
 // ---------------------------------------------------------------------------
 
 export async function reportProblem(user: CurrentUser, input: { loanId: string; kind: "MISSING_PAPER" | "WRONG_DETAILS" | "OTHER"; details: string }) {
@@ -785,13 +745,14 @@ export async function reportProblem(user: CurrentUser, input: { loanId: string; 
   const text = input.details.trim();
   if (text.length < 5) throw new UserError("Describe the problem in a few words.", "details");
   if (text.length > 1000) throw new UserError("Keep the description under 1,000 characters.", "details");
-  if (!["MISSING_PAPER", "WRONG_DETAILS", "OTHER"].includes(input.kind)) throw new UserError("Pick what kind of problem it is.", "kind");
+  if (input.kind === "MISSING_PAPER") throw new UserError("Mark the paper Missing on its transaction's checklist, with a reason and remarks.", "kind");
+  if (!["WRONG_DETAILS", "OTHER"].includes(input.kind)) throw new UserError("Pick what kind of problem it is.", "kind");
   const loan = await prisma.loan.findUnique({ where: { id: input.loanId } });
   if (!loan || !inScope(user, loan.branchId)) throw new NotInScopeError();
-  const label = input.kind === "MISSING_PAPER" ? "Missing paper" : input.kind === "WRONG_DETAILS" ? "Wrong details" : "Something else";
+  const label = input.kind === "WRONG_DETAILS" ? "Wrong details" : "Something else";
   await withLoanLock(loan.id, async (tx) => {
     const ex = await tx.loanException.create({
-      data: { loanId: loan.id, type: input.kind === "MISSING_PAPER" ? "MISSING_PAPER" : input.kind === "WRONG_DETAILS" ? "WRONG_DETAILS" : "OTHER_PROBLEM", reason: `${label}: ${text}`, raisedById: user.id, raisedByLabel: user.name },
+      data: { loanId: loan.id, type: input.kind === "WRONG_DETAILS" ? "WRONG_DETAILS" : "OTHER_PROBLEM", reason: `${label}: ${text}`, raisedById: user.id, raisedByLabel: user.name },
     });
     await writeAudit(tx, {
       actor: actorOf(user), mode: "MANUAL", action: "exception_raised", entityType: "LoanException", entityId: ex.id, loanId: loan.id, pn: loan.pn,
@@ -800,7 +761,7 @@ export async function reportProblem(user: CurrentUser, input: { loanId: string; 
     await notify(tx, {
       userIds: await supervisorUserIds(tx), loanId: loan.id,
       title: `${loan.pn}: problem reported`, body: `${user.name} reported: ${label}. ${text}`, link: `/loans/${loan.pn}`,
-      email: { event: input.kind === "MISSING_PAPER" ? "missing_paper" : "problem_changed", vars: { pn: loan.pn, transaction: "the loan file", who: user.name, status: "reported", reason: `${label}: ${text}` } },
+      email: { event: "problem_changed", vars: { pn: loan.pn, transaction: "the loan file", who: user.name, status: "reported", reason: `${label}: ${text}` } },
     });
   });
 }

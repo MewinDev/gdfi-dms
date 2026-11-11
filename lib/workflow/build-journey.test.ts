@@ -10,7 +10,7 @@ import { holdDays, stepClock } from "./tat";
 const at = (s: string) => new Date(`${s.replace(" ", "T")}:00+08:00`);
 const H = 3_600_000;
 const tats = new Map([
-  ["P3_CHECKLIST", 1], ["P3_LABELS", 0], ["P3_ASSIGN", 2], ["P3_EDST", 1], ["P4_ACCEPT", 0], ["P4_NOTARY", 3], ["P4_PPSR", 3], ["P4_MORTGAGE", 5],
+  ["P3_CHECKLIST", 1], ["P3_ASSIGN", 2], ["P3_EDST", 1], ["P4_ACCEPT", 0], ["P4_NOTARY", 3], ["P4_PPSR", 3], ["P4_MORTGAGE", 5],
   ["P4_FORWARD", 1], ["P5_ACCEPT", 2], ["P6_VAULTED", 3], ["P7_DIGICUR", 5],
 ].map(([k, d]) => [k as string, { businessDays: d as number, note: "", label: k as string }]));
 const none = new Set<string>();
@@ -321,7 +321,6 @@ describe("Custody trail", () => {
   it("time held by each holder; in transit stays with the sender until acknowledged", () => {
     const d = doc([
       ["RECEIVED_AT_BRANCH", "2026-11-02 09:00", "Ana Cruz (LA, Antipolo)", true],
-      ["LABEL_PRINTED", "2026-11-02 09:30", "Ana Cruz (LA, Antipolo)", false],
       ["DISPATCHED_TO_DP", "2026-11-02 11:00", "Joy Navarro (DP)", false],
       ["ACKNOWLEDGED_BY_DP", "2026-11-03 09:00", "Joy Navarro (DP)", true],
       ["FORWARDED_TO_BRANCH", "2026-11-04 10:00", "In transit to Ana Cruz", false],
@@ -332,7 +331,7 @@ describe("Custody trail", () => {
       ["Ana Cruz (LA, Antipolo)", 24], ["Joy Navarro (DP)", 48], ["Ana Cruz (LA, Antipolo)", 3],
     ]);
     expect(c.trail[0]).toMatchObject({ label: "Received by the LA", acknowledgedBy: "Ana Cruz" });
-    expect(c.trail.map((x) => x.label)).toContain("Label printed");
+    expect(c.trail.map((x) => x.label)).toContain("Sent to the processor (in transit)");
   });
 });
 

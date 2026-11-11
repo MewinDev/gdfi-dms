@@ -15,7 +15,6 @@ import { setRowActive } from "@/lib/services/settings-status";
 import { addSuggestionAsKind, otherSuggestionList, quickAddKind, moveExpenseKind, allKinds, lineKindText, kindNames } from "@/lib/services/expense-kinds";
 import { checkImport, runImport } from "@/lib/import/importer";
 import { toCsv } from "@/lib/import/csv";
-import { FUNDS_CSV_HEADER, fundsCsv } from "@/lib/funds/export";
 import { setSetting } from "@/lib/settings";
 import { asUser, cleanLoans } from "./helpers";
 
@@ -58,7 +57,7 @@ async function acceptedMortgage(kinds: string[]) {
   const lto = await prisma.ltoOffice.findFirstOrThrow({ where: { active: true }, orderBy: { code: "asc" } });
   await assignToDp(la, { transactionId: txn.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: lto.id, fundsNeeded: "YES", fundsKinds: kinds, beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null });
   const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id }, orderBy: { createdAt: "desc" } });
-  await acceptJob(dp, job.id, true);
+  await acceptJob(dp, job.id);
   return { loan, txn };
 }
 
@@ -123,11 +122,6 @@ describe("Other must say what it is", () => {
     expect(lineKindText(await kindNames(), { kind: "OTHER", otherDescription: "" })).toBe("Other (not described)");
   });
 
-  it("the CSV has its own Other description column", () => {
-    expect(FUNDS_CSV_HEADER).toEqual(expect.arrayContaining(["Other description", "Preset amount", "Locked", "Amount source"]));
-    const csv = fundsCsv([{ number: "CA-1", typeCode: "CA", typeName: "Cash advance", status: "REQUESTED", processor: "P", branch: "B", branchCode: "101", area: "", requestedCents: 100, approvedCents: null, releasedCents: 0, receiptCents: 0, returnedCents: 0, releasedOn: "", releaseRef: "", transferDate: "", accountProvider: "", accountName: "", accountLast4: "", liquidateBy: "", cashToSettle: false, lines: "Other: Courier", otherDescriptions: "Courier", presetAmounts: "", locked: "No", amountSources: "Typed" }]);
-    expect(csv.split("\r\n")[1]).toMatch(/Other: Courier,Courier,,No,Typed$/);
-  });
 });
 
 describe("inactive kinds", () => {

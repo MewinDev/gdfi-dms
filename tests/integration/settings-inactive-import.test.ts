@@ -176,7 +176,7 @@ describe("Inactive instead of delete", () => {
     expect(await prisma.loan.findUnique({ where: { pn: "GD1012026901001" } })).not.toBeNull();
     const n = await prisma.loan.count();
     await cleanLoans();
-    await expect(openLoanFile(la2, { pn: "GD1012026901001" })).rejects.toThrow(/Antipolo \(101\) is inactive/);
+    await expect(openLoanFile(la2, { pn: "GD1012026901001" })).rejects.toThrow(/Antipolo is inactive/);
     expect(await prisma.loan.count()).toBe(0);
     expect(n).toBe(1);
     await prisma.branch.update({ where: { id: qc.id }, data: { active: true, deactivatedAt: null } });

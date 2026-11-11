@@ -127,7 +127,6 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
   await expect(upd).toContainText(/Updated by Test Loan Associate · [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} (AM|PM)/);
   await expect(upd).toContainText(`Added ${optional.rule!.label}`);
   await expect(upd).toContainText("Note: The ID copy is in the brown envelope");
-  await page.getByLabel("Labels are on all papers").check();
   await page.getByRole("button", { name: "Accept" }).click();
   await expect(page.getByRole("heading", { name: "Work on it" })).toBeVisible();
 

@@ -107,7 +107,7 @@ describe("Changing the office", () => {
     expect(await prisma.notification.count({ where: { userId: dp.id, title: { contains: "LTO office changed" } } })).toBe(1);
     const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id } });
     expect(job.ltoOfficeId).toBe(cebu.id);
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     await expect(laChangeLtoOffice(la, txn.id, { ltoOfficeId: mandaue.id })).rejects.toThrow(/already accepted/);
     await expect(dpChangeLtoOffice(dp, job.id, { ltoOfficeId: mandaue.id, note: "" })).rejects.toThrow(/Say why the office is different/);
     await dpChangeLtoOffice(dp, job.id, { ltoOfficeId: mandaue.id, note: "Cebu City office is closed today" });
@@ -123,7 +123,7 @@ describe("Funds and custody", () => {
     const { loan, txn } = await ready("NOTARY");
     await send(loan, txn.id, mandaue.id, { fundsNeeded: "YES", fundsKinds: ["TRANSPORT"] });
     const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id } });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const [j] = await requestableJobs(dp);
     expect(j.lto).toEqual({ id: mandaue.id, name: "Z LTO Mandaue", estimate: "about 25 km · usually 1 hour · suggested transport ₱600" });
     expect(j.kinds.find((k) => k.kind === "TRANSPORT")).toMatchObject({ suggestedCents: 60000, suggestedFrom: "office" });
@@ -140,7 +140,7 @@ describe("Funds and custody", () => {
     const { loan, txn } = await ready("NOTARY");
     await send(loan, txn.id, mandaue.id);
     const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id } });
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     await logAttempt(dp, job.id, { date: businessDate(new Date()), result: "DONE" });
     await workStages(dp, job.id, { name: "Atty. Uy", docNo: "1", pageNo: "2", bookNo: "III", series: "2026" });
     await completeJob(dp, job.id, {});

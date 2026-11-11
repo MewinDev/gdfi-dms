@@ -56,7 +56,7 @@ export type PnLookupResult =
 async function inactiveRefusal(record: MyLoansRecord): Promise<{ field: DataCheckField; fieldLabel: string; message: string } | null> {
   const branch = await resolveLoanBranch(prisma, record);
   if (branch && (!branch.active || branch.hidden)) {
-    return { field: "branch", fieldLabel: "Inactive branch", message: `${branch.name}${branch.code ? ` (${branch.code})` : ""} is ${branch.hidden ? "hidden" : "inactive"} in Settings, so no new loan files can be opened for it.` };
+    return { field: "branch", fieldLabel: "Inactive branch", message: `${branch.name} is ${branch.hidden ? "hidden" : "inactive"} in Settings, so no new loan files can be opened for it.` };
   }
   const lt = record.loanType ? await prisma.loanType.findUnique({ where: { code: record.loanType } }) : null;
   if (lt && !lt.active) {

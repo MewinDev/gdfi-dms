@@ -4,7 +4,7 @@ import { cleanTestRoles, db, resetLoans } from "./db";
 
 /**
  * Cash advances and fund transfers are handled by different people: a person who handles one type sees
- * only that type on Funds (lists, counts, CSV, report links), the buttons follow the type's ticks, the
+ * only that type on Funds (lists, counts, report links), the buttons follow the type's ticks, the
  * role editor shows two blocks, Settings shows who handles each type and the "Nobody can ..." line, and
  * the approval bands have a Type switch. Test database only. Screenshots at 1440 and 390:
  * docs/screenshots/funds-handlers/.
@@ -92,11 +92,6 @@ for (const who of [
     // Even with the other type in the address, nothing of it shows.
     await page.goto(`/funds?tab=approve&ftype=${who.other.slice(0, 2)}`);
     await expect(page.locator(`[data-advance="${who.other}"]`)).toHaveCount(0);
-    // The CSV holds only their type.
-    const csv = await (await page.request.get("/api/funds/export?tab=all")).text();
-    expect(csv).toContain(who.mine);
-    expect(csv).not.toContain(who.other);
-    expect(csv).not.toContain(who.mine === CA ? FT_DONE : "CA-2026-81");
     // The other type's report: the normal refusal ("Not found"; the Funds pages stream, so the status is 200).
     if (who.mine === CA) {
       await page.goto(`/funds/${FT_DONE}/print`);

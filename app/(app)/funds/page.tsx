@@ -24,7 +24,7 @@ import { RecordHistory } from "@/components/funds/record-history";
 import { FundsList, FundsRow, FundsSearch, FundsSummary, KeepTabInView, LockNote, MoreMenu, NoMatch } from "@/components/funds/funds-list";
 import { formerlyText, releaseLine } from "@/lib/funds/types";
 import { searchTerms, DASH, PRINTABLE_STATUSES, agingTone, daysText, type ListItem } from "@/lib/funds/list-view";
-import { DownloadIcon, PrinterIcon } from "@/components/ui/icons";
+import { PrinterIcon } from "@/components/ui/icons";
 
 export const metadata: Metadata = { title: "Funds" };
 
@@ -474,7 +474,6 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
           {seen.length === 1 && <p className="mt-1 text-[15px] font-semibold text-navy" data-funds-types-line>{TYPE_TITLE[seen[0]]}</p>}
           {gaps.length > 0 && <p role="status" className="mt-2 rounded-xl border border-act-line bg-act-bg px-3 py-2 text-sm text-ink" data-funds-health>{gaps.join(" ")} Requests of that type wait; the Admin is told. Change it in Settings, Roles.</p>}
         </div>
-        <a href={`/api/funds/export?tab=${tab}${ftype ? `&ftype=${ftype}` : ""}`} className="btn-secondary btn-sm fl-csv order-3 inline-flex min-h-11 w-full items-center justify-center gap-1.5 sm:order-none sm:col-start-2 sm:row-start-1 sm:w-auto sm:self-start" data-funds-csv><DownloadIcon size={16} /> Download CSV</a>
         <nav aria-label="Funds tabs" className="funds-tabs flex min-w-0 overflow-x-auto border-b border-line sm:col-span-2" data-funds-tabs>
           {TABS.map(([k, l]) => (
             <Link key={k} href={href({ tab: k })} aria-current={tab === k ? "page" : undefined} className="tab shrink-0" data-tab={k}>{l}<span className="tab-count" data-tab-count>{counts[k]}</span></Link>

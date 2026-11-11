@@ -6,7 +6,7 @@ import { approveWithConfirm } from "./approve";
 /**
  * Funds types (Cash advance CA, Fund transfer FT) on the same funds flow: Settings > Funds types, the
  * DP's request with the type choice, a Finance list with both pills, the release form for each type,
- * the type filter and its CSV. Screenshots to docs/screenshots/funds-types/ (1440 and 390 px).
+ * the type filter (no CSV: exports are off for now). Screenshots to docs/screenshots/funds-types/ (1440 and 390 px).
  */
 const DIR = "docs/screenshots/funds-types";
 mkdirSync(DIR, { recursive: true });
@@ -64,7 +64,6 @@ async function acceptedMortgageNeedingFunds(page: Page) {
   await signInAs(page, "dp");
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: t.id } });
   await page.goto(`/jobs/${job.id}`);
-  await page.getByLabel("Labels are on all papers").check();
   await page.getByRole("button", { name: "Accept" }).click();
   await expect(page.getByText("This job needs funds. Request a cash advance first.").first()).toBeVisible();
   return t.id;
@@ -84,7 +83,7 @@ test("Settings > Funds types: the two proposed types and their switches", async 
   await noSideways(page);
 });
 
-test("DP picks Fund transfer; Finance sees both pills, filters by type, gets the CSV, and releases each type with its own fields", async ({ page }) => {
+test("DP picks Fund transfer; Finance sees both pills, filters by type, and releases each type with its own fields", async ({ page }) => {
   test.setTimeout(300_000);
   const mortgage = await acceptedMortgageNeedingFunds(page);
 
@@ -118,17 +117,12 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, gets the
   await shot(page, "finance-list-both-pills");
   await noSideways(page);
 
-  // The type filter and its CSV: only Fund transfers, with the Type column.
+  // The type filter: only Fund transfers. No CSV button (CSV exports are off for now).
   await page.locator('[data-filter-type="FT"]').click();
   await expect(page).toHaveURL(/ftype=FT/);
   await expect(page.locator("[data-advance]")).toHaveCount(1);
-  await expect(page.locator("[data-funds-csv]")).toHaveAttribute("href", /ftype=FT/);
+  await expect(page.locator("[data-funds-csv]")).toHaveCount(0);
   await shot(page, "finance-filter-fund-transfer-csv");
-  const csv = await (await page.request.get((await page.locator("[data-funds-csv]").getAttribute("href"))!)).text();
-  const lines = csv.replace(/^﻿/, "").split("\r\n");
-  expect(lines[0].split(",").slice(0, 3)).toEqual(["Number", "Type", "Type name"]);
-  expect(lines).toHaveLength(2);
-  expect(lines[1]).toContain(`${ft.number},FT,Fund transfer`);
   await page.locator("[data-funds-type-filter]").getByRole("link", { name: /^All/ }).click();
 
   // Approve both.

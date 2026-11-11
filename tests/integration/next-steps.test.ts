@@ -61,7 +61,7 @@ async function returnedNotary() {
   const lto = await prisma.ltoOffice.findFirst({ where: { active: true }, orderBy: { code: "asc" } });
   await assignToDp(la, { transactionId: t.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: lto?.id ?? null, fundsNeeded: "NO", fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null });
   const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: t.id }, orderBy: { createdAt: "desc" } });
-  await acceptJob(dp, job.id, true);
+  await acceptJob(dp, job.id);
   const reason = await prisma.returnReason.findFirstOrThrow({ where: { code: "MISSING_PAPER", active: true } }).catch(() => prisma.returnReason.findFirstOrThrow({ where: { active: true } }));
   const paper = t.checks.find((c) => c.required)!;
   await returnToLa(dp, job.id, { reasonId: reason.id, note: "The ID copy is unreadable", checkIds: [paper.id], handedOver: await allPapers(t.id) });

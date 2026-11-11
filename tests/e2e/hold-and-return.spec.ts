@@ -180,7 +180,6 @@ test("Decline and Return to LA go back to the LA who sent it; the DP no longer s
 
   // DP: accept PPSR, then Return to LA with findings (a paper and remarks).
   await page.goto(`/jobs/${ppsrJob.id}`);
-  await page.getByLabel("Labels are on all papers").check();
   await page.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.locator("[data-stages]")).toBeVisible();
   await page.getByRole("button", { name: /Return to LA: papers needed/ }).click();

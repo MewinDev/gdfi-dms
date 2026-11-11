@@ -12,7 +12,6 @@ export interface ResetCounts {
   transactions: number;
   checklistTicks: number;
   documents: number;
-  labelsPrinted: number;
   movements: number;
   edstRecords: number;
   assignments: number;
@@ -24,8 +23,7 @@ export interface ResetCounts {
 }
 
 export async function resetLoanData(tx: Prisma.TransactionClient): Promise<ResetCounts> {
-  const [labelsPrinted, edstRecords, checklistTicks, movements, snapshots] = await Promise.all([
-    tx.documentItem.count({ where: { labelPrintedAt: { not: null } } }),
+  const [edstRecords, checklistTicks, movements, snapshots] = await Promise.all([
     tx.loanTransaction.count({ where: { edstReference: { not: null } } }),
     tx.checklistCheck.count({ where: { checked: true } }),
     tx.documentMovement.count(),
@@ -71,7 +69,7 @@ export async function resetLoanData(tx: Prisma.TransactionClient): Promise<Reset
   await tx.vaultLocation.updateMany({ where: { occupied: true }, data: { occupied: false } });
 
   return {
-    loanFiles, transactions, checklistTicks, documents, labelsPrinted, movements, edstRecords,
+    loanFiles, transactions, checklistTicks, documents, movements, edstRecords,
     assignments, cashAdvances, problems, notifications, transmittals, snapshots,
   };
 }

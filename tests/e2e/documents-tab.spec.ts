@@ -5,9 +5,9 @@ import { db, resetLoans } from "./db";
 /**
  * The loan file's Documents tab: one compact card per transaction (two per row when the content is
  * 960 px or wider, one column on a tablet, collapsible cards on a phone), one line per paper (Paper,
- * Type, Label, Where, Print), the custody sentence in a details line, and the All · With you · Not yet
- * filter kept in the address. Printing opens the same label page with the same codes.
- * GD1652026901003: Notary's papers all ticked, one Mortgage paper ticked (so some papers have labels).
+ * Type, ID, Where), the custody sentence in a details line, and the All · With you · Not yet filter kept
+ * in the address. No label printing (labels were removed, 11 November 2026).
+ * GD1652026901003: Notary's papers all ticked, one Mortgage paper ticked (so some papers have Document IDs).
  * Test database only. Screenshots: docs/screenshots/documents-tab/ (1440, 820 and 390 px).
  */
 const DIR = "docs/screenshots/documents-tab";
@@ -41,7 +41,7 @@ async function noSideways(page: Page) {
 }
 const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: PN }, type: { code } } });
 
-/** Opens the sample loan; ticks every Notary paper and one Mortgage paper (labels are made for ticked papers). */
+/** Opens the sample loan; ticks every Notary paper and one Mortgage paper (ticked papers get a Document ID). */
 async function setUp(page: Page) {
   await signInLa(page);
   await page.goto(`/loans?fill=${PN}`);
@@ -85,24 +85,17 @@ test("Height of the Documents tab (recorded for the report)", async ({ page }) =
 
 const cards = (page: Page) => page.locator("[data-doc-card]");
 const width = (page: Page) => page.viewportSize()!.width;
-/** The codes the label page shows (the same page every Print opens). */
-async function labelCodes(page: Page, href: string) {
-  await page.goto(href);
-  await expect(page.getByRole("heading", { name: /^Labels for / })).toBeVisible();
-  return (await page.locator(".mono.font-bold").allInnerTexts()).sort();
-}
-
-test("Documents tab: compact cards, one line per paper, details, filters in the address, the same label printing", async ({ page }) => {
+test("Documents tab: compact cards, one line per paper, details, filters in the address, no label printing", async ({ page }) => {
   test.setTimeout(300_000);
   await setUp(page);
   const docs = await db.documentItem.findMany({ where: { loan: { pn: PN } }, include: { transaction: { include: { type: true } } } });
-  const labelled = docs.filter((d) => d.documentId);
+  const withId = docs.filter((d) => d.documentId);
   await page.goto(`/loans/${PN}?tab=documents`);
   const tab = page.locator("[data-documents-tab]");
-  await expect(tab).toContainText(`${labelled.length} of ${docs.length} papers are in your hands and have a label code.`);
+  await expect(tab).toContainText(`${withId.length} of ${docs.length} papers have a Document ID.`);
   await expect(cards(page)).toHaveCount(4);
   await expect(page.locator('[data-doc-card="NOTARY"] [data-card-count]').filter({ visible: true })).toHaveText(/^\d+ of \d+ with you$/);
-  await expect(page.locator("[data-papers-filter-option]")).toHaveText([`All${docs.length}`, `With you${labelled.length}`, `Not yet${docs.length - labelled.length}`]);
+  await expect(page.locator("[data-papers-filter-option]")).toHaveText([`All${docs.length}`, `With you${withId.length}`, `Not yet${docs.length - withId.length}`]);
 
   // Layout per width: two cards per row at 1440 (tops aligned), one column at 820, collapsible cards at 390.
   const boxes = await Promise.all((await cards(page).all()).map((c) => c.boundingBox()));
@@ -125,9 +118,8 @@ test("Documents tab: compact cards, one line per paper, details, filters in the 
     await expect(edst.locator("[data-card-toggle]")).toHaveAttribute("aria-expanded", "false");
     await expect(edst.locator("[data-card-count]").filter({ visible: true })).toHaveText(/^0 of \d+ with you$/);
     await expect(edst.locator("[data-paper-row]").first()).toBeHidden();
-    // The Print button is at least 44 px high.
-    const btn = page.locator("[data-print-paper]").filter({ visible: true }).first();
-    expect((await btn.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    // The card's open/close button is at least 44 px high.
+    expect((await edst.locator("[data-card-toggle]").boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await shot(page, "card-collapsed", false);
     await edst.locator("[data-card-toggle]").click();
     await expect(edst.locator("[data-paper-row]").first()).toBeVisible();
@@ -138,7 +130,7 @@ test("Documents tab: compact cards, one line per paper, details, filters in the 
   await noSideways(page);
   await shot(page, "all");
 
-  // Details: press a paper (or Enter): who, where, since when in PHT (not "ago"), the label code.
+  // Details: press a paper (or Enter): who, where, since when in PHT (not "ago"), the Document ID.
   const row = page.locator('[data-doc-card="NOTARY"] [data-paper-row]').first();
   const toggle = row.locator("[data-row-toggle]");
   await expect(toggle).toHaveAttribute("title", /, since [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} (AM|PM)\./);
@@ -147,7 +139,8 @@ test("Documents tab: compact cards, one line per paper, details, filters in the 
   await expect(details).toBeVisible();
   await expect(details).toContainText(/ at the .+, since [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} (AM|PM)\./);
   await expect(details).not.toContainText(/ago/);
-  await expect(details).toContainText(`Label code ${labelled.find((d) => d.transaction?.type.code === "NOTARY")!.documentId!.slice(0, 15)}`);
+  await expect(details).not.toContainText(/label/i);
+  await expect(details).toContainText(`Document ID ${withId.find((d) => d.transaction?.type.code === "NOTARY")!.documentId!.slice(0, 15)}`);
   await noSideways(page);
   await shot(page, "row-details-open", false);
   await toggle.press("Enter");
@@ -160,7 +153,7 @@ test("Documents tab: compact cards, one line per paper, details, filters in the 
   await expect(page).toHaveURL(/papers=with-you/);
   await page.reload();
   await expect(tab).toHaveAttribute("data-papers", "with-you");
-  await expect(page.locator("[data-paper-row]")).toHaveCount(labelled.length);
+  await expect(page.locator("[data-paper-row]")).toHaveCount(withId.length);
   await expect(page.locator('[data-paper-row]:not([data-where-kind="with-you"])')).toHaveCount(0);
   await noSideways(page);
   await shot(page, "with-you-filter");
@@ -168,23 +161,13 @@ test("Documents tab: compact cards, one line per paper, details, filters in the 
   await expect(page).toHaveURL(/papers=not-yet/);
   await page.reload();
   await expect(tab).toHaveAttribute("data-papers", "not-yet");
-  await expect(page.locator("[data-paper-row]")).toHaveCount(docs.length - labelled.length);
+  await expect(page.locator("[data-paper-row]")).toHaveCount(docs.length - withId.length);
   await expect(page.locator('[data-paper-row]:not([data-where-kind="not-yet"])')).toHaveCount(0);
   await noSideways(page);
   await shot(page, "not-yet-filter");
 
-  // Printing opens the same label page with the same codes: one paper, one card, all labels.
+  // No label printing anywhere on the tab (labels were removed).
   await page.goto(`/loans/${PN}?tab=documents`);
-  const one = labelled.find((d) => d.transaction?.type.code === "NOTARY")!;
-  const paperHref = await page.locator(`[data-paper-row]`).filter({ hasText: one.label }).first().locator("[data-print-paper]").getAttribute("href");
-  expect(paperHref).toBe(`/loans/${PN}/labels?ids=${one.id}`);
-  const cardHref = await page.locator('[data-doc-card="NOTARY"] [data-print-card]').first().getAttribute("href");
-  const allHref = await page.locator("[data-print-all]").getAttribute("href");
-  expect(await labelCodes(page, paperHref!)).toEqual([one.documentId]);
-  expect(await labelCodes(page, cardHref!)).toEqual(labelled.filter((d) => d.transaction?.type.code === "NOTARY").map((d) => d.documentId).sort());
-  expect(await labelCodes(page, allHref!)).toEqual(labelled.map((d) => d.documentId).sort());
-  // The card's button says how many labels it prints; EDST (no labels) has none.
-  await page.goto(`/loans/${PN}?tab=documents`);
-  await expect(page.locator('[data-doc-card="NOTARY"] [data-print-card]').filter({ visible: true })).toHaveText(`Print labels (${labelled.filter((d) => d.transaction?.type.code === "NOTARY").length})`);
-  await expect(page.locator('[data-doc-card="EDST"] [data-print-card]')).toHaveCount(0);
+  await expect(tab).not.toContainText(/label/i);
+  await expect(page.locator("[data-print-paper], [data-print-card], [data-print-all]")).toHaveCount(0);
 });

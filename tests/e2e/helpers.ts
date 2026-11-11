@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export async function signIn(page: Page, who: "la" | "admin") {
   await page.goto("/login");
@@ -81,4 +81,32 @@ export async function completeAndForwardUi(page: Page, branch: string, la = "Tes
   await fwd.getByRole("button", { name: "Forward to branch" }).click();
   await page.getByRole("alertdialog", { name: "Forward the package?" }).getByRole("button", { name: /^Forward \d+ papers?$/ }).click();
   await expect(page.getByText(/Waiting for the Loan Associate to check the papers/)).toBeVisible();
+}
+
+/**
+ * Funds list: open a row's Details (the chevron; "More" on a phone) and wait until it really is open.
+ * A click that lands before the page has hydrated does nothing, so it clicks again until the row says
+ * aria-expanded="true". Its label then reads "Hide details of ...".
+ */
+export async function openFundsDetails(row: Locator) {
+  const btn = row.getByRole("button", { name: /^(Show|Hide) details of / });
+  await expect(async () => {
+    if ((await btn.getAttribute("aria-expanded")) !== "true") await btn.click();
+    await expect(btn).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+}
+
+/**
+ * Console errors, page errors and React warnings (a missing key, for example) fail the test: call the
+ * returned function at the end. Favicon and "Failed to load resource" lines (a refused request the test
+ * makes on purpose) are ignored.
+ */
+export function watchConsole(page: Page) {
+  const bad: string[] = [];
+  page.on("console", (m) => {
+    const t = m.text();
+    if (m.type() === "error" || /Warning:|unique "key"/.test(t)) bad.push(t);
+  });
+  page.on("pageerror", (e) => bad.push(e.message));
+  return () => expect(bad.filter((t) => !/favicon|Failed to load resource/.test(t))).toEqual([]);
 }

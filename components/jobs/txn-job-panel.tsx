@@ -9,7 +9,7 @@ import { flagKindChoices } from "@/lib/services/expense-kinds";
 import { liveAssignment } from "@/lib/ui/plain";
 import { openHold, openProblem, txnFunds, txnFundsType, txnTat } from "@/lib/jobs/view";
 import { FundsTypePill } from "@/components/funds/funds-type-pill";
-import { FundsChip, LabelsChip, TatChip } from "./chips";
+import { FundsChip, TatChip } from "./chips";
 import { FundsFlagForm, PutOnHoldForm, RaiseProblemForm, ReceivePackageForm } from "./forms";
 import { AttemptTimeline } from "./timeline";
 import { ChangeLtoOfficeForm, ChangeProcessorForm, ProcessorNoteForm, PullBackForm, UpdatePapersButton } from "@/components/loan/sent-actions";
@@ -25,7 +25,7 @@ const DP_STATUS: Record<string, string> = {
 };
 
 /**
- * The job card on Check documents (the LA's view): funds, labels, processor status, TAT and problem.
+ * The job card on Check documents (the LA's view): funds, processor status, TAT and problem.
  * The LA may change the funds flag until the processor accepts, raise and resolve problems on
  * transactions it owns, and receive the package (Phase 5).
  */
@@ -36,8 +36,6 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
   const tat = txnTat(txn, tats, holidays, now);
   const problem = openProblem(txn.problems);
   const hold = openHold(txn.holds);
-  const docs = loan.documents.filter((d) => d.transactionId === txn.id && d.documentId);
-  const labelsPrinted = !!txn.labelsPrintedAt || (docs.length > 0 && docs.every((d) => d.labelPrintedAt));
   const la = can(user, PERMISSIONS.CHECKLIST_TICK) && inScope(user, loan.branchId);
   // The LA owns the transaction while it is in the LA's hands (and for LA-owned types).
   const laOwns = la && (txn.type.ownerRole === "LA" || ["FOR_CHECKLIST", "READY", "RETURNED", "FORWARDED"].includes(txn.status));
@@ -78,7 +76,6 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
         {/* Before Send, the send step asks the funds question; the chip follows once it is sent. */}
         {txn.type.requiresDp && !["FOR_CHECKLIST", "READY", "RETURNED"].includes(txn.status) && <FundsChip status={funds} />}
         {(() => { const ft = txnFundsType(txn); return ft ? <FundsTypePill code={ft.code} name={ft.name} /> : null; })()}
-        {docs.length > 0 && <LabelsChip printed={labelsPrinted} />}
         {a?.ltoOffice && <span className="chip c-wait" data-lto-chip><MapPinIcon size={14} strokeWidth={2.4} />At {a.ltoOffice.name}</span>}
         {a && !statusText && <span className="chip c-mute">{DP_STATUS[a.status] ?? a.status} · {a.dpUser.name}</span>}
       </div>

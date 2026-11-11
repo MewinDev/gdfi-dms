@@ -56,7 +56,7 @@ export async function acceptJobAction(_p: ActionState, fd: FormData): Promise<Ac
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.JOBS_WORK);
     const id = str(fd, "assignmentId");
-    await acceptJob(u, id, fd.get("labels") === "on");
+    await acceptJob(u, id);
     await refresh(id);
     return "Accepted. The job is yours.";
   });
@@ -278,7 +278,7 @@ export async function acceptWithMissingAction(_p: ActionState, fd: FormData): Pr
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.JOBS_WORK);
     const id = str(fd, "assignmentId");
-    const r = await acceptWithMissing(u, id, fd.get("labels") === "on", {
+    const r = await acceptWithMissing(u, id, {
       reasonId: str(fd, "reasonId"), checkIds: fd.getAll("checkIds").map(String), otherPaper: str(fd, "otherPaper"), note: str(fd, "note"),
       handedOver: fd.getAll("handedOver").map(String),
     });

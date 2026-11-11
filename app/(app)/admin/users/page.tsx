@@ -227,7 +227,7 @@ async function UsersModal({
     : { all: firstRole?.branchAccess === "ALL", grants: [], homeBranchId: null };
   const homeName = u?.homeBranchId ? (await prisma.branch.findUnique({ where: { id: u.homeBranchId }, select: { name: true, code: true } })) : null;
   const readOnlyAccess = canAccess ? undefined : u
-    ? `${accessSummary(initial.grants, await prisma.userBranch.count({ where: { userId: u.id } }), initial.all)}${homeName ? ` · home branch ${homeName.name}${homeName.code ? ` (${homeName.code})` : ""}` : ""}`
+    ? `${accessSummary(initial.grants, await prisma.userBranch.count({ where: { userId: u.id } }), initial.all)}${homeName ? ` · home branch ${homeName.name}` : ""}`
     : "The role's default: All branches when the role is set to All, otherwise none yet. Someone who may change branch access sets it.";
   return (
     <SettingsModal

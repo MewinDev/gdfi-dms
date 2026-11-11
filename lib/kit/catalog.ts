@@ -114,7 +114,11 @@ export const KIT_LOANS: KitLoan[] = [
 
   // Loan Associate journey.
   L(2011, "Needs LTO: office and cash estimate", "Loan Associate", { borrower: "Karen Dizon" }),
-  L(2012, "Missing paper, with reminder", "Loan Associate", { borrower: "Leo Bautista" }),
+  L(2012, "Required paper missing, with remarks", "Loan Associate", { borrower: "Leo Bautista" }),
+  // Missing papers with reasons (a required paper above; an optional one included; through the vault gate; Present but not there).
+  L(2080, "Optional paper included and missing, with remarks", "Loan Associate", { borrower: "Lorna Abad" }),
+  L(2081, "Through the vault gate with a missing paper (Complete with exceptions)", "Exceptions", { amount: 650_000, borrower: "Lucio Barrera" }),
+  L(2082, "LA ticked a paper Present that is not there (waiting at DP 1)", "DP", { borrower: "Luz Carpio" }),
   L(2013, "On hold (LA 1 and LA 2)", "Exceptions", { borrower: "Marites Flores" }),
   L(2014, "Pull back before accept", "Loan Associate", { borrower: "Nestor Castillo" }),
   L(2015, "Sent, waiting to accept", "DP", { borrower: "Olivia Navarro" }),

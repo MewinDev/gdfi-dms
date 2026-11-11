@@ -224,7 +224,7 @@ describe("Changes and the review item", () => {
   it("Close as cancelled: blocks Send and cash, needs a note, refused while cash is out, stops processor jobs, deletes nothing", async () => {
     const { loan, txn } = await open();
     const job = await send(loan, await txn("NOTARY"), "YES");
-    await acceptJob(dp, job.id, true);
+    await acceptJob(dp, job.id);
     const notary = await txn("NOTARY");
     const adv = await requestAdvance(dp, { lines: [{ transactionId: notary.id, kind: "TRANSPORT", cents: 50_000 }] });
     await change(PN, { status: "CANCELLED" });

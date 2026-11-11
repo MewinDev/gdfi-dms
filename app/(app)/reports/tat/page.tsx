@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { can, requirePagePermission } from "@/lib/auth/current-user";
+import { requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { TAT_SHOW, reasonReport, tatReport } from "@/lib/services/tat-report";
 import { ReasonTable } from "@/components/jobs/reason-table";
 import { PageTop } from "@/components/loan/page-top";
 import { JobRow } from "@/components/jobs/job-row";
-import { DownloadIcon } from "@/components/ui/icons";
 
 export const metadata: Metadata = { title: "TAT and problems" };
 
@@ -14,14 +12,13 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
   const user = await requirePagePermission(PERMISSIONS.REPORTS_TAT);
   const sp = await searchParams;
   const [{ rows, all }, reasons] = await Promise.all([tatReport(user, sp), reasonReport(user, sp)]);
-  // Branch choices: the name (kept as the filter value) shown with its code, "Antipolo (101)".
-  const branches = [...new Map(all.map((r) => [r.branch, r.branchCode ? `${r.branch} (${r.branchCode})` : r.branch])).entries()].sort(([a], [z]) => a.localeCompare(z));
+  // Branch choices: the name only (also the filter value), "Antipolo".
+  const branches = [...new Map(all.map((r) => [r.branch, r.branch])).entries()].sort(([a], [z]) => a.localeCompare(z));
   const types = [...new Map(all.map((r) => [r.typeCode, r.typeName])).entries()];
   const stageNames = [...new Set(all.map((r) => r.stage).filter((x): x is string => !!x))].sort();
   // Funds types on these jobs, with counts (the filter and its numbers).
   const fundsTypes = [...new Map(all.filter((r) => r.fundsType).map((r) => [r.fundsType!.code, r.fundsType!.name])).entries()];
   const fundsCount = (code: string) => all.filter((r) => r.fundsType?.code === code).length;
-  const qs = new URLSearchParams(Object.entries(sp).filter(([, v]) => !!v) as [string, string][]).toString();
   return (
     <div className="dense flex w-full flex-col gap-4">
       <PageTop
@@ -29,7 +26,6 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
         back={{ label: "Home", href: "/dashboard" }}
         title="TAT and problems"
         subtitle="The turnaround clock never pauses. Problem time is the sum of each problem's business days."
-        right={can(user, PERMISSIONS.REPORTS_TAT_EXPORT) ? <Link href={`/api/reports/tat?${qs}`} className="btn-ghost btn-sm" prefetch={false}><DownloadIcon size={18} /> CSV</Link> : null}
       />
       <form action="/reports/tat" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_auto_auto] lg:items-end">
         <div>
@@ -84,7 +80,6 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
       <section aria-labelledby="by-reason" className="card overflow-hidden">
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pb-2 pt-4 sm:px-6">
           <h2 id="by-reason" className="text-lg font-bold text-navy">Problems and holds by reason</h2>
-          {can(user, PERMISSIONS.REPORTS_TAT_EXPORT) && <Link href={`/api/reports/tat?${qs}${qs ? "&" : ""}kind=reasons`} className="btn-ghost btn-sm" prefetch={false}><DownloadIcon size={18} /> CSV</Link>}
         </div>
         <p className="px-4 pb-2 text-[13px] text-ink-2 sm:px-6">Average days are business days (weekends and holidays skipped); open ones count to today. Dates are Philippine time.</p>
         <ReasonTable rows={reasons} caption="Problems and holds by reason" />

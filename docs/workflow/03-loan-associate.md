@@ -2,7 +2,7 @@
 
 What the Loan Associate does, from Find loan to Send and the changes allowed before the DP accepts.
 
-Last updated: 10 November 2026 (PHT)
+Last updated: 11 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -16,11 +16,11 @@ flowchart TD
   A4 --> A5["To do tab: Next step card and All transactions list"]:::la
   A5 --> B1["Check documents: Do this now card with the one next step, then the open transaction's papers; all transactions in order on the right"]:::la
   B1 --> B2["Tick the papers: required, pick-at-least-one groups, optional, add another paper"]:::la
-  B2 -->|"A paper has not arrived"| B3["Ask for missing paper: name the papers, optional hold"]:::la
+  B2 -->|"A paper has not arrived"| B3["Mark it Missing on its row: reason and remarks, then the file goes on"]:::la
   B3 --> B2
+  B3 -.->|"It arrives later"| B3R["Received, with the date it arrived. The reason and remarks stay in the history"]:::la
   B2 -->|"Waiting on the borrower"| B4["Put on hold: reason and remarks required, resume with remarks"]:::hold
   B4 --> B2
-  B2 --> B5["Print labels, not required to send"]:::la
   B2 --> B6{"Transaction type"}
   B6 -->|"Needs a processor"| C1["Send panel with a ready check"]:::la
   B6 -->|EDST| B7["Record the EDST reference: done, no processor"]:::la
@@ -52,13 +52,30 @@ flowchart TD
   classDef hold fill:#c9d4e6,stroke:#0c2340,color:#14213a
 ```
 
-- Find loan does a live lookup in MyLoans by PN; suggestions start at 3 characters; only loans in the user's branch access appear. The PN is checked first (Settings, System, PN format: GD + branch code + year + 9 + running number, for example GD1012026900001; spaces, dashes and dots are removed): a wrong PN shows "This does not look like a PN. Example: GD1012026900001" and the wrong part, and is never sent to MyLoans. The Loan File shows the PN as stored and "Opened at {branch} ({code})" under it ("..., now at ..." when MyLoans moved the loan).
+- Find loan does a live lookup in MyLoans by PN; suggestions start at 3 characters; only loans in the user's branch access appear. The PN is checked first (Settings, System, PN format: GD + branch code + year + 9 + running number, for example GD1012026900001; spaces, dashes and dots are removed): a wrong PN shows "This does not look like a PN. Example: GD1012026900001" and the wrong part, and is never sent to MyLoans. The Loan File shows the PN as stored and "Opened at {branch}" under it, the branch name only ("..., now at ..." when MyLoans moved the loan).
 - Check documents shows the "Do this now" card and the open transaction on the left, and all transactions, in fixed order, on the right (see [What the loan file shows first](#what-the-loan-file-shows-first)).
 - Nothing is pre-selected for funds: the LA must answer. The LTO office and the late reason appear only when they apply.
 - Before the DP accepts, the LA can update papers, change funds, processor or LTO office, add a note, or pull back. After accepting, only the DP can return it.
 - A Decline (before accepting) or a Return to LA (after) goes back to the specific LA who sent it, never to another LA of the branch: it is on that LA's Home ("Sent back to you"); on Check documents the "Do this now" card says it once: the findings, the DP's name and the round. Sending again starts a new round; nothing is pre-selected.
 - While a transaction is on hold it is locked for everyone (see [Locked](01-glossary.md)); only the hold owner can resume it.
 - The Open items card on Check documents lists what is open on the other transactions of the loan file and MyLoans changes. What the "Do this now" card already says for the open transaction is not repeated there; when nothing is left, the card is not shown. A "Sent back to you" or "Waiting for papers" row reads top to bottom (the badge, the transaction, what was found or asked, then who and the date and time in PHT, so the turnaround time can be read exactly) and the whole row opens it (Open, or Show paper for a missing paper). The right column scrolls with the page. On the dashboard and the Updates page it is unchanged.
+
+## Missing papers with reasons
+
+A missing paper no longer blocks the file (confirmed with the users, 10 November 2026). The rules:
+
+1. **Per paper.** The reason and remarks belong to that paper, not to the file.
+2. **Required papers** are Present (ticked) or **Missing**. Pressing **Missing** on the row opens a compact box right under it (no pop-up): the **Reason** as one-tap chips (Settings, Missing paper reasons; the focus goes to them) and one **Remarks** line that grows as you type, with **Save** beside it (under it on a phone). Remarks are 5 to 500 characters, always required, also for "Other"; the hint says how many characters are left, and the count shows only near 500. Enter saves, Shift+Enter is a new line, Esc cancels an edit. Saved, it folds to one line: the reason chip, the remarks, who and when, and **Edit**. The row is red "Missing, remarks needed" until they are saved, then amber "Missing, with remarks".
+3. **Optional papers** have an **Include in this file** tick. Off: the row stays quiet and nothing expects the paper. On (or ticked Present): it behaves exactly like a required paper.
+4. **Send** stays locked while any expected paper is Missing without saved remarks, and says which ("Add remarks for: Deed of Sale, Valid ID"). The server refuses the same.
+5. The processor cannot return the file for a paper already Missing with remarks; it goes through as an exception (see [The DP job](04-dp-job.md)).
+6. Through the **vault gate** the file is "Complete with exceptions" until every missing paper is Received.
+7. **Received**: the LA (papers:receive_late, also Admin) marks it Received with the date it arrived (not in the future, not before it was marked). The reason and remarks stay. With the last one the flag clears.
+8. **Remarks are never silently changed.** Every save and edit is kept in the paper's history (who, when, old and new text). Once the transaction was sent, a missing paper cannot be un-marked or its remarks removed: it ends only when Received. Before the first send, "Not missing" or ticking it Present takes the mark back (also kept in the history).
+9. The turnaround time never pauses for a missing paper.
+10. No alerts and no emails: the Loan File shows a short **Missing papers** row near the top (only when there is one), and Monitoring has the **Has missing papers** filter.
+
+The old "Ask for missing paper" pop-up and its problem card are gone; the problem card now shows only problems raised by others (the processor's return, MyLoans changes, the LA's "Wrong details" or "Something else").
 
 ## What the loan file shows first
 
@@ -68,8 +85,8 @@ On Check documents, the "Do this now" card at the top of the left column says th
 2. **Problem to fix**: the problem, who raised it, and its usual action.
 3. **Confirm the papers you received**: after a Return to LA with papers handed over. "All 7 received" confirms them in one click; "Check each paper" opens the list of every paper, each set to Received, so one that did not arrive can be marked Not received (a problem is raised for it, as before).
 4. **Fix and send again**: returned or declined by the DP. The findings are shown here once, with the paper named in bold and "Go to this paper". The paper's row in the checklist has one small marker ("Returned: missing paper"). It comes after step 3 because the paper must be back in hand before it can be fixed, and Send stays locked until the papers are confirmed.
-5. **Waiting for a paper**: an open missing-paper request (not the DP's own return): which paper, who asked, "Show paper".
-6. **Tick the required papers**: "4 of 5 required".
+5. **Waiting for a paper**: an older missing-paper request (not the DP's own return): which paper, who asked, "Show paper". New ones are not made: the LA marks the paper Missing on its row instead.
+6. **Tick the required papers**: "4 of 5 required" (every paper of the file: a missing paper counts once its remarks are saved).
 7. **Send to DP**: points to the Send panel, which keeps its own ready check. Work without a processor ends with EDST or Mark as done instead.
 
 The card is soft amber for a returned transaction, soft red for a problem, soft grey-blue for a hold, and white with a plain border for normal work. The Transactions list shows one status word per transaction (On hold, Problem, Returned, Missing paper, Not started, Needs papers, Ready to send, Sent to DP, In progress, Coming back, Done) and the day count in grey. On tablet and phone the transactions become a strip under the card; only the strip scrolls sideways.
@@ -80,13 +97,13 @@ The card is soft amber for a returned transaction, soft red for a problem, soft 
 
 ## Documents tab
 
-The Documents tab lists every paper of the loan file, one compact card per transaction, in the usual order. It only shows; ticking papers stays on Check documents, and printing works as before.
+The Documents tab lists every paper of the loan file, one compact card per transaction, in the usual order. It only shows; ticking papers stays on Check documents. There is no label printing (labels were removed on 11 November 2026: they are not used in the LA and DP flow).
 
-- At the top: "8 of 23 papers are in your hands and have a label code", **Print all labels**, and the filter **All · With you · Not yet** with its counts. The filter is kept in the address (`?papers=with-you`), so a refresh keeps it; "Not yet" with nothing left says "All papers are with you."
-- Each card: the transaction, "7 of 7 with you", and **Print labels (N)** for that card's papers (the same label page, with only those papers; hidden when none has a label).
-- One line per paper: Paper, Type (Original or Copy), Label (the short code, for example `CHM-01`; the full code is in the tooltip and the details), Where (**With you** with a green dot, **Not yet** in grey, or a short phrase such as "At DP 1" or "On the way"), and **Print** when the paper has a label. "Not yet" lines are dimmed but keep their word.
-- Press a line (or Enter) to open its details: who has it, where and since when, in Philippine time ("Test Loan Associate (LA, Angono) at the Angono branch, since Nov 10, 9:29 AM"), whether the label was printed, and the full label code. The same sentence is the line's tooltip.
-- Two cards per row when the page is wide enough (1440), one column on a tablet, and on a phone collapsible cards (the ones with papers in hand open) with each paper on two lines and a full-size Print button.
+- At the top: "8 of 23 papers have a Document ID" and the filter **All · With you · Not yet** with its counts. The filter is kept in the address (`?papers=with-you`), so a refresh keeps it; "Not yet" with nothing left says "All papers are with you."
+- Each card: the transaction and "7 of 7 with you".
+- One line per paper: Paper, Type (Original or Copy), ID (the short Document ID, for example `CHM-01`; the full one is in the tooltip and the details), Where (**With you** with a green dot, **Not yet** in grey, or a short phrase such as "At DP 1" or "On the way"). "Not yet" lines are dimmed but keep their word.
+- Press a line (or Enter) to open its details: who has it, where and since when, in Philippine time ("Test Loan Associate (LA, Angono) at the Angono branch, since Nov 10, 9:29 AM"), and the full Document ID. The same sentence is the line's tooltip.
+- Two cards per row when the page is wide enough (1440), one column on a tablet, and on a phone collapsible cards (the ones with papers in hand open) with each paper on two lines.
 
 ![Documents tab: two cards per row, one line per paper](../screenshots/documents-tab/all-1440.png)
 
