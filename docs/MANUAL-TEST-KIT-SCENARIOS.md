@@ -1,6 +1,6 @@
 # Manual Test Kit: scenarios
 
-Last updated: 10 November 2026 (PHT)
+Last updated: 12 November 2026 (PHT)
 
 The old scenario data: sample accounts and one sample loan per case, already moved through the steps (sent, accepted, on hold, funded, returned, overdue and so on). It loads **only** with `--with-scenarios`; the default kit is the clean one ([Manual Test Kit](MANUAL-TEST-KIT.md)). The automated kit tests use it too.
 
@@ -56,7 +56,7 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 | GD1012026902002 | Financing, Undertaking, Transferred | LA 1 | Open the loan file. | Financing, Undertaking and Transferred (picked by the LA); New 350,000 is Mortgage: Notary, For EDST, For Entry PPSR and Mortgage. |
 | GD1012026902003 | Blank product, default Refinancing | LA 1 | Open the loan file. | Blank Product Name defaults to Refinancing; Renewal 800,000 is Mortgage: 4 transactions. |
 | GD1012026902004 | Financing, Non-Undertaking | LA 1 | Open the loan file. | Financing, Non-Undertaking (picked by the LA), Transferred; Mortgage: 4 transactions. |
-| GD1012026902005 | Financing, Untransferred | LA 1 | Open the loan file. | Rule 3: Untransferred gives Notary and For EDST; Mortgage not evaluated. |
+| GD1012026902005 | Financing, Untransferred | LA 1 | Open the loan file. | Mortgage check not needed: Untransferred gives Notary and For EDST. |
 | GD1012026902006 | New at 500,000 | LA 1 | Open the loan file. | Exactly 500,000 is Mortgage: 4 transactions. |
 | GD1012026902007 | New at 500,001 | LA 1 | Open the loan file. | Above 500,000 is Not Mortgage: Notary and For EDST. |
 | GD1652026902008 | Renewal at 1,000,000 (Angono) | LA 1 | Open the loan file. | Exactly 1,000,000 is Mortgage: 4 transactions. |

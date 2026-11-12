@@ -10,6 +10,7 @@ import { kindText } from "@/lib/funds/kinds";
 import { amountWords } from "./funds";
 import { txnFunds } from "@/lib/jobs/view";
 import { historySentence, progressStep } from "@/lib/ui/plain";
+import { plainRules } from "@/lib/rules";
 import { NO_DETAILS, holdReasonName } from "@/lib/ui/holds";
 import { buildJourney, type EventRec, type Journey, type JourneyInput, type StageRec } from "@/lib/workflow/build-journey";
 import { buildJourneyStory, type JourneyStory } from "@/lib/workflow/journey-story";
@@ -60,8 +61,12 @@ type Movement = Awaited<ReturnType<typeof prisma.documentMovement.findMany>>[num
 type AdvanceLine = { transactionId: string | null; kind?: string; otherDescription?: string; amountSource?: string; presetCents?: number | null; locked?: boolean; requestedCents?: number; kindRef?: { name: string } };
 type Advance = { id: string; number: string; status: string; createdAt: Date; approvedAt: Date | null; releasedAt: Date | null; requestedCents: number; releasedCents: number; lines: AdvanceLine[] };
 
-/** Plain sentence for an audit row (the old History text, plus holds and problems). */
+/** Plain sentence for an audit row (the old History text, plus holds and problems); old rule numbers read as the rule sentences (lib/rules/names.ts). */
 export function eventText(r: Audit): string {
+  return plainRules(eventLine(r));
+}
+
+function eventLine(r: Audit): string {
   const who = r.actorLabel.replace(/ \(Simulated\)$/, "");
   const s = r.summary.replace(/^Simulated: /, "");
   switch (r.action) {

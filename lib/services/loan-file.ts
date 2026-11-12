@@ -17,6 +17,7 @@ import {
   RuleInputError,
   TRANSACTION_ORDER,
   type FinancingType,
+  type LoanTypeValue,
   type OrcrStatus,
   type RuleOutcome,
   type TransactionCode,
@@ -41,7 +42,7 @@ export type PnLookupResult =
    * In MyLoans and in the person's branches, but not the one accepted status (lib/myloans/status.ts):
    * a card with the real status name, never a loan file and never a saved copy.
    */
-  | { kind: "status"; pn: string; statusKind: Exclude<StatusKind, "released" | "not_a_loan">; statusName: string; borrowerName: string; branchName: string | null }
+  | { kind: "status"; pn: string; statusKind: Exclude<StatusKind, "released" | "not_a_loan">; statusName: string; borrowerName: string; branchName: string | null; /** The MyLoans record (in the person's branches only): the same eight details as a released loan. */ record: MyLoansRecord }
   /** busy: the hourly limit or the circuit breaker stopped the call ("MyLoans is busy..."). */
   | { kind: "unavailable"; pn: string; message: string; busy?: boolean }
   | { kind: "refused"; pn: string; field: DataCheckField; fieldLabel: string; message: string; record: MyLoansRecord }
@@ -50,6 +51,9 @@ export type PnLookupResult =
       pn: string;
       record: MyLoansRecord;
       amount: number;
+      /** The checked loan type and product name: what the rules read (the card shows what will be set up). */
+      loanType: LoanTypeValue;
+      productName: string | null;
       classification: "FINANCING" | "REFINANCING";
       classificationRule: string;
       /** Outcome for Refinancing (no LA picks needed). Null for Financing until the LA picks. */
@@ -110,11 +114,11 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
 
   // The DMS first: a saved loan file is handled from the DMS, with no MyLoans call (the stale refresh
   // runs later, in the background, from the "Already in the DMS" card). Rules never run again.
-  const existing = await prisma.loan.findUnique({ where: { pn }, select: { id: true, branchId: true } });
+  const existing = await prisma.loan.findUnique({ where: { pn }, select: { id: true, branchId: true, branch: { select: { name: true } } } });
   if (existing) {
     if (!inScope(user, existing.branchId)) {
-      // Do not reveal another branch's Loan File.
-      return { kind: "refused", pn, field: "branch", fieldLabel: "Branch", message: "Outside your branch access.", record: emptyRecord(pn) };
+      // Another branch's Loan File: the branch only (already in the PN), so the person knows which access to ask for.
+      return { kind: "refused", pn, field: "branch", fieldLabel: "Branch", message: "Outside your branch access.", record: outsideRecord(pn, existing.branch.name) };
     }
     return { kind: "existing", pn };
   }
@@ -144,16 +148,18 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   await noteUnknownCodes(lookup.record);
   const mine = allowedBranches(user);
   if (sk !== "released") {
-    // The branch check first: a loan outside the person's branches shows none of its details.
+    // The branch check first: a loan outside the person's branches shows only its PN and branch.
     if (mine !== null && !inBranches(lookup.record, mine)) {
-      return { kind: "refused", pn, field: "branch", fieldLabel: "Branch", message: "Outside your branch access.", record: emptyRecord(pn) };
+      return { kind: "refused", pn, field: "branch", fieldLabel: "Branch", message: "Outside your branch access.", record: outsideRecord(pn, lookup.record.branchName) };
     }
-    return { kind: "status", pn, statusKind: sk, statusName: statusLabel(lookup.record), borrowerName: lookup.record.borrowerName, branchName: lookup.record.branchName };
+    return { kind: "status", pn, statusKind: sk, statusName: statusLabel(lookup.record), borrowerName: lookup.record.borrowerName, branchName: lookup.record.branchName, record: lookup.record };
   }
   const check = runDataCheck(lookup.record, { allowedBranches: allowedBranches(user), today: businessDate(new Date()) });
   if (!check.ok) {
     if (check.field === "borrowerName") await noteNoName(lookup.record);
-    return { kind: "refused", pn, field: check.field, fieldLabel: check.fieldLabel, message: check.message, record: lookup.record };
+    // Outside the person's branches: the branch only, like the other refusals above.
+    const record = check.field === "branch" ? outsideRecord(pn, lookup.record.branchName) : lookup.record;
+    return { kind: "refused", pn, field: check.field, fieldLabel: check.fieldLabel, message: check.message, record };
   }
   const off = await inactiveRefusal(lookup.record);
   if (off) return { kind: "refused", pn, ...off, record: lookup.record };
@@ -167,6 +173,8 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
     pn,
     record: lookup.record,
     amount: check.normalized.totalReleasedAmount,
+    loanType: check.normalized.loanType,
+    productName: check.normalized.productName,
     classification: cls.classification,
     classificationRule: cls.rule,
     outcome,
@@ -194,6 +202,15 @@ export const MYLOANS_BUSY = "MyLoans is busy, please try again in a few minutes.
 
 /** The one sentence for a PN MyLoans has no loan for. */
 export const NOT_IN_MYLOANS = "No loan with this PN was found in MyLoans.";
+
+/**
+ * A loan outside the person's branches: the PN and the branch only (decided 12 November 2026; the branch is
+ * already in the PN, and it tells the person which access to ask for). Never the borrower's name: PNs are
+ * easy to guess. Nothing else of the loan leaves the server.
+ */
+function outsideRecord(pn: string, branchName: string | null | undefined): MyLoansRecord {
+  return { ...emptyRecord(pn), branchName: branchName?.trim() || null };
+}
 
 function emptyRecord(pn: string): MyLoansRecord {
   return { pn, cin: null, cif: null, sourceLoanId: null, borrowerName: "", branchName: null, branchCode: null, status: null, loanType: null, productName: null, totalReleasedAmount: null, releaseDate: null };

@@ -140,7 +140,7 @@ describe("2. Material: amount raised across the mortgage threshold", () => {
     expect(l.mortgageResult).toBe("MORTGAGE");
     const forAdmin = (await reviewFor(admin, loan.id))!;
     expect(forAdmin.canReview).toBe(true);
-    expect(forAdmin.sentences.join(" ")).toMatch(/Rule 4 no longer applies/);
+    expect(forAdmin.sentences.join(" ")).toMatch(/Mortgage is not needed: this is a Renewal loan above ₱1,000,000./);
     for (const u of [la, dp]) {
       const r = (await reviewFor(u, loan.id))!;
       expect(r.canReview).toBe(false);

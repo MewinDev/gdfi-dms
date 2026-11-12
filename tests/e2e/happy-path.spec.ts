@@ -16,8 +16,8 @@ test("LA: find GD1012026901001, open loan file, tick the papers, send to a proce
   const main = page.getByRole("main");
   await main.getByLabel("Find a loan").fill("GD1012026901001");
   await main.getByRole("button", { name: /^Find/ }).click();
-  await expect(main.getByText("Source: MyLoans")).toBeVisible();
-  await expect(main.getByText("This is a Refinancing loan. Nothing to answer.")).toBeVisible();
+  await expect(main.locator("[data-find-source]")).toBeVisible();
+  await expect(main.getByText("This is a Refinancing loan: the product name has the word Refinancing.")).toBeVisible();
   await expect(main.getByText("Notary, EDST, Entry of PPSR, Mortgage")).toBeVisible();
 
   // Open loan file (automatic rules run, no confirmation dialog)

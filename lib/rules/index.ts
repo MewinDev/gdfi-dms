@@ -4,7 +4,15 @@
  * Pure functions only: no database, no clock, no I/O. Every automatic decision made at
  * "Open Loan File" comes from `evaluateLoanRules`, and the result carries the inputs used and
  * the rule that fired so it can be written to the audit trail as-is.
+ *
+ * Rules are stored by their stable key (lib/rules/names.ts, "KEY:value"); the words people see come from
+ * names.ts at display time. Rule numbers live only in these comments.
  */
+
+import { encodeFiring, plainRuleText, plainRuleValue, ruleText, storedRuleText, type RuleFiring } from "./names";
+
+export type { RuleFiring, RuleKey } from "./names";
+export { RULE_NAMES, RULE_KEYS, decodeFiring, encodeFiring } from "./names";
 
 export type Classification = "FINANCING" | "REFINANCING";
 export type FinancingType = "UNDERTAKING" | "NON_UNDERTAKING";
@@ -39,23 +47,21 @@ function containsWholeWord(text: string, word: string): boolean {
 
 export interface ClassificationResult {
   classification: Classification;
+  /** The stored key form (names.ts). */
   rule: string;
+  fired: RuleFiring;
 }
 
 export function classifyProductName(productName: string | null | undefined): ClassificationResult {
   const name = normalizeProductName(productName);
-  if (containsWholeWord(name, "refinancing")) {
-    return { classification: "REFINANCING", rule: 'Rule 1: Product Name contains the whole word "Refinancing"' };
-  }
-  if (containsWholeWord(name, "financing")) {
-    return { classification: "FINANCING", rule: 'Rule 1: Product Name contains the whole word "Financing"' };
-  }
-  return {
-    classification: "REFINANCING",
-    rule: name
-      ? 'Rule 1: Product Name has neither "Refinancing" nor "Financing" as a whole word, default Refinancing'
-      : "Rule 1: Product Name is blank, default Refinancing",
+  const out = (classification: Classification, reason: Extract<RuleFiring, { key: "PRODUCT_CLASSIFICATION" }>["reason"]): ClassificationResult => {
+    const fired: RuleFiring = { key: "PRODUCT_CLASSIFICATION", reason };
+    return { classification, rule: encodeFiring(fired), fired };
   };
+  if (containsWholeWord(name, "refinancing")) return out("REFINANCING", "REFINANCING_WORD");
+  if (containsWholeWord(name, "financing")) return out("FINANCING", "FINANCING_WORD");
+  // Neither whole word, or blank: default Refinancing.
+  return out("REFINANCING", name ? "NEITHER_WORD" : "BLANK");
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +74,9 @@ export function isValidLoanType(value: unknown): value is LoanTypeValue {
 
 export interface MortgageDetermination {
   result: Exclude<MortgageResult, "NOT_EVALUATED">;
+  /** The stored key form (names.ts). */
   rule: string;
+  fired: RuleFiring;
 }
 
 export function determineMortgage(loanType: LoanTypeValue, totalReleasedAmount: number): MortgageDetermination {
@@ -78,12 +86,9 @@ export function determineMortgage(loanType: LoanTypeValue, totalReleasedAmount: 
   if (!Number.isFinite(totalReleasedAmount) || totalReleasedAmount <= 0) {
     throw new Error("Total Released Amount must be a number greater than 0");
   }
-  const threshold = MORTGAGE_THRESHOLDS[loanType];
-  const peso = threshold.toLocaleString("en-PH");
-  if (totalReleasedAmount <= threshold) {
-    return { result: "MORTGAGE", rule: `Rule 4: ${loanType} and amount at or below PHP ${peso} -> Mortgage` };
-  }
-  return { result: "NOT_MORTGAGE", rule: `Rule 4: ${loanType} and amount above PHP ${peso} -> Not Mortgage` };
+  const met = totalReleasedAmount <= MORTGAGE_THRESHOLDS[loanType];
+  const fired: RuleFiring = { key: "MORTGAGE_THRESHOLD", loanType, met };
+  return { result: met ? "MORTGAGE" : "NOT_MORTGAGE", rule: encodeFiring(fired), fired };
 }
 
 // ---------------------------------------------------------------------------
@@ -106,9 +111,11 @@ export interface RuleOutcome {
   orcrStatus: OrcrStatus | null;
   mortgage: MortgageResult;
   transactions: TransactionCode[];
-  /** Human-readable trail of the rules that fired, in order. */
+  /** The rules that fired, in order (title and sentence: `ruleWording`). */
+  fired: RuleFiring[];
+  /** The same in the stored key form ("MORTGAGE_THRESHOLD:New:MET"), for the audit trail. */
   rulesFired: string[];
-  /** One-line summary for the Loan File ("rule that fired"). */
+  /** The last rule that fired, stored key form (Loan.ruleFired; shown as "Why this was set up"). */
   summary: string;
 }
 
@@ -123,9 +130,9 @@ export class RuleInputError extends Error {
 }
 
 export function evaluateLoanRules(input: RuleInputs): RuleOutcome {
-  const rulesFired: string[] = [];
+  const rulesFired: RuleFiring[] = [];
   const cls = classifyProductName(input.productName);
-  rulesFired.push(cls.rule);
+  rulesFired.push(cls.fired);
 
   if (cls.classification === "FINANCING") {
     // Rule 2: the LA picks Undertaking / Non-Undertaking. The system never guesses.
@@ -135,25 +142,23 @@ export function evaluateLoanRules(input: RuleInputs): RuleOutcome {
     if (!input.orcrStatus) {
       throw new RuleInputError("Pick ORCR Transferred or Untransferred before opening the Loan File.", "orcrStatus");
     }
-    rulesFired.push(
-      `Rule 2: Financing type ${input.financingType === "UNDERTAKING" ? "Undertaking" : "Non-Undertaking"} (picked by LA)`,
-    );
+    rulesFired.push({ key: "UNDERTAKING_CHOICE", financingType: input.financingType });
 
-    // Rule 3: ORCR
+    // Rule 3: ORCR (Untransferred: Notary + For EDST, Mortgage not evaluated; Transferred: run Rule 4)
     if (input.orcrStatus === "UNTRANSFERRED") {
-      rulesFired.push("Rule 3: Financing + ORCR Untransferred -> Notary + For EDST (Mortgage not evaluated)");
+      rulesFired.push({ key: "ORCR_CHECK", orcr: "UNTRANSFERRED" });
       return finish(cls.classification, input.financingType, "UNTRANSFERRED", "NOT_EVALUATED", rulesFired);
     }
-    rulesFired.push("Rule 3: Financing + ORCR Transferred -> run Rule 4");
+    rulesFired.push({ key: "ORCR_CHECK", orcr: "TRANSFERRED" });
     const m = determineMortgage(input.loanType, input.totalReleasedAmount);
-    rulesFired.push(m.rule);
+    rulesFired.push(m.fired);
     return finish(cls.classification, input.financingType, "TRANSFERRED", m.result, rulesFired);
   }
 
   // Refinancing: ORCR is skipped and Undertaking does not apply.
-  rulesFired.push("Rule 3: Refinancing -> ORCR skipped, run Rule 4");
+  rulesFired.push({ key: "ORCR_CHECK", orcr: "SKIPPED" });
   const m = determineMortgage(input.loanType, input.totalReleasedAmount);
-  rulesFired.push(m.rule);
+  rulesFired.push(m.fired);
   return finish("REFINANCING", null, null, m.result, rulesFired);
 }
 
@@ -162,19 +167,34 @@ function finish(
   financingType: FinancingType | null,
   orcrStatus: OrcrStatus | null,
   mortgage: MortgageResult,
-  rulesFired: string[],
+  fired: RuleFiring[],
 ): RuleOutcome {
   const transactions = transactionsFor(mortgage);
+  const rulesFired = fired.map(encodeFiring);
   return {
     classification,
     financingType,
     orcrStatus,
     mortgage,
     transactions,
+    fired,
     rulesFired,
     summary: rulesFired[rulesFired.length - 1],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Wording (names.ts) with the thresholds above
+// ---------------------------------------------------------------------------
+
+/** Title and sentence of one fired rule. */
+export const ruleWording = (f: RuleFiring) => ruleText(f, MORTGAGE_THRESHOLDS);
+/** Title and sentence of a stored rule (Loan.ruleFired), old wording included. */
+export const storedRuleWording = (text: string | null | undefined) => storedRuleText(text, MORTGAGE_THRESHOLDS);
+/** Old rule numbers in a stored text (audit summary, notification) replaced by the rule sentences. */
+export const plainRules = (text: string) => plainRuleText(text, MORTGAGE_THRESHOLDS);
+/** The same for a JSON value (audit details). */
+export const plainRulesIn = (v: unknown) => plainRuleValue(v, MORTGAGE_THRESHOLDS);
 
 /** Outcome table: Mortgage -> 4 transactions, otherwise Notary + For EDST. */
 export function transactionsFor(mortgage: MortgageResult): TransactionCode[] {

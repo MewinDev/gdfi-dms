@@ -1,3 +1,4 @@
+import { storedRuleWording } from "@/lib/rules";
 import { statusLabel } from "@/lib/myloans/status";
 import type { Metadata } from "next";
 import { txnFundsType } from "@/lib/jobs/view";
@@ -408,6 +409,7 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
   const deadline = ctx.deadline === today ? `Today, ${dayText(ctx.deadline, { year: false })}` : `${dayText(ctx.deadline, { year: false })}${ctx.pastDay2 ? " (passed)" : ""}`;
   const facts: [string, string][] = [["Type", type], ["Mortgage needed", mortgage], ["OR/CR", orcr], ["Send by", deadline]];
   const snap = loan.snapshots[0];
+  const why = storedRuleWording(loan.ruleFired);
   // The full MyLoans account set, with codes and IDs (docs/myloans/field-map.md): the one everyday place
   // that shows branch code, area ID, division ID, company ID and status ID.
   const v = (x: string | null | undefined) => x?.trim() || "-";
@@ -464,8 +466,9 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
             </section>
           ))}
           <div className="@[34rem]:col-span-2">
-            <p className="text-ink-2">Rule that fired</p>
-            <p className="mt-0.5">{loan.ruleFired}</p>
+            {/* The stored rule key (old records: the old sentence) in today's words: lib/rules/names.ts. */}
+            <p className="text-ink-2">Why this was set up</p>
+            <p className="mt-0.5" data-rule-why={why.key ?? ""}>{why.line.title && <><span className="font-semibold text-navy">{why.line.title}</span> · </>}{why.line.text}</p>
             <p className="mt-1 text-xs text-ink-2">MyLoans copy saved {fmtDateTime(snap?.retrievedAt)} ({snap?.adapter ?? "-"}).</p>
           </div>
         </div>

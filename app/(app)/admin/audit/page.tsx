@@ -7,6 +7,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { fmtDateTime, startOfBusinessDay } from "@/lib/time";
 import { PageHeader } from "@/components/ui/basics";
 import { Chip } from "@/components/chips";
+import { plainRules, plainRulesIn } from "@/lib/rules";
 
 export const metadata: Metadata = { title: "Audit Log" };
 
@@ -16,7 +17,8 @@ function diff(before: unknown, after: unknown): { key: string; before: string; a
   const b = (before && typeof before === "object" ? before : {}) as Record<string, unknown>;
   const a = (after && typeof after === "object" ? after : {}) as Record<string, unknown>;
   const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])];
-  const s = (v: unknown) => (v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v));
+  // Rule keys and old rule numbers read as the rule sentences (lib/rules/names.ts).
+  const s = (v: unknown) => (v === undefined ? "" : typeof v === "string" ? plainRules(v) : JSON.stringify(plainRulesIn(v)));
   return keys.filter((k) => s(b[k]) !== s(a[k])).map((k) => ({ key: k, before: s(b[k]), after: s(a[k]) }));
 }
 
@@ -88,7 +90,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
                   <td><Chip tone={r.mode === "AUTOMATIC" ? "info" : r.mode === "SIMULATED" ? "warn" : "neutral"}>{r.mode.toLowerCase()}</Chip></td>
                   <td className="mono whitespace-nowrap">{r.pn ? <Link href={`/loans/${r.pn}?tab=activity`} className="text-navy underline">{r.pn}</Link> : "-"}</td>
                   <td className="whitespace-nowrap">{r.action.replace(/_/g, " ")}</td>
-                  <td>{r.summary}</td>
+                  <td>{plainRules(r.summary)}</td>
                   <td className="min-w-64">
                     {d.length > 0 || r.details ? (
                       <details>
@@ -107,7 +109,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
                             </tbody>
                           </table>
                         )}
-                        {r.details ? <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-cream p-1 text-[11px]">{JSON.stringify(r.details, null, 2)}</pre> : null}
+                        {r.details ? <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-cream p-1 text-[11px]">{JSON.stringify(plainRulesIn(r.details), null, 2)}</pre> : null}
                       </details>
                     ) : <span className="text-xs text-ink-2">-</span>}
                   </td>

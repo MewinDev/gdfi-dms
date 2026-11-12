@@ -215,7 +215,7 @@ describe("Find loan on a PN MyLoans has not released: a status card, never a loa
 
   for (const c of CASES) {
     it(`${c.pn} (${c.statusName}): the card with the real name; one call; nothing saved; Open refuses`, async () => {
-      expect(await lookupPn(la, c.pn)).toEqual({ kind: "status", pn: c.pn, statusKind: c.statusKind, statusName: c.statusName, borrowerName: c.borrowerName, branchName: c.branchName });
+      expect(await lookupPn(la, c.pn)).toMatchObject({ kind: "status", pn: c.pn, statusKind: c.statusKind, statusName: c.statusName, borrowerName: c.borrowerName, branchName: c.branchName });
       expect(callCount()).toBe(1);
       // The card shown again (a reload within the short cache time): no second call.
       await lookupPn(la, c.pn);
@@ -234,9 +234,9 @@ describe("Find loan on a PN MyLoans has not released: a status card, never a loa
     }
   });
 
-  it("outside the person's branches: the outside message and none of the loan's details", async () => {
+  it("outside the person's branches: the outside message with the PN and branch only, never the name (decided 12 November 2026)", async () => {
     const r = await lookupPn(angonoOnly, "GD1012026901013");
-    expect(r).toMatchObject({ kind: "refused", field: "branch", message: "Outside your branch access.", record: { borrowerName: "", branchName: null, status: null } });
+    expect(r).toMatchObject({ kind: "refused", field: "branch", message: "Outside your branch access.", record: { pn: "GD1012026901013", borrowerName: "", branchName: "Antipolo", status: null, loanType: null, productName: null, totalReleasedAmount: null, releaseDate: null, cin: null, cif: null } });
     await noCopy("GD1012026901013");
   });
 

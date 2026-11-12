@@ -117,10 +117,10 @@ export function SampleLoans({ title, intro, samples, compact = false, row = fals
     );
   }
 
-  // Find a loan: one slim row of chips (PN, name, branch). What each sample tests is in the tooltip.
+  // Find a loan: one slim row of chips (PN and name only). The branch and what each sample tests are in the tooltip.
   // On a phone the list folds away under one "Show" button.
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-2" data-samples-slim>
+    <section aria-labelledby={id} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1.5" data-samples-slim>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <h2 id={id} className="text-sm font-bold text-navy">{title}</h2>
         {pill}
@@ -138,12 +138,11 @@ export function SampleLoans({ title, intro, samples, compact = false, row = fals
                 type="button"
                 aria-pressed={on}
                 onClick={() => pick(s.pn)}
-                title={`${s.tests} ${s.loanType} · ${s.amountText}`}
+                title={`${s.tests} ${s.branch} · ${s.loanType} · ${s.amountText}`}
                 className={`flex min-h-10 w-full min-w-0 items-center gap-2 rounded-full border px-3.5 text-left text-[13px] transition-colors sm:w-auto ${on ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.16)] bg-white text-navy hover:bg-fill"}`}
               >
                 <span className="font-mono text-[13px] font-bold">{s.pn}</span>
                 <span className="min-w-0 truncate font-semibold">{s.name}</span>
-                <span className={`shrink-0 ${on ? "text-white/80" : "text-ink-2"}`}>{s.branch}</span>
                 {s.opened && <span className={`shrink-0 text-xs font-semibold ${on ? "text-white" : "text-ok-fg"}`}>· Opened</span>}
               </button>
             </li>

@@ -7,7 +7,7 @@ import {
   RuleInputError,
 } from "./index";
 
-describe("Rule 1: classification from Product Name", () => {
+describe("Financing questions needed (PRODUCT_CLASSIFICATION): classification from Product Name", () => {
   it.each([
     ["Auto Refinancing", "REFINANCING"],
     ["Auto Financing", "FINANCING"],
@@ -27,12 +27,12 @@ describe("Rule 1: classification from Product Name", () => {
   });
 
   it("explains blank and default", () => {
-    expect(classifyProductName("").rule).toMatch(/blank/);
-    expect(classifyProductName("Auto Finance").rule).toMatch(/default Refinancing/);
+    expect(classifyProductName("").rule).toBe("PRODUCT_CLASSIFICATION:BLANK");
+    expect(classifyProductName("Auto Finance").rule).toBe("PRODUCT_CLASSIFICATION:NEITHER_WORD");
   });
 });
 
-describe("Rule 4: Mortgage determination (boundaries)", () => {
+describe("Mortgage needed (MORTGAGE_THRESHOLD): boundaries", () => {
   it.each([
     ["New", 1, "MORTGAGE"],
     ["New", 499_999.99, "MORTGAGE"],
@@ -157,10 +157,7 @@ describe("Outcome table", () => {
       orcrStatus: "TRANSFERRED",
     });
     expect(r.rulesFired).toHaveLength(4);
-    expect(r.rulesFired[0]).toMatch(/^Rule 1/);
-    expect(r.rulesFired[1]).toMatch(/^Rule 2/);
-    expect(r.rulesFired[2]).toMatch(/^Rule 3/);
-    expect(r.rulesFired[3]).toMatch(/^Rule 4.*Mortgage/);
+    expect(r.rulesFired).toEqual(["PRODUCT_CLASSIFICATION:FINANCING_WORD", "UNDERTAKING_CHOICE:UNDERTAKING", "ORCR_CHECK:TRANSFERRED", "MORTGAGE_THRESHOLD:Renewal:MET"]);
     expect(r.summary).toBe(r.rulesFired[3]);
   });
 });

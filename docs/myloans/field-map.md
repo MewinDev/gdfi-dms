@@ -49,7 +49,7 @@ Also kept, not one of the 15: `TransactionIsActive` → `sourceIsActive` (loan f
 ## Where it is shown
 
 - **Find a loan** (names only, no codes or IDs): borrower name, PN and product in the header; the status name, "Your branch", "Details complete" and "Source: MyLoans" as chips; amount released, released on, loan type, product, branch, area, division and company in two rows of four.
-- **Loan file, More loan details** (collapsed): Identity (PN, source loan ID, CIN, CIF), Loan (borrower name, amount released, released on, loan type, product name, product code), Organization (company, division, area and branch, each "ID · name"), Status (status ID, status name, active), Source (MyLoans, retrieved at, last checked, last updated in MyLoans, opened at), and the rule that fired. The only everyday screen that shows branch code, area ID, division ID, company ID and status ID.
+- **Loan file, More loan details** (collapsed): Identity (PN, source loan ID, CIN, CIF), Loan (borrower name, amount released, released on, loan type, product name, product code), Organization (company, division, area and branch, each "ID · name"), Status (status ID, status name, active), Source (MyLoans, retrieved at, last checked, last updated in MyLoans, opened at), and Why this was set up (the rule by name and reason, never a number). The only everyday screen that shows branch code, area ID, division ID, company ID and status ID.
 
 ## Questions for MyLoans
 

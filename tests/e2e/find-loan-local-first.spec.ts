@@ -149,7 +149,7 @@ test("an unsaved PN from the My loans toolbar: one lookup, the two questions, Op
   await visibleSearchBox(page).press("Enter"); // no row picked: Enter presses Find loan
   await expect(page).toHaveURL(new RegExp(`/search\\?q=${UNSAVED}`));
   const preview = main(page).locator("[data-find-preview]");
-  await expect(preview.getByText("Source: MyLoans")).toBeVisible();
+  await expect(preview.locator("[data-find-source]")).toBeVisible();
   await main(page).getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main(page).getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main(page).getByRole("button", { name: "Open loan file" }).click();

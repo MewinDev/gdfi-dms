@@ -142,7 +142,7 @@ test("Material change: LA sees it read-only (no amounts); Open items group; Admi
   const review = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
   await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,000,000");
   await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,020,000");
-  await expect(review.locator("[data-source-means]")).toContainText("Rule 4 no longer applies");
+  await expect(review.locator("[data-source-means]")).toContainText("Mortgage is not needed: this is a Renewal loan above ₱1,000,000.");
   await expect(review.locator("[data-source-means]")).toContainText("would be removed");
   await shot(page, "review-material");
   await noSideways(page);

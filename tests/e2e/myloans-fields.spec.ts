@@ -26,12 +26,11 @@ test("Find a loan: the short list, names only; More loan details: the full set w
   await page.goto(`/search?q=${PN}`);
   const card = main(page).locator("[data-find-preview]");
 
-  // Header: name, PN and product; chips: the status by name, Your branch, Details complete, Source: MyLoans.
+  // Header: name and PN; on the right the status by name and the source (no "all good" chips).
   await expect(card.getByRole("heading", { name: "Ana Villanueva" })).toBeVisible();
-  await expect(card.getByText(`${PN}`, { exact: true })).toBeVisible();
-  const checks = card.getByRole("list", { name: "Checks passed" });
-  await expect(checks.getByRole("listitem")).toHaveText(["Loan Released", "Your branch", "Details complete"]);
-  await expect(card.locator("[data-find-source]")).toHaveText("Source: MyLoans");
+  await expect(card.locator("[data-find-pn]")).toHaveText(PN);
+  await expect(card.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText(["Loan Released", "MyLoans"]);
+  await expect(card.locator("[data-find-amber]")).toHaveCount(0);
   await expect(card.getByText("Loan found")).toHaveCount(0);
 
   // Exactly eight facts, two rows of four, names only.
@@ -75,7 +74,10 @@ test("Find a loan: the short list, names only; More loan details: the full set w
   const src = await row("Source");
   expect(src).toMatchObject({ Source: "MyLoans", "Opened at": expect.stringContaining("Test Loan Associate") });
   for (const k of ["Retrieved at", "Last checked", "Last updated in MyLoans"]) expect(src[k]).toMatch(/\d/); // a time, not "-"
-  await expect(more.getByText("Rule that fired")).toBeVisible();
+  // Why this was set up: the rule's title and reason, never a rule number.
+  await expect(more.getByText("Why this was set up")).toBeVisible();
+  await expect(more.locator('[data-rule-why="MORTGAGE_THRESHOLD"]')).toHaveText("Mortgage needed · This is a Renewal loan of ₱1,000,000 or below.");
+  await expect(more).not.toContainText(/Rule \d/);
   // Two compact columns when the panel is wide enough (34rem); one in the narrow side column. Either way no
   // value is squeezed: each value is at least 6rem wide and a time stays on a few lines.
   const [a, b] = [(await group("Identity").boundingBox())!, (await group("Loan").boundingBox())!];

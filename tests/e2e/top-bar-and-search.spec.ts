@@ -55,7 +55,7 @@ test("LA: the Loans page has the search, and / focuses it", async ({ page }) => 
   // The search still works the same way.
   await box.fill("GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: /^Find loan/ }).click();
-  await expect(page.getByRole("main").getByText("Source: MyLoans")).toBeVisible();
+  await expect(page.getByRole("main").locator("[data-find-source]")).toBeVisible();
 });
 
 test("LA: Find loan opens Loans with the search focused", async ({ page }) => {

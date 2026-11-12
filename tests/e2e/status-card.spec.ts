@@ -26,11 +26,11 @@ test.beforeEach(async () => {
 const CASES = [
   {
     name: "not-released", pn: "GD1652026901008", kind: "before_release",
-    text: "This loan is not released yet. MyLoans status: Check Prepared.", borrower: "Roberto Cruz", branch: "Angono", status: "Check Prepared",
+    text: "This loan is not released yet.", borrower: "Roberto Cruz", branch: "Angono", status: "Check Prepared", releasedOn: "Not released yet",
   },
   {
     name: "cancelled", pn: "GD1012026901013", kind: "cancelled",
-    text: "This loan was cancelled in MyLoans.", borrower: "Andres Lim", branch: "Antipolo", status: "Cancelled",
+    text: "This loan was cancelled in MyLoans.", borrower: "Andres Lim", branch: "Antipolo", status: "Cancelled", releasedOn: null,
   },
 ] as const;
 
@@ -43,6 +43,15 @@ for (const c of CASES) {
     await expect(card).toBeVisible();
     await expect(card.locator("[data-status-text]")).toHaveText(c.text);
     for (const v of [c.pn, c.borrower, c.branch, c.status]) await expect(card.getByText(v, { exact: true }).first()).toBeVisible();
+    // The same layout as a released loan: name and PN on the left, the status and MyLoans as chips on the right.
+    await expect(card.locator("[data-find-pn]")).toHaveText(c.pn);
+    await expect(card.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText([c.status, "MyLoans"]);
+    await expect(card).not.toContainText("MyLoans status:");
+    // The same eight details; no release date is said in words.
+    await expect(card.locator("dt")).toHaveText(["Amount released", "Released on", "Loan type", "Product", "Branch", "Area", "Division", "Company"]);
+    const releasedOn = await card.locator("dd").nth(1).textContent();
+    if (c.releasedOn) expect(releasedOn).toBe(c.releasedOn);
+    else expect(releasedOn).toMatch(/\d{4}|Not released yet|^-$/);
     // Never a loan file: no Open button, no preview, no questions, nothing saved.
     await expect(main(page).getByRole("button", { name: "Open loan file" })).toHaveCount(0);
     await expect(main(page).locator("[data-find-preview]")).toHaveCount(0);
