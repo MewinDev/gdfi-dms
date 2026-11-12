@@ -140,8 +140,10 @@ describe("Part 3. Hold reasons: a managed list", () => {
       "No available DP", "Waiting for the client's papers", "Waiting for the client's decision", "Waiting for the branch head's approval",
       "Waiting for funds or payment", "Waiting for corrections from the client", "Waiting for a MyLoans update", "Other",
     ]);
-    // Testing reasons are switched off but stay on old holds.
-    expect((await reasonOf("BORROWER")).active).toBe(false);
+    // The first testing reasons are switched off but stay on old holds. Only databases made before the
+    // squash (20261119090014_baseline) have them; a new database never gets them (docs/db/migration-inventory.md).
+    const testing = await prisma.holdReason.findMany({ where: { code: { in: ["BORROWER", "OTHER-TEAM", "LTO-SCHEDULE"] } } });
+    expect(testing.filter((t) => t.active)).toEqual([]);
     expect(ADMIN_PERMISSIONS).toContain(PERMISSIONS.HOLDS_MANAGE);
     expect(PERMISSIONS.HOLDS_MANAGE).toBe("holds:manage");
     expect(ROLE_DEFAULTS.LA.permissions).not.toContain(PERMISSIONS.HOLDS_MANAGE);

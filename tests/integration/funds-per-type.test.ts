@@ -4,8 +4,6 @@
  * person's types, notifications to the right people (Admins when nobody), the "Nobody can ..." lines.
  * TEST database only.
  */
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
@@ -71,31 +69,9 @@ const advance = (type: "CA" | "FT", number: string, data: Record<string, unknown
 });
 
 describe("Permissions per type", () => {
-  it("each old key maps to both types (built-in and custom roles); the old keys are removed (the migration)", async () => {
-    // The per-type split (20261119090007), then Edit split into Edit lines and Change type (20261119090008).
-    const steps = ["20261119090007_funds_per_type", "20261119090008_funds_edit_split"].flatMap((m) => readFileSync(path.join("prisma", "migrations", m, "migration.sql"), "utf8")
-      .split(/;\s*\n/).map((s) => s.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim()).filter((s) => s.startsWith('UPDATE "Role"')));
-    expect(steps.length).toBeGreaterThan(17);
-    await rolledBack(async (tx) => {
-      const old = ["loans:view", "funds:view_all", "funds:approve", "funds:release", "funds:print", "funds:exception", "funds:view"];
-      const custom = await tx.role.create({ data: { key: "C_Z_OLD_KEYS", name: "Z Old keys", permissions: old } });
-      const viewOnly = await tx.role.create({ data: { key: "C_Z_OLD_VIEW", name: "Z Old view", permissions: ["loans:view", "funds:view_all"] } });
-      const approverOnly = await tx.role.create({ data: { key: "C_Z_OLD_APPROVER", name: "Z Old approver", permissions: ["loans:view", "funds:view_all", "funds:approve", "funds:view"] } });
-      await tx.role.update({ where: { key: "FIN" }, data: { permissions: old } });
-      for (const s of steps) await tx.$executeRawUnsafe(s);
-      for (const id of [custom.id, (await tx.role.findUniqueOrThrow({ where: { key: "FIN" } })).id]) {
-        const after = (await tx.role.findUniqueOrThrow({ where: { id } })).permissions;
-        expect([...after].sort()).toEqual(["loans:view", "funds:exception", ...CA_KEYS, ...FT_KEYS].sort());
-      }
-      expect([...(await tx.role.findUniqueOrThrow({ where: { id: viewOnly.id } })).permissions].sort()).toEqual(["loans:view", P.FUNDS_CA_VIEW, P.FUNDS_FT_VIEW].sort());
-      // Approve only: Edit lines of both types, no Change type (Release had it); "See funds status" is gone.
-      expect([...(await tx.role.findUniqueOrThrow({ where: { id: approverOnly.id } })).permissions].sort()).toEqual(
-        ["loans:view", P.FUNDS_CA_VIEW, P.FUNDS_FT_VIEW, P.FUNDS_CA_APPROVE, P.FUNDS_FT_APPROVE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_FT_EDIT_LINES].sort());
-      // A second run changes nothing.
-      for (const s of steps) await tx.$executeRawUnsafe(s);
-      expect((await tx.role.findUniqueOrThrow({ where: { id: custom.id } })).permissions).toHaveLength(2 + CA_KEYS.length + FT_KEYS.length);
-    });
-    // The code reads old keys the same way (a role saved before the migration).
+  it("each old key maps to both types (a role saved before the per-type split is read the same way)", () => {
+    // The one-off SQL that rewrote stored roles (20261119090007_funds_per_type, 20261119090008_funds_edit_split)
+    // was squashed into 20261119090014_baseline and no longer runs; the code still reads an old key.
     expect(normalizePermissions(["loans:view", "funds:release"]).sort()).toEqual(["loans:view", P.FUNDS_CA_VIEW, P.FUNDS_CA_RELEASE, P.FUNDS_CA_SETTLE, P.FUNDS_CA_EDIT_LINES, P.FUNDS_CA_CHANGE_TYPE, P.FUNDS_FT_VIEW, P.FUNDS_FT_RELEASE, P.FUNDS_FT_SETTLE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_CHANGE_TYPE].sort());
     expect(normalizePermissions(["loans:view", "funds:approve"])).not.toContain(P.FUNDS_CA_CHANGE_TYPE);
   });

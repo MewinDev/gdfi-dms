@@ -12,11 +12,12 @@ describe("the renamed tick myloans:review_borrower", () => {
     expect(normalizePermissions([PERMISSIONS.LOANS_VIEW, OLD])).not.toContain(OLD);
   });
 
-  it("the old key appears nowhere: only the rename map and the migrations keep it", () => {
+  it("the old key appears nowhere: only the rename map keeps it (the baseline migration does not either)", () => {
     const found: string[] = [];
     const walk = (dir: string) => {
       for (const f of readdirSync(dir)) {
-        if (["node_modules", ".next", ".next-e2e-prod", "test-results", "migrations", "screenshots", ".git"].includes(f)) continue;
+        // prisma/migrations is searched too: since the squash (20261119090014_baseline) no migration holds the old key.
+        if (["node_modules", ".next", ".next-e2e-prod", "test-results", "screenshots", ".git"].includes(f)) continue;
         const p = join(dir, f);
         if (statSync(p).isDirectory()) { walk(p); continue; }
         if (!/\.(ts|tsx|md|sql|json|prisma|mjs|cjs)$/.test(f)) continue;

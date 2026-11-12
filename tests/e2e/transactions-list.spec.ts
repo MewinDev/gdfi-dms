@@ -116,7 +116,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   const mortgage = await txnOf("MORTGAGE");
   const edst = await txnOf("EDST");
   await db.problem.create({ data: { loanId: ppsr.loanId, transactionId: ppsr.id, reasonId: (await db.problemReason.findFirstOrThrow({ where: { active: true } })).id, raisedByLabel: "E2E" } });
-  await db.hold.create({ data: { loanId: mortgage.loanId, transactionId: mortgage.id, reasonId: (await db.holdReason.findUniqueOrThrow({ where: { code: "BORROWER" } })).id, raisedByLabel: "E2E" } });
+  await db.hold.create({ data: { loanId: mortgage.loanId, transactionId: mortgage.id, reasonId: (await db.holdReason.findUniqueOrThrow({ where: { code: "CLIENT-PAPERS" } })).id, raisedByLabel: "E2E" } });
   const unticked = edst.checks.find((c) => !c.checked)!;
   await db.loanException.create({ data: { loanId: edst.loanId, transactionId: edst.id, type: "LEGAL_DOCS_COMPLETION", reason: "Missing", raisedByLabel: "E2E", details: { checkIds: [unticked.id], missing: ["x"] } } });
   todo = await sameWording(page, "MORTGAGE");
@@ -124,7 +124,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   expect(todo.NOTARY.line).toBe("The DP is working on it");
   expect(todo.PPSR.chip).toBe("Problem");
   expect(todo.MORTGAGE.chip).toBe("On hold");
-  expect(todo.MORTGAGE.line).toBe("On hold: Waiting on borrower · 1 day");
+  expect(todo.MORTGAGE.line).toBe("On hold: Waiting for the client's papers · 1 day");
   expect(todo.EDST.chip).toBe("Missing paper");
   await db.loanTransaction.update({ where: { id: notary.id }, data: { status: "COMPLETED", completedAt: new Date(), statusSince: new Date() } });
   todo = await sameWording(page, "EDST");

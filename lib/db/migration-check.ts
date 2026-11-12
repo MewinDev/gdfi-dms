@@ -7,6 +7,10 @@
  * deploy` applied it, and its SQL dropped the two loan-search trigram indexes. This project no longer
  * uses `migrate dev` at all (CLAUDE.md); these checks stop the same accident if a stray folder appears.
  *
+ * On 12 November 2026 the 32 earlier migrations were squashed into one baseline, BASELINE_MIGRATION
+ * (docs/db/squash-notes.md). The folder list is now the baseline, then each later migration numbered
+ * the previous number plus one. No squash after go-live.
+ *
  * The pure folder checks are here (unit-tested in migration-check.test.ts); the database checks take
  * what the script read from the connected database.
  */
@@ -14,37 +18,15 @@
 /** "<14 digits>_<lower-case name>". */
 export const FOLDER_PATTERN = /^\d{14}_[a-z0-9_]+$/;
 
-/**
- * The folders made before the numbered series, exactly as they are. Nothing new may sort among them: a
- * folder dated before 20261119090000 that is not on this list is a stray (Prisma's date name).
- */
-export const LEGACY_FOLDERS = [
-  "20261106060100_init",
-  "20261106061500_drop_transaction_type_tatdays",
-  "20261106113854_checklist_required",
-  "20261106144042_settings_inactive_and_document_types",
-  "20261106161431_roles_and_access",
-  "20261107120000_funds_dp_problems",
-  "20261107130000_advance_overdue_notice",
-  "20261108090000_pasuyo",
-  "20261109090000_holds",
-  "20261110090000_journey",
-  "20261111090000_return_to_la",
-  "20261112090000_needs_lto",
-  "20261113090000_email_outbox",
-  "20261114090000_myloans_sync",
-  "20261115090000_replacement_evidence",
-  "20261116090000_myloans_load",
-  "20261117090000_job_stages",
-  "20261118090000_hold_lock_reasons",
-] as const;
+/** The one migration that builds the whole database (every earlier migration, squashed). Always first. */
+export const BASELINE_MIGRATION = "20261119090014_baseline";
 
-/** The numbered series starts here; every later folder is the previous number plus one. */
-export const SERIES_START = 20261119090000;
+/** The numbered series starts at the baseline; every later folder is the previous number plus one. */
+export const SERIES_START = 20261119090014;
 
 /** The loan-search indexes (made by TRIGRAM_MIGRATION) that a stray Prisma folder drops. */
 export const TRIGRAM_INDEXES = ["Loan_pn_trgm_idx", "Loan_borrowerName_trgm_idx"] as const;
-export const TRIGRAM_MIGRATION = "20261116090000_myloans_load";
+export const TRIGRAM_MIGRATION = BASELINE_MIGRATION;
 
 const stamp = (f: string) => Number(f.slice(0, 14)); // 14 digits: well within a safe integer
 
@@ -53,7 +35,8 @@ const stamp = (f: string) => Number(f.slice(0, 14)); // 14 digits: well within a
  * plain words; empty when all is well.
  *  - every folder matches FOLDER_PATTERN;
  *  - the numbers are strictly increasing (no two folders share one, none out of order);
- *  - before the series, only the LEGACY_FOLDERS; from SERIES_START on, each number is the previous plus one.
+ *  - the first folder is BASELINE_MIGRATION; nothing sorts before it (a folder dated before it is a
+ *    stray with Prisma's own date name); after it, each number is the previous plus one.
  */
 export function checkFolders(folders: readonly string[]): string[] {
   const problems: string[] = [];
@@ -63,26 +46,26 @@ export function checkFolders(folders: readonly string[]): string[] {
   for (let i = 1; i < good.length; i++) {
     if (stamp(good[i]) <= stamp(good[i - 1])) problems.push(`"${good[i]}" does not come after "${good[i - 1]}": the numbers must be strictly increasing.`);
   }
-  const legacy = new Set<string>(LEGACY_FOLDERS);
   let prev: number | null = null;
   for (const f of good) {
     const n = stamp(f);
     if (n < SERIES_START) {
-      if (!legacy.has(f)) problems.push(`"${f}" is a stray folder (Prisma's own date name, before the numbered series). Delete it; make the migration with prisma migrate diff.`);
+      problems.push(`"${f}" is a stray folder (Prisma's own date name, before the baseline ${BASELINE_MIGRATION}). Delete it; make the migration with prisma migrate diff.`);
       continue;
     }
-    if (prev === null && n !== SERIES_START) problems.push(`"${f}": the numbered series starts at ${SERIES_START}.`);
+    if (prev === null && f !== BASELINE_MIGRATION) problems.push(`"${f}": the first migration must be the baseline ${BASELINE_MIGRATION}.`);
     if (prev !== null && n !== prev + 1) problems.push(`"${f}" should be ${prev + 1}_<name> (the next number after the latest).`);
     prev = n;
   }
-  for (const f of LEGACY_FOLDERS) if (!folders.includes(f)) problems.push(`"${f}" is missing (an applied migration must never be removed).`);
+  if (!folders.includes(BASELINE_MIGRATION)) problems.push(`"${BASELINE_MIGRATION}" is missing (the baseline must never be removed or renamed).`);
   return problems;
 }
 
 /**
  * Checks the connected database against the folders. `applied` is the finished, not rolled back rows
  * of _prisma_migrations in the order they ran; `indexes` the names of the Loan table's indexes.
- *  - every applied migration still has its folder;
+ *  - every applied migration still has its folder (a database that still lists the migrations from
+ *    before the squash gets the fix in plain words: docs/db/squash-notes.md);
  *  - they ran in folder order, and no folder waiting to be applied sorts before the last one applied
  *    (a stray in the middle would be applied out of order);
  *  - once TRIGRAM_MIGRATION is applied, both TRIGRAM_INDEXES exist.
@@ -90,7 +73,11 @@ export function checkFolders(folders: readonly string[]): string[] {
 export function checkDatabase(folders: readonly string[], applied: readonly string[], indexes: readonly string[]): string[] {
   const problems: string[] = [];
   const onDisk = new Set(folders);
-  for (const a of applied) if (!onDisk.has(a)) problems.push(`The database applied "${a}", but its folder is missing.`);
+  const preSquash = applied.filter((a) => !onDisk.has(a) && FOLDER_PATTERN.test(a) && stamp(a) < SERIES_START);
+  if (preSquash.length) {
+    problems.push(`The database still lists ${preSquash.length} migration(s) from before the squash (such as "${preSquash[0]}"). Its schema is the same as the baseline's: clear those rows and mark ${BASELINE_MIGRATION} as applied (docs/db/squash-notes.md).`);
+  }
+  for (const a of applied) if (!onDisk.has(a) && !preSquash.includes(a)) problems.push(`The database applied "${a}", but its folder is missing.`);
   const sorted = [...applied].sort();
   if (applied.join() !== sorted.join()) problems.push("The database applied the migrations out of folder order.");
   const last = sorted.at(-1);
@@ -99,7 +86,7 @@ export function checkDatabase(folders: readonly string[], applied: readonly stri
     for (const f of folders) if (!done.has(f) && f < last) problems.push(`"${f}" is not applied but sorts before the last applied "${last}": a stray folder. Delete it before migrate deploy.`);
   }
   if (done.has(TRIGRAM_MIGRATION)) {
-    for (const ix of TRIGRAM_INDEXES) if (!indexes.includes(ix)) problems.push(`The loan-search index "${ix}" is missing. Recreate it from ${TRIGRAM_MIGRATION}/migration.sql.`);
+    for (const ix of TRIGRAM_INDEXES) if (!indexes.includes(ix)) problems.push(`The loan-search index "${ix}" is missing. Recreate it from ${TRIGRAM_MIGRATION}/migration.sql (block 3).`);
   }
   return problems;
 }

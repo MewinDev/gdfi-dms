@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Migration folders: "<14-digit timestamp>_<name>", unique, and applied in name order. Prisma applies
- * migrations in name order; a new migration (made with prisma migrate diff, never migrate dev) is named to follow
- * 20261119090000_hold_transfer_and_papers_back (see CLAUDE.md). When a local database is reachable,
+ * migrations in name order; the first is the baseline 20261119090014_baseline (every earlier migration,
+ * squashed on 12 November 2026), and a new migration (made with prisma migrate diff, never migrate dev)
+ * takes the next number after the latest (see CLAUDE.md). When a local database is reachable,
  * the folders in name order must equal the order recorded in _prisma_migrations (so the newest
  * folder is also the last one applied). Without a database that part is skipped.
  */

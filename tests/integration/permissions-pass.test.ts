@@ -59,28 +59,18 @@ describe("the migration gives every role the new ticks for what it could already
     expect(refresh).toEqual(["ADMIN", "DIG", "DP", "LA", "QA", "SUP", "VAULT"]);
   });
 
-  it("backfills a custom role that still has the old keys (re-running the data steps is harmless)", async () => {
+  it("a custom role saved with the old keys is read with the new ones; built-in roles are the defaults", async () => {
+    // The one-off SQL that rewrote stored roles (20261119090004_permissions_pass and the later role steps)
+    // was squashed into 20261119090014_baseline and no longer runs; the renamed keys are still read in code.
     const legacy = await prisma.role.create({
       data: {
         key: "C_Z_LEGACY", name: "Z Legacy", builtIn: false,
         permissions: ["loans:view", "source:review", "source:manage", "settings:branches", "users:view", "users:edit", "reports:tat", "loans:export", "email:manage", "settings:system"],
       },
     });
-    const sql = readFileSync(path.join("prisma", "migrations", "20261119090004_permissions_pass", "migration.sql"), "utf8");
-    const statements = sql.split(/;\s*\n/).map((s) => s.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim()).filter(Boolean);
-    expect(statements.length).toBeGreaterThan(10);
-    expect(sql).not.toMatch(/^\s*DROP INDEX/im);
-    for (const s of statements) await prisma.$executeRawUnsafe(s);
-    // Later migrations' role steps run after it, as on a real database (20261119090005_expense_kinds adds the expense-kind ticks).
-    // (20261119090006_decisions_batch adds "Print liquidation report" and takes "Move a hold" from Finance.)
-    for (const later of ["20261119090005_expense_kinds", "20261119090006_decisions_batch", "20261119090007_funds_per_type", "20261119090008_funds_edit_split", "20261119090009_missing_papers", "20261119090012_borrower_details"]) {
-      const sqlLater = readFileSync(path.join("prisma", "migrations", later, "migration.sql"), "utf8");
-      for (const s of sqlLater.split(/;\s*\n/).map((x) => x.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim()).filter((x) => x.startsWith('UPDATE "Role"'))) await prisma.$executeRawUnsafe(s);
-    }
-    const after = new Set((await prisma.role.findUniqueOrThrow({ where: { id: legacy.id } })).permissions);
-    for (const k of ["myloans:review", "myloans:manage", "branches:manage", "myloans:view", "loans:refresh", "myloans:sync", "branches:view", "branches:import", "branches:review", "access:manage", "settings:pn_format", "reports:tat_export", "email:view"]) expect(after.has(k), k).toBe(true);
+    const after = effectivePermissions(await prisma.role.findUniqueOrThrow({ where: { id: legacy.id } })) as Set<string>;
+    for (const k of ["myloans:review", "myloans:manage", "branches:manage"]) expect(after.has(k), k).toBe(true);
     for (const k of ["source:review", "source:manage", "settings:branches"]) expect(after.has(k), k).toBe(false);
-    // Built-in roles are unchanged by a second run.
     for (const [key, d] of Object.entries(ROLE_DEFAULTS)) {
       expect([...effectivePermissions(await prisma.role.findUniqueOrThrow({ where: { key } }))].sort(), key).toEqual([...d.permissions].sort());
     }
