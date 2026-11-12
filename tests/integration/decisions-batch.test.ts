@@ -3,8 +3,6 @@
  * request numbers by type (CA-, FT-) safe under concurrency, the renumbering of fund transfers numbered
  * CA- (the migration's function), and the Branch Supervisor role made only when absent. TEST database only.
  */
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
@@ -190,46 +188,20 @@ describe("C. Renumbering fund transfers numbered CA- (the migration's dms_renumb
   });
 });
 
-describe("B. Built-in Branch Supervisor; Finance no longer moves holds (the migration's role steps)", () => {
-  const sql = readFileSync(path.join("prisma", "migrations", "20261119090006_decisions_batch", "migration.sql"), "utf8");
-  const statements = sql.split(/;\s*\n/).map((s) => s.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n").trim());
-  const insertSup = statements.find((s) => s.startsWith('INSERT INTO "Role"'))!;
-  const finStep = statements.find((s) => s.startsWith('UPDATE "Role"') && s.includes("array_remove"))!;
-  class Rollback extends Error {}
-
-  it("is created only when no role named Branch Supervisor exists; a role of that name made by hand is kept as it is", async () => {
-    expect(insertSup).toContain("'Branch Supervisor'");
-    await prisma.$transaction(async (tx) => {
-      await tx.user.updateMany({ where: { role: { key: "SUP" } }, data: { roleId: (await tx.role.findUniqueOrThrow({ where: { key: "LA" } })).id } });
-      await tx.role.delete({ where: { key: "SUP" } });
-      const own = await tx.role.create({ data: { key: "C_Z_BRANCH_SUPERVISOR", name: "branch supervisor", permissions: [PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER] } });
-      await tx.$executeRawUnsafe(insertSup);
-      expect(await tx.role.findUnique({ where: { key: "SUP" } })).toBeNull();
-      expect((await tx.role.findUniqueOrThrow({ where: { id: own.id } })).permissions).toEqual([PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER]);
-      await tx.role.delete({ where: { id: own.id } });
-      await tx.$executeRawUnsafe(insertSup);
-      const made = await tx.role.findUniqueOrThrow({ where: { key: "SUP" } });
-      expect(made).toMatchObject({ name: "Branch Supervisor", builtIn: true, branchAccess: "ASSIGNED", active: true });
-      // This migration's role, plus what later migrations add (20261119090012_borrower_details: myloans:review_borrower).
-      expect([...made.permissions, PERMISSIONS.SOURCE_REVIEW_BORROWER].sort()).toEqual([...ROLE_DEFAULTS.SUP.permissions].sort());
-      // A second run adds nothing.
-      await tx.$executeRawUnsafe(insertSup);
-      expect(await tx.role.count({ where: { name: "Branch Supervisor" } })).toBe(1);
-      throw new Rollback();
-    }).catch((e) => { if (!(e instanceof Rollback)) throw e; });
-    expect(await prisma.role.findUnique({ where: { key: "SUP" } })).not.toBeNull();
+describe("B. Built-in Branch Supervisor; Finance no longer moves holds", () => {
+  // These were the role steps of migration 20261119090006_decisions_batch. Since the squash
+  // (20261119090014_baseline, docs/db/squash-notes.md) a new database gets its built-in roles from the
+  // seed (ROLE_DEFAULTS, the same as "Reset to default"); the one-off steps for older databases are gone.
+  it("the built-in Branch Supervisor role has the default ticks and Assigned branches", async () => {
+    const sup = await prisma.role.findUniqueOrThrow({ where: { key: "SUP" } });
+    expect(sup).toMatchObject({ name: "Branch Supervisor", builtIn: true, branchAccess: "ASSIGNED", active: true });
+    expect([...sup.permissions].sort()).toEqual([...ROLE_DEFAULTS.SUP.permissions].sort());
+    expect(await prisma.role.count({ where: { name: "Branch Supervisor" } })).toBe(1);
   });
 
-  it("removes 'Move a hold to another person' from the built-in Finance role only (custom roles keep it)", async () => {
-    await prisma.$transaction(async (tx) => {
-      const finRole = await tx.role.findUniqueOrThrow({ where: { key: "FIN" } });
-      await tx.role.update({ where: { id: finRole.id }, data: { permissions: [...finRole.permissions, PERMISSIONS.HOLDS_TRANSFER] } });
-      const custom = await tx.role.create({ data: { key: "C_Z_FIN_LIKE", name: "Z Finance like", permissions: [PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER] } });
-      await tx.$executeRawUnsafe(finStep);
-      expect((await tx.role.findUniqueOrThrow({ where: { key: "FIN" } })).permissions).not.toContain(PERMISSIONS.HOLDS_TRANSFER);
-      expect((await tx.role.findUniqueOrThrow({ where: { id: custom.id } })).permissions).toContain(PERMISSIONS.HOLDS_TRANSFER);
-      expect((await tx.role.findUniqueOrThrow({ where: { key: "ADMIN" } })).permissions).toContain(PERMISSIONS.HOLDS_TRANSFER);
-      throw new Rollback();
-    }).catch((e) => { if (!(e instanceof Rollback)) throw e; });
+  it("'Move a hold to another person': the built-in Finance role does not have it; Admin and the Branch Supervisor do", () => {
+    expect(ROLE_DEFAULTS.FIN.permissions).not.toContain(PERMISSIONS.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.SUP.permissions).toContain(PERMISSIONS.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.ADMIN.permissions).toContain(PERMISSIONS.HOLDS_TRANSFER);
   });
 });

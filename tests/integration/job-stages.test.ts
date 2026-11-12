@@ -446,16 +446,4 @@ describe("Gaps closed", () => {
     expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).processing).toBeTruthy();
   });
 
-  it("migration: a job completed before stages has every stage Done from its stored references", async () => {
-    const { job } = await send("NOTARY");
-    await acceptJob(dp, job.id);
-    // As a job completed with the old Complete step looks (no stage rows, references stored).
-    await prisma.dpAssignment.update({ where: { id: job.id }, data: { processing: { notary: { name: "Atty. Old", docNo: "1", pageNo: "2", bookNo: "3", series: "2025" }, processedAt: new Date().toISOString() } } });
-    const sql = (await import("node:fs")).readFileSync("prisma/migrations/20261117090000_job_stages/migration.sql", "utf8");
-    const mapping = sql.slice(sql.indexOf('INSERT INTO "JobStage"'));
-    await prisma.$executeRawUnsafe(mapping.replace(/;\s*$/, ""));
-    const r = await rows(job.id);
-    expect(r.map((x) => `${x.name}:${x.status}`)).toEqual(["Notarization:DONE", "LTO drop off:DONE", "LTO pickup:DONE", "Check and verify:DONE"]);
-    expect(r[0]).toMatchObject({ migrated: true, evidence: { name: "Atty. Old", docNo: "1", pageNo: "2", bookNo: "3", series: "2025" } });
-  });
 });
