@@ -1,5 +1,6 @@
 import { ROLE_CHIPS } from "@/lib/auth/permissions";
 import { TAT_LABEL, type TatBadge as TatBadgeValue } from "@/lib/time";
+import { stageLabel } from "@/lib/workflow/stage-map";
 
 const ROLE_BG: Record<string, string> = {
   la: "bg-chip-la",
@@ -50,7 +51,7 @@ const STAGE_TONE: Record<string, Tone> = {
 };
 
 export function StageChip({ stage }: { stage: string }) {
-  return <Chip tone={STAGE_TONE[stage] ?? "neutral"}>{stage}</Chip>;
+  return <Chip tone={STAGE_TONE[stage] ?? "neutral"}>{stageLabel(stage)}</Chip>;
 }
 
 export function TatBadge({ badge, title }: { badge: TatBadgeValue | null | undefined; title?: string }) {

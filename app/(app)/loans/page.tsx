@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { listLoans, type LoanListFilters, type LoanRow } from "@/lib/services/queries";
 import { getHolidaySet } from "@/lib/settings";
 import { STAGES } from "@/lib/workflow/stage";
-import { STAGE_WORDS } from "@/lib/ui/plain";
+import { stageLabel } from "@/lib/workflow/stage-map";
 import { cardFor, sortByUrgency } from "@/lib/ui/loan-cards";
 import { LoansToolbar } from "@/components/loan/loans-toolbar";
 import { LoanTable } from "@/components/loan/loan-table";
@@ -92,7 +92,8 @@ async function LaList({ user, f, sp, rows, branches, counts }: { user: CurrentUs
   let cards = rows.map((r) => cardFor(r, holidays));
   if (sp.group === "waiting") cards = cards.filter((c) => c.group === "wait");
   cards = sortByUrgency(cards);
-  const stageOptions: [string, string][] = STAGES.filter((s) => STAGE_WORDS[s]).map((s) => [s, STAGE_WORDS[s]]);
+  // The same stages as before (all but Cancelled in MyLoans); their names from the stage map.
+  const stageOptions: [string, string][] = STAGES.filter((s) => s !== "Cancelled in MyLoans").map((s) => [s, stageLabel(s)]);
   const fields: FilterField[] = [
     { name: "stage", label: "Where it is", value: f.stage, options: stageOptions },
     { name: "branch", label: "Branch", value: f.branch, options: branches.map((b) => [b.id, b.name]) },
@@ -159,7 +160,7 @@ async function holdReasonCounts(user: CurrentUser) {
 
 function AdminList({ f, rows, branches, areas, byArea, tabs, counts, holds, unfiltered, holidays }: { f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>>; unfiltered: number | null; holidays: ReadonlySet<string> }) {
   const fields: FilterField[] = [
-    { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, s]) },
+    { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, stageLabel(s)]) },
     { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"]] },
     { name: "area", label: "Area", value: f.area, options: areas.map((a) => [a.id, a.name]) },
     { name: "branch", label: "Branch", value: f.branch, options: branches.map((b) => [b.id, b.name]) },

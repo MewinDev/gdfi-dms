@@ -4,6 +4,7 @@
  */
 import { APP_TIMEZONE, businessDate, businessDaysBetween, fmtDate, noonOfBusinessDay, type TatBadge } from "@/lib/time";
 import { plainRules } from "@/lib/rules";
+import { stageLabel } from "@/lib/workflow/stage-map";
 
 export type Tone = "act" | "wait" | "ok" | "bad" | "mute" | "navy" | "hold";
 
@@ -11,24 +12,8 @@ export type Tone = "act" | "wait" | "ok" | "bad" | "mute" | "navy" | "hold";
 // Stages
 // ---------------------------------------------------------------------------
 
-export const STAGE_WORDS: Record<string, string> = {
-  Opened: "Loan opened",
-  "For checklist": "Check documents",
-  "No DP assignment required": "Check documents",
-  "Assigned to DP": "Waiting on processor",
-  "In process": "Being processed",
-  "Awaiting LA acceptance": "Check the returned package",
-  "For Vault Transmittal": "Ready to send to vault",
-  "In transit to Vault": "On its way to vault",
-  "In Safekeeping": "Safe in vault",
-  Closed: "Closed",
-  Archived: "Archived",
-  Disposed: "Disposed",
-};
-
-export function stageWords(stage: string): string {
-  return STAGE_WORDS[stage] ?? stage;
-}
+// Stage names, step names and next steps: lib/workflow/stage-map.ts (the one source). These two lists
+// only group stored stage keys (whose turn it is); they name nothing on screen.
 
 /** Stages where the next step is the LA's. */
 export const LA_STAGES = ["Opened", "For checklist", "No DP assignment required", "Awaiting LA acceptance", "For Vault Transmittal"];
@@ -136,56 +121,7 @@ export function txnHint(t: TxnLike): string {
 // The whole journey: 10 steps (the 10 phases of the Journey tab, in plain words)
 // ---------------------------------------------------------------------------
 
-/** The 10 steps of a loan's life, in the Journey tab's order. Labels are short so they never get cut. */
-export const JOURNEY_STEPS = [
-  { name: "Loan opened", who: "You" },
-  { name: "Classified", who: "Automatic" },
-  { name: "Check documents", who: "You" },
-  { name: "Processing", who: "Processor" },
-  { name: "Your acceptance", who: "You" },
-  { name: "Vault", who: "Vault team" },
-  { name: "DigiCur", who: "Digital Records" },
-  { name: "Pull-out", who: "Vault team" },
-  { name: "QA review", who: "QA team" },
-  { name: "Closure", who: "Admin" },
-] as const;
-export const JOURNEY_STEP_COUNT = JOURNEY_STEPS.length;
-
-/**
- * Current step (1-10) from the loan file's stage; 11 when every step is done (archived or disposed).
- * Steps 1 and 2 are done as soon as the loan file exists (opening runs the automatic classification).
- * Checking papers and sending to a processor are both step 3, as in the Journey tab (phase 3).
- */
-export function progressStep(stage: string): number {
-  if (["Archived", "Disposed"].includes(stage)) return 11;
-  if (stage === "Closed") return 10;
-  if (stage === "In Safekeeping") return 7;
-  if (["For Vault Transmittal", "In transit to Vault"].includes(stage)) return 6;
-  if (stage === "Awaiting LA acceptance") return 5;
-  if (["Assigned to DP", "In process"].includes(stage)) return 4;
-  return 3;
-}
-
-/**
- * Step names said from the viewer's side ("Your acceptance") in the loan file, made neutral for a list where
- * the viewer is not the person doing the step. The loan-file stepper keeps its own names.
- */
-const NEUTRAL_STEP: Record<string, string> = { "Your acceptance": "Acceptance" };
-
-/** Stages that have no step on the stepper: shown in a list as their own word, without the dots. */
-const NO_STEP_STAGES: Record<string, string> = { "Cancelled in MyLoans": "Cancelled in MyLoans", Archived: "Archived", Disposed: "Disposed" };
-
-/**
- * A loan's place in the loan-file flow for a list (the Loans table): the same steps and order as the stepper
- * (JOURNEY_STEPS, progressStep), with neutral names. `step` is null for a stage with no step.
- */
-export function listStage(stage: string): { step: number; total: number; name: string } | { step: null; word: string } {
-  if (NO_STEP_STAGES[stage]) return { step: null, word: NO_STEP_STAGES[stage] };
-  const n = progressStep(stage);
-  if (n > JOURNEY_STEP_COUNT) return { step: null, word: stageWords(stage) };
-  const name = JOURNEY_STEPS[n - 1].name;
-  return { step: n, total: JOURNEY_STEP_COUNT, name: NEUTRAL_STEP[name] ?? name };
-}
+// The 10 steps, the step of a stage and a list's stage text: lib/workflow/stage-map.ts (STEPS, stepperOf, listStage).
 
 export type StepState = "Done" | "Now" | "Later";
 export const stepState = (n: number, current: number): StepState => (n < current ? "Done" : n === current ? "Now" : "Later");
@@ -320,7 +256,7 @@ function historyLine(r: HistoryRow): string {
     case "dp_notified":
       return r.summary.replace(/^Notified (.+?) in-app and by email$/, "$1 was told by notification and email.");
     case "stage_changed":
-      return `The loan moved to “${stageWords(String(a.stage ?? ""))}”.`;
+      return `The loan moved to “${stageLabel(String(a.stage ?? ""))}”.`;
     case "exception_raised":
       if (/^Missing paper asked for (.+?): (.+)$/.test(r.summary)) return r.summary.replace(/^Missing paper asked for (.+?): (.+)$/, `${who} asked for a missing paper for $1: $2.`);
       if (r.summary.startsWith("Raised Legal Docs Completion")) return `${who} asked for a missing paper.`;

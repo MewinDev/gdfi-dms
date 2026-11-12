@@ -9,7 +9,8 @@ import { FUNDS_LABEL, peso } from "@/lib/funds/rules";
 import { kindText } from "@/lib/funds/kinds";
 import { amountWords } from "./funds";
 import { txnFunds } from "@/lib/jobs/view";
-import { historySentence, progressStep } from "@/lib/ui/plain";
+import { historySentence } from "@/lib/ui/plain";
+import { journeyPhaseOf } from "@/lib/workflow/stage-map";
 import { plainRules } from "@/lib/rules";
 import { NO_DETAILS, holdReasonName } from "@/lib/ui/holds";
 import { buildJourney, type EventRec, type Journey, type JourneyInput, type StageRec } from "@/lib/workflow/build-journey";
@@ -135,7 +136,7 @@ export function journeyInput(loan: LoanDetail, rows: { audit: Audit[]; movements
     const text = eventText(r);
     return {
       id: r.id, at: r.at, action: r.action, by: r.actorLabel, simulated: r.mode === "SIMULATED", journeyStep: r.journeyStep,
-      text: amounts ? text : stripAmounts(text), txnId: txnOf(r), phase: Math.min(10, progressStep(stage)),
+      text: amounts ? text : stripAmounts(text), txnId: txnOf(r), phase: journeyPhaseOf(stage),
     };
   });
 

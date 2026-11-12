@@ -11,8 +11,8 @@ const GRID = "sm:grid sm:grid-cols-[minmax(0,1fr)_8.5rem_9rem_6.5rem] sm:items-c
 
 /**
  * My loans (Loan Associate): one block, a hairline between rows, about 56px a row, two lines in each column:
- * Borrower (avatar, name, PN · branch), Loan (amount; loan type · product), Next step (the step; released
- * on), Due, Open. A small header row only from five rows. On a phone the amount joins the PN line and the
+ * Borrower (avatar, name, PN · branch), Loan (amount; loan type · product), Next step (the stage map's Next
+ * step text, "Waiting for: …" on hover; released on), Due, Open. A small header row only from five rows. On a phone the amount joins the PN line and the
  * loan type, product and release date go on one grey line; the whole row is the touch target (Open stays
  * for screen readers).
  */
@@ -70,7 +70,7 @@ function Row({ c }: { c: LoanListCard }) {
             </span>
             {/* Phone: the step, then the account details, on one line. */}
             <span className="block truncate text-[12px] text-ink-2 sm:hidden" data-loan-details>
-              <span className="text-[13px] font-semibold text-ink">{c.action}</span>{[c.loanText, c.releasedText].filter(Boolean).map((t) => ` · ${t}`).join("")}
+              <span className="text-[13px] font-semibold text-ink" title={c.nextTip}>{c.nextText}</span>{[c.loanText, c.releasedText].filter(Boolean).map((t) => ` · ${t}`).join("")}
             </span>
           </span>
         </span>
@@ -80,7 +80,7 @@ function Row({ c }: { c: LoanListCard }) {
           <span className="block truncate text-[12px] text-ink-2" title={c.loanText}>{c.loanText || "-"}</span>
         </span>
         <span className="hidden min-w-0 leading-snug sm:block" data-step>
-          <span className="block text-sm font-semibold text-ink">{c.action}</span>
+          <span className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink" title={c.nextTip} data-next-text>{c.nextText}</span>
           <span className="block truncate text-[12px] text-ink-2">{c.releasedText}</span>
         </span>
         <span className="hidden sm:block" data-due><Due due={c.due} /></span>

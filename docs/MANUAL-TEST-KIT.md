@@ -230,6 +230,10 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 
 41. **The Loans table.** As **Admin**, open **Loans**, All loans, with a few loan files opened at different steps (open one, send one to a processor). Read a row from left to right, open **Group by area and branch**, and look at it on a phone.
 
+### Stage names and next steps (12 November 2026)
+
+42. **The new stage names.** As **LA Angono**, open a loan file and read the progress line at the top; finish or send every transaction (EDST done, the others sent to a processor) and read it again. Open **My loans** and hover the Next step of a few rows. Then as **Admin** open **Loans**, All loans, read the Stage and Next step columns and hover a Next step. Look at the loan file on a tablet and a phone too.
+
 ## If the sign-in page keeps coming back
 
 Your browser still has the sign-in of an account from before a reset. Open a private window, or clear the cookies for `localhost:3000` (in Chrome: the lock icon left of the address, then Cookies and site data, then delete), and sign in again.

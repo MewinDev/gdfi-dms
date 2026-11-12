@@ -81,14 +81,15 @@ test("LA with one loan: title only, one toolbar (Find loan once), samples closed
   await expect(row).toContainText("₱401,000");
   await expect(row).toContainText("New · Auto Refinancing");
   await expect(row).toContainText("Check documents");
-  if (width(page) >= 640) expect((await row.boundingBox())!.height).toBeLessThanOrEqual(60);
+  // The Next step text (stage map) may take two lines: about 70px a row.
+  if (width(page) >= 640) expect((await row.boundingBox())!.height).toBeLessThanOrEqual(76);
   else expect((await row.boundingBox())!.height).toBeLessThanOrEqual(80); // three short lines
   await noSideways(page);
   await shot(page, "la-one-loan");
   clean();
 });
 
-test("LA with twelve loans: header row, aligned columns, eight rows in view at 1440; a filter shows its chip and Showing X of Y", async ({ page }) => {
+test("LA with twelve loans: header row, aligned columns, seven rows in view at 1440; a filter shows its chip and Showing X of Y", async ({ page }) => {
   const clean = watchConsole(page);
   for (let i = 0; i < 12; i++) await loan(NAMES[i], { loanType: i < 4 ? "Renewal" : "New" });
   await signIn(page, "la");
@@ -103,7 +104,8 @@ test("LA with twelve loans: header row, aligned columns, eight rows in view at 1
     expect(new Set(xs).size).toBe(1);
   }
   if (width(page) === 1440) {
-    expect(await rows(page).nth(7).evaluate((e) => e.getBoundingClientRect().bottom)).toBeLessThanOrEqual(900);
+    // Seven rows in view at 1440 (the Next step text may take two lines).
+    expect(await rows(page).nth(6).evaluate((e) => e.getBoundingClientRect().bottom)).toBeLessThanOrEqual(900);
   }
   await noSideways(page);
 

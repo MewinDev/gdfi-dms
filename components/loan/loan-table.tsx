@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { LoanRow } from "@/lib/services/queries";
-import { ROLE_DEFAULTS } from "@/lib/auth/permissions";
-import { dayText, listStage, peso } from "@/lib/ui/plain";
+import { dayText, peso } from "@/lib/ui/plain";
+import { listStage, ownerTooltip } from "@/lib/workflow/stage-map";
 import { cardFor } from "@/lib/ui/loan-cards";
 import { groupByAreaBranch } from "@/lib/ui/loan-filters";
 import { Flags } from "./my-loans-list";
@@ -9,7 +9,7 @@ import { Flags } from "./my-loans-list";
 /**
  * The Loans table (the read-only list: Admin, Supervisor, approvers, Finance, processors), one column per fact:
  * Borrower (name, PN under it), Branch, Product (product name, loan type under it), Released, Amount, Stage (the
- * current step of the loan-file flow, its name only), TAT, Next step. No Classification column. Under 1024px Released
+ * stage's name from the stage map), TAT, Next step. No Classification column. Under 1024px Released
  * and Amount go under the product. About 56px a row; the whole row opens the loan file. On a phone each loan
  * is a block of short lines. `grouped`: by Area, then Branch, with a heading and a count for each.
  */
@@ -67,7 +67,8 @@ function facts(r: LoanRow, holidays: ReadonlySet<string>) {
     // The amount as in the rest of the app: ₱1,000,000 (no .00).
     amount: peso(r.amount),
     stage: listStage(r.stage),
-    owner: ROLE_DEFAULTS[r.nextStep.ownerRole]?.name ?? r.nextStep.ownerRole,
+    // "Waiting for: …"; none when the system has the next step.
+    ownerTip: ownerTooltip(r.nextStep.owner),
   };
 }
 
@@ -83,12 +84,12 @@ function Tat({ due, deadline }: { due: ReturnType<typeof cardFor>["due"]; deadli
 }
 
 /**
- * The stage: the current step of the loan-file flow, by its name only (the stepper's own names, neutral in a
- * list: "Acceptance"). A stage with no step (cancelled, archived, disposed) shows its own word in grey.
+ * The stage: its name from the stage map (lib/workflow/stage-map.ts). A stage where nothing more happens
+ * (cancelled, archived, disposed) shows its word in grey.
  */
 export function StageMark({ stage }: { stage: ReturnType<typeof listStage> }) {
-  if (stage.step === null) return <span className="text-[13px] text-ink-2" data-stage-word>{stage.word}</span>;
-  return <span className="text-[13px] font-semibold text-ink" data-stage-step={stage.step} data-stage-name>{stage.name}</span>;
+  if (stage.grey) return <span className="text-[13px] text-ink-2" data-stage-word>{stage.label}</span>;
+  return <span className="text-[13px] font-semibold text-ink" data-stage-step={stage.step ?? undefined} data-stage-name>{stage.label}</span>;
 }
 
 function Row({ r, holidays }: { r: LoanRow; holidays: ReadonlySet<string> }) {
@@ -117,7 +118,7 @@ function Row({ r, holidays }: { r: LoanRow; holidays: ReadonlySet<string> }) {
       <td className={`${td} hidden whitespace-nowrap text-right tabular-nums lg:table-cell`} data-col="amount">{f.amount}</td>
       <td className={`${td} min-w-[7rem]`} data-col="stage"><StageMark stage={f.stage} /></td>
       <td className={`${td} whitespace-nowrap`} data-tat><Tat due={f.c.due} deadline={r.tat?.deadline} /></td>
-      <td className={`${td} min-w-[8rem] text-[13px]`} data-next-step title={`Waiting for: ${f.owner}`}>{r.nextStep.label}</td>
+      <td className={`${td} min-w-[8rem] text-[13px]`} data-next-step title={f.ownerTip}>{r.nextStep.label}</td>
     </tr>
   );
 }
@@ -135,7 +136,7 @@ function PhoneRow({ r, holidays }: { r: LoanRow; holidays: ReadonlySet<string> }
         <span className="truncate text-[13px] text-ink-2"><span className="font-mono">{r.pn}</span> · {r.branchName || r.branch}</span>
         <span className="truncate text-[13px] text-ink-2">{f.product} · {r.loanType} · {f.released} · {f.amount}</span>
         <StageMark stage={f.stage} />
-        <span className="text-[13px] text-ink-2" title={`Waiting for: ${f.owner}`}>{r.nextStep.label}</span>
+        <span className="text-[13px] text-ink-2" title={f.ownerTip}>{r.nextStep.label}</span>
       </Link>
     </li>
   );

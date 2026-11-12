@@ -3,6 +3,7 @@
  * phases 7-10 are shown as upcoming steps with their owner role and target TAT.
  */
 import { STAGES, type Stage } from "./stage";
+import { stageLabel } from "./stage-map";
 import type { TatMap } from "./tat";
 
 export type StepState = "done" | "current" | "pending" | "na";
@@ -74,7 +75,7 @@ export const PHASES: PhaseDef[] = [
     steps: [
       { id: "5.1", title: "Receiving LA scans and records Complete / Incomplete / Other", owner: ["LA"], mode: "Manual", tatKey: "P5_ACCEPT" },
       { id: "5.2", title: "Transaction COMPLETED, DP assignment CLOSED", owner: ["SYS"], mode: "Auto", tatText: "Instant" },
-      { id: "5.3", title: "All complete and CA liquidated: For Vault Transmittal", owner: ["SYS"], mode: "Auto", tatText: "Instant" },
+      { id: "5.3", title: `All complete and CA liquidated: ${stageLabel("For Vault Transmittal")}`, owner: ["SYS"], mode: "Auto", tatText: "Instant" },
       { id: "5.4", title: "Follow up overdue cash-advance liquidation", owner: ["FIN"], mode: "Manual", tatText: "Escalates if overdue" },
     ],
   },
@@ -84,20 +85,20 @@ export const PHASES: PhaseDef[] = [
       { id: "6.1", title: "Create transmittal, scan Document IDs, dispatch", owner: ["LA"], mode: "Manual", tatKey: "P6_VAULTED" },
       { id: "6.2", title: "Receive by scan against the manifest", owner: ["VAULT"], mode: "Manual", tatText: "Transit TAT" },
       { id: "6.3", title: "Verify originals, annotation, plate, engine, chassis", owner: ["VAULT"], mode: "Manual", tatKey: "P6_VERIFY" },
-      { id: "6.4", title: "Tag, scan location; In Safekeeping", owner: ["VAULT", "SYS"], mode: "Manual + suggest", tatText: "Same day" },
+      { id: "6.4", title: `Tag, scan location; ${stageLabel("In Safekeeping")}`, owner: ["VAULT", "SYS"], mode: "Manual + suggest", tatText: "Same day" },
     ],
   },
   {
-    n: 7, title: "DigiCur digitization", built: false,
+    n: 7, title: "Digitization (Digital Records)", built: false,
     steps: [
       { id: "7.1", title: "Queue For Scanning", owner: ["SYS"], mode: "Auto", tatText: "Instant" },
       { id: "7.2", title: "Scan with page count; quality check; rescan with reason", owner: ["DIG"], mode: "Manual", tatKey: "P7_DIGICUR" },
       { id: "7.3", title: "Index PN, CIN, document type, Document ID; upload and link", owner: ["DIG", "SYS"], mode: "Manual + auto", tatKey: "P7_DIGICUR" },
-      { id: "7.4", title: "Supervisor verifies; all items Verified: DigiCur Completed", owner: ["DIG"], mode: "Manual", tatKey: "P7_DIGICUR" },
+      { id: "7.4", title: "Supervisor verifies; all items Verified: digitization completed", owner: ["DIG"], mode: "Manual", tatKey: "P7_DIGICUR" },
     ],
   },
   {
-    n: 8, title: "Pull-out and return loop", built: false,
+    n: 8, title: "Pull out and return loop", built: false,
     steps: [
       { id: "8.1", title: "Raise pull-out request (purpose, expected return)", owner: ["LA"], mode: "Manual", tatText: "When needed" },
       { id: "8.2", title: "Approve: internal (Vault Supervisor + Dept Head) or third party (Dept Head + C&M Head)", owner: ["APPR"], mode: "Manual", tatText: "Per approval matrix" },
@@ -107,7 +108,7 @@ export const PHASES: PhaseDef[] = [
     ],
   },
   {
-    n: 9, title: "QA review (any stage)", built: false,
+    n: 9, title: "Quality Assurance check (any stage)", built: false,
     steps: [
       { id: "9.1", title: "Select accounts by sampling rule, audit plan or event", owner: ["SYS"], mode: "Auto", tatText: "Per audit plan" },
       { id: "9.2", title: "Review documents, trail, digital record; pass or finding", owner: ["QA"], mode: "Manual", tatText: "Per audit plan" },
