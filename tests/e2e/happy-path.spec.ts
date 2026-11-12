@@ -54,9 +54,10 @@ test("LA: find GD1012026901001, open loan file, tick the papers, send to a proce
   await page.goto("/loans/GD1012026901001?tab=todo&tx=NOTARY");
   await expect(page.getByRole("region", { name: "Notary: job" }).getByText(/Waiting for them to accept\./)).toBeVisible();
 
-  // The sample card now says "Opened"
+  // The sample now says "Opened" (My loans: the samples are one closed row; open it first)
   await page.goto("/loans");
-  const samples = page.getByRole("region", { name: "Sample loans" });
+  const samples = page.getByRole("main").locator("[data-home-samples]").first();
+  await samples.locator("summary").click();
   await expect(samples.getByRole("button", { name: /Maria Santos/ })).toContainText("Opened");
   await expect(samples.getByRole("button", { name: /Ana Villanueva/ })).toContainText("Try it");
 

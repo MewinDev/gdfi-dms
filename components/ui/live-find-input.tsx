@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-interface Hit { pn: string; borrowerName: string; stage: string }
+interface Hit { pn: string; borrowerName: string; stage: string; branch?: string }
 type Result =
   | { kind: "hits"; hits: Hit[] }
   | { kind: "outside"; pn: string }
@@ -88,24 +88,29 @@ export function LiveFindInput({
       <p id={`${uid}-status`} role="status" aria-live="polite" className="sr-only">{status}</p>
       {showPanel && (
         <div className={`absolute z-40 overflow-hidden rounded-xl border border-line bg-white shadow-lg ${panelAlign ? "-left-px -right-px top-[calc(100%+8px)] sm:left-0 sm:right-0" : "left-[-18px] right-[-18px] top-[calc(100%+10px)] sm:left-[-20px] sm:right-0"}`} data-find-results>
-          {r.kind === "outside" && <p className="px-4 py-3 text-sm text-ink-2" data-find-empty data-find-outside>{OUTSIDE}</p>}
-          {r.kind === "unsaved" && <p className="px-4 py-3 text-sm text-ink-2" data-find-empty data-find-unsaved>{UNSAVED}</p>}
           {hits.length > 0 && (
-            <ul id={listId} role="listbox" aria-label="Loan files in the DMS" className="max-h-[360px] overflow-y-auto">
+            // Compact rows (about 36px): name, then PN · branch in grey, the stage on the right; about six show,
+            // the rest scroll (every row it found stays reachable).
+            <ul id={listId} role="listbox" aria-label="Loan files in the DMS" className="max-h-[222px] overflow-y-auto">
               {hits.map((h, i) => (
                 <li key={h.pn} id={`${listId}-${i}`} role="option" aria-selected={i === active}
-                  className={`flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-soft px-4 py-2.5 last:border-0 ${i === active ? "bg-select-bg" : "hover:bg-fill"}`}
+                  className={`flex min-h-9 cursor-pointer items-center gap-x-3 border-b border-line-soft px-3 py-1.5 last:border-0 ${i === active ? "bg-select-bg" : "hover:bg-fill"}`}
                   onMouseDown={(e) => { e.preventDefault(); go(h.pn); }} data-find-hit={h.pn}>
-                  <span className="mono text-[14px] font-bold text-navy">{h.pn}</span>
-                  <span className="min-w-0 flex-1 truncate text-[14px]">{h.borrowerName || "No name"}</span>
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <span className="chip c-navy h-6 text-xs" data-find-stage>{h.stage}</span>
-                    <span className="text-[12px] text-ink-2" data-find-in-dms>In DMS</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px]">
+                    <span className="font-semibold text-navy">{h.borrowerName || "No name"}</span>
+                    <span className="text-ink-2"> · <span className="mono">{h.pn}</span>{h.branch ? ` · ${h.branch}` : ""}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-ink-2">
+                    <span data-find-stage>{h.stage}</span>
+                    <span aria-hidden="true">·</span><span data-find-in-dms>In DMS</span>
                   </span>
                 </li>
               ))}
             </ul>
           )}
+          {/* The hint, one grey line at the bottom. */}
+          {r.kind === "outside" && <p className="px-3 py-2 text-[13px] text-ink-2" data-find-empty data-find-outside>{OUTSIDE}</p>}
+          {r.kind === "unsaved" && <p className="px-3 py-2 text-[13px] text-ink-2" data-find-empty data-find-unsaved>{UNSAVED}</p>}
         </div>
       )}
     </div>

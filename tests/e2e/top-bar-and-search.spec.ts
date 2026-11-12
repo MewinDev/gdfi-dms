@@ -44,7 +44,11 @@ test("LA: the Loans page has the search, and / focuses it", async ({ page }) => 
   await expect(box).toBeVisible();
   // Live MyLoans suggestions: PN or borrower name (the mock supports search).
   await expect(box).toHaveAttribute("placeholder", "PN, borrower name, CIN or CIF");
-  await expect(page.getByRole("region", { name: "Sample loans" }).getByRole("button")).toHaveCount(3);
+  // The samples: one closed row; opened, three of them.
+  const samples = page.getByRole("main").locator("[data-home-samples]").first();
+  await expect(samples).not.toHaveAttribute("open", "");
+  await samples.locator("summary").click();
+  await expect(samples.getByRole("button", { name: /^GD/ })).toHaveCount(3);
 
   await page.getByRole("heading", { level: 1 }).click();
   await expect(box).not.toBeFocused();
@@ -89,6 +93,7 @@ test("Admin: no Find loan button; Settings and Loans have a clean top bar; Loans
   await box.fill("PN-NOTHING");
   await page.getByRole("main").getByRole("button", { name: "Search" }).click();
   await expect(page).toHaveURL(/q=PN-NOTHING/);
-  await expect(page.getByText("No loan files here yet.")).toBeVisible();
-  await expect(page.getByText("Try removing a filter.")).toBeVisible();
+  await expect(page.getByText("No loan files here yet.")).toHaveCount(0);
+  await expect(page.getByText(/No loans match/)).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: "Clear filters" })).toBeVisible();
 });

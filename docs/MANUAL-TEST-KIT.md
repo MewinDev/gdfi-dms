@@ -222,6 +222,14 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 
 39. **Home for each role.** Sign in as **LA Angono** with nothing opened and look at Home. Open two Angono loans from the list, go back to Home, and look again. Then look at Home as **Admin**, as a Document Processor and as Finance (test mode sign-in), and on a phone.
 
+### My loans, compact (12 November 2026)
+
+40. **My loans.** As **LA Angono**, open **My loans** with nothing opened, then open three Angono loans from the list and come back. Open each tab, set a filter (Loan type), remove it, open the Sample loans row and pick one, and type part of a PN in the box. Then look at **Loans** as **Admin**, and both on a phone.
+
+### The Loans table (12 November 2026)
+
+41. **The Loans table.** As **Admin**, open **Loans**, All loans, with a few loan files opened at different steps (open one, send one to a processor). Read a row from left to right, open **Group by area and branch**, and look at it on a phone.
+
 ## If the sign-in page keeps coming back
 
 Your browser still has the sign-in of an account from before a reset. Open a private window, or clear the cookies for `localhost:3000` (in Chrome: the lock icon left of the address, then Cookies and site data, then delete), and sign in again.
