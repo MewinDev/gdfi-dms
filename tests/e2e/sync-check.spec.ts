@@ -91,7 +91,7 @@ test("2. Amount change: Send held where it reaches, LA read-only (no amounts), A
   const review = reviewSheet(page);
   await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,000,000");
   await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,020,000");
-  await expect(review.locator("[data-source-means]")).toContainText("Rule 4 no longer applies");
+  await expect(review.locator("[data-source-means]")).toContainText("Mortgage is not needed: this is a Renewal loan above ₱1,000,000.");
   await noSideways(page);
   await shot(page, "review-amount");
   expect(Number((await db.loan.findUniqueOrThrow({ where: { pn: PN } })).totalReleasedAmount)).toBe(1_000_000);

@@ -84,12 +84,12 @@ test("empty page: title, search box and samples share the page edges; the dropdo
   clean();
 });
 
-test("loan found: one 12-column grid, the selected pill is navy, keyboard focus is a separate gold ring", async ({ page }) => {
+test("loan found: details and questions share columns, the chosen button fills navy, keyboard focus is a separate gold ring", async ({ page }) => {
   const clean = watchConsole(page);
   await signIn(page, "la");
   await page.goto("/search?q=GD1652026901003");
   const card = main(page).locator("[data-find-preview]");
-  await expect(card.getByText("Source: MyLoans")).toBeVisible();
+  await expect(card.locator("[data-find-source]")).toBeVisible();
   await sameEdges(page, card);
 
   const facts = card.locator("dl > div");
@@ -113,19 +113,20 @@ test("loan found: one 12-column grid, the selected pill is navy, keyboard focus 
     expect(Math.abs(right(q1) - right(f[1]))).toBeLessThanOrEqual(2);
   }
 
-  // Type scale: fact labels 12px, values 16px, question labels 14px.
+  // Type scale: fact labels 12px, values 15px semi-bold, question labels 14px.
   const px = (l: Locator) => l.evaluate((e) => getComputedStyle(e).fontSize);
   expect(await px(card.locator("dt").first())).toBe("12px");
-  expect(await px(card.locator("dd").first())).toBe("16px");
+  expect(await px(card.locator("dd").first())).toBe("15px");
+  expect(await card.locator("dd").first().evaluate((e) => getComputedStyle(e).fontWeight)).toBe("600");
   expect(await px(card.locator("legend").first())).toBe("14px");
 
-  // Pills and buttons: the same height (44px).
+  // The answer buttons: separate, 44px at least, a 1px border; the group is just the two buttons.
   const pill = card.locator("[data-question] label").first();
   const open = card.getByRole("button", { name: "Open loan file" });
-  // The group is 44px; each pill fills it (inside its 1px border and 2px inset).
   const group = await box(card.locator("[data-question] [data-pills]").first());
-  expect(Math.round(group.height)).toBe(44);
-  expect(Math.round((await box(pill)).height)).toBe(Math.round(group.height) - 6);
+  expect(Math.round((await box(pill)).height)).toBeGreaterThanOrEqual(44);
+  expect(Math.round(group.height)).toBe(Math.round((await box(pill)).height));
+  expect(await pill.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
   expect(Math.round((await box(open)).height)).toBe(44);
   expect(Math.round((await box(card.getByRole("link", { name: "Cancel" }))).height)).toBe(44);
 
@@ -138,8 +139,8 @@ test("loan found: one 12-column grid, the selected pill is navy, keyboard focus 
   } else {
     expect(hint.y).toBeGreaterThan(cancel.y + cancel.height - 1);
   }
-  // The "Next:" line below a divider.
-  expect(await card.locator("[data-find-next]").evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
+  // No "Next:" line any more.
+  await expect(card.locator("[data-find-next]")).toHaveCount(0);
   await noOverflow(page);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await shot(page, "found-nothing-picked");

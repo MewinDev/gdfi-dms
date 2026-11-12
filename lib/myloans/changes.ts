@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { evaluateLoanRules, MORTGAGE_THRESHOLDS, RuleInputError, TRANSACTION_ORDER, type FinancingType, type LoanTypeValue, type OrcrStatus, type RuleOutcome, type TransactionCode } from "@/lib/rules";
+import { evaluateLoanRules, RuleInputError, ruleWording, TRANSACTION_ORDER, type FinancingType, type LoanTypeValue, type OrcrStatus, type RuleOutcome, type TransactionCode } from "@/lib/rules";
 import { parseAmount } from "./data-check";
 import type { MyLoansRecord } from "./types";
 
@@ -227,8 +227,9 @@ export function proposeEffect(input: {
   if (outcome.classification !== loan.classification) {
     base.sentences.push(`The product name now means ${outcome.classification === "FINANCING" ? "Financing" : "Refinancing"} (was ${loan.classification === "FINANCING" ? "Financing" : "Refinancing"}).`);
   }
-  if (loan.mortgageResult === "MORTGAGE" && outcome.mortgage !== "MORTGAGE") base.sentences.push(`Rule 4 no longer applies (now above ₱${MORTGAGE_THRESHOLDS[next.loanType as LoanTypeValue].toLocaleString("en-PH")} for ${next.loanType}).`);
-  if (loan.mortgageResult !== "MORTGAGE" && outcome.mortgage === "MORTGAGE") base.sentences.push(`Rule 4 now applies (at or below ₱${MORTGAGE_THRESHOLDS[next.loanType as LoanTypeValue].toLocaleString("en-PH")} for ${next.loanType}).`);
+  // Mortgage gained or lost: the sentence of the rule that decided it (lib/rules/names.ts).
+  const crossed = (loan.mortgageResult === "MORTGAGE") !== (outcome.mortgage === "MORTGAGE");
+  if (crossed) base.sentences.push(ruleWording(outcome.fired[outcome.fired.length - 1]).sentence);
   if (base.removed.length) base.sentences.push(`${list(base.removed.map((c) => NAME[c]))} would be removed.`);
   if (base.added.length) base.sentences.push(`${list(base.added.map((c) => NAME[c]))} would be added.`);
   if (base.removed.length || base.added.length) {

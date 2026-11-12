@@ -29,6 +29,8 @@ import { inactiveEffect, type StatusKind } from "@/lib/services/settings-status"
 import { PageHeader } from "@/components/ui/basics";
 import { FundsSettingsForm, MockOverrideForm, SettingsEditForm, ToggleForm, type FieldDef } from "@/components/admin/forms";
 import { TestKitPanel } from "@/components/admin/test-kit";
+import { MORTGAGE_THRESHOLDS, RULE_NAMES } from "@/lib/rules";
+import { pesoWhole } from "@/lib/rules/names";
 import { PnFormatForm } from "@/components/admin/pn-format";
 import { getPnFormat } from "@/lib/pn";
 import { kitScreensAvailable } from "@/lib/kit/access";
@@ -62,7 +64,7 @@ const AREAS = [
   { key: "checklist", title: "Checklist items", desc: "The papers for each transaction, required or optional.", help: "Changes apply to loan files opened from now on. Open loan files keep their papers and settings.", Icon: ChecklistIcon },
   { key: "processing-stages", title: "Processing stages", desc: "The stages a processor works through, with evidence.", help: "Stages run in order. LTO drop off and LTO pickup are added while a type needs LTO processing; Check and verify is always last. Changes apply to jobs not yet started.", Icon: ListIcon },
   { key: "tat", title: "Turnaround times", desc: "Target business days for each step.", help: "Business days skip weekends and holidays. 0 means the same day.", Icon: ClockIcon },
-  { key: "loan-types", title: "Loan types", desc: "Display names for the MyLoans loan types.", help: "The Data Check accepts only New and Renewal. The mortgage thresholds are fixed by Rule 4.", Icon: TagIcon },
+  { key: "loan-types", title: "Loan types", desc: "Display names for the MyLoans loan types.", help: `The Data Check accepts only New and Renewal. The mortgage thresholds are fixed by the rule “${RULE_NAMES.MORTGAGE_THRESHOLD.title}”: ${pesoWhole(MORTGAGE_THRESHOLDS.New)} for New, ${pesoWhole(MORTGAGE_THRESHOLDS.Renewal)} for Renewal.`, Icon: TagIcon },
   { key: "dp-capacity", title: "Processor capacity", desc: "How many open jobs a processor takes, and who is on leave.", help: "Used by the Monitoring page and the Send panel. Open jobs = assigned + in process + on hold. A processor on leave is shown disabled in the Send panel and counts as 0% available. A past \"until\" day ends the leave by itself.", Icon: UsersIcon },
   { key: "roles", title: "Roles and access", desc: "What each role may do, and which branches it sees.", help: "Who can do what. A change applies on each person's next click or page.", Icon: UsersIcon },
   { key: "lto", title: "LTO offices", desc: "LTO offices a processor can be sent to.", help: "Add an office or rename it. Nothing is deleted: make it inactive instead.", Icon: MapPinIcon },

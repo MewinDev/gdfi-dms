@@ -211,6 +211,13 @@ body {
       scroll-padding-bottom: 9rem;
     }
   }
+  /* Tablet and desktop: the 72px top bar is sticky too, so focus and jump links stop below it
+     (Find a loan's title was partly hidden under it). */
+  @media (min-width: 37.5rem) {
+    html {
+      scroll-padding-top: 5.5rem;
+    }
+  }
   /* On the navy sidebar and phone top bar the ring is white. */
   :where(.bg-navy) :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
     outline-color: var(--white);

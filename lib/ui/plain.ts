@@ -3,6 +3,7 @@
  * Pure functions only, so they can be used by server and client components and unit tests.
  */
 import { APP_TIMEZONE, businessDate, businessDaysBetween, fmtDate, noonOfBusinessDay, type TatBadge } from "@/lib/time";
+import { plainRules } from "@/lib/rules";
 
 export type Tone = "act" | "wait" | "ok" | "bad" | "mute" | "navy" | "hold";
 
@@ -253,7 +254,12 @@ export interface HistoryRow {
 
 const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 
+/** One history line; any old rule number in a stored text reads as the rule sentence (lib/rules/names.ts). */
 export function historySentence(r: HistoryRow): string {
+  return plainRules(historyLine(r));
+}
+
+function historyLine(r: HistoryRow): string {
   const a = obj(r.after);
   const who = r.actorLabel.replace(/ \(Simulated\)$/, "");
   switch (r.action) {

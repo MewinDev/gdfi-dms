@@ -7,11 +7,10 @@ import { examplePn, getPnFormat, isPnAttempt, parsePn, pnHeadline } from "@/lib/
 import { lookupPn, type PnLookupResult } from "@/lib/services/loan-file";
 import { completePn, LIST_LIMIT, savedLoanCard, searchSaved } from "@/lib/services/find-local";
 import { SavedLoanCard, type SavedLoanCardData } from "@/components/loan/saved-loan-card";
-import { TRANSACTION_LABEL } from "@/lib/rules";
-import { dayText, peso, stageWords, txnName } from "@/lib/ui/plain";
+import { dayText, peso, stageWords } from "@/lib/ui/plain";
 import { FindLoan } from "@/components/ui/find-loan";
 import { Avatar, ToneChip } from "@/components/ui/basics";
-import { AlertIcon } from "@/components/ui/icons";
+import { AlertIcon, LockIcon } from "@/components/ui/icons";
 import { OpenLoanForm } from "@/components/loan/open-loan-form";
 import { DocumentCard } from "@/components/loan/document-card";
 import { SampleLoans } from "@/components/loan/sample-loans";
@@ -64,9 +63,10 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
   return (
     <div className="flex w-full min-w-0 flex-col gap-4 sm:gap-6" data-find-page>
       {/* The same container as My loans and Monitoring: the main area's width and padding. */}
-      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      {/* scroll-mt: when the page is scrolled to the title, it stops below the sticky top bar. */}
+      <header className="flex scroll-mt-24 flex-wrap items-baseline gap-x-3 gap-y-1" data-find-title>
         <h1 className="text-[22px] font-bold leading-tight tracking-[-0.01em] text-navy sm:text-2xl">Find a loan</h1>
-        <p className="text-sm text-ink-2">Loan files in the DMS first. A full PN not opened here yet is looked up in MyLoans. Nothing is saved until you open the loan file.</p>
+        <p className="text-sm text-ink-2">Loan files in the DMS first; a full PN not opened here yet is looked up in MyLoans.</p>
       </header>
       <FindLoan defaultValue={q} autoFocus={!q} suggest={can(user, PERMISSIONS.LOANS_SEARCH)} />
 
@@ -153,7 +153,6 @@ function Notice({ tone, role = "alert", pn, title, q, children, data }: { tone: 
 
 const NEXT_STEP: Record<string, string> = {
   pn: "Check the number and try again.",
-  branch: "This loan belongs to another branch. Ask that branch to open it.",
   status: "Wait until the loan is released in MyLoans, then try again.",
   borrowerName: "",
   releaseDate: "Ask the MyLoans data owner to add the release date, then try again.",
@@ -176,6 +175,8 @@ function Problem({ r, q }: { r: PnLookupResult; q: string }) {
     : r.fieldLabel.startsWith("Inactive") ? "Ask an Admin to make it active in Settings, then try again."
     : NEXT_STEP[r.field] ?? "Try again later.";
   const kind = r.kind === "refused" ? r.field : r.kind === "unavailable" && r.busy ? "busy" : r.kind;
+  // Outside the person's branches: the PN and branch only, and the way to get access.
+  if (r.kind === "refused" && r.field === "branch" && !r.fieldLabel.startsWith("Inactive")) return <OutsideBranches pn={r.pn} branch={r.record.branchName} q={q} />;
   // Busy: the title says it all (never "not found").
   if (r.kind === "unavailable" && r.busy) return <Notice tone="bad" pn={r.pn} title={title} q={q} data={{ "data-find-problem": kind }}>Nothing was saved.</Notice>;
   return (
@@ -186,44 +187,95 @@ function Problem({ r, q }: { r: PnLookupResult; q: string }) {
 }
 
 /**
- * A loan in MyLoans and in the person's branches whose status the DMS does not accept (only Loan Released
- * is): what MyLoans says, by name. No Open button; nothing is saved; no further MyLoans call.
+ * A loan outside the person's branch access, laid out like the status card: the PN and the branch only
+ * (decided 12 November 2026; the branch is already in the PN, the borrower's name is never shown, and the
+ * server sends nothing else). The way forward is access to that branch, which Admin gives (Settings, Roles
+ * and access); there is no in-app request.
  */
-function StatusCard({ r, q }: { r: Extract<PnLookupResult, { kind: "status" }>; q: string }) {
-  const text = r.statusKind === "before_release" ? <>This loan is not released yet. MyLoans status: <b data-status-name>{r.statusName}</b>.</>
-    : r.statusKind === "cancelled" ? <>This loan was cancelled in MyLoans.</>
-    : <>MyLoans status: <b data-status-name>{r.statusName}</b>. The DMS does not accept this status.</>;
-  const facts: [string, string][] = [["PN", r.pn], ["Borrower", r.borrowerName.trim() || "-"], ["Branch", r.branchName?.trim() || "-"], ["MyLoans status", r.statusName]];
+function OutsideBranches({ pn, branch, q }: { pn: string; branch: string | null; q: string }) {
+  const where = branch?.trim() || null;
   return (
-    <section role="status" aria-labelledby="status-title" className="card min-w-0 p-4 sm:p-5" data-find-status={r.statusKind}>
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex shrink-0 text-act-fg"><AlertIcon size={18} /></span>
-        <div className="min-w-0 flex-1">
-          <h2 id="status-title" className="text-base font-bold leading-snug text-navy sm:text-[17px]" data-status-text>{text}</h2>
-          <p className="mt-0.5 text-sm text-ink-2">Only released loans can be opened in the DMS. Nothing was saved.</p>
-        </div>
-        <Link href={`/search?q=${encodeURIComponent(q)}`} className="btn-ghost h-10 min-h-10 shrink-0 px-3 text-sm">Try again</Link>
-      </div>
-      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-4">
-        {facts.map(([k, v]) => (
-          <div key={k} className="min-w-0">
-            <dt className="text-xs text-ink-2">{k}</dt>
-            <dd className={`mt-0.5 break-words text-[15px] font-semibold text-navy ${k === "PN" ? "font-mono" : ""}`}>{v}</dd>
+    <section role="alert" aria-labelledby="outside-title" className="card min-w-0 p-4 sm:px-5 sm:py-4" data-find-notice="branch" data-find-problem="branch">
+      {/* Header like the loan cards: a lock in place of the avatar, the PN and the branch; the chips on the right. */}
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4" data-find-head>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-fill text-navy"><LockIcon size={20} /></span>
+          <div className="min-w-0">
+            <h2 className="font-mono text-lg font-bold leading-tight text-navy" data-notice-pn>{pn}</h2>
+            <p className="text-sm text-ink-2" data-outside-branch>{where ? `Branch: ${where}` : "Branch: -"}</p>
           </div>
-        ))}
-      </dl>
+        </div>
+        <ul aria-label="Loan status" className="flex flex-wrap items-center gap-2" data-find-chips>
+          <li><ToneChip tone="act">No access</ToneChip></li>
+          <li><span className="chip c-mute" data-find-source>{SOURCE_NAME}</span></li>
+        </ul>
+      </div>
+      <div className="mt-3 flex items-center gap-3 rounded-xl bg-act-bg px-3 py-2">
+        <span className="flex shrink-0 text-act-fg" data-notice-icon><AlertIcon size={18} /></span>
+        <div className="min-w-0 flex-1" data-notice-text>
+          <p id="outside-title" className="text-[15px] font-bold leading-snug text-navy">This loan is outside your branches.</p>
+          <p className="text-[13px] text-ink-2">You can open loans of your own branches only. To work on this one, ask your Admin to add this branch to your access. Nothing was saved.</p>
+        </div>
+        <Link href={`/search?q=${encodeURIComponent(q)}`} className="btn-ghost h-10 min-h-10 shrink-0 bg-white px-3 text-sm">Try again</Link>
+      </div>
     </section>
   );
 }
 
-function Preview({ r, warnings }: { r: Extract<PnLookupResult, { kind: "preview" }>; warnings: string[] }) {
+/**
+ * A loan in MyLoans and in the person's branches whose status the DMS does not accept (only Loan Released
+ * is): what MyLoans says, by name. No Open button; nothing is saved; no further MyLoans call.
+ */
+function StatusCard({ r, q }: { r: Extract<PnLookupResult, { kind: "status" }>; q: string }) {
+  // The status itself is the chip on the right; the sentence says only what it means.
+  const text = r.statusKind === "before_release" ? "This loan is not released yet."
+    : r.statusKind === "cancelled" ? "This loan was cancelled in MyLoans."
+    : "The DMS does not accept this status.";
   const rec = r.record;
-  const financing = r.classification === "FINANCING";
-  // The short list, names only (no codes or IDs; those are on the loan file under More loan details).
+  const amount = Number(rec.totalReleasedAmount);
+  // Not released yet: never a date (MyLoans may hold a planned one), said in words rather than a bare dash.
+  const released = r.statusKind === "before_release" ? "Not released yet" : rec.releaseDate ? dayText(rec.releaseDate) : "-";
+  return (
+    <section role="status" aria-labelledby="status-title" className="card min-w-0 p-4 sm:px-5 sm:py-4" data-find-status={r.statusKind}>
+      <LoanHead name={r.borrowerName} pn={r.pn} titleId="status-name">
+        <li data-status-name><ToneChip tone="act">{r.statusName}</ToneChip></li>
+        <li><span className="chip c-mute" data-find-source>{SOURCE_NAME}</span></li>
+      </LoanHead>
+      <div className="mt-3 flex items-center gap-3 rounded-xl bg-act-bg px-3 py-2">
+        <span className="flex shrink-0 text-act-fg"><AlertIcon size={18} /></span>
+        <div className="min-w-0 flex-1">
+          <p id="status-title" className="text-[15px] font-bold leading-snug text-navy" data-status-text>{text}</p>
+          <p className="text-[13px] text-ink-2">Only released loans can be opened in the DMS. Nothing was saved.</p>
+        </div>
+        <Link href={`/search?q=${encodeURIComponent(q)}`} className="btn-ghost h-10 min-h-10 shrink-0 bg-white px-3 text-sm">Try again</Link>
+      </div>
+      <LoanFacts rec={rec} amount={Number.isFinite(amount) && amount > 0 ? peso(amount) : "-"} released={released} />
+    </section>
+  );
+}
+
+/** Name and PN on the left; the chips (status, source, any amber chip) on the right, under the name below 1024px. */
+function LoanHead({ name, pn, titleId, children }: { name: string; pn: string; titleId: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4" data-find-head>
+      <div className="flex min-w-0 items-center gap-3">
+        <Avatar name={name.trim() || "?"} size={40} />
+        <div className="min-w-0">
+          <h2 id={titleId} className="text-lg font-bold leading-tight text-navy">{name.trim() || "-"}</h2>
+          <p className="font-mono text-sm text-ink-2" data-find-pn>{pn}</p>
+        </div>
+      </div>
+      <ul aria-label="Loan status" className="flex flex-wrap items-center gap-2" data-find-chips>{children}</ul>
+    </div>
+  );
+}
+
+/** The eight details by name only (no codes or IDs; those are on the loan file under More loan details). */
+function LoanFacts({ rec, amount, released }: { rec: Extract<PnLookupResult, { kind: "preview" }>["record"]; amount: string; released: string }) {
   const name = (v: string | null | undefined) => v?.trim() || "-";
   const facts: [string, string][] = [
-    ["Amount released", peso(r.amount)],
-    ["Released on", dayText(rec.releaseDate)],
+    ["Amount released", amount],
+    ["Released on", released],
     ["Loan type", name(rec.loanType)],
     ["Product", name(rec.productName)],
     ["Branch", name(rec.branchName)],
@@ -232,9 +284,27 @@ function Preview({ r, warnings }: { r: Extract<PnLookupResult, { kind: "preview"
     ["Company", name(rec.companyName)],
   ];
   return (
-    <section aria-labelledby="found-title" className="card min-w-0 p-4 sm:p-6" data-find-preview>
+    <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 md:grid-cols-4 md:gap-x-6" data-find-facts>
+      {facts.map(([k, v]) => (
+        <div key={k} className="min-w-0">
+          <dt className="text-xs text-ink-2">{k}</dt>
+          <dd className="break-words text-[15px] font-semibold leading-snug text-navy md:truncate" title={v}>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Preview({ r, warnings }: { r: Extract<PnLookupResult, { kind: "preview" }>; warnings: string[] }) {
+  const rec = r.record;
+  const financing = r.classification === "FINANCING";
+  // An amber chip only for what is not fine (no "Your branch" or "Details complete" chips). Another loan of
+  // the borrower and a replaced PN already have their own line above the header, so no chip.
+  const amber = warnings.length > 0 ? ["Details incomplete"] : [];
+  return (
+    <section aria-labelledby="found-title" className="card min-w-0 p-4 sm:px-5 sm:py-4" data-find-preview>
       {(r.otherLoans.length > 0 || r.otherHidden > 0 || r.replacesPn) && (
-        <div className="mb-4 flex flex-col gap-2" data-preview-warnings>
+        <div className="mb-3 flex flex-col gap-1.5" data-preview-warnings>
           {r.replacesPn && <p className="rounded-xl bg-fill px-3 py-2 text-sm font-semibold text-navy">MyLoans says this PN replaces {r.replacesPn}. Opening it does not link them: Admin reviews the old one and decides whether to link them.</p>}
           {(r.otherLoans.length > 0 || r.otherHidden > 0) && (
             <p className="rounded-xl bg-wait-bg px-3 py-2 text-sm font-semibold text-wait-fg" data-other-loans>
@@ -244,53 +314,23 @@ function Preview({ r, warnings }: { r: Extract<PnLookupResult, { kind: "preview"
           )}
         </div>
       )}
-      {/* Avatar and name on the left; the status chips on the right (under the name below 1024px). */}
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4" data-find-head>
-        <div className="flex min-w-0 items-center gap-3">
-          <Avatar name={rec.borrowerName} size={40} />
-          <div className="min-w-0">
-            <h2 id="found-title" className="text-lg font-bold leading-tight text-navy">{rec.borrowerName}</h2>
-            <p className="text-sm text-ink-2"><span className="font-mono">{rec.pn}</span> · {rec.productName?.trim() || "No product name"}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ul aria-label="Checks passed" className="flex flex-wrap gap-2">
-            {/* The MyLoans status by its name (never the number). */}
-            {[statusLabel(rec), "Your branch", "Details complete"].map((c) => (
-              <li key={c}><ToneChip tone="ok" check>{c}</ToneChip></li>
-            ))}
-          </ul>
-          <span className="chip c-mute" data-find-source>Source: {SOURCE_NAME}</span>
-        </div>
-      </div>
-      {/* One 12-column grid: each fact takes 3 columns, each question 6 (OpenLoanForm uses the same grid and gap). */}
-      <dl className="mt-4 grid grid-cols-12 gap-x-6 gap-y-4">
-        {facts.map(([k, v]) => (
-          <div key={k} className="col-span-6 min-w-0 md:col-span-3">
-            <dt className="text-xs text-ink-2">{k}</dt>
-            <dd className="mt-0.5 break-words text-base font-semibold text-navy md:truncate" title={v}>{v}</dd>
-          </div>
-        ))}
-      </dl>
+      {/* As in the old design: name and PN on the left; the status (by name, never the number) and the
+          source on the right. The branch and product are in the details, so not repeated. */}
+      <LoanHead name={rec.borrowerName} pn={rec.pn} titleId="found-title">
+        <li><ToneChip tone="ok" check>{statusLabel(rec)}</ToneChip></li>
+        <li><span className="chip c-mute" data-find-source>{SOURCE_NAME}</span></li>
+        {amber.map((c) => <li key={c} data-find-amber><ToneChip tone="act">{c}</ToneChip></li>)}
+      </LoanHead>
+      <LoanFacts rec={rec} amount={peso(r.amount)} released={dayText(rec.releaseDate)} />
       {warnings.length > 0 && (
         // Admin's data check: MyLoans left these empty. A warning only; the loan file can still be opened.
-        <p className="mt-4 rounded-xl bg-wait-bg px-3 py-2 text-[13px] text-wait-fg" data-account-warnings>
+        <p className="mt-3 rounded-xl bg-wait-bg px-3 py-2 text-[13px] text-wait-fg" data-account-warnings>
           <span className="font-semibold">Data check (Admin):</span> {warnings.join(" ")} Opening is not blocked.
         </p>
       )}
-      {!financing && r.outcome && (
-        <div className="mt-5 rounded-xl bg-cream px-4 py-3 text-sm">
-          <p className="font-semibold text-navy">This is a Refinancing loan. Nothing to answer.</p>
-          <p className="mt-0.5 text-ink-2">
-            We will set up: {r.outcome.transactions.map((t) => txnName(t, TRANSACTION_LABEL[t])).join(", ")}.
-            {r.outcome.mortgage === "MORTGAGE" ? " A mortgage is needed." : " No mortgage needed."}
-          </p>
-        </div>
-      )}
-      <div className="mt-5">
-        <OpenLoanForm pn={r.pn} financing={financing} canOpen={r.canOpen} />
+      <div className="mt-4 border-t border-line-soft pt-3.5">
+        <OpenLoanForm pn={r.pn} financing={financing} canOpen={r.canOpen} facts={{ productName: r.productName, loanType: r.loanType, amount: r.amount }} />
       </div>
-      <p className="mt-4 border-t border-line pt-4 text-[13px] text-ink-2" data-find-next>Next: we set up the loan file, you check the papers, then send them to a processor.</p>
     </section>
   );
 }

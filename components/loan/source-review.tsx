@@ -255,7 +255,7 @@ export function SimulateSourceChange({ loanId }: { loanId: string }) {
       <div className="min-w-0 flex-1">
         <label htmlFor={`${uid}-k`} className="label">Simulate a MyLoans change</label>
         <select id={`${uid}-k`} name="kind" className="input">
-          <option value="amount">Change the amount (across the Rule 4 threshold)</option>
+          <option value="amount">Change the amount (across the mortgage threshold)</option>
           <option value="name">Change the borrower name, address and contact number</option>
           <option value="cif">Change the borrower&apos;s CIF</option>
           <option value="area">Correct the area name (minor)</option>

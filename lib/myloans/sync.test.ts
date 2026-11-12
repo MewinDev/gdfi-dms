@@ -42,24 +42,24 @@ const txns = (sent: string[] = []): TxnNow[] => ["NOTARY", "EDST", "PPSR", "MORT
   id: `t${i}`, code, name: { NOTARY: "Notary", EDST: "EDST", PPSR: "Entry of PPSR", MORTGAGE: "Mortgage" }[code]!, status: sent.includes(code) ? "ASSIGNED" : "FOR_CHECKLIST",
   stateLine: `${code}: ${sent.includes(code) ? "sent to Grace Tan, waiting to accept" : "checking papers"}`,
 }));
-const refiMortgage = { classification: "REFINANCING", financingType: null, orcrStatus: null, mortgageResult: "MORTGAGE", ruleFired: "Rule 4" };
+const refiMortgage = { classification: "REFINANCING", financingType: null, orcrStatus: null, mortgageResult: "MORTGAGE", ruleFired: "MORTGAGE_THRESHOLD:New:MET" };
 
 describe("proposeEffect", () => {
-  it("Rule 4 no longer applies: Mortgage and Entry of PPSR would be removed; sent ones are locked", () => {
+  it("Mortgage no longer needed: Mortgage and Entry of PPSR would be removed; sent ones are locked", () => {
     const p = proposeEffect({ category: "MATERIAL", loan: refiMortgage, txns: txns(["PPSR"]), next: t({ totalReleasedAmount: 520_000 }) });
     expect(p.removed).toEqual(["PPSR", "MORTGAGE"]);
-    expect(p.sentences.join(" ")).toBe("Rule 4 no longer applies (now above ₱500,000 for New). Entry of PPSR and Mortgage would be removed. Notary and EDST stay.");
+    expect(p.sentences.join(" ")).toBe("Mortgage is not needed: this is a New loan above ₱500,000. Entry of PPSR and Mortgage would be removed. Notary and EDST stay.");
     expect(p.affected).toEqual([
       { code: "PPSR", name: "Entry of PPSR", stateLine: "PPSR: sent to Grace Tan, waiting to accept", locked: true },
       { code: "MORTGAGE", name: "Mortgage", stateLine: "MORTGAGE: checking papers", locked: false },
     ]);
   });
-  it("Rule 4 now applies (the other way); a loan type change crosses the threshold too", () => {
+  it("Mortgage needed again (the other way); a loan type change crosses the threshold too", () => {
     const loan = { ...refiMortgage, mortgageResult: "NOT_MORTGAGE" };
     const two = txns().slice(0, 2);
     const up = proposeEffect({ category: "MATERIAL", loan, txns: two, next: t({ totalReleasedAmount: 480_000 }) });
     expect(up.added).toEqual(["PPSR", "MORTGAGE"]);
-    expect(up.sentences[0]).toBe("Rule 4 now applies (at or below ₱500,000 for New).");
+    expect(up.sentences[0]).toBe("Mortgage is needed: this is a New loan of ₱500,000 or below.");
     // New 600,000 is above the New limit; as Renewal it is at or below 1,000,000.
     const renewal = proposeEffect({ category: "MATERIAL", loan, txns: two, next: t({ totalReleasedAmount: 600_000, loanType: "Renewal" }) });
     expect(renewal.added).toEqual(["PPSR", "MORTGAGE"]);

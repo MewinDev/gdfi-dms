@@ -31,7 +31,7 @@ test("empty page: title, one search row, slim samples (one line each, details in
   await signIn(page, "la");
   await page.goto("/search");
   await expect(main(page).getByRole("heading", { level: 1, name: "Find a loan" })).toBeVisible();
-  await expect(main(page).getByText("Loan files in the DMS first. A full PN not opened here yet is looked up in MyLoans. Nothing is saved until you open the loan file.")).toBeVisible();
+  await expect(main(page).getByText("Loan files in the DMS first; a full PN not opened here yet is looked up in MyLoans.")).toBeVisible();
   const box = visibleSearchBox(page);
   await expect(box).toHaveAttribute("placeholder", "PN, CIN or CIF");
   await expect(box).toBeFocused();
@@ -50,6 +50,9 @@ test("empty page: title, one search row, slim samples (one line each, details in
   const maria = samples.getByRole("button", { name: /Maria Santos/ });
   await expect(maria).toHaveAttribute("title", /No questions\. Mortgage, 4 transactions\./);
   await expect(samples.getByText("No questions. Mortgage, 4 transactions.")).toHaveCount(0);
+  // PN and name only; the branch is in the tooltip.
+  await expect(maria).toHaveText(/^GD1012026901001\s*Maria Santos$/);
+  await expect(maria).toHaveAttribute("title", /Antipolo/);
   // One line each.
   const h = (await maria.boundingBox())!.height;
   expect(h).toBeLessThan(48);
@@ -69,10 +72,11 @@ test("loan found with both questions: Open loan file disabled until both are pic
   await signIn(page, "la");
   await page.goto("/search?q=GD1652026901003");
   const card = main(page).locator("[data-find-preview]");
-  await expect(card.getByText("Source: MyLoans")).toBeVisible();
-  for (const c of ["Released", "Your branch", "Details complete"]) await expect(card.getByRole("list", { name: "Checks passed" }).getByText(c)).toBeVisible();
+  await expect(card.locator("[data-find-source]")).toBeVisible();
+  // Only the status and the source on the right; no "all good" chips, no "Next:" line.
+  await expect(card.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText(["Loan Released", "MyLoans"]);
+  for (const gone of ["Your branch", "Details complete", "Source: MyLoans", "Next: we set up the loan file"]) await expect(card.getByText(gone)).toHaveCount(0);
   for (const k of ["Amount released", "Branch", "Released on", "Loan type"]) await expect(card.getByText(k, { exact: true })).toBeVisible();
-  await expect(card.getByText("Next: we set up the loan file, you check the papers, then send them to a processor.")).toBeVisible();
   await expect(main(page).getByText("What happens next")).toHaveCount(0);
   await expect(main(page).getByText("Nothing to type for documents. We choose them from the loan details.")).toHaveCount(0);
 
@@ -81,7 +85,9 @@ test("loan found with both questions: Open loan file disabled until both are pic
   await expect(und).toBeFocused();
   // Disabled, with one short hint; no per-question message yet.
   await expect(openBtn(page)).toBeDisabled();
-  await expect(card.locator("[data-open-hint]")).toHaveText("Pick both answers to continue");
+  await expect(card.locator("[data-open-hint]")).toHaveText("Choose both answers");
+  await expect(card.locator("[data-open-nothing-saved]")).toHaveCount(0);
+  await expect(card.locator("[data-setup]")).toHaveCount(0); // nothing set up until both are answered
   await expect(main(page).getByText("Please pick one to continue.")).toHaveCount(0);
 
   // Side by side on desktop and tablet, stacked on a phone.
@@ -89,15 +95,17 @@ test("loan found with both questions: Open loan file disabled until both are pic
   const q2 = (await card.locator('[data-question="orcrStatus"]').boundingBox())!;
   if (width(page) >= 768) expect(Math.abs(q1.y - q2.y)).toBeLessThan(2);
   else expect(q2.y).toBeGreaterThan(q1.y + q1.height - 1);
-  // Two half-width pills of normal button height.
-  const pill = (await card.locator("label", { hasText: /^Undertaking$/ }).boundingBox())!;
-  expect(pill.height).toBeLessThan(48);
-  expect(pill.width).toBeLessThan(q1.width * 0.55);
+  // Two separate, equal-width buttons with a gap, at least 44px tall.
+  const [b1, b2] = [(await card.locator('[data-choice="UNDERTAKING"]').boundingBox())!, (await card.locator('[data-choice="NON_UNDERTAKING"]').boundingBox())!];
+  expect(b1.height).toBeGreaterThanOrEqual(44);
+  expect(Math.abs(b1.width - b2.width)).toBeLessThanOrEqual(1);
+  expect(b2.x - (b1.x + b1.width)).toBeGreaterThanOrEqual(6);
+  expect(Math.abs(b1.y - b2.y)).toBeLessThan(2);
 
   // Arrow keys move inside a question.
   await page.keyboard.press("ArrowRight");
   await expect(main(page).getByRole("radio", { name: "Non-Undertaking" })).toBeChecked();
-  await expect(card.locator("[data-open-hint]")).toBeVisible(); // one still empty
+  await expect(card.locator("[data-open-hint]")).toHaveText("Choose the OR/CR answer"); // one still empty
   await noSideways(page);
   await shot(page, "found-questions");
   if (width(page) === 1440) {
@@ -119,6 +127,7 @@ test("loan found with both questions: Open loan file disabled until both are pic
   await main(page).getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await expect(main(page).getByText("Please pick one to continue.")).toHaveCount(0);
   await expect(card.locator("[data-open-hint]")).toHaveCount(0);
+  await expect(card.locator("[data-open-nothing-saved]")).toHaveText("Nothing is saved until you open the loan file.");
   await expect(openBtn(page)).toBeEnabled();
   await openBtn(page).click();
   await expect(page).toHaveURL(/\/loans\/GD1652026901003/);
@@ -143,10 +152,19 @@ test("messages: one compact line each, the PN, and Try again", async ({ page }) 
       await expect(n.getByText("No loan with this PN was found in MyLoans.")).toHaveCount(1);
       await expect(n).not.toContainText("PN not found");
     } else await expect(n.getByText(/Nothing was saved\./)).toBeVisible();
+    if (name === "outside-branches") {
+      // The way forward is access to that branch; never "Ask that branch to open it"; no loan details.
+      await expect(n).toContainText("To work on this one, ask your Admin to add this branch to your access.");
+      await expect(n.locator("[data-outside-branch]")).toHaveText(/^Branch: [A-Z]/);
+      await expect(n.getByRole("heading")).toHaveText(pn); // the PN, never the borrower's name
+      await expect(n.locator("dl, [data-find-facts]")).toHaveCount(0); // no other details
+      await expect(n).not.toContainText("Ask that branch");
+      await expect(n).not.toContainText("Outside your branch access.");
+    }
     await expect(n.getByRole("link", { name: "Try again" })).toBeVisible();
-    // At most about two lines of text (more only on a phone).
+    // At most about two lines of text (more only on a phone); the outside-branches card has its access panel.
     const h = (await n.boundingBox())!.height;
-    expect(h).toBeLessThan(width(page) < 640 ? 180 : 100);
+    expect(h).toBeLessThan(name === "outside-branches" ? (width(page) < 640 ? 340 : 230) : width(page) < 640 ? 180 : 100);
     await noSideways(page);
     await shot(page, `message-${name}`);
   }
