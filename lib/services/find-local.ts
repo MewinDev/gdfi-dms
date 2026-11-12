@@ -7,7 +7,8 @@ import { callsThisHour } from "@/lib/myloans/client";
 import { cleanPn, getPnFormat, isPnAttempt, parsePn, type PnFormat } from "@/lib/pn";
 import { getSetting } from "@/lib/settings";
 import { SYSTEM_ACTOR } from "@/lib/audit";
-import { liveAssignment, stageWords } from "@/lib/ui/plain";
+import { liveAssignment } from "@/lib/ui/plain";
+import { nextStepFor, stageLabel } from "@/lib/workflow/stage-map";
 import { fmtDate } from "@/lib/time";
 import { refreshLoan } from "./source-sync";
 
@@ -95,7 +96,7 @@ export async function suggestLoans(user: CurrentUser, text: string): Promise<Sug
   const q = text.trim().slice(0, 60);
   if (q.length < SUGGEST_MIN) return { kind: "none" };
   const rows = await searchSaved(user, q, SUGGEST_LIMIT);
-  if (rows.length) return { kind: "hits", hits: rows.map((r) => ({ pn: r.pn, borrowerName: r.borrowerName, stage: stageWords(r.stage), branch: r.branch.name })) };
+  if (rows.length) return { kind: "hits", hits: rows.map((r) => ({ pn: r.pn, borrowerName: r.borrowerName, stage: stageLabel(r.stage), branch: r.branch.name })) };
   const pn = await completePn(q);
   if (!pn) return { kind: "none" };
   const saved = await prisma.loan.findUnique({ where: { pn }, select: { branchId: true } });
@@ -161,9 +162,9 @@ export async function savedLoanCard(user: CurrentUser, pn: string, now: Date = n
     : problems ? "Fix the open problem first."
     : holds.length ? "Resume the hold when it is cleared."
     : l._count.sourceChanges ? "Admin reviews the MyLoans change."
-    : stageWords(l.stage);
+    : nextStepFor(l.stage, { hasOpenException: l._count.exceptions > 0 }).label;
   return {
-    pn: l.pn, borrowerName: l.borrowerName, productName: l.productName, branchName: l.branch.name, stage: l.stage, stageText: stageWords(l.stage),
+    pn: l.pn, borrowerName: l.borrowerName, productName: l.productName, branchName: l.branch.name, stage: l.stage, stageText: stageLabel(l.stage),
     holder: job ? { role: "Processor", name: job.dpUser.name } : { role: "Owner", name: l.openedBy.name },
     next, holds, problems, changed: l._count.sourceChanges > 0,
     cancelled: l.cancelledAt ? { on: fmtDate(l.cancelledAt), reason: l.cancelReason } : null,

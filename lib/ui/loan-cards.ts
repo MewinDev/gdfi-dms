@@ -1,7 +1,8 @@
 import type { LoanRow } from "@/lib/services/queries";
 import type { LoanCardData } from "@/components/ui/loan-card";
 import { BORROWER_CHIP } from "./borrower-chip";
-import { dayText, deadlineChip, LA_STAGES, peso, stageWords, WAITING_STAGES, type Tone } from "./plain";
+import { dayText, deadlineChip, LA_STAGES, peso, WAITING_STAGES, type Tone } from "./plain";
+import { ownerTooltip, stageLabel } from "@/lib/workflow/stage-map";
 
 /** A loan's row on My loans: the one Home chip, plus the deadline and the "something is different" flags apart. */
 export interface LoanListCard extends LoanCardData {
@@ -15,6 +16,9 @@ export interface LoanListCard extends LoanCardData {
   /** The account at a glance: "New · Auto Refinancing" and "Released Nov 10, 2026". */
   loanText: string;
   releasedText: string;
+  /** My loans' Next step column: the stage map's Next step text (or "Fix a problem first"), and its tooltip. */
+  nextText: string;
+  nextTip?: string;
 }
 
 export function cardFor(r: LoanRow, holidays: ReadonlySet<string>): LoanListCard {
@@ -35,7 +39,10 @@ export function cardFor(r: LoanRow, holidays: ReadonlySet<string>): LoanListCard
     borrowerName: r.borrowerName,
     branch: r.branch,
     amountText: peso(r.amount),
-    action: problem ? "Fix a problem first" : stageWords(r.stage),
+    // Home rows and cards: the stage's name (stage map). My loans' Next step column: nextText.
+    action: problem ? "Fix a problem first" : stageLabel(r.stage),
+    nextText: problem ? "Fix a problem first" : r.nextStep.label,
+    nextTip: problem ? undefined : ownerTooltip(r.nextStep.owner),
     chip: r.sourceChanged ? { text: "MyLoans changed", tone: "bad" } : r.borrowerChanged ? { text: BORROWER_CHIP, tone: "wait" } : problem ? { text: `${r.openExceptions} problem${r.openExceptions === 1 ? "" : "s"}`, tone: "bad" } : dl ? { text: dl.text, tone: dl.tone } : null,
     urgency: (problem ? 10 : 0) + (dl?.urgency ?? 0),
     group: needsYou ? "need" : WAITING_STAGES.includes(r.stage) ? "wait" : "other",

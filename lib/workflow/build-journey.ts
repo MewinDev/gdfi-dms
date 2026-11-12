@@ -14,6 +14,7 @@
  */
 import { businessDate, businessDaysBetween, isBusinessDay } from "@/lib/time";
 import { computeJourney, PHASES, type JourneyContext } from "./journey";
+import { nextStepFor, stageLabel } from "./stage-map";
 import { holdDays, problemDays, stepClock, targetOf, type TatChipData, type TatMap } from "./tat";
 import { txnTat } from "@/lib/jobs/view";
 
@@ -410,10 +411,11 @@ function baseOwner(t: TxnRec, ctx: OwnerContext): Owner | null {
     }
     case "COMPLETED": {
       const s = ctx.loan.stage;
-      if (s === "For Vault Transmittal") return { role: "LA", name: ctx.loan.openedBy.name, since: ctx.loan.stageSince, text: `Branch ${withRole("LA", ctx.loan.openedBy.name)}: send to the vault` };
-      if (s === "In transit to Vault") return { role: "VAULT", name: "Vault", since: ctx.loan.stageSince, text: "On the way to the vault" };
-      if (s === "In Safekeeping") return { role: "VAULT", name: "Vault Custodian", since: ctx.loan.stageSince, text: "Safe in the vault (Vault Custodian)" };
-      if (["Closed", "Archived", "Disposed"].includes(s)) return { role: "APPR", name: "Records", since: ctx.loan.stageSince, text: s };
+      // The stage's name and next step from the stage map (lib/workflow/stage-map.ts).
+      if (s === "For Vault Transmittal") return { role: "LA", name: ctx.loan.openedBy.name, since: ctx.loan.stageSince, text: `Branch ${withRole("LA", ctx.loan.openedBy.name)}: ${nextStepFor(s).label.toLowerCase()}` };
+      if (s === "In transit to Vault") return { role: "VAULT", name: "Collateral", since: ctx.loan.stageSince, text: stageLabel(s) };
+      if (s === "In Safekeeping") return { role: "VAULT", name: "Vault Custodian", since: ctx.loan.stageSince, text: `${stageLabel(s)} (Vault Custodian)` };
+      if (["Closed", "Archived", "Disposed"].includes(s)) return { role: "APPR", name: "Records", since: ctx.loan.stageSince, text: stageLabel(s) };
       return { role: "DONE", name: "", since: t.completedAt ?? t.statusSince, text: "Done" };
     }
     default:

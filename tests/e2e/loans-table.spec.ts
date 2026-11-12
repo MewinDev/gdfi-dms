@@ -5,8 +5,8 @@ import { watchConsole } from "./helpers";
 /**
  * The Loans table (the read-only list: Admin, Supervisor, approvers, Finance, processors): one column per fact,
  * Borrower (name, PN under it), Branch, Product (product name, loan type under it), Released, Amount, Stage
- * (the current step of the loan-file flow, its name only), TAT (a small chip with the date), Next step (the
- * step only, its owner in a tooltip). No Classification. Screenshots: docs/screenshots/loans-table/.
+ * (the stage's name from the stage map), TAT (a small chip with the date), Next step (the stage map's text, its
+ * owner in a tooltip; none for the system). No Classification. Screenshots: docs/screenshots/loans-table/.
  */
 const DIR = "docs/screenshots/loans-table";
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
@@ -99,7 +99,7 @@ test("one loan: one column per fact (no Classification); the stage name is the l
     await expect(row).toContainText(`${l.pn} · Angono`);
     await expect(row).toContainText("Auto Financing · Renewal · Nov 10, 2026 · ₱1,001,000");
   }
-  // Stage: the name only, the same as the loan file's stepper for this loan.
+  // Stage: the stage map's name.
   await expect(row.locator("[data-stage-name]")).toHaveText("Check documents");
   await expect(row.locator("[data-stage-dots]")).toHaveCount(0);
   // TAT: a small chip or grey text, with the deadline date.
@@ -111,29 +111,51 @@ test("one loan: one column per fact (no Classification); the stage name is the l
   await row.click(); // the whole row opens the loan file
   await expect(page).toHaveURL(new RegExp(`/loans/${l.pn}`));
   const progress = page.getByRole("region", { name: "Progress" });
-  if (width(page) >= 640) await expect(progress.locator('[aria-current="step"]:visible')).toContainText("Check documents");
+  if (width(page) >= 1024) await expect(progress.locator('[aria-current="step"]:visible')).toContainText("Check documents");
   else await expect(progress).toContainText("Step 3 of 10 · Check documents");
   clean();
 });
 
-test("twelve loans across the flow: the stepper's step names (Acceptance, neutral), plain words for no step; grouped by area", async ({ page }) => {
+/** The stage map's Stage column, Next step and tooltip for the twelve loans (lib/workflow/stage-map.ts). */
+const TWELVE: [string, string, string, string | null][] = [
+  ["Ana Villanueva", "Check documents", "Check documents, then assign to DP", "Waiting for: Loan Associate"],
+  ["Ramon Garcia", "Check documents", "System sets up the transactions", null],
+  ["Liza Torres", "DP Assigning", "DP accepts the assignment", "Waiting for: Document Processor / Collateral & Mortgage"],
+  ["Mario Reyes", "LTO Processing", "DP processes the transactions", "Waiting for: Document Processor / Collateral & Mortgage"],
+  ["Nora Santos", "Forwarding to LA branch", "LA accepts the package", "Waiting for: Loan Associate (receiving branch)"],
+  ["Pedro Cruz", "For transmittal", "Create the transmittal", "Waiting for: Loan Associate"],
+  ["Gina Lopez", "Receiving", "Collateral receives by scan", "Waiting for: Collateral"],
+  ["Tess Ramos", "In safekeeping", "Kept in the vault until the loan is fully paid", "Waiting for: Collateral"],
+  ["Carlo Diaz", "Closed", "Records archives the file", "Waiting for: Records"],
+  ["Rosa Lim", "Cancelled in MyLoans", "No further steps", null],
+  ["Joel Tan", "Check documents (LA only)", "Complete the LA-only transactions", "Waiting for: Loan Associate"],
+];
+
+test("twelve loans across the flow: the stage map's Stage and Next step texts, grey for cancelled; grouped by area", async ({ page }) => {
   const clean = watchConsole(page);
   await twelve();
   await signInAs(page, "admin");
   await page.goto("/loans?tab=all");
   await expect(rows(page)).toHaveCount(12);
   const stageOf = async (name: string) => (await rows(page).filter({ hasText: name }).locator("[data-stage-name], [data-stage-word]").textContent())?.trim();
-  expect(await stageOf("Ana Villanueva")).toBe("Check documents");
-  expect(await stageOf("Liza Torres")).toBe("Processing");
-  expect(await stageOf("Nora Santos")).toBe("Acceptance");
-  expect(await stageOf("Pedro Cruz")).toBe("Vault");
-  expect(await stageOf("Tess Ramos")).toBe("DigiCur");
-  expect(await stageOf("Carlo Diaz")).toBe("Closure");
-  expect(await stageOf("Rosa Lim")).toBe("Cancelled in MyLoans");
-  await expect(main(page).getByText("Your acceptance")).toHaveCount(0);
+  for (const [name, stage, next, tip] of TWELVE) {
+    expect(await stageOf(name), name).toBe(stage);
+    const row = rows(page).filter({ hasText: name });
+    if (width(page) >= 640) {
+      const cell = row.locator("[data-next-step]");
+      await expect(cell).toHaveText(next);
+      if (tip) await expect(cell).toHaveAttribute("title", tip);
+      else expect(await cell.getAttribute("title"), name).toBeNull();
+    } else await expect(row).toContainText(next);
+  }
+  // Cancelled: its word in grey (no step).
+  await expect(rows(page).filter({ hasText: "Rosa Lim" }).locator("[data-stage-word]")).toHaveText("Cancelled in MyLoans");
+  for (const old of ["Your acceptance", "Acceptance", "Processing", "Vault", "DigiCur", "Pull-out", "QA review", "SYS"]) await expect(main(page).getByText(old, { exact: true })).toHaveCount(0);
   if (width(page) === 1440) expect(await rows(page).nth(7).evaluate((e) => e.getBoundingClientRect().bottom)).toBeLessThanOrEqual(900);
   await noSideways(page);
   await shot(page, "admin-twelve-stages");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: `docs/screenshots/stage-map/loans-table-${width(page)}.png`, fullPage: true });
 
   // Group by area and branch: the same toggle and headings.
   await main(page).getByRole("link", { name: "Group by area and branch" }).click();

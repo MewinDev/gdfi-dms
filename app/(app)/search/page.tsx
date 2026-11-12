@@ -7,7 +7,8 @@ import { examplePn, getPnFormat, isPnAttempt, parsePn, pnHeadline } from "@/lib/
 import { lookupPn, type PnLookupResult } from "@/lib/services/loan-file";
 import { completePn, LIST_LIMIT, savedLoanCard, searchSaved } from "@/lib/services/find-local";
 import { SavedLoanCard, type SavedLoanCardData } from "@/components/loan/saved-loan-card";
-import { dayText, peso, stageWords } from "@/lib/ui/plain";
+import { dayText, peso } from "@/lib/ui/plain";
+import { stageLabel } from "@/lib/workflow/stage-map";
 import { FindLoan } from "@/components/ui/find-loan";
 import { Avatar, ToneChip } from "@/components/ui/basics";
 import { AlertIcon, LockIcon } from "@/components/ui/icons";
@@ -119,7 +120,7 @@ export default async function FindLoanPage({ searchParams }: { searchParams: Pro
                       <span className="mono text-[14px] font-bold text-navy">{m.pn}</span>
                       <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{m.borrowerName}</span>
                       <span className="flex shrink-0 items-center gap-2">
-                        <span className="chip c-navy h-6 text-xs">{stageWords(m.stage)}</span>
+                        <span className="chip c-navy h-6 text-xs">{stageLabel(m.stage)}</span>
                         <span className="hidden text-[12px] text-ink-2 sm:inline">{m.branch.name}</span>
                       </span>
                     </Link>

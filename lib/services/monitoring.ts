@@ -1,4 +1,5 @@
 import "server-only";
+import { stageLabel } from "@/lib/workflow/stage-map";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
@@ -677,7 +678,7 @@ export async function missingPapersMonitor(user: CurrentUser, q: MonitorQuery, n
   const out = new Map<string, MissingLoanRow>();
   for (const c of checks) {
     const l = c.transaction.loan;
-    const row = out.get(l.id) ?? { loanId: l.id, pn: l.pn, href: linkable(user, l.branchId) ? `/loans/${l.pn}?tab=todo&tx=${c.transaction.type.code}` : null, borrower: l.borrowerName, branch: l.branch.name, stage: l.stage, papers: [] };
+    const row = out.get(l.id) ?? { loanId: l.id, pn: l.pn, href: linkable(user, l.branchId) ? `/loans/${l.pn}?tab=todo&tx=${c.transaction.type.code}` : null, borrower: l.borrowerName, branch: l.branch.name, stage: stageLabel(l.stage), papers: [] };
     row.papers.push({
       label: c.rule?.label ?? c.otherLabel ?? "Other paper", txnName: c.transaction.type.name, reason: c.missingReason?.name ?? null,
       remarks: c.missingRemarks, by: c.missingByLabel, days: calendarDays(c.missingAt ? businessDate(c.missingAt) : today, today),

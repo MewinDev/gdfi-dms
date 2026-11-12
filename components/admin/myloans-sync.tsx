@@ -5,6 +5,7 @@ import { FormMessage, SubmitButton } from "@/components/form-status";
 import { announcing } from "@/components/ui/live-toast";
 import { pauseMyLoansAction, runSyncNowAction, syncSettingsAction } from "@/app/actions/source";
 import { SAVED_EVENT } from "./settings-modal";
+import { stepName } from "@/lib/workflow/stage-map";
 
 const runNow = announcing(runSyncNowAction);
 const pauseIt = announcing(pauseMyLoansAction);
@@ -148,7 +149,7 @@ export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: 
         {field("backgroundMinutes", "Background run every (minutes)", "How often the sync runs; each loan is checked by its tier below.", d.backgroundMinutes)}
         {field("tierA", "Work in progress: check every (minutes)", "Sent or in process, cash out, a change under review.", d.tierA)}
         {field("tierB", "Not yet sent: check every (minutes)", "Checking papers, ready to send.", d.tierB)}
-        {field("tierC", "Finished, not closed: check every (minutes)", "Vault, DigiCur, pull-out, QA.", d.tierC)}
+        {field("tierC", "Finished, not closed: check every (minutes)", `${[6, 7, 8, 9].map(stepName).join(", ")}.`, d.tierC)}
         {field("maxPerRun", "Loans per run (at most)", "Lowered by itself when MyLoans is slow, and raised again when healthy.", d.maxPerRun)}
         {field("pauseMs", "Pause between calls (milliseconds)", "A little random time is added so calls do not line up.", d.pauseMs)}
         {field("hourlyCeiling", "Calls to MyLoans per hour (at most)", "At the limit the background sync waits for the next hour; people opening a loan still get it.", d.hourlyCeiling)}

@@ -2,7 +2,7 @@
 
 How a released loan moves from the MyLoans lookup to the vault gate.
 
-Last updated: 10 November 2026 (PHT)
+Last updated: 12 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -34,7 +34,7 @@ flowchart TD
   R3 --> G{"All transactions complete and all funds settled?"}
   G -->|No| WAIT["Wait for the others"]:::sys
   G -->|Yes| V1["For Vault transmittal"]:::later
-  V1 --> V2["Vault, DigiCur, pull-out, QA, closure and archival"]:::later
+  V1 --> V2["Collateral, Quality Assurance, Digital Records, safekeeping, closure, archiving and warehousing"]:::later
   classDef la fill:#dbe8fb,stroke:#3b5a8a,color:#14213a
   classDef dp fill:#fdecc8,stroke:#c98512,color:#14213a
   classDef sys fill:#e6e8ec,stroke:#56627a,color:#14213a

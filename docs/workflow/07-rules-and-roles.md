@@ -75,29 +75,32 @@ The same layout for everyone who sees loan files: the title only (no subtitle), 
 
 | Who (by ticks) | Title and search | Tabs | The list |
 |---|---|---|---|
-| Loan Associate (`checklist:tick`) | My loans; "PN, borrower name, CIN or CIF" with **Find loan** (suggestions from the DMS while typing) | My queue, All branch loans, Problems, Archived | One block, aligned columns: Borrower (name; PN · branch), Loan (amount; loan type · product), Next step (the step; released on), Due (amber or red chip only when due today or late, otherwise grey text), Open. A header row from five rows. Flags when something is different: MyLoans changed, borrower details waiting, problems (two at most, the rest as "+N"). Most urgent first. On a phone each loan is two or three short lines and the whole row opens it. |
+| Loan Associate (`checklist:tick`) | My loans; "PN, borrower name, CIN or CIF" with **Find loan** (suggestions from the DMS while typing) | My queue, All branch loans, Problems, Archived | One block, aligned columns: Borrower (name; PN · branch), Loan (amount; loan type · product), Next step (the stage map's next step text, its owner on hover; released on), Due (amber or red chip only when due today or late, otherwise grey text), Open. A header row from five rows. Flags when something is different: MyLoans changed, borrower details waiting, problems (two at most, the rest as "+N"). Most urgent first. On a phone each loan is two or three short lines and the whole row opens it. |
 | Everyone else who sees loan files (Admin, Branch Supervisor, approvers, Finance, a processor with `loans:view`) | Loans; "Search by PN, CIN or CIF" with **Search** (the DMS only) | Needs action, All loans, Exceptions, Archived | The Loans table (below); On hold by reason chips; Group by area and branch. |
 
 ### The Loans table
 
 One column per fact: **Borrower** (the name, the PN under it), **Branch**, **Product** (the product name, the loan type under it), **Released**, **Amount** (₱1,000,000), **Stage**, **TAT**, **Next step**. No Classification column (it stays on the loan file, in the filters, the reports and the data). The whole row opens the loan file. Under 1024px the branch goes under the PN and the released date and the amount under the product; on a phone each loan is a block of short lines.
 
-- **Stage** is the current step of the loan file's flow, by its name only, the same names and order as the stepper on the loan file (one list in the code, `JOURNEY_STEPS` and `progressStep`). The stepper's "Your acceptance" is "Acceptance" in the list, where the viewer is not the person doing it; no other step name depends on the viewer.
+- **Stage** is the stage's name from the one stage map ([Stages and next steps](13-stages-and-next-steps.md); in the code `lib/workflow/stage-map.ts`). No name depends on the viewer.
 - **TAT** is a small chip with the deadline date, amber for "Due today · Nov 12" and red for "Late by 2 days · Nov 10"; any other deadline is grey text ("2 days left · Nov 14").
-- **Next step** is the step text only; who does it is in its tooltip ("Waiting for: Loan Associate").
+- **Next step** is the stage map's next step text; who does it is in its tooltip ("Waiting for: Loan Associate"). When the system has the next step there is no tooltip.
 - A loan that needs attention has small chips after the name (MyLoans changed, borrower details waiting, problems; two at most, the rest as "+N").
 
-| Stage (internal) | Step on the loan-file flow |
-|---|---|
-| Opened, For checklist, No DP assignment required | 3 Check documents |
-| Assigned to DP, In process | 4 Processing |
-| Awaiting LA acceptance | 5 Acceptance (the stepper: Your acceptance) |
-| For Vault Transmittal, In transit to Vault | 6 Vault |
-| In Safekeeping | 7 DigiCur |
-| Closed | 10 Closure |
-| Cancelled in MyLoans, Archived, Disposed | No step: the word itself, in grey |
+| Stage (internal) | Stage column | Step on the loan-file stepper |
+|---|---|---|
+| Opened, For checklist | Check documents | 3 Check documents |
+| No DP assignment required | Check documents (LA only) | 3 Check documents |
+| Assigned to DP | DP Assigning | 4 DP Processing |
+| In process | LTO Processing | 4 DP Processing |
+| Awaiting LA acceptance | Forwarding to LA branch | 5 LA Acceptance |
+| For Vault Transmittal | For transmittal | 6 Collateral |
+| In transit to Vault | Receiving | 6 Collateral |
+| In Safekeeping | In safekeeping | 9 In Safekeeping |
+| Closed | Closed | 10 Closure |
+| Cancelled in MyLoans, Archived, Disposed | The word itself, in grey | No step |
 
-Steps 1 (Loan opened) and 2 (Classified) are done as soon as the loan file exists, so a loan is never shown at them; 8 (Pull-out) and 9 (QA review) have no stage yet.
+Steps 1 (Loan opened) and 2 (Classified) are done as soon as the loan file exists, so a loan is never shown at them; 7 (Quality Assurance) and 8 (Digital Records) have no stage in the app yet (Phase 2), so a loan goes from 6 (Collateral) straight to 9 (In Safekeeping). Archiving, Warehousing and Warehoused come after Closed, under step 10 (Phase 2). The full table, with the next steps, owners and the Phase 2 stages: [Stages and next steps](13-stages-and-next-steps.md).
 
 ### Branch access: where a person works
 

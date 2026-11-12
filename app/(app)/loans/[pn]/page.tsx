@@ -13,7 +13,8 @@ import { businessDate, fmtDate, fmtDateTime, fmtShort } from "@/lib/time";
 import { openJobCounts, processors } from "@/lib/services/monitoring";
 import { advisoryWarnings } from "@/lib/services/lto-advisories";
 import { availability, leaveText } from "@/lib/monitoring/rules";
-import { JOURNEY_STEP_COUNT, dayText, deadlineChip, liveAssignment, peso, plainMessage, progressStep, stageWords, timeAgo, txnName } from "@/lib/ui/plain";
+import { dayText, deadlineChip, liveAssignment, peso, plainMessage, timeAgo, txnName } from "@/lib/ui/plain";
+import { STEP_COUNT, stageLabel, stepperOf, type StepperAt } from "@/lib/workflow/stage-map";
 import { Banner, ToneChip } from "@/components/ui/basics";
 import { AlertIcon, PauseIcon } from "@/components/ui/icons";
 import { PageTop } from "@/components/loan/page-top";
@@ -98,7 +99,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
   const notice = sp.notice ? NOTICES[sp.notice] : undefined;
 
   const dl = deadlineChip(ctx.tat, ctx.holidays);
-  const step = progressStep(loan.stage);
+  const step = stepperOf(loan.stage);
   const tabs = [
     { key: "todo", label: "To do" },
     { key: "documents", label: "Documents" },
@@ -137,7 +138,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
       <SourceStrip loan={loan} view={can(user, PERMISSIONS.MYLOANS_VIEW)} refresh={can(user, PERMISSIONS.LOANS_REFRESH)} paused={await getSetting("myloans.paused")} />
       {!la && <Banner tone="wait">You are viewing this loan file. Your role does not include the steps on it.</Banner>}
 
-      {!workTxn && <Stepper current={step} problem={loanProblem} hold={loanHold} />}
+      {!workTxn && <Stepper at={step} problem={loanProblem} hold={loanHold} />}
 
       <nav aria-label="Loan file sections" className={`border-b border-line ${workTxn ? "hidden sm:flex" : "flex"}`}>
         {tabs.map((t) => (
@@ -237,10 +238,10 @@ function stepFor(loan: LoanDetail, held: ReadonlySet<string>): NextStep {
     const a = waiting.dpAssignments[0];
     return { title: `Nothing for you right now`, help: `${a?.dpUser.name ?? "The processor"} has the ${name(waiting)}. We will tell you when it comes back.` };
   }
-  return { title: "Nothing for you right now", help: `This loan is ${stageWords(loan.stage).toLowerCase()}.` };
+  return { title: "Nothing for you right now", help: `Stage: ${stageLabel(loan.stage)}.` };
 }
 
-async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; step: number; related: React.ReactNode }) {
+async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; step: StepperAt; related: React.ReactNode }) {
   const la = can(user, PERMISSIONS.CHECKLIST_TICK);
   const ns = nextStep(loan);
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
@@ -326,7 +327,7 @@ async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; c
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <p className="text-xs font-bold uppercase tracking-[0.08em] text-ink-2">Next step</p>
-              {step <= JOURNEY_STEP_COUNT && <span className="text-xs text-ink-2">· Step {step} of {JOURNEY_STEP_COUNT}</span>}
+              {step.current && <span className="text-xs text-ink-2">· Step {step.current} of {STEP_COUNT}</span>}
             </div>
             <h2 id="next" className="text-[15px] font-bold leading-snug text-navy">{ns.title}</h2>
             <p className="text-[13px] text-ink-2">{ns.help}</p>

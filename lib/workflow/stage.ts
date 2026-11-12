@@ -73,38 +73,4 @@ export function computeStage(input: StageInput): Stage {
   return "For Vault Transmittal";
 }
 
-export interface NextAction {
-  label: string;
-  ownerRole: string; // role key: LA, DP, FIN, VAULT, SYS, ...
-}
-
-export function nextActionForStage(stage: Stage, opts: { hasOpenException?: boolean } = {}): NextAction {
-  switch (stage) {
-    case "Opened":
-      return { label: "System generates transactions", ownerRole: "SYS" };
-    case "For checklist":
-      return { label: "Check documents, then assign to DP", ownerRole: "LA" };
-    case "No DP assignment required":
-      return { label: "Complete the LA-only transactions", ownerRole: "LA" };
-    case "Assigned to DP":
-      return { label: "DP accepts the assignment", ownerRole: "DP" };
-    case "In process":
-      return { label: "DP processes the transactions", ownerRole: "DP" };
-    case "Awaiting LA acceptance":
-      return { label: "Receiving LA accepts the package", ownerRole: "LA" };
-    case "For Vault Transmittal":
-      return { label: "Create transmittal to the Vault", ownerRole: "LA" };
-    case "In transit to Vault":
-      return { label: "Vault receives by scan", ownerRole: "VAULT" };
-    case "In Safekeeping":
-      return { label: opts.hasOpenException ? "Resolve open exceptions" : "Safekeeping until closure", ownerRole: "VAULT" };
-    case "Closed":
-      return { label: "Records archives the file", ownerRole: "APPR" };
-    case "Cancelled in MyLoans":
-      return { label: "None. Closed as cancelled in MyLoans", ownerRole: "SYS" };
-    case "Archived":
-      return { label: "Retention clock running", ownerRole: "SYS" };
-    case "Disposed":
-      return { label: "None. Trail kept forever", ownerRole: "SYS" };
-  }
-}
+// Stage names, next steps and owners on screen: lib/workflow/stage-map.ts (the one source).

@@ -1,4 +1,5 @@
 import "server-only";
+import { stageLabel } from "@/lib/workflow/stage-map";
 import { prisma } from "@/lib/db";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -158,7 +159,7 @@ export async function relatedPanel(user: CurrentUser, loan: Parameters<typeof re
   return {
     hidden: all.length - visible.length,
     rows: visible.map((r) => ({
-      pn: r.loan.pn, product: r.loan.productName || "No product name", stage: r.loan.stage, status: status(r.status),
+      pn: r.loan.pn, product: r.loan.productName || "No product name", stage: stageLabel(r.loan.stage), status: status(r.status),
       amount: seesAmounts ? peso(Math.round(Number(r.loan.totalReleasedAmount.toString()) * 100)) : null,
       tag: r.tag, tagText: TAG_TEXT[r.tag], reason: r.relation ? r.relation.reason : null,
       canLink: canReview && (r.tag === "POSSIBLE" || r.tag === "ADDITIONAL") && !loan.replacesPn && !loan.replacedByPn && !r.loan.replacesPn && !r.loan.replacedByPn,

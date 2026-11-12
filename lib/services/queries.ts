@@ -6,7 +6,7 @@ import { can, inScope, loanScope, type CurrentUser } from "@/lib/auth/current-us
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { loanTat, assignDeadline, type TatMap } from "@/lib/workflow/tat";
-import { nextActionForStage, type Stage } from "@/lib/workflow/stage";
+import { nextStepFor, type NextStepText } from "@/lib/workflow/stage-map";
 import { businessDate } from "@/lib/time";
 import { evaluateChecklist } from "./workflow";
 
@@ -94,8 +94,8 @@ export function whatToDoNow(loan: LoanDetail): TodoItem[] {
     if (t.status === "FORWARDED" && a) items.push({ text: `${a.receivingLa?.name ?? "Receiving LA"} to accept the ${t.type.name} package`, owner: "LA" });
   }
   if (items.length === 0) {
-    const n = nextActionForStage(loan.stage as Stage);
-    items.push({ text: n.label, owner: n.ownerRole });
+    const n = nextStepFor(loan.stage);
+    items.push({ text: n.label, owner: n.owner ?? "System" });
   }
   return items;
 }
@@ -139,7 +139,8 @@ export interface LoanRow {
   classification: string;
   stage: string;
   tat: ReturnType<typeof loanTat>;
-  nextStep: { label: string; ownerRole: string };
+  /** The Next step text and its owner (stage map); owner null: the system (no tooltip). */
+  nextStep: NextStepText;
   openExceptions: number;
   needsAction: boolean;
   archived: boolean;
@@ -185,7 +186,7 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
   const corrected = await borrowerChangedLoanIds(loans.map((l) => l.id));
   let rows: LoanRow[] = loans.map((l) => {
     const tat = loanTat({ stage: l.stage, stageSince: l.stageSince, releasedAt: l.releasedAt, inProcessCodes: l.transactions.map((x) => x.type.code) }, t, h);
-    const next = nextActionForStage(l.stage as Stage, { hasOpenException: l._count.exceptions > 0 });
+    const next = nextStepFor(l.stage, { hasOpenException: l._count.exceptions > 0 });
     const needsAction = LA_STAGES.includes(l.stage) || l._count.exceptions > 0;
     return {
       id: l.id, pn: l.pn, borrowerName: l.borrowerName, loanType: l.loanType, productName: l.productName,

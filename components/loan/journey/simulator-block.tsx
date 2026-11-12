@@ -52,7 +52,7 @@ function simGroups(loan: LoanDetail): { title: string; buttons: SimButton[] }[] 
     if (b.length) groups.push({ title: `${t.type.name} (Phases 4-5)`, buttons: b });
   }
   if (loan.stage === "For Vault Transmittal") groups.push({ title: "Transmittal (6.1)", buttons: [{ action: "TRANSMIT", label: "Dispatch transmittal to Vault" }] });
-  if (loan.stage === "In transit to Vault") groups.push({ title: "Vault (6.2-6.4)", buttons: [{ action: "VAULT_RECEIVE", label: "Vault receives, verifies, tags" }] });
+  if (loan.stage === "In transit to Vault") groups.push({ title: "Collateral (6.2-6.4)", buttons: [{ action: "VAULT_RECEIVE", label: "Vault receives, verifies, tags" }] });
   return groups;
 }
 
