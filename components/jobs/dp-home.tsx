@@ -4,12 +4,14 @@ import { doNext, jobCounts, myJobs } from "@/lib/services/job-queries";
 import { notifyOverdue } from "@/lib/services/funds";
 import { prisma } from "@/lib/db";
 import { OPEN_ADVANCE, isOverdue, peso } from "@/lib/funds/rules";
-import { greeting } from "@/lib/ui/plain";
-import { PageHeader } from "@/components/ui/basics";
-import { AlertIcon, ClockIcon, CoinsIcon, ChecklistIcon, PauseIcon } from "@/components/ui/icons";
+import { AlertCard, AllClear, CaughtUp, HomeHeader, ListBlock, SummaryStrip, type Segment } from "@/components/home/home-ui";
 import { JobRow } from "./job-row";
+import { AlertIcon, ChecklistIcon, ClockIcon, CoinsIcon, PauseIcon } from "@/components/ui/icons";
 
-/** The processor's Home: counts, then "Do these next" (problems, overdue, due today, to review). */
+/** "Do these next": the first six; "See all (N)" for the rest. */
+const SHOW = 6;
+
+/** The processor's Home: the counts, then "Do these next" (problems, overdue, due today, to review), then any alert. */
 export async function DpHome({ user }: { user: CurrentUser }) {
   await notifyOverdue();
   const now = new Date();
@@ -18,48 +20,35 @@ export async function DpHome({ user }: { user: CurrentUser }) {
     prisma.cashAdvance.findMany({ where: { requestedById: user.id, status: { in: OPEN_ADVANCE as never } }, select: { number: true, status: true, liquidationDueAt: true, releasedCents: true } }),
   ]);
   const c = jobCounts(rows);
-  const next = doNext(rows).slice(0, 8);
+  const all = doNext(rows);
+  const next = all.slice(0, SHOW);
   const overdueAdv = advances.filter((a) => isOverdue(a, now));
-  const tiles = [
-    { n: c.review, label: "To review", icon: <ChecklistIcon size={24} />, href: "/jobs?tab=review", tone: "bg-act-bg text-act-fg" },
-    { n: c.process, label: "In process", icon: <ClockIcon size={24} />, href: "/jobs?tab=process", tone: "bg-fill-strong text-navy" },
-    { n: c.problems, label: c.problems === 1 ? "Problem" : "Problems", icon: <AlertIcon size={24} />, href: "/jobs?tab=process&problem=1", tone: "bg-bad-bg text-bad-fg" },
-    { n: c.needsFunds, label: "Need funds", icon: <CoinsIcon size={24} />, href: "/my-funds", tone: "bg-wait-bg text-wait-fg" },
-    { n: c.onHold, label: "On hold", icon: <PauseIcon size={24} />, href: "/jobs?tab=process&hold=1", tone: "border border-hold-line bg-hold-bg text-hold-fg" },
+  const strip: Segment[] = [
+    { key: "review", n: c.review, label: "To review", href: "/jobs?tab=review", dot: "act", icon: <ChecklistIcon size={18} /> },
+    { key: "process", n: c.process, label: "In process", href: "/jobs?tab=process", icon: <ClockIcon size={18} /> },
+    { key: "problems", n: c.problems, label: c.problems === 1 ? "Problem" : "Problems", href: "/jobs?tab=process&problem=1", dot: "bad", icon: <AlertIcon size={18} /> },
+    { key: "funds", n: c.needsFunds, label: "Need funds", href: "/my-funds", dot: "act", icon: <CoinsIcon size={18} /> },
+    { key: "hold", n: c.onHold, label: "On hold", href: "/jobs?tab=process&hold=1", icon: <PauseIcon size={18} /> },
   ];
   return (
-    <div className="flex w-full flex-col gap-4 sm:gap-6">
-      <PageHeader title="Home" help={`${greeting(now)}. ${next.length === 0 ? "Nothing urgent right now." : `${next.length} job${next.length === 1 ? "" : "s"} to look at first.`}`} />
-      {overdueAdv.length > 0 && (
-        <p role="alert" className="rounded-xl bg-bad-bg px-4 py-3 text-[15px] text-bad-fg">
-          Liquidation overdue: {overdueAdv.map((a) => `${a.number} (${peso(a.releasedCents)})`).join(", ")}. You cannot request a new cash advance until you liquidate.{" "}
-          <Link href="/my-funds?tab=liquidation" className="font-semibold text-bad-fg underline">Liquidate now</Link>
-        </p>
+    <div className="flex w-full max-w-[960px] flex-col gap-4" data-home="dp">
+      <HomeHeader name={user.name} now={now}>
+        <Link href="/jobs" className="btn-ghost btn-sm">All jobs</Link>
+      </HomeHeader>
+      <SummaryStrip items={strip} />
+      {next.length === 0 ? (
+        <CaughtUp>You&apos;re all caught up: no problems, nothing overdue or due today, nothing to review.</CaughtUp>
+      ) : (
+        <ListBlock id="dp-next" title="Do these next" icon={<ChecklistIcon size={15} />} more={{ href: "/jobs", total: all.length, shown: next.length }} data={{ "data-do-next": "" }}>
+          {next.map((r) => <JobRow key={r.id} r={r} />)}
+        </ListBlock>
       )}
-      <section aria-label="Counts" className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-5">
-        {tiles.map((t) => (
-          <Link key={t.label} href={t.href} className="card flex items-center gap-3 px-3 py-3 no-underline hover:bg-fill sm:px-5 sm:py-4">
-            <span aria-hidden="true" className={`hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl lg:flex ${t.tone}`}>{t.icon}</span>
-            <span>
-              <span className="block text-[28px] font-bold leading-none text-navy">{t.n}</span>
-              <span className="mt-1 block text-sm font-medium">{t.label}</span>
-            </span>
-          </Link>
-        ))}
-      </section>
-      <section aria-labelledby="dp-next" className="card overflow-hidden">
-        <div className="flex items-baseline justify-between gap-3 px-4 pb-3 pt-4 sm:px-5">
-          <h2 id="dp-next" className="text-lg font-bold text-navy">Do these next</h2>
-          <Link href="/jobs" className="link text-sm">All jobs</Link>
-        </div>
-        <div className="border-t border-[rgb(12_35_64/0.1)]">
-          {next.length === 0 ? (
-            <p className="px-4 py-5 text-[15px] text-ink-2 sm:px-5">No problems, nothing overdue or due today, nothing to review.</p>
-          ) : (
-            next.map((r) => <JobRow key={r.id} r={r} />)
-          )}
-        </div>
-      </section>
+      {overdueAdv.length > 0 ? (
+        <AlertCard id="liq-h" title="Liquidation overdue" icon={<CoinsIcon size={15} />} count={overdueAdv.length} tone="bad" link={{ href: "/my-funds?tab=liquidation", label: "Liquidate now" }} data={{ "data-liquidation-overdue": "", role: "alert" }}
+          reason={<>{overdueAdv.map((a) => `${a.number} (${peso(a.releasedCents)})`).join(", ")}. You cannot request a new cash advance until you liquidate.</>} />
+      ) : (
+        <AllClear />
+      )}
     </div>
   );
 }

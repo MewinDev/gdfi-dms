@@ -1,8 +1,8 @@
 import { initials, type Tone } from "@/lib/ui/plain";
 import { CheckIcon } from "./icons";
 
-export function Avatar({ name, size = 44, tone = "navy" }: { name: string; size?: 40 | 44 | 56; tone?: "navy" | "gold" }) {
-  const cls = size === 56 ? "h-14 w-14 text-lg" : size === 40 ? "h-10 w-10 text-[15px]" : "h-11 w-11 text-base";
+export function Avatar({ name, size = 44, tone = "navy" }: { name: string; size?: 32 | 40 | 44 | 56; tone?: "navy" | "gold" }) {
+  const cls = size === 56 ? "h-14 w-14 text-lg" : size === 40 ? "h-10 w-10 text-[15px]" : size === 32 ? "h-8 w-8 text-xs" : "h-11 w-11 text-base";
   return (
     <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center rounded-full ${tone === "gold" ? "bg-gold font-bold text-navy" : "bg-navy font-semibold text-white"} ${cls}`}>
       {initials(name)}

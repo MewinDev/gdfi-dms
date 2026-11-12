@@ -29,7 +29,7 @@ function fillSearch(pn: string): boolean {
  * Selectable sample loan cards (TEST_MODE only; the server decides whether to render this).
  * Pressing a card only fills the PN box. The tester still presses "Find loan".
  */
-export function SampleLoans({ title, intro, samples, compact = false, row = false, id }: { title: string; intro: string; samples: SampleCard[]; compact?: boolean; row?: boolean; id: string }) {
+export function SampleLoans({ title, intro, samples, compact = false, row = false, collapsed = false, id }: { title: string; intro: string; samples: SampleCard[]; compact?: boolean; row?: boolean; collapsed?: boolean; id: string }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [shown, setShown] = useState(false); // phone only (the slim list)
   const router = useRouter();
@@ -76,6 +76,34 @@ export function SampleLoans({ title, intro, samples, compact = false, row = fals
           })}
         </ul>
       </section>
+    );
+  }
+
+  if (collapsed) {
+    // Home: one slim row, closed by default; inside, one line per sample (PN · name, then its chip). What each
+    // sample tests is in the tooltip.
+    return (
+      <details className="group rounded-lg border border-line bg-white" data-home-samples>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 sm:px-4 [&::-webkit-details-marker]:hidden">
+          <h2 id={id} className="text-[15px] font-semibold text-navy">{title}</h2>
+          <span className="text-ink-2">·</span>
+          <span className="text-[11px] font-bold tracking-[0.04em] text-navy">TEST MODE</span>
+          <span aria-hidden="true" className="ml-auto text-ink-2 transition-transform group-open:rotate-180">▾</span>
+        </summary>
+        <p className="border-t border-line px-3 pt-2 text-[13px] text-ink-2 sm:px-4" aria-live="polite">{intro}</p>
+        <ul className="px-1.5 pb-1.5 pt-1 sm:px-2.5">
+          {samples.map((s) => (
+            <li key={s.pn}>
+              <button type="button" onClick={() => pick(s.pn)} title={`${s.tests} ${s.branch} · ${s.loanType} · ${s.amountText}`}
+                className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-[13px] hover:bg-fill">
+                <span className="font-mono font-semibold text-navy">{s.pn}</span>
+                <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                {chip(s)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </details>
     );
   }
 

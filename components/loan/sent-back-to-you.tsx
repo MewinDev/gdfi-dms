@@ -5,6 +5,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { fmtDateTime } from "@/lib/time";
 import { txnName } from "@/lib/ui/plain";
 import { inactiveSenderNote, sentBack, sentBackIsFor, type SentBack } from "@/lib/ui/rounds";
+import { AlertCard } from "@/components/home/home-ui";
 import { ArrowLeftIcon } from "@/components/ui/icons";
 
 /**
@@ -34,29 +35,26 @@ export async function sentBackFor(user: CurrentUser) {
     .sort((a, b) => a.sb.at.getTime() - b.sb.at.getTime());
 }
 
-export async function SentBackToYou({ user }: { user: CurrentUser }) {
-  const rows = await sentBackFor(user);
+/** Hidden when none. */
+export function SentBackToYou({ rows }: { rows: Awaited<ReturnType<typeof sentBackFor>> }) {
   if (!rows.length) return null;
   return (
-    <section aria-labelledby="sent-back-h" className="card overflow-hidden shadow-[inset_4px_0_0_var(--hold-stripe)]" data-sent-back-home>
-      <h2 id="sent-back-h" className="flex items-center gap-2 px-4 pb-2 pt-4 text-lg font-bold text-navy sm:px-6">
-        <span className="text-act-fg"><ArrowLeftIcon size={18} /></span>Sent back to you ({rows.length})
-      </h2>
+    <AlertCard id="sent-back-h" title="Sent back to you" count={rows.length} tone="act" icon={<ArrowLeftIcon size={15} />} reason="The processor declined or returned these. Fix what they found and send again." data={{ "data-sent-back-home": "" }}>
       <ul>
         {rows.map(({ t, sb }) => (
-          <li key={t.id} className="border-t border-line">
-            <Link href={`/loans/${t.loan.pn}?tab=todo&tx=${t.type.code}`} className="flex flex-col gap-0.5 px-4 py-3 text-inherit no-underline hover:bg-fill sm:px-6" data-sent-back-row={sb.kind}>
+          <li key={t.id} className="border-b border-line-soft last:border-0">
+            <Link href={`/loans/${t.loan.pn}?tab=todo&tx=${t.type.code}`} className="flex flex-col gap-0.5 px-3 py-2 text-inherit no-underline hover:bg-fill sm:px-4" data-sent-back-row={sb.kind}>
               <span className="flex flex-wrap items-center gap-2">
                 <span className="chip c-act h-6 px-2 text-xs">{sb.kind === "declined" ? "Declined by the DP" : "Returned by the DP: fix and send again"}</span>
-                <span className="text-[15px] font-semibold">{t.loan.pn} · {txnName(t.type.code, t.type.name)}</span>
+                <span className="text-[14px] font-semibold">{t.loan.pn} · {txnName(t.type.code, t.type.name)}</span>
               </span>
               <span className="line-clamp-2 text-[14px] text-ink">{sb.findings}</span>
-              <span className="text-[13px] text-ink-2">{t.loan.borrowerName} · {sb.dpName} (DP) · {fmtDateTime(sb.at)} · Round {sb.round}</span>
-              {inactiveSenderNote(sb) && <span className="text-[13px] font-semibold text-act-fg" data-inactive-sender>{inactiveSenderNote(sb)}</span>}
+              <span className="text-[12px] text-ink-2">{t.loan.borrowerName} · {sb.dpName} (DP) · {fmtDateTime(sb.at)} · Round {sb.round}</span>
+              {inactiveSenderNote(sb) && <span className="text-[12px] font-semibold text-act-fg" data-inactive-sender>{inactiveSenderNote(sb)}</span>}
             </Link>
           </li>
         ))}
       </ul>
-    </section>
+    </AlertCard>
   );
 }
