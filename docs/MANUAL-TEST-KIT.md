@@ -218,6 +218,10 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 37. **The answer buttons.** As **LA Angono**, find an Angono PN from the list that asks the two questions (Auto Financing, Renewal) and nobody opened yet. Look at the card before answering, then choose **Non-Undertaking**, then **Undertaking**, click it again, use the arrow keys, and choose **Untransferred**, then **Transferred**. Read the line beside **Open loan file** each time. Then press **Open loan file**, open **More loan details** and read the last line.
 38. **Refinancing and the status card.** As **Admin**, find a PN from the list with no questions (Auto Refinancing) and read "What will be set up". Then, with **Show data-check test PNs** on, pick the "Check Prepared" sample and press **Find loan**.
 
+### Home, compact (12 November 2026)
+
+39. **Home for each role.** Sign in as **LA Angono** with nothing opened and look at Home. Open two Angono loans from the list, go back to Home, and look again. Then look at Home as **Admin**, as a Document Processor and as Finance (test mode sign-in), and on a phone.
+
 ## If the sign-in page keeps coming back
 
 Your browser still has the sign-in of an account from before a reset. Open a private window, or clear the cookies for `localhost:3000` (in Chrome: the lock icon left of the address, then Cookies and site data, then delete), and sign in again.
