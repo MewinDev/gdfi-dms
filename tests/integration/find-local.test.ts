@@ -81,13 +81,14 @@ describe("Typing (the dropdown): the DMS only", () => {
     expect(callCount()).toBe(0);
   });
 
-  it("rows: saved loans with the name and stage; at least 3 characters; at most 8", async () => {
+  it("rows: saved loans with the name, stage and branch; at least 3 characters; at most 8", async () => {
     expect(await suggestLoans(la, "GD")).toEqual({ kind: "none" });
     const r = await suggestLoans(la, "GD1");
     expect(r.kind).toBe("hits");
     if (r.kind !== "hits") return;
     expect(r.hits.map((h) => h.pn)).toEqual([ANTIPOLO, ANGONO]);
-    expect(r.hits[0]).toEqual({ pn: ANTIPOLO, borrowerName: "Maria Santos", stage: expect.any(String) });
+    // Name, stage and branch name only (never an amount, address or contact).
+    expect(r.hits[0]).toEqual({ pn: ANTIPOLO, borrowerName: "Maria Santos", stage: expect.any(String), branch: "Antipolo" });
     expect(await suggestLoans(la, "maria")).toMatchObject({ kind: "hits", hits: [{ pn: ANTIPOLO }] });
     expect(await suggestLoans(la, "santos")).toMatchObject({ kind: "hits", hits: [{ pn: ANTIPOLO }] }); // part of the name
     expect(await suggestLoans(la, "2026901003")).toMatchObject({ kind: "hits", hits: [{ pn: ANGONO }] }); // part of a PN

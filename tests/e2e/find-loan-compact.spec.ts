@@ -234,7 +234,8 @@ test("samples: an Angono Loan Associate sees no Antipolo sample", async ({ page 
     await expect(page).toHaveURL(/\/dashboard/);
     for (const url of ["/search", "/loans", "/dashboard"]) {
       await page.goto(url);
-      const samples = main(page).getByRole("region", { name: "Sample loans" });
+      // Find a loan: the slim row; My loans and Home: the closed row (its lines are counted closed too).
+      const samples = main(page).locator("[data-samples-slim], [data-home-samples]").first();
       await expect(samples.getByText("GD1652026901003")).toHaveCount(1);
       await expect(samples.getByText("GD1652026901004")).toHaveCount(1);
       await expect(samples.getByText("GD1012026901001")).toHaveCount(0);

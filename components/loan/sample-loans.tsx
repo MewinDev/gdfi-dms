@@ -97,7 +97,7 @@ export function SampleLoans({ title, intro, samples, compact = false, row = fals
               <button type="button" onClick={() => pick(s.pn)} title={`${s.tests} ${s.branch} · ${s.loanType} · ${s.amountText}`}
                 className="flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-[13px] hover:bg-fill">
                 <span className="font-mono font-semibold text-navy">{s.pn}</span>
-                <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                <span className="min-w-0 flex-1 truncate">{s.name}<span className="text-ink-2 max-sm:hidden"> · {s.branch} · {s.amountText}</span></span>
                 {chip(s)}
               </button>
             </li>

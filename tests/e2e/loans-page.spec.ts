@@ -26,7 +26,9 @@ test("Admin Loans: one toolbar, Filters with a count, chips, Clear all, Show res
   await page.goto("/loans?tab=all");
   await expect(filtersBtn(page)).toHaveCount(1);
   await expect(page.getByRole("main").getByRole("combobox")).toHaveCount(0); // no dropdowns on the page itself
-  await expect(page.getByText("Showing 1 loan file")).toBeVisible();
+  // No "Showing N loan files" line; "Showing X of Y" only with a filter or a search.
+  await expect(page.getByRole("main").locator("[data-showing]")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Loan lists" }).getByRole("link", { name: /^All loans/ })).toContainText("1");
   await noSideScroll(page);
 
   // Esc closes the panel without changing anything.
@@ -49,6 +51,7 @@ test("Admin Loans: one toolbar, Filters with a count, chips, Clear all, Show res
   const main = page.getByRole("main");
   await expect(main.getByRole("link", { name: "Remove filter Classification: Refinancing" })).toBeVisible();
   await expect(main.getByRole("link", { name: "Remove filter Branch: Antipolo" })).toBeVisible();
+  await expect(main.locator("[data-showing]")).toHaveText("Showing 1 of 1");
 
   // Refresh keeps them.
   await page.reload();
@@ -69,15 +72,16 @@ test("Admin Loans: empty state with and without filters; tabs without arrows; PN
   await page.goto("/loans?tab=all");
   const main = page.getByRole("main");
   await expect(main.getByText("No loan files here yet.")).toBeVisible();
-  await expect(main.getByText("Try removing a filter.")).toHaveCount(0);
+  await expect(main.getByText("No loans match.")).toHaveCount(0);
   await expect(main.getByText("Sample loans are opened from My loans by a Loan Associate.")).toBeVisible();
   await expect(main.getByRole("table")).toHaveCount(0);
 
   await page.goto("/loans?tab=all&classification=FINANCING");
-  await expect(main.getByText("Try removing a filter.")).toBeVisible();
-  await expect(main.getByRole("link", { name: "Clear all" }).last()).toBeVisible();
+  await expect(main.getByText("No loans match.")).toBeVisible();
+  await expect(main.getByRole("link", { name: "Clear filters" })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Clear all" })).toBeVisible(); // the chips line
 
-  // Tabs: a segmented control with counts; no scrollbar or arrows.
+  // Tabs: underline tabs with counts; no scrollbar or arrows.
   const tabs = page.getByRole("navigation", { name: "Loan lists" });
   await expect(tabs.getByRole("link")).toHaveCount(4);
   await expect(tabs.getByRole("link", { name: /^All loans/ })).toHaveAttribute("aria-current", "page");
@@ -102,14 +106,17 @@ test("No Export CSV for now, even with the export permission; the old address is
   expect((await page.request.get("/api/loans/export")).status()).toBe(404);
 });
 
-test("Loan Associate My loans: compact search, samples in one row, the list below; Filters panel closes on outside click", async ({ page }) => {
+test("Loan Associate My loans: compact search, samples in one closed row, the list below; Filters panel closes on outside click", async ({ page }) => {
   await signIn(page, "la");
   await page.goto("/loans");
   const main = page.getByRole("main");
   await expect(main.getByRole("heading", { level: 1, name: "My loans" })).toHaveCount(1);
   await expect(main.getByRole("search", { name: "Search" })).toHaveCount(1);
-  await expect(main.getByRole("region", { name: "Sample loans" }).getByRole("button")).toHaveCount(3);
-  await expect(main.getByText("Showing 0 loan files")).toBeVisible();
+  const samples = main.locator("[data-home-samples]").first();
+  await expect(samples).not.toHaveAttribute("open", "");
+  await samples.locator("summary").click();
+  await expect(samples.getByRole("button", { name: /^GD/ })).toHaveCount(3);
+  await expect(main.locator("[data-empty-line]")).toContainText("You're all caught up.");
   await noSideScroll(page);
 
   await filtersBtn(page).click();

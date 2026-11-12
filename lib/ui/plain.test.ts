@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { JOURNEY_STEPS, deadlineChip, historySentence, initials, plainMessage, progressStep, stageWords, stepState, txnChip } from "./plain";
+import { JOURNEY_STEPS, deadlineChip, historySentence, initials, listStage, plainMessage, progressStep, stageWords, stepState, txnChip } from "./plain";
+import { STAGES } from "@/lib/workflow/stage";
 
 describe("plain words", () => {
   it("maps stages", () => {
@@ -20,6 +21,27 @@ describe("plain words", () => {
       expect([stage, progressStep(stage)]).toEqual([stage, n]);
     }
     expect([stepState(2, 3), stepState(3, 3), stepState(4, 3)]).toEqual(["Done", "Now", "Later"]);
+  });
+  it("list stage: every stage on the stepper's own steps (same names, neutral where viewer-specific), or a plain word", () => {
+    const want: Record<string, [number, string] | string> = {
+      Opened: [3, "Check documents"], "For checklist": [3, "Check documents"], "No DP assignment required": [3, "Check documents"],
+      "Assigned to DP": [4, "Processing"], "In process": [4, "Processing"], "Awaiting LA acceptance": [5, "Acceptance"],
+      "For Vault Transmittal": [6, "Vault"], "In transit to Vault": [6, "Vault"], "In Safekeeping": [7, "DigiCur"], Closed: [10, "Closure"],
+      "Cancelled in MyLoans": "Cancelled in MyLoans", Archived: "Archived", Disposed: "Disposed",
+    };
+    for (const stage of STAGES) {
+      const s = listStage(stage);
+      const w = want[stage];
+      expect(w, `${stage} is mapped`).toBeDefined();
+      if (typeof w === "string") expect(s).toEqual({ step: null, word: w });
+      else {
+        expect(s).toEqual({ step: w[0], total: 10, name: w[1] });
+        // The same step number as the loan-file stepper, and its name (only "Your acceptance" is made neutral).
+        expect(progressStep(stage)).toBe(w[0]);
+        expect(JOURNEY_STEPS[w[0] - 1].name.replace(/^Your acceptance$/, "Acceptance")).toBe(w[1]);
+      }
+    }
+    expect(Object.values(want).some((w) => Array.isArray(w) && w[1].startsWith("Your"))).toBe(false);
   });
   it("txn chips", () => {
     expect(txnChip({ code: "NOTARY", requiresDp: true, status: "FOR_CHECKLIST", checkedCount: 0 }).text).toBe("Not started");

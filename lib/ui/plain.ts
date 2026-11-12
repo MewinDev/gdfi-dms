@@ -166,6 +166,27 @@ export function progressStep(stage: string): number {
   return 3;
 }
 
+/**
+ * Step names said from the viewer's side ("Your acceptance") in the loan file, made neutral for a list where
+ * the viewer is not the person doing the step. The loan-file stepper keeps its own names.
+ */
+const NEUTRAL_STEP: Record<string, string> = { "Your acceptance": "Acceptance" };
+
+/** Stages that have no step on the stepper: shown in a list as their own word, without the dots. */
+const NO_STEP_STAGES: Record<string, string> = { "Cancelled in MyLoans": "Cancelled in MyLoans", Archived: "Archived", Disposed: "Disposed" };
+
+/**
+ * A loan's place in the loan-file flow for a list (the Loans table): the same steps and order as the stepper
+ * (JOURNEY_STEPS, progressStep), with neutral names. `step` is null for a stage with no step.
+ */
+export function listStage(stage: string): { step: number; total: number; name: string } | { step: null; word: string } {
+  if (NO_STEP_STAGES[stage]) return { step: null, word: NO_STEP_STAGES[stage] };
+  const n = progressStep(stage);
+  if (n > JOURNEY_STEP_COUNT) return { step: null, word: stageWords(stage) };
+  const name = JOURNEY_STEPS[n - 1].name;
+  return { step: n, total: JOURNEY_STEP_COUNT, name: NEUTRAL_STEP[name] ?? name };
+}
+
 export type StepState = "Done" | "Now" | "Later";
 export const stepState = (n: number, current: number): StepState => (n < current ? "Done" : n === current ? "Now" : "Later");
 

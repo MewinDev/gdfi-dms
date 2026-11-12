@@ -8,12 +8,12 @@ import { getHolidaySet } from "@/lib/settings";
 import { STAGES } from "@/lib/workflow/stage";
 import { STAGE_WORDS } from "@/lib/ui/plain";
 import { cardFor, sortByUrgency } from "@/lib/ui/loan-cards";
-import { LoanCard } from "@/components/ui/loan-card";
 import { LoansToolbar } from "@/components/loan/loans-toolbar";
-import { EmptyLoans, LoanTable } from "@/components/loan/loan-table";
+import { LoanTable } from "@/components/loan/loan-table";
+import { EmptyLine, FilterChips, MyLoansList } from "@/components/loan/my-loans-list";
+import { LoanTabs } from "@/components/loan/loan-tabs";
 import { activeChips, clearAllHref, listHref, type FilterField } from "@/lib/ui/loan-filters";
 import { isTestMode } from "@/lib/test-mode";
-import { PageHeader } from "@/components/ui/basics";
 import { SampleLoans } from "@/components/loan/sample-loans";
 import { loadSampleCards } from "@/lib/ui/samples";
 
@@ -64,41 +64,27 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   const counts = Object.fromEntries(tabs.map((t, i) => [t.key, perTab[i].length]));
   return la
     ? <LaList user={user} f={f} sp={sp} rows={rows} branches={branches} counts={counts} />
-    : <AdminList f={f} rows={rows} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)} />;
+    : <AdminList f={f} rows={rows} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)}
+        unfiltered={isFiltered(f) ? (await listLoans(user, { tab: f.tab })).length : null} holidays={await getHolidaySet()} />;
 }
+
+/** A filter or a search narrows the tab (then "Showing X of Y"). */
+const isFiltered = (f: LoanListFilters) => [f.stage, f.classification, f.branch, f.area, f.loanType, f.tat, f.needsAction, f.holdReason, f.q].some(Boolean);
 
 const TAT_OPTIONS: [string, string][] = [["ON_TIME", "On time"], ["DUE_TODAY", "Due today"], ["OVERDUE", "Overdue"], ["DUE_OR_OVERDUE", "Due today or overdue"]];
 
-/** Tabs as a segmented control with counts; scrolls sideways on phone without a scrollbar. */
-function Segments({ tabs, current, counts, params }: { tabs: { key: string; label: string }[]; current?: string; counts: Record<string, number>; params: Record<string, string | undefined> }) {
+/** The tabs with their counts, as underline tabs; "Showing X of Y" on the right only with a filter or a search on. */
+function Tabs({ tabs, current, counts, params, showing }: { tabs: { key: string; label: string }[]; current?: string; counts: Record<string, number>; params: Record<string, string | undefined>; showing?: { x: number; y: number } | null }) {
   return (
-    <nav aria-label="Loan lists" className="seg self-start">
-      {tabs.map((t) => (
-        <Link key={t.key} href={listHref({ ...params, tab: t.key })} aria-current={current === t.key ? "page" : undefined} className="seg-item">
-          {t.label}<span className="seg-count">{counts[t.key] ?? 0}</span>
-        </Link>
-      ))}
-    </nav>
-  );
-}
-
-/** "Showing 24 loan files" and the active-filter chips, in one thin row. */
-function ResultLine({ count, chips, clearHref, extra }: { count: number; chips: { text: string; removeHref: string }[]; clearHref: string; extra?: string }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <p className="mr-2 text-[15px] text-ink-2" role="status">Showing {count} loan file{count === 1 ? "" : "s"}{extra ?? ""}</p>
-      {chips.map((c) => (
-        <Link key={c.text} href={c.removeHref} className="chip c-mute h-8 gap-1.5 text-sm no-underline hover:bg-fill-strong" aria-label={`Remove filter ${c.text}`}>
-          {c.text} <span aria-hidden="true">×</span>
-        </Link>
-      ))}
-      {chips.length > 0 && <Link href={clearHref} className="link text-sm">Clear all</Link>}
-    </div>
+    <LoanTabs
+      tabs={tabs.map((t) => ({ key: t.key, label: t.label, href: listHref({ ...params, tab: t.key }), count: counts[t.key] ?? 0, current: current === t.key }))}
+      aside={showing ? <>Showing {showing.x} of {showing.y}</> : undefined}
+    />
   );
 }
 
 // ---------------------------------------------------------------------------
-// Loan Associate: compact search, the sample loans in one row, then the loan files
+// Loan Associate: one toolbar, the samples in one closed row (test mode), tabs, then the loan files
 // ---------------------------------------------------------------------------
 
 async function LaList({ user, f, sp, rows, branches, counts }: { user: CurrentUser; f: LoanListFilters; sp: SP; rows: LoanRow[]; branches: { id: string; name: string }[]; counts: Record<string, number> }) {
@@ -116,35 +102,34 @@ async function LaList({ user, f, sp, rows, branches, counts }: { user: CurrentUs
   ];
   const params = { tab: f.tab, stage: f.stage, branch: f.branch, loanType: f.loanType, tat: f.tat, needsAction: f.needsAction, group: sp.group };
   const chips = activeChips(fields, params, [{ name: "group", text: "Waiting on others" }]);
+  const filtersOn = chips.length > 0;
+  // "Showing X of Y": Y is the tab without filters (one more list, only while a filter is on).
+  const showing = filtersOn ? { x: cards.length, y: (await listLoans(user, { tab: f.tab })).length } : null;
   const emptyText =
-    f.tab === "queue" ? "You are all caught up. Nothing needs you right now."
-    : f.tab === "exceptions" ? "No problems to fix. Nice."
-    : f.tab === "archived" ? "No archived loan files yet."
-    : "No loan files here yet.";
+    f.tab === "queue" ? "You're all caught up."
+    : f.tab === "exceptions" ? "No problems."
+    : f.tab === "archived" ? "Nothing archived."
+    : "No loan files in your branches yet.";
 
   return (
-    <div className="flex w-full flex-col gap-4">
-      <PageHeader title="My loans" help="Find a loan by its number, or open one of your loan files below." />
+    <div className="flex w-full min-w-0 flex-col gap-3" data-my-loans="la">
+      <h1 className="text-[22px] font-semibold leading-tight text-navy">My loans</h1>
       <LoansToolbar
         search={{ action: "/search", defaultValue: sp.fill ?? "", autoFocus: sp.find === "1" || !!sp.fill, buttonLabel: "Find loan", suggest: true }}
         filters={{ fields, hidden: { tab: f.tab, group: sp.group }, activeCount: chips.length, clearHref: clearAllHref(params) }}
         resultCount={cards.length}
       />
+      <FilterChips chips={chips} clearHref={clearAllHref(params)} />
       {samples.samples.length > 0 && (
-        <SampleLoans id="find-samples" title="Sample loans" intro="Pick one to put its PN in the box above, then press Find loan." samples={samples.samples} row />
+        <SampleLoans id="find-samples" title="Sample loans" intro="Pick one, then press Find loan." samples={samples.samples} collapsed />
       )}
       {samples.dataCheck.length > 0 && (
-        <SampleLoans id="find-datacheck" title="Data-check samples" intro="These test the checks that refuse a loan." samples={samples.dataCheck} row />
+        <SampleLoans id="find-datacheck" title="Data-check samples" intro="These test the checks that refuse a loan." samples={samples.dataCheck} collapsed />
       )}
-      <Segments tabs={LA_TABS} current={f.tab} counts={counts} params={params} />
-      <ResultLine count={cards.length} chips={chips} clearHref={clearAllHref(params)} />
-      {cards.length === 0 ? (
-        <EmptyLoans filtersOn={chips.length > 0} clearHref={clearAllHref(params)} testMode={false} text={emptyText} />
-      ) : (
-        <div className="flex flex-col gap-3">
-          {cards.map((c) => <LoanCard key={c.pn} d={c} />)}
-        </div>
-      )}
+      <Tabs tabs={LA_TABS} current={f.tab} counts={counts} params={params} showing={showing} />
+      {cards.length === 0
+        ? <EmptyLine text={filtersOn ? "No loans match." : emptyText} clearHref={filtersOn ? clearAllHref(params) : undefined} done={!filtersOn && (f.tab === "queue" || f.tab === "exceptions")} />
+        : <MyLoansList cards={cards} />}
     </div>
   );
 }
@@ -172,7 +157,7 @@ async function holdReasonCounts(user: CurrentUser) {
   };
 }
 
-function AdminList({ f, rows, branches, areas, byArea, tabs, counts, holds }: { f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>> }) {
+function AdminList({ f, rows, branches, areas, byArea, tabs, counts, holds, unfiltered, holidays }: { f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>>; unfiltered: number | null; holidays: ReadonlySet<string> }) {
   const fields: FilterField[] = [
     { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, s]) },
     { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"]] },
@@ -186,35 +171,39 @@ function AdminList({ f, rows, branches, areas, byArea, tabs, counts, holds }: { 
   const params = { tab: f.tab, stage: f.stage, classification: f.classification, area: f.area, branch: f.branch, loanType: f.loanType, tat: f.tat, needsAction: f.needsAction, holdReason: f.holdReason, q: f.q, by: byArea ? "area" : undefined };
   const chips = activeChips(fields, params);
   const filtersOn = chips.length > 0 || !!f.q;
+  const showing = filtersOn && unfiltered !== null ? { x: rows.length, y: unfiltered } : null;
   return (
-    <div className="flex w-full min-w-0 flex-col gap-4">
-      <PageHeader title="Loans" help="Read-only view of all branches." />
+    <div className="flex w-full min-w-0 flex-col gap-3" data-my-loans="read-only">
+      <h1 className="text-[22px] font-semibold leading-tight text-navy">Loans</h1>
       <LoansToolbar
         search={{ action: "/loans", defaultValue: f.q ?? "", required: false, hidden: { ...params, q: undefined } }}
         filters={{ fields, hidden: { tab: f.tab, q: f.q, by: params.by }, activeCount: chips.length, clearHref: clearAllHref(params) }}
         resultCount={rows.length}
       />
-      <Segments tabs={tabs} current={f.tab} counts={counts} params={params} />
+      <FilterChips chips={chips} clearHref={clearAllHref(params)} />
+      <Tabs tabs={tabs} current={f.tab} counts={counts} params={params} showing={showing} />
       {holds.chips.length > 0 && (
         <nav aria-label="On hold by reason" className="flex flex-wrap items-center gap-1.5" data-hold-reason-chips>
-          <span className="mr-1 text-[13px] font-semibold text-ink-2">On hold by reason</span>
+          <span className="mr-1 text-[12px] text-ink-2">On hold by reason</span>
           {holds.chips.map((c) => (
             <Link key={c.id} href={listHref({ ...params, holdReason: f.holdReason === c.id ? undefined : c.id })} aria-current={f.holdReason === c.id ? "true" : undefined}
-              className={`chip c-hold h-7 no-underline ${f.holdReason === c.id ? "ring-2 ring-[var(--hold-stripe)]" : ""}`} data-hold-reason={c.name}>
+              className={`chip c-hold h-6 text-[12px] no-underline ${f.holdReason === c.id ? "ring-2 ring-[var(--hold-stripe)]" : ""}`} data-hold-reason={c.name}>
               {c.name} ({c.count})
             </Link>
           ))}
         </nav>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <ResultLine count={rows.length} chips={chips} clearHref={clearAllHref(params)} extra={f.q ? ` matching "${f.q}"` : ""} />
-        <Link href={listHref({ ...params, by: byArea ? undefined : "area" })} className="link inline-flex min-h-11 items-center text-sm" aria-pressed={byArea} data-group-by-area>
-          {byArea ? "Show as one list" : "Group by area and branch"}
-        </Link>
-      </div>
+      {rows.length > 0 && (
+        <div className="-my-2 flex justify-end">
+          <Link href={listHref({ ...params, by: byArea ? undefined : "area" })} className="inline-flex min-h-11 items-center text-[13px] font-semibold text-navy underline underline-offset-2" aria-pressed={byArea} data-group-by-area>
+            {byArea ? "Show as one list" : "Group by area and branch"}
+          </Link>
+        </div>
+      )}
       {rows.length === 0
-        ? <EmptyLoans filtersOn={filtersOn} clearHref={listHref({ tab: f.tab })} testMode={isTestMode()} />
-        : <LoanTable rows={rows} grouped={byArea} />}
+        ? <EmptyLine text={filtersOn ? (f.q ? `No loans match "${f.q}".` : "No loans match.") : "No loan files here yet."} clearHref={filtersOn ? listHref({ tab: f.tab }) : undefined}
+            note={!filtersOn && isTestMode() ? "Sample loans are opened from My loans by a Loan Associate." : undefined} />
+        : <LoanTable rows={rows} grouped={byArea} holidays={holidays} />}
     </div>
   );
 }

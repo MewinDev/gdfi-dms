@@ -20,26 +20,27 @@ export function LoansToolbar({
   resultCount: number;
 }) {
   return (
-    <div className="flex items-center gap-2 sm:gap-3">
+    <div className="flex items-center gap-2" data-loans-toolbar>
       <form action={search.action} method="get" role="search" aria-label="Search" className="min-w-0 flex-1">
         {Object.entries(search.hidden ?? {}).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null))}
-        <div className="flex h-12 items-center gap-2 rounded-xl border border-line-input bg-white pl-4 pr-1 focus-within:border-navy focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-navy">
-          <span className="text-navy"><SearchIcon size={18} /></span>
+        {/* One 40px row: the box with its button inside the right end (32px). */}
+        <div className="flex h-10 items-center gap-2 rounded-lg border border-line-input bg-white pl-3 pr-1 focus-within:border-navy focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-navy" data-search-box>
+          <span className="text-ink-2"><SearchIcon size={16} /></span>
           <label htmlFor="find-loan" className="sr-only">Find a loan</label>
           {search.suggest ? (
             <LiveFindInput
               defaultValue={search.defaultValue} autoFocus={search.autoFocus} required={search.required ?? true}
               placeholder="PN, borrower name, CIN or CIF"
-              className="h-12 w-full min-w-0 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
+              className="h-9 w-full min-w-0 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
             />
           ) : (
             <input
               id="find-loan" name="q" defaultValue={search.defaultValue} autoFocus={search.autoFocus} required={search.required ?? true} autoComplete="off"
               placeholder="Search by PN, CIN or CIF"
-              className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
+              className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
             />
           )}
-          <button type="submit" className="btn-gold h-10 min-h-10 shrink-0 px-4 text-sm">{search.buttonLabel ?? "Search"}</button>
+          <button type="submit" className="btn-navy h-8 min-h-8 shrink-0 rounded-md px-3 text-[13px]">{search.buttonLabel ?? "Search"}</button>
         </div>
       </form>
       <FiltersButton {...filters} resultCount={resultCount} />
@@ -90,11 +91,11 @@ function FiltersButton({ fields, hidden, activeCount, clearHref, resultCount }: 
       <button
         ref={btn} type="button" onClick={() => (mode === "closed" ? open() : close())} aria-haspopup="dialog" aria-expanded={mode !== "closed"}
         aria-label={activeCount ? `Filters, ${activeCount} on` : "Filters"}
-        className="btn-ghost h-12 gap-2 px-3 sm:px-4"
+        className="btn-ghost h-10 min-h-10 gap-2 rounded-lg px-2.5 text-sm max-sm:min-w-11 sm:px-3.5"
       >
         <FilterIcon size={18} />
         <span className="hidden sm:inline">Filters</span>
-        {activeCount > 0 && <span className="rounded-full bg-gold px-2 text-xs font-bold text-navy"><span className="hidden sm:inline">· </span>{activeCount}</span>}
+        {activeCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-navy px-1.5 text-[11px] font-bold text-white" data-filter-count>{activeCount}</span>}
       </button>
       <dialog
         ref={dlg}

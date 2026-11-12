@@ -81,7 +81,7 @@ export async function searchSaved(user: CurrentUser, text: string, limit: number
   return [...first, ...more];
 }
 
-export interface SuggestHit { pn: string; borrowerName: string; stage: string }
+export interface SuggestHit { pn: string; borrowerName: string; stage: string; branch: string }
 export type SuggestResult =
   | { kind: "hits"; hits: SuggestHit[] }
   /** A complete PN saved in a branch outside the person's access (no details). */
@@ -95,7 +95,7 @@ export async function suggestLoans(user: CurrentUser, text: string): Promise<Sug
   const q = text.trim().slice(0, 60);
   if (q.length < SUGGEST_MIN) return { kind: "none" };
   const rows = await searchSaved(user, q, SUGGEST_LIMIT);
-  if (rows.length) return { kind: "hits", hits: rows.map((r) => ({ pn: r.pn, borrowerName: r.borrowerName, stage: stageWords(r.stage) })) };
+  if (rows.length) return { kind: "hits", hits: rows.map((r) => ({ pn: r.pn, borrowerName: r.borrowerName, stage: stageWords(r.stage), branch: r.branch.name })) };
   const pn = await completePn(q);
   if (!pn) return { kind: "none" };
   const saved = await prisma.loan.findUnique({ where: { pn }, select: { branchId: true } });
