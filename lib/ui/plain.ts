@@ -92,31 +92,6 @@ export function txnChip(t: TxnLike): { text: string; tone: Tone } {
   }
 }
 
-export function txnHint(t: TxnLike): string {
-  if (!t.requiresDp) {
-    if (t.status === "COMPLETED") return "Done. EDST reference recorded.";
-    if (t.status === "READY") return "You do this one. Enter it and record the reference.";
-    return "You do this one. No processor needed.";
-  }
-  switch (t.status) {
-    case "FOR_CHECKLIST":
-    case "READY":
-      return "Send to a Document Processor";
-    case "RETURNED":
-      return "The processor sent it back. Fix it and send it again.";
-    case "ASSIGNED":
-      return `Waiting for ${t.dpName ?? "the processor"} to accept`;
-    case "IN_PROCESS":
-      return `${t.dpName ?? "The processor"} is working on it`;
-    case "FORWARDED":
-      return `Coming back to ${t.receivingLaName ?? "the branch"}. Check the package when it arrives.`;
-    case "COMPLETED":
-      return "Done";
-    default:
-      return "Cancelled";
-  }
-}
-
 // ---------------------------------------------------------------------------
 // The whole journey: 10 steps (the 10 phases of the Journey tab, in plain words)
 // ---------------------------------------------------------------------------
@@ -136,11 +111,6 @@ export function initials(name: string): string {
   const first = parts[0][0] ?? "";
   const last = parts.length > 1 ? parts[1][0] ?? "" : "";
   return (first + last).toUpperCase();
-}
-
-const NUMBER_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-export function numberWord(n: number): string {
-  return NUMBER_WORDS[n] ?? String(n);
 }
 
 export function peso(n: number): string {

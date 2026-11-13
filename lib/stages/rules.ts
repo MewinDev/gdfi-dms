@@ -9,7 +9,6 @@
 
 export const FIELD_TYPES = ["text", "date", "number", "file", "tick"] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
-export const FIELD_TYPE_LABEL: Record<FieldType, string> = { text: "Text", date: "Date", number: "Number", file: "File", tick: "Tick (yes)" };
 
 export interface EvidenceField { key: string; label: string; type: FieldType; required: boolean }
 export type StageKind = "OWN" | "LTO_DROP" | "LTO_PICKUP" | "VERIFY";
@@ -26,9 +25,6 @@ export interface StageDef {
 
 /** System stages always come after the type's own stages, in this order. */
 export const SYSTEM_ORDER: Record<Exclude<StageKind, "OWN">, number> = { LTO_DROP: 1000, LTO_PICKUP: 1001, VERIFY: 1002 };
-export const KIND_LABEL: Record<StageKind, string> = {
-  OWN: "Own stage", LTO_DROP: "Added when Needs LTO processing is on", LTO_PICKUP: "Added when Needs LTO processing is on", VERIFY: "Always last",
-};
 
 const f = (key: string, label: string, type: FieldType, required = true): EvidenceField => ({ key, label, type, required });
 

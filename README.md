@@ -175,9 +175,9 @@ Component classes: `.btn-gold` (the one main action), `.btn-navy`, `.btn-ghost`,
 | Component | File | Notes |
 |---|---|---|
 | `AppShell` | `components/ui/app-shell.tsx` | Sidebar (1024px+), 88px icon rail (640-1023px), top header + bottom tab bar (below 640px). `/` focuses Find a loan. |
-| `FindLoan` | `components/ui/find-loan.tsx` | PN (also CIN, CIF, label code) search box, `id="find-loan"` |
-| `LoanCard` | `components/ui/loan-card.tsx` | Home and My loans cards; whole card is the link |
-| `Stepper` | `components/ui/stepper.tsx` | 5-step progress; segmented bar with "Step N of 5" on phones |
+| `FindLoan` | `components/ui/find-loan.tsx` | Search box for a PN, CIN or CIF (placeholder "PN, CIN or CIF"), `id="find-loan"` |
+| `HomeLoanRow`, `MyLoansList` | `components/home/home-loan-row.tsx`, `components/loan/my-loans-list.tsx` | Home rows and the My loans list; the whole row is the link (their data type `LoanCardData` is in `components/ui/loan-card.tsx`) |
+| `Stepper` | `components/ui/stepper.tsx` | The 10 steps from the stage map (`lib/workflow/stage-map.ts`); under 1024px one line "Step N of 10 · name" with a 10-segment bar |
 | `Avatar`, `ToneChip`, `Banner` | `components/ui/basics.tsx` | |
 | `Sheet` | `components/ui/sheet.tsx` | Native `<dialog>`: centered card, bottom sheet on phones, or side panel (`side`) |
 | `WorkCard` (checklist rows, send block, EDST) | `components/loan/work.tsx` | Checklist saves automatically ("Saved just now"); send asks for confirmation |
@@ -198,10 +198,10 @@ Full-height shells use `100dvh`. Checked with no horizontal scroll at 1440, 1280
 ### What differs from the mockups
 
 - The mockups show "Deed of Sale (proof of sale)" inline; the app shows a small "Proof of sale: pick at least one" line above the one-of group (as the redesign brief asks), so both one-of items are listed.
-- Each ticked paper shows its label code (Document ID) as a small caption, which the mockup rows do not have.
+- Each ticked paper shows its Document ID as a small caption, which the mockup rows do not have.
 - The LTO office field appears in the send block for Mortgage only (it is required there); the mockup shows Notary, which does not need it.
 - "Who should do it" is a standard dropdown with the Recommended chip drawn inside it, not a custom list.
-- The Find a loan placeholder is the short "Type the PN number" on Home and My loans (one text fits every width); the Find a loan page uses the longer example text.
+- The Find a loan placeholder is "PN, CIN or CIF" on every page (one text fits every width).
 - The sidebar shows a sign-out button next to the user; on phones, sign out is at the bottom of Updates. The mockups do not show sign out.
 - Phases 4 to 10 have no LA screens yet, so "Check the returned package" and "Send the papers to the vault" show the step without a button.
 - Admin keeps a Journey tab (with the test simulator) on the Loan File; the LA sees three tabs and can open the full 10-phase view from More loan details.
@@ -215,7 +215,7 @@ Full-height shells use `100dvh`. Checked with no horizontal scroll at 1440, 1280
 2. **Prisma 6, not 7.** Prisma 7 no longer accepts `url`/`directUrl` in `schema.prisma`, which section 10 requires, so Prisma is pinned to 6.x.
 3. **Next.js Cache Components is off.** Every page depends on the signed-in user.
 4. **Stage is derived, then cached.** `Loan.stage` is recomputed from the transactions, cash advances and documents inside every write (never typed in) and cached for list filters. Lists hold at most 500 rows per query for now.
-5. **Mortgage thresholds are fixed by Rule 4** (New PHP 500,000; Renewal PHP 1,000,000, inclusive). Loan types in Settings only change the display name.
+5. **Mortgage thresholds are fixed by the Mortgage needed rule** (New PHP 500,000; Renewal PHP 1,000,000, inclusive). Loan types in Settings only change the display name.
 6. **Loan File fields keep the values used for the automatic decisions.** A refresh stores a new snapshot, updates `Retrieved at`, records field differences, and raises a **Source change** exception (LA and Supervisor notified, in-app and email outbox) only when the automatic result would change or the record fails the Data Check. Transactions are never changed by a refresh; a Supervisor override is the way to apply a change.
 7. **Checklist completeness** = every active Required item ticked and at least one item ticked in each One-of group. "Others" items are free text, present when added, and get a Document ID with type code `OTH`.
 8. **Document IDs** are generated when an item is first ticked; un-ticking keeps the ID (never reused) and moves the item back to Expected. Sequence is per PN and document type (`GD1012026901001-ORCR-01`, `-02`, ...).

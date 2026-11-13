@@ -214,23 +214,6 @@ export function outcomesDiffer(a: RuleOutcome, b: RuleOutcome): boolean {
 // Labels
 // ---------------------------------------------------------------------------
 
-export const CLASSIFICATION_LABEL: Record<Classification, string> = {
-  FINANCING: "Financing",
-  REFINANCING: "Refinancing",
-};
-export const FINANCING_TYPE_LABEL: Record<FinancingType, string> = {
-  UNDERTAKING: "Undertaking",
-  NON_UNDERTAKING: "Non-Undertaking",
-};
-export const ORCR_LABEL: Record<OrcrStatus, string> = {
-  TRANSFERRED: "Transferred",
-  UNTRANSFERRED: "Untransferred",
-};
-export const MORTGAGE_LABEL: Record<MortgageResult, string> = {
-  MORTGAGE: "Mortgage",
-  NOT_MORTGAGE: "Not Mortgage",
-  NOT_EVALUATED: "Not evaluated",
-};
 export const TRANSACTION_LABEL: Record<TransactionCode, string> = {
   NOTARY: "Notary",
   EDST: "For EDST",

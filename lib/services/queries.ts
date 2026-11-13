@@ -2,8 +2,7 @@ import "server-only";
 import { borrowerChangedLoanIds } from "./borrower-review";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { can, inScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
-import { PERMISSIONS } from "@/lib/auth/permissions";
+import { inScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { loanTat, assignDeadline, type TatMap } from "@/lib/workflow/tat";
 import { nextStepFor, type NextStepText } from "@/lib/workflow/stage-map";
@@ -207,35 +206,8 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
   return rows;
 }
 
-export async function dashboardCounts(user: CurrentUser) {
-  const rows = await listLoans(user, { tab: "all" });
-  const today = rows.filter((r) => r.needsAction && (r.tat?.badge === "DUE_TODAY" || r.tat?.badge === "OVERDUE"));
-  const openExceptions = await prisma.loanException.count({ where: { status: "OPEN", loan: loanScope(user) } });
-  return {
-    needsActionToday: today.length,
-    forChecklist: rows.filter((r) => r.stage === "For checklist").length,
-    assignedToDp: rows.filter((r) => r.stage === "Assigned to DP").length,
-    awaitingLa: rows.filter((r) => r.stage === "Awaiting LA acceptance").length,
-    overdue: rows.filter((r) => r.tat?.badge === "OVERDUE").length,
-    openExceptions,
-    total: rows.length,
-    attention: [...rows]
-      .filter((r) => r.needsAction || r.tat?.badge === "OVERDUE")
-      .sort((a, b) => rank(b) - rank(a))
-      .slice(0, 8),
-  };
-}
-
-function rank(r: LoanRow) {
-  return (r.tat?.badge === "OVERDUE" ? 100 : r.tat?.badge === "DUE_TODAY" ? 50 : 0) + r.openExceptions * 10 + (r.needsAction ? 5 : 0);
-}
-
 export async function unreadNotificationCount(userId: string) {
   return prisma.notification.count({ where: { userId, readAt: null } });
-}
-
-export function canExport(user: CurrentUser) {
-  return can(user, PERMISSIONS.LOANS_EXPORT);
 }
 
 /** The distinct cash advances that fund this loan's transactions. */

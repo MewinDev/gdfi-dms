@@ -3,7 +3,6 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
-import { businessDate } from "@/lib/time";
 import type { FundsStatus } from "@/lib/funds/rules";
 import { doneTat, openHold, openProblem, txnFunds, txnTat, txnFundsType } from "@/lib/jobs/view";
 import { holdDays, problemDays, type TatChipData } from "@/lib/workflow/tat";
@@ -139,5 +138,3 @@ export function jobCounts(rows: JobRow[]) {
     onHold: open.filter((r) => r.hold).length,
   };
 }
-
-export const todayText = () => businessDate(new Date());

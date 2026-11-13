@@ -33,56 +33,6 @@ export interface FieldDef {
   offNote?: string;
 }
 
-/** One editable settings row (or the "Add" row when id is null). */
-export function SettingsRowForm({ kind, id, fields, submitLabel }: { kind: string; id: string | null; fields: FieldDef[]; submitLabel?: string }) {
-  const [state, action] = useActionState(saveSettingsAction, null);
-  const uid = `${kind}-${id ?? "new"}`;
-  return (
-    <form action={action} className="rounded-lg border border-line bg-white p-3">
-      <input type="hidden" name="kind" value={kind} />
-      {id && <input type="hidden" name="id" value={id} />}
-      <div className="flex flex-wrap items-end gap-3">
-        {fields.map((f) => {
-          const fid = `${uid}-${f.name}`;
-          const w = f.width === "lg" ? "min-w-64 flex-1" : f.width === "sm" ? "w-24" : "w-44";
-          if (f.type === "checkbox") {
-            return (
-              <label key={f.name} htmlFor={fid} className="flex items-center gap-2 pb-2 text-sm">
-                <input type="hidden" name={`$has_${f.name}`} value="1" />
-                <input id={fid} type="checkbox" name={f.name} defaultChecked={!!f.value} className="h-4 w-4 accent-[var(--navy)]" />
-                {f.label}
-              </label>
-            );
-          }
-          return (
-            <div key={f.name} className={w}>
-              <label htmlFor={fid} className="label">{f.label}</label>
-              {f.type === "select" ? (
-                <select id={fid} name={f.name} defaultValue={String(f.value ?? "")} className="input" aria-invalid={state?.field === f.name}>
-                  {f.options!.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              ) : (
-                <input
-                  id={fid}
-                  name={f.name}
-                  type={f.type === "number" ? "text" : f.type}
-                  inputMode={f.type === "number" ? "decimal" : undefined}
-                  defaultValue={f.value === null || f.value === undefined ? "" : String(f.value)}
-                  readOnly={f.readOnly}
-                  className={`input ${f.readOnly ? "bg-cream" : ""}`}
-                  aria-invalid={state?.field === f.name}
-                />
-              )}
-            </div>
-          );
-        })}
-        <SubmitButton className={id ? "btn-secondary" : "btn-primary"}>{submitLabel ?? (id ? "Save" : "Add")}</SubmitButton>
-      </div>
-      {state && <div className="mt-2"><FormMessage state={state} /></div>}
-    </form>
-  );
-}
-
 /** Cash-advance switches (top of the Cash-advance rules pop-up). */
 export function FundsSettingsForm({ carryOverLimitDays, liquidationDueDays, blockLtoUntilFunded }: { carryOverLimitDays: number; liquidationDueDays: number; blockLtoUntilFunded: boolean }) {
   const [state, action] = useActionState(saveFundsSettingsAction, null);

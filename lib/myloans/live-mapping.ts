@@ -106,17 +106,6 @@ export function mapChanged(raw: unknown): MyLoansRecord[] {
  */
 export const ENDED_STATUSES: readonly string[] = ["CANCELLED", "CANCELED", "VOIDED", "VOID", "REPLACED", "WITHDRAWN"];
 
-/** TO CONFIRM: the status words MyLoans uses, mapped to ours. */
-export const STATUS_WORDS: Record<string, "RELEASED" | "CANCELLED" | "WITHDRAWN" | "NOT_RELEASED" | "REPLACED"> = {
-  RELEASED: "RELEASED",
-  CANCELLED: "CANCELLED",
-  CANCELED: "CANCELLED",
-  WITHDRAWN: "WITHDRAWN",
-  PENDING: "NOT_RELEASED",
-  NOT_RELEASED: "NOT_RELEASED",
-  REPLACED: "REPLACED",
-};
-
 /**
  * TO CONFIRM (MyLoans team): one branch as the API returns it. Fields to fill: a stable branch id (and
  * whether it stays the same when the code changes), code, name, area (id and name), division (id and

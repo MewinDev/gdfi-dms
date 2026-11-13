@@ -195,9 +195,6 @@ export const KIT_BRANCH_CHANGES = {
   code: { branchId: 398, name: "Alicia", from: "709", to: "710" },
 } as const;
 
-/** A PN typed the way people paste it (the test sheet): spaces, dashes and lower case. */
-export const KIT_PASTED_PN = { typed: "gd 101-2026-9-02050", pn: "GD1012026902050" } as const;
-
 /** The new PN the MyLoans "replaced" simulation gives GD1012026902044 (the first free number from 9100). */
 /**
  * Two general expenses typed as Other ("Courier") by DP 1, Cash advance, still waiting for approval:
@@ -213,8 +210,3 @@ export const KIT_REPLACEMENT_PN = "GD1012026909100";
 /** The kit's branches (real MyLoans branches; see lib/branches/builtin.ts). */
 export const BRANCH_NAMES = { "101": "Antipolo", "165": "Angono", "390": "Alaminos", "168": "A. Mabini", "174": "Amang Rodriguez", "189": "Angono - Car Financing", "709": "Alicia", "718": "Alicia-Inactive" } as const;
 export type KitBranch = keyof typeof BRANCH_NAMES;
-
-/** The old made-up sample branches and the real branches that replaced them. */
-export const OLD_BRANCHES: { old: string; code: KitBranch }[] = [
-  { old: "Quezon City (QC)", code: "101" }, { old: "Cebu (CEB)", code: "165" }, { old: "Davao (DVO)", code: "390" }, { old: "Makati (MKT)", code: "168" },
-];

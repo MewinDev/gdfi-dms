@@ -30,6 +30,3 @@ export function getMyLoansAdapter(): MyLoansAdapter & { breakerState(): Promise<
   cached = { mode, adapter: new ResilientAdapter(inner, { ...(mode === "mock" ? { retries: 0, breakAfter: 1_000_000 } : {}), breaker: new DbBreakerStore() }) };
   return cached.adapter;
 }
-
-/** Trim, upper case, remove spaces, dashes and dots (the shared PN cleaning, lib/pn/format.ts). */
-export { cleanPn as normalizePn } from "@/lib/pn/format";

@@ -12,7 +12,7 @@
  *   - per paper: the custody trail and the time each holder held it.
  * The TAT clock never pauses: holds and problems only colour the segments.
  */
-import { businessDate, businessDaysBetween, isBusinessDay } from "@/lib/time";
+import { businessDate, isBusinessDay } from "@/lib/time";
 import { computeJourney, PHASES, type JourneyContext } from "./journey";
 import { nextStepFor, stageLabel } from "./stage-map";
 import { holdDays, problemDays, stepClock, targetOf, type TatChipData, type TatMap } from "./tat";
@@ -109,7 +109,6 @@ export type SegState = "waiting" | "processing" | "hold" | "problem";
 export const STEP_STATE_LABEL: Record<StepState, string> = {
   waiting: "Waiting", now: "Now", hold: "On hold", problem: "Problem", done: "Done", later: "Later", na: "Not applicable",
 };
-export const SEG_LABEL: Record<SegState, string> = { waiting: "Waiting", processing: "Processing", hold: "On hold", problem: "Problem" };
 
 export interface Segment { state: SegState; start: Date; /** null: still open (counts to now) */ end: Date | null }
 
@@ -707,9 +706,6 @@ function nextDay(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
-
-/** Business days in a state span, for the bars legend and table. */
-export const businessSpan = (a: Date, b: Date, holidays: ReadonlySet<string>) => Math.max(0, businessDaysBetween(businessDate(a), businessDate(b), holidays));
 
 /** The processing stages of a transaction's jobs (latest job last), with what was recorded in each. */
 export function stageRowsOf(t: TxnRec, now: Date): JStageRow[] {

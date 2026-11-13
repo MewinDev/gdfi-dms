@@ -80,9 +80,3 @@ export const gapText = (type: TypeKey, step: HandlerStep) => `Nobody can ${STEP_
 export async function fundsGaps(db: Db = prisma): Promise<string[]> {
   return (await fundsHandlers(db)).flatMap((h) => h.gaps);
 }
-
-/** "Ana Cruz, Ben Uy, ... +3 more" (up to 5 names). */
-export function namesText(names: string[], max = 5): string {
-  if (!names.length) return "Nobody";
-  return names.length > max ? `${names.slice(0, max).join(", ")} +${names.length - max} more` : names.join(", ");
-}

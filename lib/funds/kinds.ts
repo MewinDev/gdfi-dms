@@ -6,7 +6,6 @@ import { peso } from "./rules";
 
 export const OTHER = "OTHER";
 export type AmountMode = "TYPED" | "SUGGESTED" | "FIXED";
-export const AMOUNT_MODES: AmountMode[] = ["TYPED", "SUGGESTED", "FIXED"];
 /** Where a line's amount came from (CSV "Amount source", the Journey line). */
 export type AmountSource = "RULE" | "PRESET" | "OFFICE" | "TYPED";
 
@@ -107,8 +106,6 @@ export function sourceHint(source: AmountSource | null, locked: boolean): string
 export function presetWas(presetCents: number | null, cents: number): string {
   return presetCents !== null && presetCents !== cents ? `Preset was ${peso(presetCents)}` : "";
 }
-
-export const SOURCE_TEXT: Record<AmountSource, string> = { RULE: "Rule", PRESET: "Preset", OFFICE: "LTO office", TYPED: "Typed" };
 
 /** A code for a new kind, from its name ("Photo copy" -> PHOTO_COPY), unique among the given codes. */
 export function codeFromName(name: string, taken: Iterable<string>): string {

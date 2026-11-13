@@ -187,14 +187,6 @@ export async function addSuggestionAsKind(u: CurrentUser, raw: { name?: unknown;
   });
 }
 
-/** Kind of a line must exist and be active for new work; an inactive one is allowed only if it is already on the record. */
-export async function requireUsableKind(db: Db, code: string, current?: string | null) {
-  const k = await db.expenseKind.findUnique({ where: { code } });
-  if (!k) throw new UserError("Pick an expense kind from the list.", "kind");
-  if (!k.active && k.code !== current) throw new UserError(`${k.name} is inactive. Pick an active expense kind.`, "kind");
-  return k;
-}
-
 /** The LA's funds flag: known kinds only; a kind made inactive stays only if it was already flagged. */
 export async function validFlagKinds(db: Db, codes: string[], current: string[] = []): Promise<string[]> {
   const rows = await db.expenseKind.findMany({ where: { code: { in: [...new Set(codes)] } } });

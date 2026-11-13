@@ -1117,10 +1117,3 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
   return message;
 }
 
-/** For Find loan and the TAT report: loans with an open review item. */
-export async function openReviewLoanIds(ids: string[]): Promise<Set<string>> {
-  if (!ids.length) return new Set();
-  const rows = await prisma.sourceChange.findMany({ where: { loanId: { in: ids }, state: "OPEN", category: { not: "BORROWER" } }, select: { loanId: true } });
-  return new Set(rows.map((r) => r.loanId));
-}
-

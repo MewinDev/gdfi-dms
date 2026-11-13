@@ -7,8 +7,6 @@ export interface FilterField {
   options: [string, string][];
 }
 
-export const FILTER_NAMES = ["stage", "classification", "area", "branch", "loanType", "tat", "needsAction", "holdReason", "group"] as const;
-
 export interface Chip { name: string; text: string; removeHref: string }
 
 /** Address of the list with these params (empty values dropped). */

@@ -14,7 +14,7 @@ import {
   advanceBalance, bandRolesFor, decimalToCents, isOverdue, liquidationDue, liquidationStatus, peso,
 } from "@/lib/funds/rules";
 import { OTHER, kindText, lineAmountSource, otherDescriptionProblem, sortKinds, startingAmount, type AmountMode, type AmountSource } from "@/lib/funds/kinds";
-import { canFunds, canFundsAny, typesFor, TYPE_NOUN, typeKeyOf, type FundsStep, type TypeRef } from "@/lib/funds/access";
+import { canFunds, canFundsAny, TYPE_NOUN, typeKeyOf, type FundsStep, type TypeRef } from "@/lib/funds/access";
 import { handlersOrAdmins, typeBandApprovers, bandTypeId } from "./funds-handlers";
 import { cashBlockReason } from "./source-blocks";
 import { recomputeStage } from "./stage";
@@ -28,7 +28,6 @@ import { DEFAULT_FUNDS_TYPE_CODE, checkRelease, defaultFundsType, isTransfer, nu
  * integer centavos. Released amounts, receipts and returns are append-only.
  */
 
-export interface FundsActor { id: string; name: string; roleId?: string }
 const actorOf = (u: { id: string; name: string }): Actor => ({ id: u.id, label: u.name });
 
 function need(u: CurrentUser, p: (typeof PERMISSIONS)[keyof typeof PERMISSIONS], msg: string) {
@@ -737,6 +736,3 @@ export function liquidationReportAccess(u: CurrentUser, a: { branchId: string; s
   if (!canFunds(u, "print", a)) return "refused";
   return "ok";
 }
-
-/** The types a person may see on the Funds page ("CA", "FT"). */
-export const fundsTypesSeen = (u: CurrentUser) => typesFor(u, "view");

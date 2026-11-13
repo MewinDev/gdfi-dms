@@ -25,7 +25,6 @@ export const pasuyoSchema = z.object({
   /** Cash the passing processor holds for this job: return it to Finance, or hand it to the second processor. */
   funds: z.enum(["RETURN", "HAND"]).nullable().default(null),
 });
-export type PasuyoInput = z.infer<typeof pasuyoSchema>;
 
 /** Released, unliquidated cash the person holds for this job (per line, after spends and returns). */
 export async function heldFor(db: Tx | typeof prisma, a: Pick<AssignmentFull, "transaction">, userId: string) {

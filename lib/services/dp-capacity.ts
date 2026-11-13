@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
-import { requirePermission, type CurrentUser } from "@/lib/auth/current-user";
+import type { CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { setSetting } from "@/lib/settings";
 import { businessDate, fmtDate } from "@/lib/time";
@@ -69,6 +69,3 @@ export async function saveDpCapacity(u: CurrentUser, userId: string, input: DpCa
   });
   return `${dp.name}: ${changes.join(", ")}.`;
 }
-
-/** For actions: the signed-in person with dpcapacity:manage. */
-export const requireCapacityManager = () => requirePermission(PERMISSIONS.DP_CAPACITY_MANAGE);

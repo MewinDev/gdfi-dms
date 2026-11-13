@@ -316,9 +316,6 @@ export function missingPapersOf(txns: { id: string; status: string; type: { name
   })));
 }
 
-/** True while any expected paper of a live transaction is still Missing (derived; never stored). */
-export const hasMissingPapers = (papers: Pick<MissingPaperView, "state">[]) => papers.some((p) => p.state === "MISSING");
-
 /** The same answer from the database, for one loan (the flag is computed from the paper rows). */
 export async function loanHasMissingPapers(db: Tx | typeof prisma, loanId: string): Promise<boolean> {
   return (await db.checklistCheck.count({ where: { missingState: "MISSING", transaction: { loanId, status: { not: "CANCELLED" } } } })) > 0;
@@ -327,8 +324,3 @@ export async function loanHasMissingPapers(db: Tx | typeof prisma, loanId: strin
 /** Stages from the vault gate on: a file with missing papers there is "Complete with exceptions". */
 export const VAULT_STAGES = ["For Vault Transmittal", "In transit to Vault", "In Safekeeping"];
 export const COMPLETE_WITH_EXCEPTIONS = "Complete with exceptions";
-
-/** The history of one paper (oldest first). */
-export async function paperHistory(db: Tx | typeof prisma, checkId: string) {
-  return db.paperEvent.findMany({ where: { checkId }, orderBy: { at: "asc" } });
-}

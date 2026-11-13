@@ -43,8 +43,6 @@ export function kitRefusal(env: Env = process.env): string | null {
   return null;
 }
 
-export const kitAvailable = (env: Env = process.env) => kitRefusal(env) === null;
-
 /** The database the kit works on (after kitRefusal passed). */
 export function kitDatabase(env: Env = process.env): string {
   return databaseName(env.DIRECT_URL || env.DATABASE_URL) ?? kitConfig.databases[0];

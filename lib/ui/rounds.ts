@@ -10,7 +10,6 @@ import { fmtDateTime } from "@/lib/time";
 
 /** Decline: one reason from this short list, plus remarks (5 to 500). Same list on the server. */
 export const DECLINE_REASONS = ["No capacity", "Wrong job for me", "Papers not complete", "Other"] as const;
-export type DeclineReason = (typeof DECLINE_REASONS)[number];
 
 export interface AssignmentLike {
   id: string;

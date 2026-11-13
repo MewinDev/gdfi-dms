@@ -52,11 +52,6 @@ const peopleWith = (s: AccessSnapshot, key: string) => {
   return [...s.users.values()].filter((u) => u.active && roles.has(u.roleId)).length;
 };
 
-/** How many active people hold each protected tick (for the role editor's notes). */
-export function keepCounts(s: AccessSnapshot): Record<string, { roles: number; people: number }> {
-  return Object.fromEntries(KEEP_PERMISSIONS.map((k) => [k, { roles: rolesWith(s, k).length, people: peopleWith(s, k) }]));
-}
-
 /**
  * Why the change may not be made (plain words), or null. Only a change that takes the LAST holder away
  * is refused: a database that already had nobody (a fresh test setup) is never made worse by it.
