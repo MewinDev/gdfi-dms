@@ -3,7 +3,7 @@ import type { LoanRow } from "@/lib/services/queries";
 import { dayText, peso } from "@/lib/ui/plain";
 import { listStage, ownerTooltip } from "@/lib/workflow/stage-map";
 import { cardFor } from "@/lib/ui/loan-cards";
-import { groupByAreaBranch } from "@/lib/ui/loan-filters";
+import { branchKey, groupByAreaBranch, type GroupTotals } from "@/lib/ui/loan-filters";
 import { Flags } from "./my-loans-list";
 
 /**
@@ -15,8 +15,12 @@ import { Flags } from "./my-loans-list";
  */
 const COLS = 8;
 
-export function LoanTable({ rows, grouped = false, holidays }: { rows: LoanRow[]; grouped?: boolean; holidays: ReadonlySet<string> }) {
+export function LoanTable({ rows, grouped = false, totals, holidays }: { rows: LoanRow[]; grouped?: boolean; totals?: GroupTotals; holidays: ReadonlySet<string> }) {
   const groups = grouped ? groupByAreaBranch(rows) : null;
+  // With paging: the counts of the whole result, and "continued" for a group begun on an earlier page.
+  const areaCount = (a: string, n: number) => totals?.areas[a] ?? n;
+  const branchCount = (a: string, b: string, n: number) => totals?.branches[branchKey(a, b)] ?? n;
+  const cont = (k: string) => (totals?.continued.has(k) ? " (continued)" : "");
   const th = "px-3 py-2 font-normal first:pl-4 last:pr-4";
   return (
     <>
@@ -36,9 +40,9 @@ export function LoanTable({ rows, grouped = false, holidays }: { rows: LoanRow[]
           </thead>
           {groups ? groups.map((g) => (
             <tbody key={g.area} data-loan-area={g.area}>
-              <tr className="bg-fill"><th scope="rowgroup" colSpan={COLS} className="px-4 py-2 text-left text-[13px] font-semibold text-navy">{g.area} <span className="font-normal text-ink-2">· {g.count} loan file{g.count === 1 ? "" : "s"}</span></th></tr>
+              <tr className="bg-fill"><th scope="rowgroup" colSpan={COLS} className="px-4 py-2 text-left text-[13px] font-semibold text-navy">{g.area}{cont(g.area)} <span className="font-normal text-ink-2">· {areaCount(g.area, g.count)} loan file{areaCount(g.area, g.count) === 1 ? "" : "s"}</span></th></tr>
               {g.branches.map((b) => [
-                <tr key={`h-${b.branch}`} data-loan-branch={b.branch} className="border-b border-line"><th scope="rowgroup" colSpan={COLS} className="px-6 py-1.5 text-left text-[12px] font-semibold text-ink-2">{b.branch} · {b.rows.length}</th></tr>,
+                <tr key={`h-${b.branch}`} data-loan-branch={b.branch} className="border-b border-line"><th scope="rowgroup" colSpan={COLS} className="px-6 py-1.5 text-left text-[12px] font-semibold text-ink-2">{b.branch}{cont(branchKey(g.area, b.branch))} · {branchCount(g.area, b.branch, b.rows.length)}</th></tr>,
                 ...b.rows.map((r) => <Row key={r.id} r={r} holidays={holidays} />),
               ])}
             </tbody>

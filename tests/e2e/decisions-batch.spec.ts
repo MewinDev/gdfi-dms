@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { cleanTestRoles, db, resetLoans } from "./db";
 import { approveWindow } from "./approve";
 
@@ -19,20 +20,6 @@ const DONE = "CA-2026-8003";
 const PN = "GD1652026990101";
 
 const width = (page: Page) => page.viewportSize()!.width;
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
-/** A test user of a custom or built-in role: the "Other test user" list on the sign-in page. */
-async function signInOther(page: Page, label: string) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByLabel("Other test user").selectOption({ label });
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string, target?: Locator) {
   if (width(page) === 820) return; // 1440 and 390 only
   await page.waitForTimeout(250);
@@ -82,7 +69,7 @@ async function fixtures() {
 test("Approve asks first: the amount and the request; Cancel and Esc do nothing; Approve approves once even on a double click", async ({ page }) => {
   test.setTimeout(180_000);
   const { dp } = await fixtures();
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   // Both numbers by type, and the former number under the FT one.
   await expect(page.locator(`[data-advance="${CA}"] [data-request-number]`)).toHaveText(CA);
@@ -153,13 +140,13 @@ test("Approve asks first: the amount and the request; Cancel and Esc do nothing;
 
 test("Print liquidation report: Finance prints; a role without the tick has no Print and the report is refused", async ({ page }) => {
   await fixtures();
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=outstanding");
   await expect(page.locator(`[data-advance="${DONE}"] [data-print-link]`).filter({ visible: true })).toHaveCount(1);
 
   const role = await db.role.create({ data: { key: "C_Z_NO_PRINT", name: "Z Funds viewer no print", builtIn: false, permissions: ["loans:view", "funds:ca_view", "funds:ft_view"] } });
   await db.user.create({ data: { email: "zz.noprint@gdfi.ph", name: "Zz No Print", roleId: role.id, isTestUser: true, allBranches: true } });
-  await signInOther(page, "Zz No Print (Z Funds viewer no print)");
+  await signInWith(page, { other: "Zz No Print (Z Funds viewer no print)" });
   await page.goto("/funds?tab=outstanding");
   await expect(page.locator(`[data-advance="${DONE}"]`).first()).toBeAttached();
   await expect(page.locator("[data-print-link]")).toHaveCount(0);
@@ -175,7 +162,7 @@ test("Print liquidation report: Finance prints; a role without the tick has no P
 test("Role editor: the Print liquidation report tick, the Branch Supervisor role, Finance losing Move a hold", async ({ page }) => {
   const finRole = await db.role.findUniqueOrThrow({ where: { key: "FIN" } });
   const sup = await db.role.findUniqueOrThrow({ where: { key: "SUP" } });
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/admin/settings?open=roles&edit=${finRole.id}`);
   const print = page.locator('[data-perm="funds:ca_print"]');
   await expect(print).toContainText("Print liquidation report for cash advances");
@@ -212,7 +199,7 @@ test("Role editor: the Print liquidation report tick, the Branch Supervisor role
 });
 
 test("Settings, Roles: 'N active branches have nobody who can move a hold', with the branches", async ({ page }) => {
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings?open=roles");
   await expect(page.getByRole("dialog")).toContainText("Roles and access");
   await expect(page.locator("[data-hold-mover-health]")).toHaveCount(0); // Admin (All branches) can move holds everywhere
@@ -246,13 +233,13 @@ test("The Branch Supervisor moves a hold inside their branch, not outside it", a
   const reason = await db.holdReason.findFirstOrThrow({ where: { active: true } });
   await db.hold.create({ data: { loanId: loan.id, transactionId: loan.transactions[0].id, reasonId: reason.id, reasonName: reason.name, note: "Waiting for the client's papers", raisedById: la.id, raisedByLabel: la.name, ownerId: la.id, ownerLabel: la.name } });
 
-  await signInOther(page, "Zz Angono Sup (Branch Supervisor)");
+  await signInWith(page, { other: "Zz Angono Sup (Branch Supervisor)" });
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(page.locator("[data-hold-summary] [data-transfer-hold]").filter({ visible: true }).first()).toBeVisible();
   await expect(page.locator("[data-hold-summary] [data-resume]")).toHaveCount(0);
   await noSideways(page);
 
-  await signInOther(page, "Zz Antipolo Sup (Branch Supervisor)");
+  await signInWith(page, { other: "Zz Antipolo Sup (Branch Supervisor)" });
   const res = await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   expect(res?.status()).toBe(404);
   await expect(page.locator("[data-transfer-hold]")).toHaveCount(0);

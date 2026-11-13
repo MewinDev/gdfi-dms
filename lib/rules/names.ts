@@ -9,6 +9,9 @@
  * - On screen a decision reads "<title> · <reason>" (never the title twice).
  * - The classification is not a decision but what the loan is: it reads as one complete sentence with no
  *   title, "This is a Refinancing loan: the product name has the word Refinancing."
+ * - The OR/CR check keeps one name for every outcome, "OR/CR transfer check" (it was "Mortgage check
+ *   needed", too close to "Mortgage needed"); its reason says what follows for the Mortgage.
+ * - No two rules share a title (names.test.ts).
  *
  * Internal history only (never shown): PRODUCT_CLASSIFICATION was Rule 1, UNDERTAKING_CHOICE Rule 2,
  * ORCR_CHECK Rule 3, MORTGAGE_THRESHOLD Rule 4.
@@ -41,7 +44,7 @@ export interface RuleName {
 export const RULE_NAMES: Record<RuleKey, RuleName> = {
   PRODUCT_CLASSIFICATION: { key: "PRODUCT_CLASSIFICATION", title: "Loan classification", decides: "Financing or Refinancing, from the product name", formerly: 1 },
   UNDERTAKING_CHOICE: { key: "UNDERTAKING_CHOICE", title: "Undertaking answer required", decides: "Undertaking or Non-Undertaking, picked by the Loan Associate", formerly: 2 },
-  ORCR_CHECK: { key: "ORCR_CHECK", title: "Mortgage check needed", decides: "Whether the mortgage amount check runs, from the OR/CR answer", formerly: 3 },
+  ORCR_CHECK: { key: "ORCR_CHECK", title: "OR/CR transfer check", decides: "Whether the mortgage amount check runs, from the OR/CR answer", formerly: 3 },
   MORTGAGE_THRESHOLD: { key: "MORTGAGE_THRESHOLD", title: "Mortgage needed", decides: "Mortgage or not, from the loan type and the amount threshold", formerly: 4 },
 };
 
@@ -91,11 +94,14 @@ function ruleTitleAndSentence(f: RuleFiring, thresholds: Thresholds): Omit<RuleW
         sentence: `Undertaking answer is required: this is a Financing loan, answered ${f.financingType === "UNDERTAKING" ? "Undertaking" : "Non-Undertaking"}.`,
       };
     case "ORCR_CHECK":
-      if (f.orcr === "UNTRANSFERRED") return { key: f.key, title: "Mortgage check not needed", sentence: "Mortgage check is not needed: the OR/CR is untransferred." };
       return {
         key: f.key,
-        title: "Mortgage check needed",
-        sentence: f.orcr === "TRANSFERRED" ? "Mortgage check is needed: the OR/CR is transferred." : "Mortgage check is needed: a Refinancing loan skips the OR/CR question.",
+        title: RULE_NAMES.ORCR_CHECK.title,
+        sentence: `${RULE_NAMES.ORCR_CHECK.title}: ${
+          f.orcr === "UNTRANSFERRED" ? "the OR/CR is untransferred, so the amount is not checked for a Mortgage"
+          : f.orcr === "TRANSFERRED" ? "the OR/CR is transferred, so the amount is checked for a Mortgage"
+          : "a Refinancing loan skips the OR/CR question, so the amount is checked for a Mortgage"
+        }.`,
       };
     case "MORTGAGE_THRESHOLD": {
       const t = pesoWhole(thresholds[f.loanType]);

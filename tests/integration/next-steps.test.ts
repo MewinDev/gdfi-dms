@@ -40,7 +40,9 @@ const open = async () => {
   await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
   return prisma.loan.findUniqueOrThrow({ where: { pn: PN } });
 };
-const txnOf = (code: string) => prisma.loanTransaction.findFirstOrThrow({ where: { loan: { pn: PN }, type: { code } }, include: { checks: true } });
+// Checks in a fixed order, with their rule (a query without orderBy returns rows in any order).
+const txnOf = (code: string) =>
+  prisma.loanTransaction.findFirstOrThrow({ where: { loan: { pn: PN }, type: { code } }, include: { checks: { include: { rule: true }, orderBy: { id: "asc" } } } });
 
 /** The steps of one transaction, read from the stored records the way the Check documents page reads them. */
 async function stepsOf(code: string) {
@@ -63,7 +65,9 @@ async function returnedNotary() {
   const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: t.id }, orderBy: { createdAt: "desc" } });
   await acceptJob(dp, job.id);
   const reason = await prisma.returnReason.findFirstOrThrow({ where: { code: "MISSING_PAPER", active: true } }).catch(() => prisma.returnReason.findFirstOrThrow({ where: { active: true } }));
-  const paper = t.checks.find((c) => c.required)!;
+  // A plain required paper, never one of a "one of" group (NOTARY's Proof of sale: Deed of Sale or Sales
+  // Invoice): naming one member while the other stays ticked leaves the group answered, so "tick" would be done.
+  const paper = t.checks.find((c) => c.required && c.rule?.kind === "REQUIRED")!;
   await returnToLa(dp, job.id, { reasonId: reason.id, note: "The ID copy is unreadable", checkIds: [paper.id], handedOver: await allPapers(t.id) });
   return { txn: t, job, paper, reason };
 }

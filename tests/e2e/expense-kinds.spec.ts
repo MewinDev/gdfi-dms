@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { openFundsDetails } from "./helpers";
+import { openFundsDetails, signInWith } from "./helpers";
 
 /**
  * Expense kinds: Settings > Expense kinds (list, Other explained, add a kind, the suggestions block),
@@ -22,12 +22,6 @@ async function clean() {
 test.beforeEach(clean);
 test.afterAll(clean);
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string, target?: Locator) {
   if (width(page) === 820) return; // 1440 and 390 only
@@ -48,7 +42,7 @@ async function addOtherExpense(page: Page, i: number, amount: string, desc: stri
 }
 
 test("Settings > Expense kinds: the list, Other explained, add a kind, names unique", async ({ page }) => {
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings");
   const card = page.locator("#card-expense-kinds");
   await expect(card).toContainText("What a cash advance or fund transfer can be for.");
@@ -79,7 +73,7 @@ test("Settings > Expense kinds: the list, Other explained, add a kind, names uni
 });
 
 test("Other needs \"What is this expense?\"; Finance adds a new kind and it is selected; a processor has no link", async ({ page }) => {
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto("/my-funds?tab=request");
   const row = await addOtherExpense(page, 0, "150", "");
   const send = page.getByRole("button", { name: "Send to Finance" });
@@ -98,7 +92,7 @@ test("Other needs \"What is this expense?\"; Finance adds a new kind and it is s
   const line = await db.cashAdvanceLine.findFirstOrThrow({ where: { kind: "OTHER" } });
   expect(line.otherDescription).toBe("Courier");
 
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   const advance = page.locator("[data-advance]", { hasText: "Other: Courier" }).first();
   // At 820 the lines sit in the row's Details (collapsed); 1440 and 390 show them in the row.
@@ -122,13 +116,13 @@ test("Other needs \"What is this expense?\"; Finance adds a new kind and it is s
 });
 
 test("Often typed as Other: the suggestion block, Add as a kind", async ({ page }) => {
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto("/my-funds?tab=request");
   for (const [i, t] of ["Courier", "courier", "COURIER"].entries()) await addOtherExpense(page, i, "100", t);
   await page.getByRole("button", { name: "Send to Finance" }).click();
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
 
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings?open=expense-kinds");
   const block = dialog(page).locator("[data-other-suggestions]");
   await expect(block).toContainText("Often typed as Other");
@@ -145,7 +139,7 @@ test("Often typed as Other: the suggestion block, Add as a kind", async ({ page 
 });
 
 test("Add rule modal: no field covers the next one; Other explains itself", async ({ page }) => {
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings?open=cash-advance&edit=new");
   const f = page.locator("[data-ca-rule-form]");
   await expect(f.getByLabel("Purpose")).toBeVisible();

@@ -1,9 +1,36 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-export async function signIn(page: Page, who: "la" | "admin") {
+/**
+ * Signing in, for every spec. Specs must not define their own sign-in (no local signInAs, no inline
+ * goto("/login") and click): use signInWith, or signIn for the Loan Associate and the Admin. A copy that
+ * clears the cookie while the page is still navigating (after Send or Save) signs in back to that page.
+ */
+export async function signIn(page: Page, who: "la" | "admin"): Promise<URL> {
+  return signInWith(page, who === "admin" ? "Continue as Admin" : "Continue as Loan Associate");
+}
+
+/** A test user: the button on the sign-in page ("Continue as Admin"), or a name from the "Other test user" list ("Name (Role)"). */
+export type TestUser = string | { other: string };
+
+/**
+ * Signs in afresh as a test user. First leaves the current page (about:blank), so a navigation it still
+ * had in flight (e.g. the app moving to the next transaction after Send) cannot run without the cookie
+ * and land on /login?next=…, which would then send the sign-in back to that page. Waits until the URL
+ * has left /login and returns where the role landed: callers that mean to check the landing page do so
+ * (an Operations Monitor is sent on from Home to Monitoring).
+ */
+export async function signInWith(page: Page, who: TestUser): Promise<URL> {
+  await page.goto("about:blank");
+  await page.context().clearCookies();
   await page.goto("/login");
-  await page.getByRole("button", { name: who === "admin" ? "Continue as Admin" : "Continue as Loan Associate" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page).toHaveURL(/\/login$/); // no next=: the sign-in goes to the role's own landing page
+  if (typeof who === "string") await page.getByRole("button", { name: who }).click();
+  else {
+    await page.getByLabel("Other test user").selectOption({ label: who.other });
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+  }
+  await page.waitForURL((u) => !u.pathname.startsWith("/login"));
+  return new URL(page.url());
 }
 
 /** The PN / CIN / CIF box. It is only on the Loans page (and its search results). */

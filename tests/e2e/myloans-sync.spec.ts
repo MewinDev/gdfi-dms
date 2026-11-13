@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -9,12 +10,6 @@ import { db, resetLoans } from "./db";
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin" } as const;
 const PN = "GD1652026901003";
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
@@ -57,10 +52,10 @@ test.afterAll(async () => {
 
 test("Settings: the MyLoans sync card (health, run statistics, tiers, last runs, settings)", async ({ page }) => {
   // One loan file, due now.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page);
   await db.loan.update({ where: { pn: PN }, data: { nextCheckAt: new Date(Date.now() - 60_000) } });
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings");
   await expect(page.getByRole("link", { name: /^MyLoans sync/ })).toContainText("Mock · Healthy");
   await page.goto("/admin/settings?open=myloans-sync");
@@ -89,7 +84,7 @@ test("Settings: the MyLoans sync card (health, run statistics, tiers, last runs,
 });
 
 test("Find loan: suggestions from the DMS from 3 characters, at most 8; nothing for no match", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page);
   await page.goto("/loans?find=1");
   const box = page.locator("#find-loan");
@@ -112,7 +107,7 @@ test("Find loan: suggestions from the DMS from 3 characters, at most 8; nothing 
 });
 
 test("Material change: LA sees it read-only (no amounts); Open items group; Admin reviews and applies", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page);
   await change(PN, { totalReleasedAmount: 1_020_000 });
   await page.goto(`/loans/${PN}?tab=todo`);
@@ -137,7 +132,7 @@ test("Material change: LA sees it read-only (no amounts); Open items group; Admi
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(page.locator('[id^="send-why-"]')).toHaveText("MyLoans changed this loan. Admin is reviewing.");
 
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${PN}?tab=todo&review=1`);
   const review = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
   await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,000,000");
@@ -153,10 +148,10 @@ test("Material change: LA sees it read-only (no amounts); Open items group; Admi
 });
 
 test("Cancellation: Admin closes the loan as cancelled", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page);
   await change(PN, { status: "CANCELLED" });
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${PN}?tab=todo`);
   await refresh(page);
   await expect(page.getByText("Changes found: review.")).toBeVisible();
@@ -176,7 +171,7 @@ test("Cancellation: Admin closes the loan as cancelled", async ({ page }) => {
 
 test("Replacement PN: simulated, linked on both files, Copy reusable papers", async ({ page }) => {
   await setting("simulator.enabled", true);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page);
   // Tick the Notary papers (the valid IDs belong to the borrower).
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
@@ -184,7 +179,7 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   for (const box of await papers.getByRole("checkbox").all()) if (!(await box.isChecked())) await box.check();
   await expect.poll(async () => db.checklistCheck.count({ where: { checked: true, transaction: { loan: { pn: PN }, type: { code: "NOTARY" } } } })).toBeGreaterThan(3);
 
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${PN}?tab=journey`);
   const sim = page.locator("[data-simulate-source]");
   await sim.getByLabel("Simulate a MyLoans change").selectOption("replace");
@@ -193,7 +188,7 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   const extra = (await db.setting.findUniqueOrThrow({ where: { key: "myloans.mockExtra" } })).value as { pn: string }[];
   const newPn = extra[0].pn;
 
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/search?q=${newPn}`);
   await expect(page.locator("[data-preview-warnings] [data-other-loans]")).toContainText(`This borrower has another loan: ${PN}`);
   await expect(page.locator("[data-preview-warnings]")).toContainText(`replaces ${PN}`);
@@ -201,7 +196,7 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   await openPn(page, newPn);
   // Only a suggestion: nothing is linked until Admin presses Link as replacement (with a note).
   await expect(page.locator("[data-replaces]")).toHaveCount(0);
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${PN}?tab=todo&review=1`);
   const rev = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
   await expect(rev.locator("[data-candidates]")).toContainText(newPn);
@@ -209,7 +204,7 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   await rev.getByLabel("Note (required)").fill("Same unit, new PN from MyLoans");
   await rev.getByRole("button", { name: "Link as replacement" }).click();
   await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: newPn } })).replacesPn).toBe(PN);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/${newPn}`);
   await expect(page.locator("[data-replaces]")).toHaveText(`Replaces ${PN}`);
   await expect(page.locator("[data-related-loans]")).toContainText(PN);
@@ -221,7 +216,7 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   await shot(page, "replacement-old-file");
   await noSideways(page);
 
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${newPn}?tab=todo`);
   const card = page.locator("[data-copy-papers]");
   await expect(card).toContainText(`Copy reusable papers from ${PN}`);

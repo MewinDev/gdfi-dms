@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
-import { completeAndForwardUi, finishCurrentStage, workStagesUi } from "./helpers";
+import { completeAndForwardUi, finishCurrentStage, signInWith, workStagesUi } from "./helpers";
 
 /**
  * DP job stages, Check and verify, manual Forward to branch, the receiving LA, and the vault gate.
@@ -12,12 +12,6 @@ test.beforeEach(async () => {
 });
 
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor", fin: "Continue as Test Finance" } as const;
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string, fullPage = true) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
@@ -76,7 +70,7 @@ async function receiveComplete(page: Page, pn: string, code: string) {
 test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Check and verify, manual forward, liquidation, receive, vault gate", async ({ page }) => {
   test.setTimeout(900_000);
   const PN = "GD1012026901001";
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page, PN);
   const branch = (await db.loan.findUniqueOrThrow({ where: { pn: PN }, include: { branch: true } })).branch.name;
   await send(page, PN, "NOTARY", "YES", ["LTO fee"]);
@@ -91,7 +85,7 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
   await expect.poll(async () => (await txnOf(PN, "EDST")).status).toBe("COMPLETED");
 
   // DP accepts Notary: every paper received into the DP's custody.
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const notary = await jobOf(PN, "NOTARY");
   await page.goto(`/jobs/${notary.id}`);
   await expect(page.locator("[data-received-papers]")).toBeVisible();
@@ -104,7 +98,7 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
   await page.getByRole("textbox", { name: /LTO fee amount/ }).fill("1500.00");
   await page.getByRole("button", { name: "Send to Finance" }).click();
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   await approveWithConfirm(page);
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("APPROVED");
@@ -115,7 +109,7 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("RELEASED");
 
   // Notarization with its evidence.
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${notary.id}`);
   const stepper = page.locator("[data-stage-stepper]");
   await expect(stepper.locator("li")).toHaveText([/Notarization/, /LTO drop off/, /LTO pickup/, /Check and verify/]);
@@ -208,13 +202,13 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
   await page.getByLabel("Receipt / OR no.").fill("OR-LTO-1");
   await page.getByRole("button", { name: "Add receipt" }).click();
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("LIQUIDATED");
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=outstanding");
   await page.getByRole("button", { name: "Close advance" }).click();
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("CLOSED");
 
   // The LA's to-do on Home, then received Complete.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   const todo = page.locator("[data-packages-to-receive]");
   await expect(todo).toContainText("Package forwarded to you: receive it");
   await expect(todo).toContainText(PN);
@@ -227,12 +221,12 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
 
   // Mortgage and Entry of PPSR through their stages too; then the vault gate opens.
   for (const code of ["MORTGAGE", "PPSR"]) {
-    await signInAs(page, "dp");
+    await signInWith(page, BUTTONS.dp);
     const j = await jobOf(PN, code);
     await accept(page, j.id);
     await workStagesUi(page, { orNumber: "OR-777002", registrationNo: "PPSR-0001" });
     await completeAndForwardUi(page, branch);
-    await signInAs(page, "la");
+    await signInWith(page, BUTTONS.la);
     await receiveComplete(page, PN, code);
   }
   await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: PN } })).stage).toBe("For Vault Transmittal");
@@ -241,15 +235,15 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
 test("Incomplete: the LA records it, the DP sees Package incomplete, corrects and forwards again", async ({ page }) => {
   test.setTimeout(400_000);
   const PN = "GD1652026901003";
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page, PN);
   await send(page, PN, "NOTARY", "NO");
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const job = await jobOf(PN, "NOTARY");
   await accept(page, job.id);
   await workStagesUi(page, { name: "Atty. Uy", docNo: "1", pageNo: "2", bookNo: "3" });
   await completeAndForwardUi(page, "Angono");
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/${PN}?tab=todo&work=${job.transactionId}`);
   const form = page.locator("[data-receive-form]");
   await expect(form.getByRole("radio")).toHaveCount(3); // Complete, Incomplete, Other
@@ -257,7 +251,7 @@ test("Incomplete: the LA records it, the DP sees Package incomplete, corrects an
   await form.getByLabel("What is missing or wrong?").fill("Chattel Mortgage page 2 missing");
   await form.getByRole("button", { name: "Record as incomplete" }).click();
   await expect.poll(async () => (await txnOf(PN, "NOTARY")).status).toBe("IN_PROCESS");
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${job.id}`);
   await expect(page.locator("[data-package-incomplete]")).toContainText("Package incomplete: Chattel Mortgage page 2 missing");
   await shot(page, "dp-package-incomplete");
@@ -268,14 +262,14 @@ test("Incomplete: the LA records it, the DP sees Package incomplete, corrects an
   await fwd.getByRole("button", { name: "Forward to branch" }).click();
   await page.getByRole("alertdialog", { name: "Forward the package?" }).getByRole("button", { name: /^Forward \d+ papers?$/ }).click();
   await expect(page.getByText(/Waiting for the Loan Associate to check the papers/)).toBeVisible();
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await receiveComplete(page, PN, "NOTARY");
 });
 
 test("Screens: Settings Processing stages, DP Home with On hold (a returned job leaves the DP), the phone bottom bar", async ({ page }) => {
   test.setTimeout(400_000);
   // Settings > Processing stages (Admin).
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings?open=processing-stages");
   const d = page.locator("dialog#settings-modal");
   await expect(d.getByRole("link", { name: /Notary · Notarization/ })).toBeVisible();
@@ -290,11 +284,11 @@ test("Screens: Settings Processing stages, DP Home with On hold (a returned job 
 
   // Two jobs: one put on hold, one returned to the LA.
   const PN = "GD1652026901003";
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page, PN);
   await send(page, PN, "NOTARY", "NO");
   await send(page, PN, "PPSR", "NO");
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const n = await jobOf(PN, "NOTARY");
   await accept(page, n.id);
   // Phone: the main next action pinned above the bottom navigation, 48px high.

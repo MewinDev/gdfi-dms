@@ -38,7 +38,6 @@ test("Add a transaction type, then the Loan Associate adds it from Check documen
   await expect(dialog(page).getByText(/always active/)).toBeVisible();
   await expect(dialog(page).getByRole("button", { name: "Make inactive" })).toHaveCount(0);
 
-  await page.context().clearCookies();
   await signIn(page, "la");
   await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();

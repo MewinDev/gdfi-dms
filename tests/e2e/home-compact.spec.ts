@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { watchConsole } from "./helpers";
+import { watchConsole, signInWith } from "./helpers";
 
 /**
  * Home, compact and minimalist, for every role: header (no count in the greeting), one summary strip,
@@ -14,19 +14,6 @@ const strip = (page: Page) => main(page).getByRole("region", { name: "Counts" })
 const seg = (page: Page, key: string) => strip(page).locator(`[data-segment="${key}"]`);
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor", fin: "Continue as Test Finance", monitor: "Continue as Test Operations Monitor" } as const;
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(who === "monitor" ? /\/monitoring/ : /\/dashboard/);
-}
-async function signInOther(page: Page, label: string) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByLabel("Other test user").selectOption({ label });
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard|\/monitoring/);
-}
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -101,7 +88,7 @@ test.afterAll(async () => {
 
 test("LA with nothing: zeros muted, You're all caught up, one All clear line; samples collapsed (test mode)", async ({ page }) => {
   const clean = watchConsole(page);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await layoutRules(page);
   await expect(strip(page).getByRole("listitem")).toHaveCount(3);
   for (const k of ["need", "waiting", "problems"]) await expect(seg(page, k)).toHaveAttribute("data-count", "0");
@@ -124,7 +111,7 @@ test("LA with nothing: zeros muted, You're all caught up, one All clear line; sa
 test("LA with one task: Do these next first, one compact row (no Next step label), the counts as before", async ({ page }) => {
   const clean = watchConsole(page);
   await loan("For checklist", "Ana Villanueva");
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await layoutRules(page);
   await expect(seg(page, "need")).toHaveAttribute("data-count", "1");
   await expect(seg(page, "need").getByRole("link", { name: "1 Need you now, open" })).toHaveAttribute("href", "/loans?tab=queue");
@@ -150,7 +137,7 @@ test("LA with eight tasks and two waiting: six rows and See all (8); Waiting on 
   for (const nm of NAMES) await loan("For checklist", nm);
   await loan("In process", "Waiting One");
   await loan("Assigned to DP", "Waiting Two");
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await layoutRules(page);
   await expect(seg(page, "need")).toHaveAttribute("data-count", "8");
   await expect(seg(page, "waiting")).toHaveAttribute("data-count", "2");
@@ -181,7 +168,7 @@ test("LA with eight tasks and two waiting: six rows and See all (8); Waiting on 
 
 test("Document Processor: five counts in the strip (two rows at most), Do these next or the caught-up line", async ({ page }) => {
   const clean = watchConsole(page);
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await layoutRules(page);
   await expect(strip(page).getByRole("listitem")).toHaveText([/To review/, /In process/, /Problems?/, /Need funds/, /On hold/]);
   const ys = new Set(await strip(page).getByRole("listitem").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top))));
@@ -193,7 +180,7 @@ test("Document Processor: five counts in the strip (two rows at most), Do these 
 
 test("Finance: the four funds counts, Open Funds, outstanding cash in one line", async ({ page }) => {
   const clean = watchConsole(page);
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await layoutRules(page);
   await expect(strip(page).getByRole("listitem")).toHaveText([/To approve/, /To release/, /Outstanding/, /Overdue/]);
   await expect(main(page).getByRole("link", { name: "Open Funds" })).toHaveAttribute("href", "/funds");
@@ -209,7 +196,7 @@ test("an approver with funds requests waiting: To approve shows the request (per
   const dp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
   const angono = await db.branch.findUniqueOrThrow({ where: { code: "165" } });
   await db.cashAdvance.create({ data: { requestedById: dp.id, branchId: angono.id, number: "CA-2099-0001", requestedCents: 250_000, lines: { create: [{ kind: "OTHER", otherDescription: "Courier", requestedCents: 250_000 }] } } });
-  await signInOther(page, "Zz Home Approver (Z Home approver)");
+  await signInWith(page, { other: "Zz Home Approver (Z Home approver)" });
   await layoutRules(page);
   await expect(seg(page, "approve")).toHaveAttribute("data-count", "1");
   await expect(seg(page, "approve").getByRole("link")).toHaveAttribute("href", "/funds?tab=approve");
@@ -223,7 +210,7 @@ test("Admin with a MyLoans review waiting: the count in the strip and one slim c
   const clean = watchConsole(page);
   const l = await loan("For checklist", "Ana Villanueva");
   await change(l.id, "MATERIAL");
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await layoutRules(page);
   await expect(seg(page, "source")).toHaveAttribute("data-count", "1");
   const card = main(page).locator("[data-source-changes-card]");
@@ -243,7 +230,7 @@ test("Branch Supervisor with decisions waiting: Corrections to review in the str
   const label = await supervisor();
   const l = await loan("For checklist", "Ana Villanueva");
   await change(l.id, "BORROWER");
-  await signInOther(page, label);
+  await signInWith(page, { other: label });
   await layoutRules(page);
   await expect(seg(page, "corrections")).toHaveAttribute("data-count", "1");
   await expect(seg(page, "corrections").getByRole("link")).toHaveAttribute("href", "#corr-h");
@@ -257,7 +244,7 @@ test("Branch Supervisor with decisions waiting: Corrections to review in the str
 test("Branch Supervisor with nothing: zeros, caught up, one All clear line", async ({ page }) => {
   const clean = watchConsole(page);
   const label = await supervisor();
-  await signInOther(page, label);
+  await signInWith(page, { other: label });
   await layoutRules(page);
   await expect(seg(page, "corrections")).toHaveAttribute("data-count", "0");
   await expect(seg(page, "corrections").getByRole("link")).toHaveCount(0); // nothing to open
@@ -269,7 +256,8 @@ test("Branch Supervisor with nothing: zeros, caught up, one All clear line", asy
 
 test("Operations Monitor: Home is the Monitoring page, as before", async ({ page }) => {
   const clean = watchConsole(page);
-  await signInAs(page, "monitor");
+  await signInWith(page, BUTTONS.monitor);
+  await expect(page).toHaveURL(/\/monitoring/); // sent on from Home
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/monitoring/);
   await noSideways(page);

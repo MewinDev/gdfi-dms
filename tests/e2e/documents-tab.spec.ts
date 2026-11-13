@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -24,12 +25,6 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
-async function signInLa(page: Page) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Continue as Loan Associate" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string, fullPage = true) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(250);
@@ -43,7 +38,7 @@ const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { l
 
 /** Opens the sample loan; ticks every Notary paper and one Mortgage paper (ticked papers get a Document ID). */
 async function setUp(page: Page) {
-  await signInLa(page);
+  await signInWith(page, "Continue as Loan Associate");
   await page.goto(`/loans?fill=${PN}`);
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice } from "./helpers";
+import { pickLtoOffice, signInWith } from "./helpers";
 
 /**
  * Softer borders and keyboard-only focus rings; the LA changes a sent job before the processor accepts;
@@ -13,12 +13,6 @@ test.beforeEach(async () => {
 
 const BUTTONS = { la: "Continue as Loan Associate", dp: "Continue as Test Document Processor" } as const;
 const wide = (page: Page) => page.viewportSize()!.width >= 1100;
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string, fullPage = true) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
@@ -42,7 +36,7 @@ const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { l
 const outline = (page: Page, sel: string) => page.locator(sel).first().evaluate((e) => { const s = getComputedStyle(e); return `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor}`; });
 
 test("Softer borders; the focus ring shows for the keyboard only", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const card = page.getByRole("region", { name: "Notary", exact: true });
@@ -77,7 +71,7 @@ test("Softer borders; the focus ring shows for the keyboard only", async ({ page
 
 test("Before accept the LA can change it; after a return the LA sees the papers needed", async ({ page }) => {
   test.setTimeout(240_000);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   // Send Notary (required papers only) to the test processor.
   await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
@@ -120,7 +114,7 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
   await noSideways(page);
 
   // The processor sees "Updated by" and the list, then accepts.
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: notary.id } });
   await page.goto(`/jobs/${job.id}`);
   const upd = page.locator("[data-updated-by]");
@@ -164,7 +158,7 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
   await noSideways(page);
 
   // The LA who sent it: the findings once in the "Do this now" card, one marker on the paper, the word Returned; the processor is chosen again (nothing pre-selected).
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const fix = page.locator('[data-do-now] [data-step="fix"]');
   await expect(fix).toContainText("Missing paper");

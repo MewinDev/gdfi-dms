@@ -12,6 +12,8 @@ import { SettingsEditForm, type FieldDef } from "@/components/admin/forms";
 import { StatusPanel } from "@/components/admin/status-panel";
 import { ImportStep } from "@/components/admin/import-step";
 import { SearchIcon } from "@/components/ui/icons";
+import { Pager } from "@/components/ui/pager";
+import { PAGE_SIZE, pageOf, pageParam } from "@/lib/ui/paging";
 import { BranchScheduleForm, BranchSyncButton, HidePanel, MyLoansImport, ReviewItem } from "./client";
 
 /**
@@ -26,7 +28,7 @@ import { BranchScheduleForm, BranchSyncButton, HidePanel, MyLoansImport, ReviewI
 const BASE = "/admin/settings";
 const href = (q: Record<string, string | undefined>) => `${BASE}?${new URLSearchParams(Object.entries({ open: "branches", ...q }).filter(([, v]) => !!v) as [string, string][]).toString()}`;
 
-export interface BranchFilter { q?: string; area?: string; source?: string; show?: string }
+export interface BranchFilter { q?: string; area?: string; source?: string; show?: string; page?: string }
 
 type Common = { id: string; title: string; help: string; closeHref: string; returnFocusId: string };
 
@@ -81,7 +83,9 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
     .filter((b) => !q || (b.code ?? "").includes(q) || b.name.toLowerCase().includes(q))
     // "Code needed" first, then "Area needed", then by code.
     .sort((a, b) => Number(!!a.code) - Number(!!b.code) || Number(!!a.areaId) - Number(!!b.areaId) || (a.code ?? "").localeCompare(b.code ?? "") || a.name.localeCompare(b.name));
-  const work = new Map(await Promise.all(shown.filter((b) => !b.active).slice(0, 50).map(async (b) => [b.id, await branchWorkload(b.id)] as const)));
+  // Paging: the filters and the order first, then 100 a page ("N of M" stays the total).
+  const paged = pageOf(shown, pageParam(filter.page), PAGE_SIZE.settings);
+  const work = new Map(await Promise.all(paged.rows.filter((b) => !b.active).map(async (b) => [b.id, await branchWorkload(b.id)] as const)));
   const needCode = rows.filter((b) => !b.code).length;
   const needArea = rows.filter((b) => !b.areaId).length;
   return (
@@ -121,7 +125,7 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
       </form>
       <p className="text-xs text-ink-2" role="status">{shown.length} of {rows.length}</p>
       <ul className="divide-y divide-[rgb(12_35_64/0.1)] rounded-xl border border-line">
-        {shown.slice(0, 400).map((b) => {
+        {paged.rows.map((b) => {
           const w = work.get(b.id);
           const title = `${b.name} (${b.code ?? "code needed"})`;
           return (
@@ -149,8 +153,8 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
           );
         })}
         {shown.length === 0 && <li className="px-4 py-6 text-center text-sm text-ink-2">Nothing matches.</li>}
-        {shown.length > 400 && <li className="px-4 py-3 text-sm text-ink-2">{shown.length - 400} more: narrow the search.</li>}
       </ul>
+      <Pager info={paged.info} href={href({ q: filter.q, area: filter.area, source: filter.source, show: filter.show })} label="branches" />
     </div>
   );
 }

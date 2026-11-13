@@ -479,6 +479,57 @@ describe("11. Refresh paths, the pause switch, limits", () => {
     expect(await lookupPn(la, "GD1012026999999")).toMatchObject({ kind: "unavailable", busy: true, message: MYLOANS_BUSY });
   });
 
+  it("refresh on open obeys the shared hourly limit and the circuit breaker; the Refresh button does not", async () => {
+    const { loan } = await setup();
+    const old = new Date(Date.now() - 6 * 3_600_000);
+    const stale = async () => {
+      await prisma.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: old, lastRefreshError: null } });
+      return prisma.loan.findUniqueOrThrow({ where: { id: loan.id } });
+    };
+    const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // A second spyOn returns the same spy: start each step from zero calls.
+    const fresh = () => { spy(); for (const c of calls) c.mockClear(); };
+
+    // Below the limit: one call.
+    await setSetting("myloans.hourlyCeiling", 600);
+    resetClient();
+    fresh();
+    expect(await refreshOnOpen(await stale())).toMatchObject({ ok: true });
+    expect(count()).toBe(1);
+
+    // At the limit: zero calls; the loan opens from the DMS copy; "last checked" and the error stay as they were; one log line.
+    await setSetting("myloans.hourlyCeiling", 10);
+    for (let i = await callsThisHour(); i < 10; i++) await countCall();
+    resetClient();
+    fresh();
+    log.mockClear();
+    expect(await refreshOnOpen(await stale())).toBeNull();
+    expect(count()).toBe(0);
+    expect(await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).toMatchObject({ lastCheckedAt: old, lastRefreshError: null });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(String(log.mock.calls[0][0])).toMatch(/^\[myloans\] refresh on open skipped .*hourly limit/);
+    // The count is the shared one: nothing was added by the skipped open.
+    expect(await callsThisHour()).toBe(10);
+
+    // The Refresh button at the limit: still calls MyLoans (counted, never limited).
+    expect(await refreshFromMyLoans(la, loan.id)).toMatchObject({ ok: true });
+    expect(count()).toBe(1);
+    expect(await callsThisHour()).toBe(11);
+
+    // Circuit breaker open, under the limit: fails closed, zero calls, nothing written.
+    await setSetting("myloans.hourlyCeiling", 600);
+    resetClient();
+    fresh();
+    log.mockClear();
+    const a = getMyLoansAdapter() as unknown as { breakerState: () => Promise<{ open: boolean }> };
+    vi.spyOn(a, "breakerState").mockResolvedValue({ open: true } as never);
+    expect(await refreshOnOpen(await stale())).toBeNull();
+    expect(count()).toBe(0);
+    expect(await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).toMatchObject({ lastCheckedAt: old, lastRefreshError: null });
+    expect(String(log.mock.calls[0][0])).toMatch(/circuit breaker is open/);
+    vi.restoreAllMocks(); // the breaker and the log back to normal for the tests after this one
+  });
+
   it("the default for refresh on open is 60 minutes", async () => {
     const { SETTING_DEFAULTS } = await import("@/lib/settings");
     expect(SETTING_DEFAULTS["myloans.refreshOnOpenMinutes"]).toBe(60);

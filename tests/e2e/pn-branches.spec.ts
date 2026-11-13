@@ -60,7 +60,6 @@ test("Loan File: Opened at Antipolo, now at Angono after a MyLoans branch change
   // MyLoans now says Angono (165); Admin applies it in the MyLoans review.
   const over = { "GD1012026901001": { branchName: "Angono", branchCode: "165", changedAt: new Date().toISOString() } };
   await db.setting.upsert({ where: { key: "myloans.mockOverrides" }, create: { key: "myloans.mockOverrides", value: over }, update: { value: over } });
-  await page.context().clearCookies();
   await signIn(page, "admin");
   await page.goto("/loans/GD1012026901001");
   // Refresh from MyLoans asks MyLoans afresh. A refresh on open may reuse the answer the server kept for

@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { cleanTestRoles, db, resetLoans } from "./db";
 
 /**
@@ -26,19 +27,6 @@ async function shot(page: Page, name: string) {
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(over, `page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
-}
-async function signIn(page: Page, button: string) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: button }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
-async function signInOther(page: Page, label: string) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByLabel("Other test user").selectOption({ label });
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
 }
 
 let saved: { id: string; permissions: string[] }[] = [];
@@ -79,7 +67,7 @@ for (const who of [
 ]) {
   test(`${who.line} only: no other type anywhere, no Type filter, the type said under Funds`, async ({ page }) => {
     await fixtures();
-    await signInOther(page, who.label);
+    await signInWith(page, { other: who.label });
     await page.goto("/funds?tab=approve");
     await expect(page.locator("[data-funds-types-line]")).toHaveText(who.line);
     await expect(page.locator("[data-funds-type-filter]")).toHaveCount(0);
@@ -106,7 +94,7 @@ for (const who of [
 
 test("Both types: the Type filter; the buttons follow the type's ticks (no Release without the tick)", async ({ page }) => {
   await fixtures();
-  await signIn(page, "Continue as Test Finance");
+  await signInWith(page, "Continue as Test Finance");
   await page.goto("/funds?tab=approve");
   await expect(page.locator("[data-funds-type-filter]")).toBeVisible();
   await expect(page.locator("[data-funds-types-line]")).toHaveCount(0);
@@ -117,7 +105,7 @@ test("Both types: the Type filter; the buttons follow the type's ticks (no Relea
   await db.user.create({ data: { email: "zz.ft.approver@gdfi.ph", name: "Zz Transfer Approver", roleId: role.id, isTestUser: true, allBranches: true } });
   const fin = await db.user.findUniqueOrThrow({ where: { email: "test.finance@gdfi.ph" } });
   await db.cashAdvance.update({ where: { number: FT }, data: { status: "APPROVED", approvedCents: 120_000, approvedById: fin.id, approvedAt: new Date() } });
-  await signInOther(page, "Zz Transfer Approver (Z Approver transfer)");
+  await signInWith(page, { other: "Zz Transfer Approver (Z Approver transfer)" });
   await page.goto("/funds?tab=release");
   await expect(page.locator(`[data-advance="${FT}"]`).first()).toBeAttached();
   await expect(page.locator("[data-release-open]")).toHaveCount(0);
@@ -128,7 +116,7 @@ test("Both types: the Type filter; the buttons follow the type's ticks (no Relea
 test("Role editor: two blocks under Funds; unticking Release fund transfers says who loses it", async ({ page }) => {
   const fin = await db.role.findUniqueOrThrow({ where: { key: "FIN" } });
   const users = await db.user.count({ where: { roleId: fin.id, active: true } });
-  await signIn(page, "Continue as Admin");
+  await signInWith(page, "Continue as Admin");
   await page.goto(`/admin/settings?open=roles&edit=${fin.id}`);
   const ca = page.locator('[data-subgroup="Cash advance"]');
   const ft = page.locator('[data-subgroup="Fund transfer"]');
@@ -151,7 +139,7 @@ test("Role editor: two blocks under Funds; unticking Release fund transfers says
 });
 
 test("Settings: who handles each type, the 'Nobody can release fund transfers.' line, the bands' Type switch", async ({ page }) => {
-  await signIn(page, "Continue as Admin");
+  await signInWith(page, "Continue as Admin");
   await page.goto("/admin/settings?open=funds-types");
   const ftBlock = page.locator('[data-who-handles-type="FT"]');
   await expect(page.locator('[data-who-handles-type="CA"] [data-handler-step="release"]')).toContainText("Test Finance");

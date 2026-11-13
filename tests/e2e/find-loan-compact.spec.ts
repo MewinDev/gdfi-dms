@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, visibleSearchBox, watchConsole } from "./helpers";
+import { signIn, visibleSearchBox, watchConsole, signInWith } from "./helpers";
 
 /**
  * Find a loan, the compact page: the search row, the slim sample list, one result card, the two
@@ -228,10 +228,7 @@ test("samples: an Angono Loan Associate sees no Antipolo sample", async ({ page 
   await db.userAccessGrant.create({ data: { userId: u.id, kind: "BRANCH", branchId: angono.id } });
   await db.userBranch.create({ data: { userId: u.id, branchId: angono.id } });
   try {
-    await page.goto("/login");
-    await page.getByLabel("Other test user").selectOption({ label: `Zz Angono LA (${la.name})` });
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await expect(page).toHaveURL(/\/dashboard/);
+    await signInWith(page, { other: `Zz Angono LA (${la.name})` });
     for (const url of ["/search", "/loans", "/dashboard"]) {
       await page.goto(url);
       // Find a loan: the slim row; My loans and Home: the closed row (its lines are counted closed too).

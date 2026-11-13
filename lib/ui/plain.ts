@@ -3,7 +3,7 @@
  * Pure functions only, so they can be used by server and client components and unit tests.
  */
 import { APP_TIMEZONE, businessDate, businessDaysBetween, fmtDate, noonOfBusinessDay, type TatBadge } from "@/lib/time";
-import { plainRules } from "@/lib/rules";
+import { plainRules, RULE_NAMES } from "@/lib/rules";
 import { stageLabel } from "@/lib/workflow/stage-map";
 
 export type Tone = "act" | "wait" | "ok" | "bad" | "mute" | "navy" | "hold";
@@ -231,7 +231,7 @@ function historyLine(r: HistoryRow): string {
         ? "The system checked the amount: a mortgage is needed."
         : a.mortgageResult === "NOT_MORTGAGE"
           ? "The system checked the amount: no mortgage needed."
-          : "The system skipped the mortgage check because the OR/CR is untransferred.";
+          : `The system ran the ${RULE_NAMES.ORCR_CHECK.title}: the OR/CR is untransferred, so the amount was not checked for a Mortgage.`;
     case "transactions_generated": {
       const list = Array.isArray(a.transactions) ? (a.transactions as string[]).map((c) => txnName(c)).join(", ") : "";
       return `The system listed the work to do${list ? `: ${list}` : ""}.`;

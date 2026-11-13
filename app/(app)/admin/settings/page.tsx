@@ -90,7 +90,7 @@ const listHref = (key: string) => `${BASE}?open=${key}`;
 const editHref = (key: string, id: string) => `${BASE}?open=${key}&edit=${id}`;
 const importHref = (key: string) => `${BASE}?open=${key}&step=import`;
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string; btype?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string; btype?: string; page?: string }> }) {
   // Settings opens for anyone who may change at least one area; each card shows only if allowed.
   const user = await requirePageAny(SETTINGS_PERMISSIONS);
   const sp = await searchParams;
@@ -152,7 +152,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </section>
         ))}
       </div>
-      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show }} btype={sp.btype === "FT" ? "FT" : "CA"} />}
+      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show, page: sp.page }} btype={sp.btype === "FT" ? "FT" : "CA"} />}
     </div>
   );
 }

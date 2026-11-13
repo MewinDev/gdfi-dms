@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice } from "./helpers";
+import { pickLtoOffice, signInWith } from "./helpers";
 
 /**
  * Missing papers with reasons, on the production build (npm run e2e:groups), one width at a time:
@@ -21,12 +21,6 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
 }
@@ -46,7 +40,7 @@ function watchConsole(page: Page) {
 }
 
 async function openNotary(page: Page) {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/search?q=${PN}`);
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
   await expect(page).toHaveURL(new RegExp(`/loans/${PN}`));
@@ -111,7 +105,7 @@ test("LA marks a paper Missing: Send blocked naming it, remarks saved, sent; DP 
   clean();
 
   // DP: the paper in Review the papers (no card on top), then accept; the return offers every paper but the missing one.
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   // Test setup: the job goes to the test processor (the Send panel pre-selects the recommended one).
   const testDp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
   const job = await db.dpAssignment.update({ where: { id: (await db.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id } })).id }, data: { dpUserId: testDp.id } });
@@ -162,7 +156,8 @@ test("vault gate with exceptions on the loan file, and Monitoring, Has missing p
   await noSideways(page);
   clean();
 
-  await signInAs(page, "monitor");
+  await signInWith(page, BUTTONS.monitor);
+  await expect(page).toHaveURL(/\/monitoring/); // sent on from Home
   await page.goto("/monitoring");
   const filter = page.locator("[data-missing-filter]");
   await expect(filter.locator("[data-missing-count]")).toHaveText("1");

@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -22,12 +23,6 @@ test.beforeEach(async () => {
 
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor", fin: "Continue as Test Finance" } as const;
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string, fullPage = true) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(250);
@@ -79,7 +74,7 @@ const md = (page: Page) => page.viewportSize()!.width >= 768;
 
 test("Journey v2: the strip groups, Story is the default and says the reason once, By document, Full log, the choice in the address", async ({ page }) => {
   test.setTimeout(420_000);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
 
   // Just opened: the four transactions are with the LA, on one line; Story is the default view.
@@ -109,7 +104,7 @@ test("Journey v2: the strip groups, Story is the default and says the reason onc
   const notary = await txnOf("NOTARY");
   const paper = notary.checks.find((c) => c.required)!;
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: notary.id }, orderBy: { createdAt: "desc" } });
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${job.id}`);
   await page.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.locator("[data-stages]")).toBeVisible();
@@ -134,7 +129,7 @@ test("Journey v2: the strip groups, Story is the default and says the reason onc
   await expect(page.getByRole("heading", { name: "This job is no longer with you." })).toBeVisible();
 
   // The LA confirms the papers came back.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.evaluate(() => sessionStorage.clear());
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
   await page.locator('[data-do-now] [data-step="confirm"] [data-step-action]').click();
@@ -298,7 +293,7 @@ test("Journey v2: the strip groups, Story is the default and says the reason onc
 
 test("Cash amounts: Finance sees them, the LA and the DP see the status only, until the LA role gets the switch", async ({ page }) => {
   test.setTimeout(180_000);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   await sendToTestDp(page, "MORTGAGE", "YES", ["LTO fee"]);
   const mortgage = (await txnOf("MORTGAGE")).id;
@@ -325,10 +320,10 @@ test("Cash amounts: Finance sees them, the LA and the DP see the status only, un
     }
     return out;
   };
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   expect(await text()).toContain("₱1,500.00");
   for (const who of ["la", "dp"] as const) {
-    await signInAs(page, who);
+    await signInWith(page, BUTTONS[who]);
     const t = await text();
     expect(t).toContain("CA-2026-9001: Funded");
     expect(t).not.toMatch(/₱|PHP \d/);
@@ -338,7 +333,7 @@ test("Cash amounts: Finance sees them, the LA and the DP see the status only, un
     }
   }
   // Admin turns the switch on for the Loan Associate role: the LA sees amounts on the next request.
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   const la = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   try {
     await page.goto(`/admin/settings?open=roles&edit=${la.id}`);
@@ -346,7 +341,7 @@ test("Cash amounts: Finance sees them, the LA and the DP see the status only, un
     await dialog.locator('[data-perm="journey:view_amounts"]').getByRole("checkbox").check();
     await dialog.getByRole("button", { name: "Save" }).click();
     await expect(dialog.getByText("Saved", { exact: true }).first()).toBeVisible();
-    await signInAs(page, "la");
+    await signInWith(page, BUTTONS.la);
     expect(await text()).toContain("₱1,500.00");
   } finally {
     await db.role.update({ where: { key: "LA" }, data: { permissions: la.permissions } });

@@ -731,7 +731,13 @@ export async function copyReusablePapers(u: CurrentUser, newLoanId: string, from
 // When to refresh: on open (older than N minutes), and in the background (active loans only)
 // ---------------------------------------------------------------------------
 
-/** Refresh a loan being opened when its copy is older than the setting (0 = always). Never throws. */
+/**
+ * Refresh a loan being opened when its copy is older than the setting (0 = always). Never throws.
+ * Automatic, so it obeys the shared hourly limit (MyLoansCallHour) and fails closed while the circuit
+ * breaker is open, like the stale refresh in Find a loan: no call, the loan file opens from the DMS copy,
+ * the "last checked" line stays as it was, no error is shown, and the server logs one line. The Refresh
+ * button (refreshFromMyLoans) is a person asking: counted, never limited.
+ */
 export async function refreshOnOpen(loan: { id: string; lastCheckedAt: Date | null; retrievedAt: Date; cancelledAt?: Date | null; closedAt?: Date | null; archivedAt?: Date | null }, now: Date = new Date()): Promise<RefreshResult | null> {
   // Paused by Admin, or a closed or cancelled loan: no call.
   if (await getSetting("myloans.paused")) return null;
@@ -740,10 +746,22 @@ export async function refreshOnOpen(loan: { id: string; lastCheckedAt: Date | nu
   const last = loan.lastCheckedAt ?? loan.retrievedAt;
   if (minutes > 0 && now.getTime() - last.getTime() < minutes * 60_000) return null;
   try {
-    return await refreshLoan(loan.id, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "open", now });
+    const ceiling = await getSetting("myloans.hourlyCeiling");
+    // The breaker store fails safe: if it cannot be read, it counts as open.
+    if ((await getMyLoansAdapter().breakerState()).open) return skippedOnOpen(loan.id, "the circuit breaker is open");
+    if ((await callsThisHour()) >= ceiling) return skippedOnOpen(loan.id, "the hourly limit is reached");
+    // The ceiling is reserved again atomically in the call itself: two instances cannot both slip past it.
+    const r = await refreshLoan(loan.id, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "open", now, ceiling });
+    return !r.ok && r.limited ? skippedOnOpen(loan.id, "the hourly limit is reached") : r;
   } catch {
     return null;
   }
+}
+
+/** Refresh on open stopped before any call: one server log line; the loan file opens as it is. */
+function skippedOnOpen(loanId: string, why: string): null {
+  console.warn(`[myloans] refresh on open skipped for loan ${loanId}: ${why}; opened from the DMS copy.`);
+  return null;
 }
 
 /** Mon to Sat, 7:00 AM to 7:00 PM, Philippine time; holidays skipped. */

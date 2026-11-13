@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
-import { openFundsDetails } from "./helpers";
+import { openFundsDetails, signInWith } from "./helpers";
 
 /**
  * "Needs LTO processing" per transaction type and the LTO office everywhere it is needed:
@@ -11,12 +11,6 @@ import { openFundsDetails } from "./helpers";
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor", fin: "Continue as Test Finance" } as const;
 const dialog = (page: Page) => page.locator("dialog#settings-modal");
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
@@ -51,7 +45,7 @@ test.afterAll(async () => {
 });
 
 test("Settings: Needs LTO processing follows Needs a processor; LTO chip; LTO office figures and No estimate yet", async ({ page }) => {
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings?open=transaction-types");
   await expect(dialog(page).getByRole("listitem").filter({ has: page.getByRole("link", { name: "Edit Notary", exact: true }) }).getByText("LTO", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(dialog(page).getByRole("listitem").filter({ has: page.getByRole("link", { name: "Edit For EDST", exact: true }) }).getByText("LTO", { exact: true })).toHaveCount(0);
@@ -110,7 +104,7 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   const cebu = await db.ltoOffice.create({ data: { code: "ZLTO-CEB", name: "Z LTO Cebu City" } });
 
   // LA: open the loan file; the branch's usual LTO office is pre-selected for Notary.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   const loan = await db.loan.findUniqueOrThrow({ where: { pn: "GD1652026901003" }, include: { branch: true } });
   await db.branch.update({ where: { id: loan.branchId }, data: { usualLtoOfficeId: mandaue.id } });
@@ -169,7 +163,7 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await expect(page.locator("[data-lto-chip]").filter({ visible: true }).first()).toHaveText("At Z LTO Cebu City");
 
   // DP: accept; "Process at" with the estimate; change it after accepting (a note is required).
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const a = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id } });
   await page.goto(`/jobs/${a.id}`);
   const at = page.locator("[data-process-at]");
@@ -209,7 +203,7 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await expect(page.locator("#lto-h")).toHaveText(/Process at: Z LTO Cebu City/);
 
   // Finance: approval and release show the office and estimate per line, and "Office changed".
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   // Tablet: the For column opens with the row's Details.
   if ((page.viewportSize()?.width ?? 0) === 820) await openFundsDetails(page.locator(".fl-row[id]").first());

@@ -2,7 +2,7 @@
 
 The automatic rules, the turnaround targets, the roles and examples of permissions.
 
-Last updated: 12 November 2026 (PHT)
+Last updated: 13 November 2026 (PHT)
 
 ### Automatic rules (run once, when the LA clicks Open Loan File)
 
@@ -101,6 +101,23 @@ One column per fact: **Borrower** (the name, the PN under it), **Branch**, **Pro
 | Cancelled in MyLoans, Archived, Disposed | The word itself, in grey | No step |
 
 Steps 1 (Loan opened) and 2 (Classified) are done as soon as the loan file exists, so a loan is never shown at them; 7 (Quality Assurance) and 8 (Digital Records) have no stage in the app yet (Phase 2), so a loan goes from 6 (Collateral) straight to 9 (In Safekeeping). Archiving, Warehousing and Warehoused come after Closed, under step 10 (Phase 2). The full table, with the next steps, owners and the Phase 2 stages: [Stages and next steps](13-stages-and-next-steps.md).
+
+### Long lists: pages
+
+Long lists are shown a page at a time, with one compact line under the list: "1–50 of 312 · Previous · Next" (no line when everything fits on one page).
+
+| List | Rows a page | Notes |
+|---|---|---|
+| Loans (the Loans table) and My loans | 50 | The tabs, their counts, the filters, the search and the order are as before; the whole list is filtered and put in order first, then one page is shown. |
+| Settings > Users | 100 | "N of M users" counts the whole filtered list. |
+| Settings > Branches | 100 | Was cut at 400 rows ("N more: narrow the search"); now every branch can be reached. |
+| Home: Do these next, Waiting on others, Problems to fix | 6 | Unchanged: already limited, with **See all (N)** to My loans. |
+| Monitoring drill-downs (a processor's jobs, an LTO office's jobs, Loan files with missing papers) | 100 rows each | A row limit, not pages: a pop-up holds up to three lists. The heading keeps the whole count and a line says "Showing the first 100 of N" and how to narrow it. |
+
+- **Counts are the total.** Tab counts, "Showing X of Y" and "N of M users" never count only the page.
+- **The page is in the address** (`page=2`), so Back and refresh keep it. A new filter, search, tab or grouping goes back to page 1.
+- **Group by area and branch.** The whole result is grouped (Area, then Branch, the usual order inside each), then cut into pages of 50 rows. Each heading shows its group's count over the whole result, and "(continued)" when the group began on an earlier page. Whole groups per page were not chosen: one branch with 300 loan files would make a page of 300.
+- **Still read in full on the server.** The order of My loans (most urgent first) and the TAT filter are worked out from every loan file, so the server still reads the whole filtered list (at most 500 loan files per tab, as before) and sends one page to the browser. Settings > Users is paged in the database.
 
 ### Branch access: where a person works
 

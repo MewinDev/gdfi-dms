@@ -192,7 +192,7 @@ describe("Changes and the review item", () => {
     await expect(keepCurrent(admin, it2.id, "")).rejects.toThrow(/short note/);
     await keepCurrent(admin, it2.id, "client confirmed by phone");
     expect((await item(loan.id)).state).toBe("KEPT");
-    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_change_kept" } })).summary).toBe("MyLoans changed Amount. Admin Test Admin kept the current setup: client confirmed by phone");
+    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_change_kept", loanId: loan.id }, orderBy: [{ at: "desc" }, { id: "desc" }] })).summary).toBe("MyLoans changed Amount. Admin Test Admin kept the current setup: client confirmed by phone");
     expect(await refreshLoan(loan.id, sys)).toMatchObject({ outcome: "none" });
     expect(await prisma.sourceChange.count({ where: { loanId: loan.id } })).toBe(1);
     expect(await sendBlockReason(prisma, loan.id, "MORTGAGE")).toBeNull();

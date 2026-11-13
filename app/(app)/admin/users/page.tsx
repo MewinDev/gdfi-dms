@@ -16,10 +16,12 @@ import { permissionLabel, plainWords } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { accessTreeData } from "@/lib/services/access";
 import { accessSummary } from "@/lib/branches/access";
+import { PAGE_SIZE, pageInfo, pageParam, skipTake } from "@/lib/ui/paging";
+import { Pager } from "@/components/ui/pager";
 
 export const metadata: Metadata = { title: "Users" };
 
-type SP = { q?: string; role?: string; branch?: string; status?: string; open?: string; edit?: string };
+type SP = { q?: string; role?: string; branch?: string; status?: string; open?: string; edit?: string; page?: string };
 
 const MAX_BRANCH_CHIPS = 2;
 
@@ -38,16 +40,21 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     // Who works at this branch: their access includes it, or they have All branches.
     ...(sp.branch ? { AND: [{ OR: [{ branches: { some: { branchId: sp.branch } } }, { allBranches: true }] }] } : {}),
   };
+  // Paging in the database: the filters and the order first, then 100 a page ("N of M users" stays the total).
+  const matching = await prisma.user.count({ where });
+  const info = pageInfo(matching, pageParam(sp.page), PAGE_SIZE.settings);
   const [users, roles, branches, total] = await Promise.all([
-    prisma.user.findMany({ where, include: { role: true, accessGrants: true, homeBranch: true, branches: { include: { branch: true }, orderBy: { branch: { name: "asc" } } } }, orderBy: [{ role: { sortOrder: "asc" } }, { name: "asc" }] }),
+    prisma.user.findMany({ where, include: { role: true, accessGrants: true, homeBranch: true, branches: { include: { branch: true }, orderBy: { branch: { name: "asc" } } } }, orderBy: [{ role: { sortOrder: "asc" } }, { name: "asc" }, { id: "asc" }], ...skipTake(info) }),
     prisma.role.findMany({ orderBy: { sortOrder: "asc" } }),
     prisma.branch.findMany({ where: { hidden: false }, orderBy: { name: "asc" } }),
     prisma.user.count(),
   ]);
 
-  // Addresses keep the filters, so closing a pop-up returns to the same list.
+  // Addresses keep the filters, so closing a pop-up returns to the same list (and the same page).
   const keep = new URLSearchParams();
   for (const k of ["q", "role", "branch", "status"] as const) if (sp[k]) keep.set(k, sp[k]!);
+  const pagerHref = `/admin/users${keep.size ? `?${keep}` : ""}`;
+  if (info.page > 1) keep.set("page", String(info.page));
   const listHref = `/admin/users${keep.size ? `?${keep}` : ""}`;
   const withOpen = (open: string, edit?: string) => {
     const p = new URLSearchParams(keep);
@@ -73,7 +80,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         addHref={canEdit ? withOpen("user", "new") : undefined}
       />
 
-      <p className="-mb-3 text-sm text-ink-2" role="status">{users.length} of {total} user{total === 1 ? "" : "s"}</p>
+      <p className="-mb-3 text-sm text-ink-2" role="status">{matching} of {total} user{total === 1 ? "" : "s"}</p>
 
       {users.length === 0 ? (
         <p className="card p-6 text-[15px] text-ink-2">No users match. Change the search or the filters.</p>
@@ -121,6 +128,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
               </li>
             ))}
           </ul>
+          <Pager info={info} href={pagerHref} label="users" />
         </>
       )}
 

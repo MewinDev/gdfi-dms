@@ -4,7 +4,7 @@
  * the times moved into the past (as the Manual Test Kit does) so each count and average is known.
  * LOCAL test database only; removes all loan files first.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";

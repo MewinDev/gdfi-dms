@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { cleanSettingsTestRows, db, resetLoans } from "./db";
 
 /**
@@ -20,12 +21,6 @@ test.afterAll(async () => {
 });
 
 const BUTTONS = { la: "Continue as Loan Associate", dp: "Continue as Test Document Processor" } as const;
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 const wide = (page: Page) => page.viewportSize()!.width >= 1100;
 async function shot(page: Page, name: string) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -81,7 +76,7 @@ const openItems = (page: Page) => page.locator("[data-open-items]").filter({ vis
 
 test("Do this now: returned, confirm in one click, the reason once, hold, problem, ready to send, Open items for other transactions", async ({ page }) => {
   test.setTimeout(420_000);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
 
   // Normal work: the card is short (tick, then send).
@@ -98,7 +93,7 @@ test("Do this now: returned, confirm in one click, the reason once, hold, proble
   const notary = await txnOf("NOTARY");
   const paper = notary.checks.find((c) => c.required)!;
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: notary.id }, orderBy: { createdAt: "desc" } });
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${job.id}`);
   await page.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(page.locator("[data-stages]")).toBeVisible();
@@ -114,7 +109,7 @@ test("Do this now: returned, confirm in one click, the reason once, hold, proble
   expect(handed).toBeGreaterThan(0);
 
   // The LA: one card, step 1 (confirm the papers) is now; the reason is on the page exactly once.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.evaluate(() => sessionStorage.clear()); // no leftover "sent" toast from before the return
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
   await expect(card(page)).toHaveCount(1);
