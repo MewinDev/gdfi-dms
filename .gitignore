@@ -54,3 +54,6 @@ next-env.d.ts
 
 # Local database backups (may hold test data)
 /backups
+
+# Incoming files from other teams (may hold real data); save redacted copies under docs/
+/docs/incoming/

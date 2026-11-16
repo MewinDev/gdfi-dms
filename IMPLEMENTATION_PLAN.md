@@ -243,7 +243,7 @@ Finance runs first, then all roles. A user with no scope sees nothing.
 ## 7. Piece 6: myloans mock (agreed contract, D-022)
 
 > Rewritten on 16 Nov 2026 for the myloans team's updated answers and query (D-022). This is plan only; no sync code yet.
-> **Waiting on:** the updated query text and the answers. `docs/myloans-api-contract.sql` and `docs/MYLOANS_ANSWERS.md` are replaced or created when they are pasted. The field names below come from the project owner's summary of them.
+> **Checked against the actual query** (`docs/myloans-api-contract.sql`, saved 16 Nov 2026) and the answers (`docs/MYLOANS_ANSWERS.md`). The list of corrections is in §7.1.
 
 **What it is.** A local HTTP mock served by the app at `/api/dev/myloans/api/dms/v1/...`.
 - It refuses unless `APP_ENV=local` and `MYLOANS_MODE=mock`.
@@ -253,24 +253,25 @@ Finance runs first, then all roles. A user with no scope sees nothing.
 
 | Call | Behaviour |
 |---|---|
-| API 1 `GET /loans/{pnNo}` | 404 when not found; 422 with the status when not selectable; 200 with the loan. **Up to 2 rows** for one PN # |
-| API 2 change mode `GET /loans/changes?since=&afterId=&limit=500` | `since` is **fixed for the whole run**. Pages by `ExternalLoanId` (`afterId` is a bigint). Returns `runStartedAt` on page 1. A page with fewer than 500 rows is the last |
-| API 2 pool mode (first load) `GET /loans/changes?releasedSince=&afterId=&limit=500` | Released loans since the cutoff, for the one-time first load (D-022 #9) |
-| API 3 `GET /loans/{pnNo}/freshness` | Freshness check |
+| API 1 `GET /loans/{pnNo}` | The query returns **0–2 rows, any status** (`TOP 2`). The API layer maps them: no row → 404; no selectable row → 422 with `TransactionStatusId`, `FeedState` and, for a redo, `ReplacedByPNNo`; a selectable row → 200. The 404 / 422 mapping is v2 §11.1, still to be confirmed with myloans |
+| API 2 change mode `GET /loans/changes?since=&afterId=&limit=500` | Loans **ever released** (they have a ReleaseDate) and changed after `since`, in **any FeedState**. `since` is **fixed for the whole run**. Pages are `ORDER BY ExternalLoanId` with `id > afterId`. **Every row** carries `RunStartedAt`; each page has its own, and the DMS uses page 1's. The query has no `nextCursor`: the next `afterId` is the last row's id. A page with fewer than 500 rows is the last; an exactly full last page is followed by an empty page |
+| Pool mode (first load) `GET /loans/changes?releasedSince=&afterId=&limit=500` (URL proposed; the query defines the mode, not the URL) | Only `FeedState = Released` loans released on or after the cutoff, paged the same way (D-022 #9) |
+| API 3 `GET /loans/{pnNo}/freshness` | **Not in the query.** Until myloans confirms whether API 3 exists, the mock offers it as API 1's row cut down to PNNo, TransactionStatusId, TransactionIsActive, SourceUpdatedAt and ContentHash |
 | API 4 `GET /branches` | Branches |
 | API 5 `GET /products` | Products |
 
-**Fields the mock returns:**
-- `CIN`, `ExternalLoanId`, `PNNo`
-- `FeedState` (5 values, below)
-- `ReplacedByExternalLoanId`
-- `BirthDateHash` (never a birth date)
-- `LoanID`, `LoanClass`, `LoanTypeId`, `LoanType` (name)
-- `TotalLoanAmount`
-- `ReleaseDate` (**datetimeoffset**)
-- `ProductCode`, `ProductName`
-- `BranchID` and branch / area / division / company names
-- `SourceUpdatedAt`, `ContentHash` (hex)
+**Fields the mock returns** (exactly the query's columns, in its order; the API drops `BirthDate` and adds `BirthDateHash`):
+- `RunStartedAt`
+- `ExternalLoanId`, `CIN` (base code, 20 characters), `PNNo`, `TransactionStatusId`, `TransactionIsActive`, `FeedState`, `IsSelectable`
+- `ReplacedByExternalLoanId`, `ReplacedByPNNo` (superseded rows)
+- `CIFNo`, `FirstName`, `MiddleName`, `LastName`, `Suffix` (empty parts are `null`)
+- `BirthDateHash` (HMAC-SHA256, computed in the API; never a birth date)
+- `LoanID`, `LoanTypeId` (= LoanClass), `LoanType` (name: New / Renewal)
+- `BorrowerCompanyName` (the borrower's employer: a **loan** field)
+- `TotalLoanAmount` (a **string**, e.g. `"219590.00"`), `ReleaseDate` (datetimeoffset in +08:00)
+- `ProductID`, `ProductCode`, `ProductName`
+- `CompanyID`, `CompanyName`, `DivisionId`, `DivisionName`, `AreaId`, `AreaName`, `BranchID`, `BranchCode`, `BranchName` (the **organization**: reference data)
+- `SourceUpdatedAt`, `ContentHash` (64 lowercase hex characters, no `0x`)
 
 **FeedState values:**
 
@@ -280,17 +281,47 @@ Finance runs first, then all roles. A user with no scope sees nothing.
 | `Cancelled` | Cancelled in myloans |
 | `Superseded` | Replaced by another myloans record |
 | `Inactive` | No longer active |
-| `NotReleased` | Not yet released |
+| `NotReleased` | Not, or no longer, at status 12 |
 
-**ContentHash** is computed in the mock the way the agreed query does, as lowercase hex. The exact input list follows the agreed query once it is pasted; until then the mock includes `ReplacedByExternalLoanId` (requested in `docs/MYLOANS_REPLY_2.md`).
+The query picks the **first** state that applies, in this order:
+1. Cancelled (status 14)
+2. Superseded (code longer than 20 characters)
+3. NotReleased (status ≠ 12)
+4. Inactive (`is_active` = 0)
+5. Released
+
+So a loan that is cancelled **and then redone** stays `Cancelled`, never `Superseded`, but it still carries `ReplacedByExternalLoanId` / `ReplacedByPNNo`.
+
+**ContentHash** is computed in the mock exactly as the query does:
+- SHA-256 over the UTF-16LE text of `CONCAT` of 17 fields joined by `|`, in this order: FeedState, PN, status id, is_active, CIF, first, middle, last, suffix, birth date (style 126), LoanID, LoanClass, borrower company name, amount, release date (+08:00, style 126), ProductCode, BranchID.
+- **NULL counts as empty text** (no `~` marker).
+- Output: 64 lowercase hex characters.
+- `ReplacedByExternalLoanId` is **not** in today's hash (requested in `docs/MYLOANS_REPLY_2.md`). The mock has a switch to add it once myloans does.
+- Byte-for-byte equality with SQL Server is checked against sample rows requested from myloans.
+
+### 7.1 Corrections after checking the actual query (16 Nov 2026)
+
+| # | The plan said | The actual query | Now |
+|---|---|---|---|
+| 1 | API 3 freshness exists | No API 3 mode; only API 1, API 2 and Pool | On-demand refresh uses API 1; API 3 is to confirm |
+| 2 | API 1: 404 / 422 / 200 | The query returns 0–2 rows of any status; the HTTP codes are the API's job | Mapping kept, marked "to confirm"; 422 explains why from FeedState and `ReplacedByPNNo` |
+| 3 | `RunStartedAt` on page 1 | On **every row**, set per call | The DMS uses page 1's value |
+| 4 | Fields as summarized | Also `ReplacedByPNNo`, `ProductID`, org ids and names, `BranchCode`, and **two** company fields | Field list corrected. `BorrowerCompanyName` is a monitored loan field; `CompanyName` is reference data |
+| 5 | FeedState: 5 values, no order | A CASE with a fixed order; Cancelled outranks Superseded | Documented above; cancel-then-redo keeps `Cancelled` but has `ReplacedBy…` |
+| 6 | Hash input "per the agreed query" | 17 fields; NULL = empty text; lowercase hex; ReplacedBy and all names not hashed | Mock follows it exactly; test vectors requested |
+| 7 | Amount a decimal | The API sends `TotalLoanAmount` as a **string** | Parsed as an exact decimal string |
+| 8 | Names: borrower display name | `NULLIF`: empty name parts arrive as `null` | Stored as parts; display joins the non-null ones |
+| 9 | PN search: statuses 15–19 = not found | FeedState explains every case | Replaces the status-range rule |
+| 10 | Pool endpoint `releasedSince` | The query defines the mode, not a URL | URL marked "proposed" |
+| 11 | Reference renames via the feed | Names come in the feed but are not hashed | A rename shows only when the loan also changes, or through APIs 4 / 5 (API 5 required before go-live) |
 
 **Scenario builders** (fake data only, in a local-only mock table):
 
 | Scenario | What it covers |
 |---|---|
-| **Cancel-then-redo** | Old row becomes `Cancelled` with its hash unchanged; a **new ExternalLoanId with the same CIN** and a new PN # arrives as `Released` |
+| **Cancel-then-redo** | The old row becomes `Cancelled` (its hash changes once, through FeedState). Later its code gets the suffix and `ReplacedBy…` is set, with the **hash unchanged** (Cancelled outranks Superseded, and ReplacedBy is not hashed). A **new ExternalLoanId with the same CIN** and a new PN # arrives as `Released` |
 | `NotReleased` row (and later `Released`) | FeedState handling |
-| **Superseded with `ReplacedByExternalLoanId`** | Replacement case (a) |
+| **Superseded with `ReplacedByExternalLoanId` / `ReplacedByPNNo`** (a redo without a cancellation) | Replacement case (a) |
 | Timestamp-only change (same hash) | No action |
 | Runs with pages of **exactly 500** rows (full page, then a short or empty page) | Paging end |
 | **Pool mode**: released loans since the cutoff, more than 500 | First load |
@@ -337,7 +368,7 @@ The external scheduler calls `POST /api/cron/myloans-sync` every 5 minutes (fixe
    - after `myloans.alertAfterFailedRuns` consecutive failures (default 3), alert the Admin and Superadmin in-app and by email.
 8. **Run log.** Write a `SyncRun` row: start, end, pages, rows, Open Items created, timestamp-only updates, replacements, duplicates, errors, checkpoint before and after.
 
-The rotating-batch polling, tiers, `nextCheckAt` and the background hourly ceiling are removed. On-demand refresh (open, Refresh button) uses API 3, then API 1 only when the timestamp is newer and the hash differs.
+The rotating-batch polling, tiers, `nextCheckAt` and the background hourly ceiling are removed. On-demand refresh (open, Refresh button) uses **API 1** (the query has no API 3; see §7) and acts only when the `ContentHash` differs from the saved one.
 
 ### 8.3 Row handling
 
@@ -348,13 +379,13 @@ The rules apply in this order:
 | 0 | **Duplicate `ExternalLoanId` within the run** | Alert the Admin; **no Open Items** for that id in this run; logged on the run (D-022 #10) |
 | 1 | Known loan (by CIN and ExternalLoanId), **same `ContentHash`** | **No action** (D-022 #4) |
 | 2 | Known, newer `SourceUpdatedAt`, same hash | Not reachable when the hash is the same (#1). Kept as a guard: update `sourceUpdatedAt` only |
-| 3 | **Replacement (a):** a row we hold has `ReplacedByExternalLoanId` | Open Item **"myloans record replaced"** showing **old and new PN #** (and ExternalLoanId). Forward blocked. On approval: re-link `externalLoanId` / `pn` (history row) and fetch the new record |
+| 3 | **Replacement (a):** a row we hold has `ReplacedByExternalLoanId`, in any FeedState (Superseded, or Cancelled after a cancel-then-redo) | Open Item **"myloans record replaced"** showing the **old and new PN #** (from `ReplacedByPNNo`, no extra call) and the ExternalLoanId. Forward blocked. On approval: re-link `externalLoanId` / `pn` (history row) and fetch the new record |
 | 4 | **Replacement (b):** a **new ExternalLoanId** with a **CIN we already hold** | Same Open Item as #3. Covers **cancel-then-redo**, where the old row stays `Cancelled` with an **unchanged hash** (so #1 would skip it) |
 | 5 | Known, `FeedState` changes **away from `Released`** (to Cancelled / Superseded / Inactive / NotReleased) | Open Item + loan flag **"Cancellation pending review"** (wording per state) + **Forward blocked** (D-013). DMS data unchanged until approved. When #3 or #4 also applies, **one** item is raised: "record replaced" |
 | 6 | Known, different hash | Per monitored field that differs: one Open Item (field, DMS value, myloans value, `SourceUpdatedAt`). See the special fields below |
 | 7 | Unknown CIN, `FeedState = Released` | Upsert into `SourceLoanCandidate`. Shown in the branch pool as "Released. Not yet in DMS", only if released on or after the **branch pool cutoff date** (#9). No DMS transaction until an LA accepts |
 | 8 | Unknown CIN, any other FeedState | Ignored. Any existing candidate is removed |
-| 9 | Reference names (branch / area / division / company / product) differ from the lookups | Update the lookup automatically; write the **Reference data changes** log (old, new, when, source = feed); in-app notice to Admin and LA Supervisor/Head (D-012). Never an Open Item |
+| 9 | Reference names in the row (`BranchCode` / `BranchName`, `AreaName`, `DivisionName`, `CompanyName`, `ProductName`, matched on their ids) differ from the lookups. These are **not hashed**, so a rename reaches the DMS only when the loan also changes, or through APIs 4 / 5 | Update the lookup automatically; write the **Reference data changes** log (old, new, when, source = feed); in-app notice to Admin and LA Supervisor/Head (D-012). Never an Open Item |
 
 **Special fields in case #6:**
 
@@ -399,7 +430,7 @@ The old sync settings (tiers, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hour
 | `myloans.alertAfterFailedRuns` | Default 3 |
 | `myloans.branchPoolCutoffDate` | Superadmin only |
 | `myloans.paused` | Kept |
-| `myloans.monitoredFields` | Tickboxes over the loan and borrower fields, including **Birth date (hash only)** |
+| `myloans.monitoredFields` | Tickboxes over the hashed loan and borrower fields: PN #, status / active / FeedState, CIF, first / middle / last name, suffix, birth date (hash only), LoanID, loan type, borrower company name, amount, release date, product code, branch. All are on by default |
 
 ### 8.8 Screens
 
@@ -577,9 +608,10 @@ The existing `DpAssignment` / `DocumentMovement` records keep working. The engin
 
 - **Order unchanged:** validate → DMS → myloans (API 1).
 - **API 1 answers:**
-  - 404 → "Not found";
-  - 422 → a status card with the status;
+  - no row (404) → "Not found";
+  - no selectable row (422) → a status card that says why, from `FeedState`: Cancelled, Inactive, Not released, or **"Replaced by <new PN #>"** (`ReplacedByPNNo`), with a link when that PN is already in the DMS;
   - up to 2 rows → use the one with `IsSelectable = 1` and alert the Admin (8.5).
+- The old rule "statuses 15–19 count as not found" (`lib/services/loan-file.ts:146-147`) is replaced by `FeedState`.
 - **On open**, save `cin`, `externalLoanId` (with the first `LoanSourceIdentity` row) and `contentHash`. Duplicates are prevented by the database (`Loan.cin` and `Loan.pn` unique; race handled).
 - **IsSelectable** (`FeedState = Released`) from the API replaces the status-12-only check. `ReleaseDate` is converted to the Manila date.
 - **`PnSearchLog`:** user, PN typed, outcome (INVALID / FOUND_IN_DMS / NOT_FOUND / NOT_SELECTABLE / OPENED), status id, time. Shown under Reports, scoped.
