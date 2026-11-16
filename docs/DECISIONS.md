@@ -326,3 +326,76 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - timing, limits, credentials;
   - the empty-page / nextCursor format.
 - **Scope of this change:** docs and plan only; no sync code yet.
+- **Amended 16 November 2026, after checking the actual query** (`docs/myloans-api-contract.sql`):
+  - API 1 returns 0–2 rows of any status; the 404 / 422 mapping is the API's job, still to confirm;
+  - the query has **no API 3 mode**: refresh uses API 1;
+  - every row carries `RunStartedAt`; the checkpoint uses page 1's;
+  - FeedState follows a fixed order (Cancelled, Superseded, NotReleased, Inactive, Released), so a cancelled-then-redone loan stays Cancelled but carries `ReplacedBy…`;
+  - the hash covers 17 fields with NULL as empty text, and no names.
+
+  Full list: `IMPLEMENTATION_PLAN.md` §7.1. Q-N14 is answered by D-027.
+
+## D-023 Who edits access and scope
+
+- **Date:** 16 November 2026
+- **Decision:**
+
+  | Who | May change |
+  |---|---|
+  | **Superadmin only** | the permission matrix; per-user permission overrides; the "Can approve LA Open Items" tickbox; the "All branches" tickbox |
+  | **Admin and Superadmin** | specific branch tickboxes; the "Handles CA" / "Handles FT" tickboxes (day-to-day staffing) |
+  | **Nobody** | their own access or scope |
+
+  Every change is audit-logged.
+- **Reason:** permissions and wide access stay with the Superadmin. Staffing changes (who covers which branch, who handles CA or FT) are routine and should not wait for the developer.
+- **Answers:** `IMPLEMENTATION_PLAN.md` Q-N4. **Narrows D-008** ("only the Superadmin edits permissions and overrides") for branch and CA / FT ticks.
+
+## D-024 Finance keeps approve-then-release; amount bands are a setting, off by default
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - The Finance **approve, then release** steps stay.
+  - Approval **amount bands** become a setting, **off by default**. That matches v2, which has no bands.
+  - With bands off, a request is approved by a user who has the approve permission for its fund type (role tick or override) and handles that type (D-009).
+  - **To confirm with Finance.**
+- **Reason:** separation of duties (the person who approves is not the only check before money moves). Bands stay available if Finance wants them.
+- **Answers:** Q-N6. Departs from v2 §3.5 / §5.7 (no approval step) on purpose.
+
+## D-025 Cancel-then-redo raises one Open Item
+
+- **Date:** 16 November 2026
+- **Decision:** a cancel-then-redo raises **one** "myloans record replaced" Open Item, not a separate cancellation item as well.
+- **Reason:** it is one business event. Two items would ask the approver to decide the same thing twice.
+- **Answers:** Q-N15.
+
+## D-026 Real branch names are kept
+
+- **Date:** 16 November 2026
+- **Decision:** the development and test data keep the real GDFI branch names (and areas and divisions).
+- **Reason:** branch names are organization data, not personal data. Borrower data stays fake.
+
+## D-027 Financing vs Refinancing comes from keywords in the product name
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - The loan classification is decided by **keywords in the product name**, a business rule from the users. **Not by ProductCode / ProductID.**
+  - There are two keyword lists in Settings: **Refinancing keywords** and **Financing keywords**.
+    - They are matched case-insensitively.
+    - Admin and Superadmin edit them; every change is audit-logged.
+    - Before saving, a **"Test keyword rules"** preview lists every known product with its result.
+  - **No keyword matches** → **"Can't classify"**. **Both lists match** → **"Classification conflict"**. Either way:
+    - the Admin and the LA Supervisor/Head are alerted;
+    - the loan **cannot be forwarded** until it is resolved.
+  - **When the LA accepts a loan,** it saves its classification and the product name used.
+    - If the name or the keywords later give a different result, the loan is flagged **"Classification changed since accepted"**.
+    - A logged **reclassify** action (its own permission tickbox) applies the new result. The system never switches silently.
+  - ProductCode / ProductID are used **only** to recognise that the same product was renamed (Reference data changes log).
+- **Reason:** business rule from the users (A7.3); myloans has no classification field.
+- **Replaces:**
+  - any earlier code-based mapping;
+  - v2 §4.1 / Chart 3 Rule 1 as built (`lib/rules/index.ts:55-64`): whole words "Refinancing" / "Financing", and **"neither word or a blank name = Refinancing"**. Under this decision, no match is "Can't classify", not Refinancing.
+- **Still to confirm:**
+  - the exact matching rule (Q-N16);
+  - the starting keywords (Q-N17).
+
+  Proposals and a preview are in `IMPLEMENTATION_PLAN.md` §3a. **Nothing is seeded until confirmed.**

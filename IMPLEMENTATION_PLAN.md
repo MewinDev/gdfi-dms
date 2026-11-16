@@ -28,6 +28,7 @@ Effort is in **developer-days** for one experienced developer.
 | **1** | **Sign-in hardening** (priority #1, D-021) | 1.5 | — |
 | 2 | Permission core: one resolver; 10 roles; per-user overrides and scope; matrix screen; user screen; role migration | 6–8 | 1 |
 | 3 | Branch scope everywhere; file download route; file-view log; cross-branch tests (Finance first) | 4–6 | 2 |
+| **3a** | **Product classification by keywords** (D-027): settings, preview, Can't classify / conflict, saved result, reclassify, minimal Product table. Moved before the myloans pieces because the LA module needs it | 3–4 | 2, 3 |
 | 4 | One working-days calendar (Mon–Sun ticks, national and local holidays) | 2–3 | — |
 | 5 | Liquidation due: one CA / FT setting, saved at LTO completion; remove the old constants | 2 | 4 |
 | 6 | myloans mock APIs 1–5 (the exact contract) | 3–4 | — |
@@ -37,7 +38,7 @@ Effort is in **developer-days** for one experienced developer.
 | 10 | PN # search: IsSelectable, ExternalLoanId on open, Search Log, "Released. Not yet in DMS" accepted from the pool | 2–3 | 7, 9 |
 | 11 | Products (API 5) and branches (API 4) from the mock; LTO-PASIG sample warning | 2–3 | 6 |
 | 12 | Docs, manual test kit, e2e update; Step 5 verification | 4–6 | all |
-| | **Total** | **≈ 47–64 days** | |
+| | **Total** | **≈ 50–68 days** | |
 
 Pieces 4 and 6 have no dependencies and can be built early or in parallel. Each piece is committed on its own, with its tests.
 
@@ -150,7 +151,7 @@ The migration writes one audit row per changed user. A migration report lists th
 | Screen | What it shows | Who |
 |---|---|---|
 | **Settings → Permissions** | A grid of roles (columns) × permissions (rows, grouped by area), with tickboxes and a help text per key. Save shows a diff of added and removed ticks per role before confirming | edit: Superadmin (`permissions:manage`); view: Admin |
-| **Users → Edit** | Role; status; branch scope (existing tree + "All branches"); Handles CA / Handles FT; "Can approve LA Open Items". A **permissions panel** shows each key as Inherited ✓/✗ / **Granted** / **Denied**, with a reason note | Superadmin edits overrides and scope. Admin sees them read-only (see Q-N4) |
+| **Users → Edit** | Role; status; branch scope (existing tree + "All branches"); Handles CA / Handles FT; "Can approve LA Open Items". A **permissions panel** shows each key as Inherited ✓/✗ / **Granted** / **Denied**, with a reason note | Per D-023. **Superadmin only:** overrides, the approver tick, "All branches", role. **Admin and Superadmin:** specific branches, Handles CA / FT. **Nobody** edits their own access or scope (server-side refusal, audited attempt). Admin sees the rest read-only |
 | **Users list** | Filter "has overrides"; badges for approver, CA, FT | Superadmin, Admin |
 
 ### 3.6 Lock-out rules
@@ -170,6 +171,86 @@ Every change is audited with before and after.
 - **Migration test:** old roles map as in 3.3.
 
 ---
+
+## 3a. Piece 3a: Product classification by keywords (D-027)
+
+### 3a.1 Rule
+
+The rule decides **Financing**, **Refinancing**, **Can't classify** (no match) or **Classification conflict** (both lists match) from the **product name only**.
+
+`lib/rules/index.ts` `classifyProductName` (whole words "Refinancing" / "Financing"; neither or blank = Refinancing) is replaced. Rules 2–4 stay as they are; Rules 2–3 (Undertaking and OR/CR picks) apply only to Financing.
+
+### 3a.2 Matching: proposal (Q-N16)
+
+The literal rule "ignore spaces and hyphens, then look for the keyword anywhere" causes **false conflicts**. Removing spaces joins words, so:
+- "Agriculture Financing" becomes `agriculturefinancing`, which contains `refinanc`;
+- "Auto Refinancing" contains `financing` as well as `refinanc`.
+
+**Proposed rule C:**
+- case-insensitive;
+- a keyword matches **at the start of a word**;
+- hyphens and extra spaces **inside** a word are ignored, so "Re-Financing" = "refinancing";
+- " - " between words is a separator.
+
+### 3a.3 Starting keywords: proposal (Q-N17)
+
+**Not seeded until you confirm.** Preview on every product name in the kit and mock data, plus four examples from v2 and the BRDs:
+
+| Product name | Today (v2 Rule 1) | Your example keywords, literal rule (Refi: `refinanc`, `refi`; Fin: `financing`) | **Proposal: rule C, Refi `refinanc`, `refi`; Fin `financ`** | Rule C with Fin `financing` only |
+|---|---|---|---|---|
+| Auto Financing | Financing | Financing | Financing | Financing |
+| Auto Refinancing | Refinancing | **CONFLICT** | Refinancing | Refinancing |
+| Auto Finance | Refinancing (v2 example) | Can't classify | **Financing** | Can't classify |
+| Truck Financing | Financing | Financing | Financing | Financing |
+| Truck Refinancing | Refinancing | **CONFLICT** | Refinancing | Refinancing |
+| Angono - Car Financing | Financing | Financing | Financing | Financing |
+| Auto | Refinancing | Can't classify | Can't classify | Can't classify |
+| (blank) | Refinancing | Can't classify | Can't classify | Can't classify |
+| Car Loan (v2 example) | Refinancing | Can't classify | Can't classify | Can't classify |
+| Personal - Doctors Loan (v2 question) | Refinancing | Can't classify | Can't classify | Can't classify |
+| Agriculture Financing (made-up) | Financing | **CONFLICT** | Financing | Financing |
+| Hardware Financing (made-up) | Financing | **CONFLICT** | Financing | Financing |
+| Auto Re-Financing (made-up) | Financing | **CONFLICT** | Refinancing | Refinancing |
+
+The real product list (`PR_PRODUCTS`) is requested from myloans (`docs/MYLOANS_REPLY_2.md`). The keyword lists should be checked against it before go-live.
+
+### 3a.4 Data
+
+| Change | Detail |
+|---|---|
+| Setting `classification.keywords` | `{ refinancing: string[], financing: string[] }`; audited; Admin + Superadmin (`settings:classification`) |
+| `Loan` columns | `classification` (FINANCING / REFINANCING / UNCLASSIFIED / CONFLICT), `classifiedProductName`, `classifiedAt`, `classificationChanged` (bool) |
+| New `Product` table | `productId` (myloans ProductID, unique), `productCode`, `name`, `active`, `sourceUpdatedAt`. Moved here from piece 11. Filled from mock API 5 and from loans' product names; a rename (same ProductID, new name) goes to the Reference data changes log |
+| Permission | `loans:reclassify` (default: LA Supervisor/Head, Superadmin) |
+
+### 3a.5 Behaviour
+
+| Event | What happens |
+|---|---|
+| **Accept / open** | Classify and save the result with the product name used |
+| UNCLASSIFIED or CONFLICT | An alert (in-app; email when on) to Admin and the LA Supervisors/Heads of the branch. A banner on the loan file. **Send to DP / Forward is refused** with the reason (today's send action now; the engine in piece 9) |
+| **Re-check** (keyword save, product rename, loan product change) | Re-classify open loans. If the result differs from the saved one, set `classificationChanged` and show the banner "Classification changed since accepted: was X, now Y" |
+| **Reclassify** (`loans:reclassify`, remarks required) | Applies the new result: the existing Rules 2–4 and the transaction effects (re-uses the "apply" path; sent or in-process transactions never change). Audited |
+| **Test keyword rules** (Settings) | Before saving, a table of every known product (`Product` + distinct product names on open loans) with today's and the new result, and how many open loans change |
+
+### 3a.6 Mock products (piece 6)
+
+The mock includes:
+- a clear Financing name;
+- a clear Refinancing name;
+- no keyword;
+- both keywords (e.g. "Financing and Refinancing Promo");
+- a rename that flips the classification (same ProductID: "Auto Loan" → "Auto Refinancing").
+
+### 3a.7 Tests
+
+- the matching rule: case, hyphens, word start, both or none;
+- the preview counts;
+- the saved classification on accept;
+- Can't classify / conflict block Send and Forward, and the alert goes out;
+- a keyword change and a rename flag "changed since accepted" without switching;
+- reclassify only with the permission, with remarks, audited;
+- a rename recognised by ProductID and logged.
 
 ## 4. Piece 3: Branch scope everywhere (D-019)
 
@@ -626,8 +707,7 @@ The existing `DpAssignment` / `DocumentMovement` records keep working. The engin
 ## 12. Piece 11: Branches and products (APIs 4 and 5)
 
 - **Branches:** the live adapter's `listBranches` uses API 4. The mock serves it. Renames are applied and logged (D-012). Existing Branch review is kept for new or unknown branches.
-- **New `Product` table:** `productCode` (unique), `name`, `active`, `sourceUpdatedAt`. Synced from API 5. Loans keep `productCode`; the name is read from `Product`.
-  - **Rule 1 risk:** a rename that would flip Financing / Refinancing for an open loan. See Q-N2.
+- **Products:** the `Product` table is built in piece 3a. Here it is synced from API 5 (required before go-live, `docs/MYLOANS_REPLY_2.md`). A rename that flips a classification is handled by piece 3a (flag, then reclassify).
 - **LTO-PASIG** (D-020): seeded with a sample distance. New `LtoOffice.isSample` and `sampleNote` = "Sample. Verify with Operations". Settings and the Send panel show a warning badge on that office.
 
 ---
@@ -637,7 +717,8 @@ The existing `DpAssignment` / `DocumentMovement` records keep working. The engin
 Step 2 (reset and seed) runs **before** Step 4. So `npm run db:reset-seed` is built to grow:
 - the first version seeds what today's schema supports;
 - each Step 4 piece extends the seed for its new tables (overrides, Open Items, Products, calendar, mock data);
-- the reset-seed is re-run after each piece.
+- the reset-seed is re-run after each piece;
+- **each piece adds sample loans for the stages it makes reachable** (Part E of the 16 Nov update).
 
 `db:reset-seed`:
 - refuses unless the database name is the local dev one, `APP_ENV=local`, and `ALLOW_DESTRUCTIVE=1` is set for that one command (reusing `lib/env/destructive.ts`);
@@ -675,11 +756,11 @@ Some are carried from Step 1; some are new from the contract.
 | # | Question | My proposal |
 |---|---|---|
 | Q-N1 | ~~Superseded copies vs "ignore IsSuperseded = 1"~~ | **Resolved by D-022:** link on CIN; "myloans record replaced" when a held row has `ReplacedByExternalLoanId` or a new ExternalLoanId arrives with a held CIN (8.3 #3–#4) |
-| Q-N2 | A product rename (API 5) is auto-applied (D-012), but Rule 1 classifies from the product name. Should a rename that would **change Financing / Refinancing** for an open loan raise an Open Item instead? | Yes: auto-apply the name, and raise an Open Item only when the rule result would change |
+| Q-N2 | ~~Product rename vs Rule 1~~ | **Resolved by D-027:** flag "Classification changed since accepted" and a logged reclassify; never silent |
 | Q-N3 | A cash advance covering several transactions: is liquidation due N days after the **last** LTO completion, or per transaction? | Last |
-| Q-N4 | Who edits branch scope, CA / FT ticks and the approver tick: Superadmin only, or Admin too? | Superadmin only (D-008); Admin read-only |
+| Q-N4 | ~~Who edits scope, CA/FT and the approver tick~~ | **Resolved by D-023** |
 | Q-N5 | Allow test sign-in in **staging** for UAT before Entra exists? | No (staging refuses), unless you want an explicit `ALLOW_TEST_SIGNIN` for UAT |
-| Q-N6 | Finance approval step and **amount bands**. v2 has no approval (release only). D-010 turns approvers into per-user tickboxes. Keep the approve-then-release step and the small / large bands, or drop approval? | Keep approve as an optional per-user tick; drop amount bands. Please confirm |
+| Q-N6 | ~~Finance approval and bands~~ | **Resolved by D-024:** keep approve-then-release; bands are a setting, off by default (to confirm with Finance) |
 | Q-N7 | Does On Hold pause TAT? (Q13) | No pause; hold time reported separately |
 | Q-N8 | Does the 30-minute sync run 24/7 or office hours only? Do checks continue for loans in safekeeping (years) until "Loan closed/released"? (Q11, Q15) | 24/7 (one API 2 call is cheap); keep syncing until closed |
 | Q-N9 | Accept / Forward now for the existing stages only, with Custodian / QA / Digicur / Archiver in their modules? (Q2) | Yes |
@@ -687,5 +768,8 @@ Some are carried from Step 1; some are new from the contract.
 | Q-N11 | Where is "Processing complete" set, and what signals "fully paid"? (Q15) | Later module; not needed for the foundation |
 | Q-N12 | Rule 4 exact decimals now? (Q16) | Yes, in piece 10 (½ day) |
 | Q-N13 | ~~Birth date: options D1 / D2 / D3~~ | **Resolved by D-022:** the birth date never arrives; `BirthDateHash` flags a change with no values |
-| Q-N14 | **Source of Financing / Refinancing and API 5** (myloans A7.3). Rule 1 needs the product name, or a myloans flag. Still open with the myloans team. **Blocks the LA module** | Ask in `docs/MYLOANS_REPLY_2.md`; until answered, Rule 1 keeps using the product name from the feed |
-| Q-N15 | When a loan changes away from Released **and** is replaced (cancel-then-redo), raise one item or two? | One item, "myloans record replaced" (8.3 #5) |
+| Q-N14 | ~~Source of Financing / Refinancing~~ | **Resolved by D-027:** keywords in the product name. API 5 required before go-live |
+| Q-N15 | ~~One or two items for cancel-then-redo~~ | **Resolved by D-025:** one item |
+| Q-N16 | **Keyword matching rule.** The literal "ignore spaces and hyphens" gives false conflicts ("Agriculture Financing", every Refinancing name). Use rule C (keyword at the start of a word; hyphens inside a word ignored)? | Rule C (§3a.2) |
+| Q-N17 | **Starting keywords.** Refinancing `refinanc`, `refi`; Financing `financ` (then "Auto Finance" = Financing) or `financing` (then "Auto Finance" = Can't classify, as v2 intended it not to be Financing)? | `financ`; check against the real PR_PRODUCTS list |
+| Q-N18 | **Go-live cutoff.** D-022 says go-live minus 30 days; myloans suggests the go-live date itself (C4). Keep minus 30? | Keep minus 30 (a setting either way) |
