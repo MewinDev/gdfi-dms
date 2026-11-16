@@ -51,3 +51,6 @@ next-env.d.ts
 /storage
 /test-results
 /playwright-report
+
+# Local database backups (may hold test data)
+/backups

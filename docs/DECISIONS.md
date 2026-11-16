@@ -34,9 +34,7 @@ v2 below means *Loan Document Management System v2* (16 Nov 2026), the main spec
 
   LA Supervisor/Head is its own role. It has every LA permission, plus "Approve/Reject myloans Open Items".
 - **Reason:** Project owner's decision. v2 §1.6 and §12.2 model the Supervisor as an LA with an `IsSupervisor` flag. A separate role was chosen instead. The reason is to be confirmed.
-- **Open points:**
-  - Finance CA vs FT users (`FOUNDATION_CHECK.md` Q3).
-  - What happens to today's extra roles: Monitor, Approvers, Branch Supervisor (Q4).
+- **Open points:** resolved by D-009 (Finance CA / FT) and D-010 (old roles).
 
 ## D-003 Permissions are customizable in a matrix
 
@@ -49,6 +47,7 @@ v2 below means *Loan Document Management System v2* (16 Nov 2026), the main spec
   - The last Superadmin cannot lose "manage permissions".
   - Every change is audit-logged.
 - **Reason:** Project owner's decision. The reason is to be confirmed. v2 §9.5 lists "user roles and permissions" as an Admin-maintained setting. This decision restricts editing to the Superadmin.
+- **Extended by:** D-008 (per-user overrides and scope).
 
 ## D-004 myloans changes follow v2 strictly
 
@@ -60,6 +59,7 @@ v2 below means *Loan Document Management System v2* (16 Nov 2026), the main spec
   - Remarks are required on approve and on reject.
 - **Reason:** v2 §3.2 and §5.2 say DMS data is not changed until the change is approved.
 - **Replaces:** the earlier rule that applied "minor" changes (area, division, company, vehicle details) automatically, and the split of reviewers between the Admin and the Branch Supervisor (`docs/workflow/08-systems.md`).
+- **Narrowed by D-012:** only monitored loan and borrower fields raise Open Items. Renames of reference data (area, division, company, branch and product names) update automatically, with a log.
 
 ## D-005 myloans check interval
 
@@ -69,6 +69,7 @@ v2 below means *Loan Document Management System v2* (16 Nov 2026), the main spec
   - A value below 30 or above 60 minutes shows a warning but is allowed.
   - A change applies without a restart and is audit-logged.
 - **Reason:** v2 §9.2 gives "every 30 minutes during office hours" as the example. The reason for the 30–60 warning band is to be confirmed.
+- **Applied by D-016:** the interval drives the API 2 change feed.
 
 ## D-006 Closure: documents stay in the vault until the loan is fully paid
 
@@ -93,3 +94,182 @@ v2 below means *Loan Document Management System v2* (16 Nov 2026), the main spec
   - 1–8 units per PN;
   - NTC / NTE / NOD notices.
 - **Reason:** v2 is the source of truth for this phase. v2 §1.5 puts retrieval and borrowing out of scope for now.
+
+---
+
+Decisions D-008 to D-021 come from the project owner's answers to the Step 1 questions (`FOUNDATION_CHECK.md` §E.2), dated 16 November 2026. Where an answer gave a reason, it is quoted. Otherwise the reason is the problem the question raised.
+
+## D-008 Per-user permission overrides and scope (built now)
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - **Effective permission** = the role's default ticks (D-003 matrix) plus per-user overrides. An override is Grant or Deny.
+  - The user edit screen shows each permission as **Inherited / Granted / Denied**.
+  - **Per-user scope:**
+    - branch tickboxes plus an explicit "All branches" tickbox;
+    - Finance "Handles CA" and "Handles FT" (D-009);
+    - "Can approve LA Open Items" (D-010).
+  - Only the Superadmin edits permissions and overrides. Every change is audit-logged.
+  - **One server-side helper** resolves permissions and branch scope. Every query, count, page, API route and file download uses it, with no inline checks.
+- **Reason:** D-009, D-010 and D-011 each need a per-user setting, so overrides can no longer be deferred.
+- **Replaces:** the Step 3 instruction to assess overrides "for later, don't build".
+
+## D-009 One Finance role; CA and FT handled per user
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - One Finance role.
+  - Each user has two tickboxes, "Handles CA" and "Handles FT". A user can have one or both.
+  - Finance screens, queues and approvals are filtered by these tickboxes.
+- **Reason:** v2 §5.7 says a Finance user cannot process the other fund type. Per-user tickboxes do that without two roles.
+- **Answers:** `FOUNDATION_CHECK.md` Q3.
+
+## D-010 Open Item approvers and the migration of old roles
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - LA Supervisor/Head is the **default** approver of LA Open Items.
+  - Approval is a per-user tickbox, "Can approve LA Open Items". The Superadmin can give it to, or remove it from, any user.
+  - Old roles migrate as follows:
+
+    | Old role | Becomes |
+    |---|---|
+    | Branch Supervisor | LA Supervisor/Head |
+    | Operations Monitor | a read-only role built from matrix tickboxes |
+    | Approvers (APPR and the custom approver roles) | per-user approval tickboxes |
+
+  - The users affected are listed in `IMPLEMENTATION_PLAN.md` §3.3.
+- **Reason:** to fit the 10 roles of D-002 while keeping the current abilities, without adding extra roles.
+- **Answers:** Q4.
+
+## D-011 Approvers work only on their assigned branches; an "Unassigned" queue
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - An approver handles only the branches assigned to them.
+  - Branch assignment is per-user tickboxes and can be changed at any time.
+  - Items for a branch with no approver go to an **"Unassigned"** queue. The Superadmin and all-branch approvers see that queue.
+- **Reason:** so that no Open Item waits unseen.
+- **Answers:** Q6.
+
+## D-012 Only loan and borrower fields raise Open Items; reference renames update automatically, with a log
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - Only **loan and borrower fields** create Open Items.
+  - Which fields are monitored is a tickbox setting.
+  - Renames of reference data (area, division, company, branch and product **names**) update automatically. Each one is written to a **"Reference data changes"** log (old value, new value, when, source) that the Admin and LA Supervisor/Head can see, and also raises an in-app notice.
+- **Reason:** a rename is not a change to the loan. Raising an Open Item on every open loan for one rename would flood the approvers.
+- **Partly replaces:** D-004 ("every differing field becomes an Open Item").
+- **Answers:** Q7.
+
+## D-013 A myloans cancellation is an Open Item
+
+- **Date:** 16 November 2026
+- **Decision:** When myloans reports a cancellation, or that a loan is no longer released:
+  - an Open Item is raised;
+  - the loan is flagged **"Cancellation pending review"**;
+  - Forward is blocked;
+  - DMS data stays unchanged until the item is approved.
+- **Reason:** follows D-004 (nothing applied without approval). Blocking Forward stops work moving on a loan that may be cancelled.
+- **Answers:** Q8.
+
+## D-014 TAT is per user, from accept to forward; waiting time is recorded too
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - TAT is measured **per user, from accept to forward**.
+  - **Waiting time** (from arrival in the inbox to accept) is also recorded.
+- **Reason:** v2 §2.2 and §5.3. Waiting time shows delays before work starts.
+- **Answers:** Q12.
+
+## D-015 Branch pool plus personal inbox
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - Work arrives in a **branch pool**. Each user also has a **personal inbox**.
+  - **Accepting** an item from the pool assigns it to the user who accepted it.
+- **Reason:** gives the LA an accept event, so the LA's TAT has a start (v2 C10), while any LA in the branch can still pick up work.
+- **Answers:** Q14.
+
+## D-016 myloans sync uses the change feed (API 2), matched on ExternalLoanId
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - **API 2** (changed since, with cursor) is the main sync. The rotating-batch polling is dropped.
+  - **Checkpoint:**
+    - the new checkpoint is the `maxSourceUpdatedAt` of the last **successful** full run, minus 5 minutes;
+    - it is saved only after **all** pages succeed;
+    - a failed run keeps the old checkpoint.
+  - The interval comes from D-005.
+  - **Repeats are handled safely:**
+
+    | Repeat | Action |
+    |---|---|
+    | Same ExternalLoanId and same ContentHash | Nothing |
+    | Newer timestamp, same hash | Update the saved timestamp only |
+    | Different hash | One Open Item per field: field, DMS value, myloans value, SourceUpdatedAt |
+
+  - **Matching and superseded copies:**
+    - Loans are matched on **ExternalLoanId**, not PN #.
+    - Rows with `IsSuperseded = 1` are ignored.
+    - If API 1 returns more than one row for a PN, the non-superseded one is used and a warning is logged.
+  - **Status and active changes** follow D-013.
+  - **Released loans not yet in the DMS:** loans in API 2 with `IsSelectable = 1` that are not yet in the DMS appear in the branch pool as **"Released. Not yet in DMS"**. No DMS transaction is created until an LA accepts.
+  - **Duplicate ExternalLoanId within one run** is logged and alerts the Admin. It never crashes the run.
+  - **ContentHash:** stored as hex, using myloans' hash. The DMS stops computing its own.
+  - **Sync run log** (visible to the Admin): start, end, pages, rows, Open Items created, errors, checkpoint before and after.
+  - **Failures:** retries with backoff, a timeout, and an alert after N failed runs (N is a setting).
+  - A **local mock of APIs 1–3** follows the exact contract.
+- **Reason:** the polling cannot keep up at a 30-minute interval (`FOUNDATION_CHECK.md` C.7). v2 §11 defines APIs 1–3.
+- **Answers:** Q9 and Q10.
+- **Birth date:** not stored until the project owner decides. The options are in `docs/MYLOANS_QUESTIONS.md`.
+
+## D-017 Liquidation due date: one setting, saved on the record
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - Liquidation is due **N working days after LTO completion**.
+  - There are separate values for **CA** and **FT**; both default to 2.
+  - The due date is calculated and **saved on the record** when LTO completion is recorded.
+  - Changing the setting affects new records only. Existing records keep their due dates.
+  - The 10-day and 5-day constants and the unused `CashAdvanceRule.liquidationDays` column are removed by migration.
+  - Changes to the setting are audit-logged.
+- **Reason:** there were three conflicting sources (`FOUNDATION_CHECK.md` A.3). v2 §5.8 says 2 working days after LTO.
+
+## D-018 One working-days calendar
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - Working days are set with **Mon–Sun tickboxes**. The default is **Mon–Sat working**: "Saturday IS a working day".
+  - **Holiday list:** date, name, national or local. A local holiday can apply to specific branches (tickboxes).
+  - **One calendar service** is used by TAT, liquidation, the sync and reports. All other day-counting code is removed, including the sync's separate Saturday rule.
+- **Reason:** the TAT calendar (Mon–Fri) and the sync window (Mon–Sat) disagreed (`FOUNDATION_CHECK.md` A.3).
+- **Changes:** TAT, overdue and due dates move from Mon–Fri to Mon–Sat by default.
+
+## D-019 Branch scope everywhere; file access is logged
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - Every list, count, detail and download is filtered by the user's branch scope, through the one helper (D-008). This applies to all roles, starting with Finance.
+  - Receipts and evidence files are served **only** through a signed-in download route that checks branch scope. There are no public or static URLs.
+  - A request outside the user's scope returns **404** (not 403).
+  - Every file view or download is logged: user, record, file, time. This is also the RA 10173 view log.
+  - Tests: every role tries to read another branch's list, count, detail and file. All must be blocked.
+- **Reason:** fixes scope gaps G1 and G2 (`FOUNDATION_CHECK.md` B.4) and gives the Data Privacy Act access log.
+
+## D-020 Charts: no scheduling step; LTO-PASIG seeded as a sample
+
+- **Date:** 16 November 2026
+- **Decision:**
+  - "Set schedule date; group PN #" and "Reschedule" are **removed**. "Not in scope."
+  - The v2 .docx charts are the reference.
+  - LTO-PASIG is seeded with a **sample** distance, clearly marked "Sample. Verify with Operations", and the UI shows a warning on that record.
+- **Reason:** "Not in scope" (project owner). The three PASIG source files disagree (10, 50 and 2 km).
+- **Answers:** Q1 and Q17.
+
+## D-021 Sign-in hardening is priority #1
+
+- **Date:** 16 November 2026
+- **Decision:** the sign-in fix is the first item built in Step 4.
+- **Reason:** production currently only warns when test sign-in is on (`FOUNDATION_CHECK.md` B.8).
