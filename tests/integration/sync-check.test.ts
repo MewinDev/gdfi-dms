@@ -62,6 +62,8 @@ beforeEach(async () => {
   process.env.MYLOANS_MODE = "mock";
   vi.restoreAllMocks();
   await cleanLoans();
+  // This file sets up who approves in each branch itself: the seeded LA Supervisor/Head is parked.
+  await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
   for (const [k, v] of [["myloans.refreshOnOpenMinutes", 15], ["myloans.refreshOnFindHours", 4], ["myloans.maxPerRun", 50], ["myloans.pauseMs", 0], ["myloans.hourlyCeiling", 600]] as const) await setSetting(k, v);
   await setSetting("myloans.paused", false);
   await setSetting("myloans.businessHoursOnly", false);
@@ -76,6 +78,7 @@ beforeEach(async () => {
 afterAll(async () => {
   vi.restoreAllMocks();
   await cleanLoans();
+  await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
   await setSetting("myloans.paused", false);
   await setSetting("myloans.businessHoursOnly", true);
   await setSetting("myloans.mockOverrides", {});
@@ -543,7 +546,9 @@ describe("12. Notifications", () => {
     await change(PN, { totalReleasedAmount: 1_020_000 });
     await refreshLoan(loan.id, sys);
     const notes = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "MyLoans changed this loan" } } });
-    expect(new Set(notes.map((n) => n.userId))).toEqual(new Set([admin.id, la.id, dp.id]));
+    // The Angono LA Supervisor/Head reviews myloans changes for Angono (D-010, D-011); the Antipolo one is not told.
+    expect(new Set(notes.map((n) => n.userId))).toEqual(new Set([admin.id, la.id, dp.id, supAngono.id]));
+    expect(notes.map((n) => n.userId)).not.toContain(supAntipolo.id);
     expect(notes.every((n) => !/₱|1,020,000/.test(n.body))).toBe(true);
     const out = await prisma.emailOutbox.findMany({ where: { loanId: loan.id, event: "source_changed" } });
     // The outbox records it; with the master switch off nothing is sent.

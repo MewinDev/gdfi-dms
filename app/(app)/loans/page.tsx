@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requirePagePermission, can, loanScope, type CurrentUser } from "@/lib/auth/current-user";
+import { requirePagePermission, can, branchRowScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 import { listLoans, type LoanListFilters, type LoanRow } from "@/lib/services/queries";
@@ -55,7 +55,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   };
   // Filter choices: branches as "Name (code)" in the person's scope (hidden branches left out), and their Areas.
   const branchRows = await prisma.branch.findMany({
-    where: { hidden: false, ...(user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }) }, orderBy: { name: "asc" },
+    where: { hidden: false, ...branchRowScope(user) }, orderBy: { name: "asc" },
     select: { id: true, name: true, code: true, area: { select: { id: true, name: true } } },
   });
   const branches = branchRows.map((b) => ({ id: b.id, name: b.name }));

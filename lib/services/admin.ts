@@ -18,6 +18,7 @@ import { checkLockout } from "./lockout";
 import { applyAccess, branchGrants, parseAccess, type AccessInput } from "./access";
 import { rebuildAccess } from "@/lib/branches/access";
 import { newUsersAreTestUsers } from "@/lib/auth/mode";
+import { refuseAllBranchesChange, refuseRoleEscalation, refuseSelf } from "./user-rights";
 import { KIND_SCHEMA, saveExpenseKind } from "./expense-kinds";
 import { decimalToCents, peso } from "@/lib/funds/rules";
 
@@ -47,6 +48,9 @@ export const USER_SCHEMA = z.object({
   branchIds: z.array(z.string()).optional(),
   /** Branch access (where the person works): { all, grants, homeBranchId } or its JSON. */
   access: z.unknown().optional(),
+  /** Handles CA / Handles FT (D-009). Not sent: kept (a new person: neither). */
+  handlesCa: z.preprocess((v) => (v === undefined ? undefined : v === "on" || v === "true" || v === true), z.boolean().optional()),
+  handlesFt: z.preprocess((v) => (v === undefined ? undefined : v === "on" || v === "true" || v === true), z.boolean().optional()),
 });
 
 export const NO_ACCESS_MANAGE = "Ask an Admin to turn on \"Change branch access\" for your role.";
@@ -62,10 +66,20 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
     throw new UserError(`${role.name} is inactive. Pick an active role.`, "roleId");
   }
   if (!id && !role.active) throw new UserError(`${role.name} is inactive. Pick an active role.`, "roleId");
-  if (id === user.id) {
-    if (can(user, PERMISSIONS.ROLES_MANAGE) && !effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE)) {
-      throw new UserError("You cannot take \"Manage roles\" away from yourself. Ask another person who can manage roles.", "roleId");
-    }
+  const existing = id ? await prisma.user.findUnique({ where: { id }, select: { roleId: true, allBranches: true, handlesCa: true, handlesFt: true } }) : null;
+  if (id && !existing) throw new UserError("User not found.");
+  const roleChanged = !existing || existing.roleId !== role.id;
+  // Nobody changes their own role, access or scope (D-023).
+  if (id === user.id && roleChanged) refuseSelf(user, id, "role");
+  // Giving a role: never more than you have yourself, unless you manage permissions (D-023).
+  if (roleChanged) refuseRoleEscalation(user, role);
+  // Handles CA / FT: day-to-day staffing (Change branch access), never your own (D-009, D-023).
+  const ticks = { handlesCa: d.handlesCa ?? existing?.handlesCa ?? false, handlesFt: d.handlesFt ?? existing?.handlesFt ?? false };
+  const ticksChanged = !!existing && (ticks.handlesCa !== existing.handlesCa || ticks.handlesFt !== existing.handlesFt);
+  const ticksSet = !existing && (ticks.handlesCa || ticks.handlesFt);
+  if (ticksChanged || ticksSet) {
+    if (!can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError(NO_ACCESS_MANAGE, "handlesCa");
+    refuseSelf(user, id, "fund types");
   }
   if (id) {
     const cur = await prisma.user.findUnique({ where: { id }, include: { role: true } });
@@ -82,12 +96,15 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
   // Branch access is its own tick ("Change branch access"): without it the form sends none and keeps it.
   const sentAccess = (d.access !== undefined && d.access !== null && d.access !== "") || d.branchIds !== undefined;
   if (sentAccess && !can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError(NO_ACCESS_MANAGE, "access");
+  if (sentAccess) refuseSelf(user, id, "branch access");
   // Branch access: what the form sent; a new user without one gets the role's default (All, or none yet).
   const access: AccessInput | null = d.access !== undefined && d.access !== null && d.access !== ""
     ? parseAccess(d.access)
     : d.branchIds
       ? { all: false, grants: branchGrants(d.branchIds), homeBranchId: d.branchIds[0] ?? null }
-      : id ? null : { all: role.branchAccess === "ALL", grants: [], homeBranchId: null };
+      : id ? null : { all: role.branchAccess === "ALL" && can(user, PERMISSIONS.ACCESS_ALL_BRANCHES), grants: [], homeBranchId: null };
+  // "All branches" on or off: the Superadmin's (D-023). A new person's default "All" counts as turning it on.
+  if (access) refuseAllBranchesChange(user, existing?.allBranches ?? false, access.all);
 
   await prisma.$transaction(async (tx) => {
     const before = id ? await tx.user.findUnique({ where: { id }, include: { role: true } }) : null;
@@ -97,11 +114,11 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
       ? await tx.user.update({
           where: { id },
           data: {
-            name: d.name, roleId: role.id, active: d.active,
+            name: d.name, roleId: role.id, active: d.active, handlesCa: ticks.handlesCa, handlesFt: ticks.handlesFt,
             ...(before && before.active !== d.active ? (d.active ? { deactivatedAt: null, deactivatedById: null } : { deactivatedAt: new Date(), deactivatedById: user.id }) : {}),
           },
         })
-      : await tx.user.create({ data: { name: d.name, email: d.email, roleId: role.id, active: d.active, isTestUser: newUsersAreTestUsers() } });
+      : await tx.user.create({ data: { name: d.name, email: d.email, roleId: role.id, active: d.active, isTestUser: newUsersAreTestUsers(), handlesCa: ticks.handlesCa, handlesFt: ticks.handlesFt } });
     if (before && before.active !== d.active) {
       await writeAudit(tx, {
         actor: actorOf(user), mode: "MANUAL", action: d.active ? "made_active" : "made_inactive", entityType: "user", entityId: saved.id,
@@ -113,8 +130,8 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
     await writeAudit(tx, {
       actor: actorOf(user), mode: "MANUAL", action: id ? "user_updated" : "user_created", entityType: "User", entityId: saved.id,
       summary: `${id ? "Updated" : "Added test"} user ${saved.email}`,
-      before: before ? { name: before.name, role: before.role.name, active: before.active } : undefined,
-      after: { name: d.name, role: role.name, active: d.active, ...(where ? { access: where.summary } : {}) },
+      before: before ? { name: before.name, role: before.role.name, active: before.active, handlesCa: before.handlesCa, handlesFt: before.handlesFt } : undefined,
+      after: { name: d.name, role: role.name, active: d.active, handlesCa: ticks.handlesCa, handlesFt: ticks.handlesFt, ...(where ? { access: where.summary } : {}) },
     });
   }, { timeout: 30_000 });
 }
@@ -428,6 +445,7 @@ export async function setMockOverride(user: CurrentUser, pn: string, amount: num
 }
 
 export const FUNDS_SETTINGS_SCHEMA = z.object({
+  approvalBandsOn: z.boolean().default(false),
   carryOverLimitDays: int("Carry-over limit", 0, 60),
   liquidationDueDays: int("Liquidation due", 1, 90),
   blockLtoUntilFunded: bool,
@@ -441,12 +459,14 @@ export async function saveFundsSettings(user: CurrentUser, raw: Record<string, u
   await prisma.$transaction(async (tx) => {
     const before = {
       carryOverLimitDays: await getSetting("funds.carryOverLimitDays", tx),
+      approvalBandsOn: await getSetting("funds.approvalBandsOn", tx),
       liquidationDueDays: await getSetting("funds.liquidationDueDays", tx),
       blockLtoUntilFunded: await getSetting("funds.blockLtoUntilFunded", tx),
     };
     await setSetting("funds.carryOverLimitDays", p.data.carryOverLimitDays, tx);
+    await setSetting("funds.approvalBandsOn", p.data.approvalBandsOn, tx);
     await setSetting("funds.liquidationDueDays", p.data.liquidationDueDays, tx);
     await setSetting("funds.blockLtoUntilFunded", p.data.blockLtoUntilFunded, tx);
-    await writeAudit(tx, { actor: actorOf(user), mode: "MANUAL", action: "setting_updated", entityType: "Setting", entityId: "funds", summary: `Cash-advance switches: carry-over limit ${p.data.carryOverLimitDays} business days, liquidation due ${p.data.liquidationDueDays} business days, block At the LTO until funded ${p.data.blockLtoUntilFunded ? "on" : "off"}`, before, after: p.data });
+    await writeAudit(tx, { actor: actorOf(user), mode: "MANUAL", action: "setting_updated", entityType: "Setting", entityId: "funds", summary: `Cash-advance switches: carry-over limit ${p.data.carryOverLimitDays} business days, liquidation due ${p.data.liquidationDueDays} business days, block At the LTO until funded ${p.data.blockLtoUntilFunded ? "on" : "off"}, approval bands ${p.data.approvalBandsOn ? "on" : "off"}`, before, after: p.data });
   });
 }

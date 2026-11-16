@@ -108,7 +108,9 @@ describe("1. Return the cash", () => {
       docs: await prisma.documentItem.count({ where: { loanId: loan.id } }),
     };
     // Who may: only those who review MyLoans changes.
-    for (const u of [la, dp, sup]) await expect(askCashBack(u, item.id, "Return it please")).rejects.toThrow(/Only Admin reviews/);
+    // The LA Supervisor/Head (sup) approves myloans changes since D-010; the LA and the DP do not.
+    for (const u of [la, dp]) await expect(askCashBack(u, item.id, "Return it please")).rejects.toThrow(/Only Admin reviews/);
+    void sup;
     // A note of 5 to 500 characters.
     await expect(askCashBack(admin, item.id)).rejects.toThrow(/at least 5 characters/);
     await expect(askCashBack(admin, item.id, "1234")).rejects.toThrow(/at least 5 characters/);

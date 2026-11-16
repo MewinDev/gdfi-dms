@@ -399,3 +399,29 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - the starting keywords (Q-N17).
 
   Proposals and a preview are in `IMPLEMENTATION_PLAN.md` §3a. **Nothing is seeded until confirmed.**
+
+## D-028 Piece 2 build choices (proposed; for review)
+
+- **Date:** 17 November 2026
+- **Decision:** while building the permission core, these points were not covered by D-002 to D-027. They were decided as below and can be changed in the matrix or by a new decision.
+  1. **Superadmin default ticks:** everything **except** the loan-file work steps (LA, DP, Finance actions) and the Open Item approver ticks. Admin already worked this way.
+     - The Superadmin is not offered as a processor, receiver or Finance handler, and is not told about every myloans change.
+     - Any of these can be ticked in the matrix.
+     - (Answers Step 1 question Q5, `FOUNDATION_CHECK.md`, for now.)
+  2. **No role escalation, but staffing stays with the Admin:**
+     - Someone without "Manage permissions" may give any role **except** one that can manage permissions or give All branches.
+     - So the Admin can add LAs, DPs and Finance people, but cannot create a Superadmin.
+  3. **"Handles CA / FT" gates every per-type funds key** (view, approve, release, settle, edit lines, change type, print), for every role.
+     - Existing people were ticked to match what their role could do (migration backfill), so nobody's access changed.
+     - A new person starts with neither tick.
+  4. **"Can approve LA Open Items"** is a per-person override of the two myloans review keys.
+     - The LA Supervisor/Head has it by default.
+     - Admin keeps them until the Open Items piece (8) rewrites the review. The Unassigned queue (D-011) comes with that piece.
+  5. **Reviewers of myloans changes are limited to the loan's branch** (D-011): the review key, and the branch in their access.
+  6. **"Nobody is left to approve or handle this" notices** go to the people who manage access and staffing (Admin and Superadmin), not only to the Superadmin.
+  7. **The D-010 migration** (`npm run roles:migrate`, dry run by default; also run by `db:create-test` and `db:reset-seed`):
+     - Branch Supervisor people keep their old ticks as per-person grants. Approvers and custom funds roles become Finance with exactly the same abilities (grants and denies).
+     - Admin loses "Manage permissions" only once an active Superadmin exists.
+     - Roles keep their keys (SUP, FIN, VAULT, DIG, MONITOR); only their names and ticks change. Keys are internal ids that no code checks.
+  8. **Approval amount bands** (D-024): built as the setting "Use approval bands by amount" (Settings, Cash-advance rules), off by default.
+- **Reason:** to finish piece 2 without guessing on things that change what people can do. Each point keeps today's access unless a decision changed it.

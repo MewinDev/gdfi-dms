@@ -7,7 +7,7 @@ import { buildPn } from "@/lib/pn/format";
 
 export const KIT_EMAIL_DOMAIN = "@example.test";
 
-export type KitAccountKey = "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
+export type KitAccountKey = "superadmin" | "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
   | "areaSupervisor" | "laAreaExcept" | "laRoving" | "laAlicia" | "laNoRefresh" | "financeCash" | "financeTransfer" | "approverCash" | "approverTransfer";
 
 export interface KitAccount {
@@ -15,7 +15,7 @@ export interface KitAccount {
   email: string;
   name: string;
   /** Built-in role key, or SUPERVISOR / LA_NO_REFRESH for the kit's own sample roles. */
-  role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR" | "LA_NO_REFRESH" | "FIN_CA" | "FIN_FT" | "APPR_CA" | "APPR_FT";
+  role: "SUPERADMIN" | "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR" | "LA_NO_REFRESH" | "FIN_CA" | "FIN_FT" | "APPR_CA" | "APPR_FT";
   /** "ALL": All branches. Otherwise single-branch grants (the first is the home branch). */
   branches: KitBranch[] | "ALL";
   /** Extra grants: whole areas (Division, Area), and exceptions (branches unticked inside them). */
@@ -27,6 +27,8 @@ export const KIT_L1 = { division: "Branch Division", area: "LUZON 1 (NGMA + RIZA
 
 
 export const KIT_ACCOUNTS: KitAccount[] = [
+  // The Superadmin (D-002, D-023): the permission matrix, per-user overrides, All branches. Makes the kit's sample roles.
+  { key: "superadmin", email: `kit.superadmin${KIT_EMAIL_DOMAIN}`, name: "Superadmin", role: "SUPERADMIN", branches: "ALL" },
   { key: "admin", email: `kit.admin${KIT_EMAIL_DOMAIN}`, name: "Admin", role: "ADMIN", branches: "ALL" },
   { key: "finance", email: `kit.finance${KIT_EMAIL_DOMAIN}`, name: "Finance", role: "FIN", branches: "ALL" },
   // Funds handled by different people: Finance and an approver for each type (only that type's ticks).
@@ -60,7 +62,8 @@ export const KIT_ACCOUNTS: KitAccount[] = [
  * The Branch Supervisor accounts use the built-in Branch Supervisor role (key SUP, made by migration
  * 20261119090006_decisions_batch). Where a role of that name was made by hand before, that one is used.
  */
-export const SUPERVISOR_ROLE_NAME = "Branch Supervisor";
+/** The built-in LA Supervisor/Head role (key SUP; the former Branch Supervisor, D-010). */
+export const SUPERVISOR_ROLE_NAME = "LA Supervisor/Head";
 export const SUPERVISOR_ROLE_KEY = "SUP";
 /** The kit's sample role for the Refresh tick: the Loan Associate's ticks without "Refresh a loan from MyLoans". */
 export const NO_REFRESH_ROLE_NAME = "LA (no refresh)";

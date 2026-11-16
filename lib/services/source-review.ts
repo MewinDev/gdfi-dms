@@ -3,6 +3,7 @@ import { stageLabel } from "@/lib/workflow/stage-map";
 import { prisma } from "@/lib/db";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { changeText, type FieldChange, type Proposed } from "@/lib/myloans/changes";
 import { fmtDateTime } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
@@ -67,7 +68,7 @@ async function branchMoveFor(loan: { id: string; pn: string; branchId: string },
   const was = await prisma.branch.findUniqueOrThrow({ where: { id: loan.branchId }, select: { id: true, name: true, code: true } });
   const to = await resolveLoanBranch(prisma, { branchCode: next.branchCode ?? null, branchName: next.branchName ?? null });
   const who = async (branchId: string) => (await prisma.user.findMany({
-    where: { active: true, OR: [{ allBranches: true }, { branches: { some: { branchId } } }], role: { permissions: { has: PERMISSIONS.LOANS_VIEW } } },
+    where: andWhere({ OR: [{ allBranches: true }, { branches: { some: { branchId } } }] }, holdsWhere(PERMISSIONS.LOANS_VIEW)),
     select: { id: true, name: true, allBranches: true },
   }));
   const before = await who(was.id);

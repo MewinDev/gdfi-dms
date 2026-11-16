@@ -54,7 +54,7 @@ Pieces 4 and 6 have no dependencies and can be built early or in parallel. Each 
 | `authMode()` no longer defaults to `test`. An unset `AUTH_MODE` means `entra` in staging and production, and `test` only in local | `lib/auth/providers.ts:16-18` |
 | Users created from the app or the import are **real users** (`isTestUser: false`). Only the local seed and kit create test users | `lib/services/admin.ts:103`; `lib/import/importer.ts:743` |
 | The `/login` user list shows only in local test mode | `app/login/page.tsx` |
-| `canSignIn` is replaced by a matrix permission, **"Sign in"** (`auth:sign_in`), ticked by default for all 10 roles. This lets DP, Finance, Custodian, QA and Digicur sign in | piece 2 |
+| `canSignIn` is replaced by a matrix permission, **"Sign in"** (`auth:sign_in`), ticked by default for all 10 roles. **Not done in piece 2:** instead every built-in role's default `canSignIn` is now true (so DP, Finance, Custodian, QA, Digicur, Archiver can sign in). The permission version is deferred to the Entra piece | deferred |
 | Fix the wrong allow-list comment (G3) | `lib/auth/permission-scan.ts:24` |
 
 **Later (Entra ID; not in this foundation)**
@@ -77,6 +77,17 @@ Until Entra is built, staging and production **cannot start**. That is intended.
 ---
 
 ## 3. Piece 2: Permission core (D-002, D-003, D-008 to D-011)
+
+> **Status: built 17 Nov 2026** (branch `feature/foundation-settings-rbac-myloans`). Choices made while building are recorded in D-028.
+>
+> **Where the build differs from this plan:**
+> - **Role keys are kept.** `SUP` (now "LA Supervisor/Head"), `FIN`, `VAULT` ("Custodian"), `DIG` ("Digicur") and `MONITOR` ("Monitoring (read-only)") keep their keys; only the names and ticks changed. New keys: `SUPERADMIN`, `ARCHIVER`. `APPR` is retired. Keys are internal ids (no code checks them), so renaming them would have changed the kit, the seed and about 50 tests for no gain.
+> - **No `openitems:approve` key yet.** "Can approve LA Open Items" is an override of the two myloans review keys (`OPEN_ITEM_APPROVER_KEYS`); piece 8 may rename it.
+> - **No `transactions:reassign` / `transactions:cancel`** yet: they come with the engine (piece 9).
+> - **`canSignIn` is not replaced by a permission:** every built-in role now defaults to sign-in on (see §2).
+> - **Admin keeps myloans review and sync settings** until pieces 7 and 8 rewrite them.
+> - **One download route and the file-view log** stay in piece 3. Piece 2 put the receipt and evidence checks in `lib/services/file-access.ts` and added branch scope to receipts (G1) and the Finance Home (G2).
+> - **Also built:** approval bands as a setting, off by default (D-024); the reviewers of myloans changes limited to the loan's branch (D-011).
 
 ### 3.1 Model
 

@@ -281,6 +281,8 @@ async function requireApprover(tx: Tx, u: CurrentUser, amountCents: number, requ
   needSee(u, type);
   needType(u, "approve", type, "approving");
   if (requesterId === u.id) throw new UserError("You cannot approve your own request.");
+  // Approval bands are off by default (D-024): the type's Approve tick (and Handles CA / FT) is enough.
+  if (!(await getSetting("funds.approvalBandsOn", tx))) return;
   // The bands of the request's own type.
   const bands = await tx.approvalBand.findMany({ where: { fundsTypeId: bandTypeId(type) } });
   const me = await tx.user.findUniqueOrThrow({ where: { id: u.id } });

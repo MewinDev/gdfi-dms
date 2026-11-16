@@ -4,8 +4,9 @@ import { z } from "zod";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { notify } from "@/lib/notify";
-import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
+import { can, inScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsAllWhere, holdsWhere } from "@/lib/auth/holders";
 import { BORROWER_KEYS, FIELDS, type FieldChange, type Tracked } from "@/lib/myloans/changes";
 import { fmtDateTime } from "@/lib/time";
 import { UserError, NotInScopeError } from "./errors";
@@ -44,7 +45,7 @@ export function borrowerDiffs(dms: DmsBorrower, myloans: Pick<Tracked, BorrowerK
 /** People who may decide a correction on a loan of this branch: the tick, and the branch in their own access (not "All branches"). */
 export async function branchDeciderIds(db: Db, branchId: string): Promise<string[]> {
   const rows = await db.user.findMany({
-    where: { active: true, allBranches: false, role: { active: true, permissions: { has: PERMISSIONS.SOURCE_REVIEW_BORROWER } }, branches: { some: { branchId } } },
+    where: andWhere({ allBranches: false, branches: { some: { branchId } } }, holdsWhere(PERMISSIONS.SOURCE_REVIEW_BORROWER)),
     select: { id: true },
   });
   return rows.map((r) => r.id);
@@ -52,7 +53,7 @@ export async function branchDeciderIds(db: Db, branchId: string): Promise<string
 /** When the branch has nobody: Admin (those who also review MyLoans changes and hold the tick). */
 async function adminDeciderIds(db: Db): Promise<string[]> {
   const rows = await db.user.findMany({
-    where: { active: true, role: { active: true, AND: [{ permissions: { has: PERMISSIONS.SOURCE_REVIEW_BORROWER } }, { permissions: { has: PERMISSIONS.SOURCE_REVIEW } }] } },
+    where: holdsAllWhere([PERMISSIONS.SOURCE_REVIEW_BORROWER, PERMISSIONS.SOURCE_REVIEW]),
     select: { id: true },
   });
   return rows.map((r) => r.id);
@@ -180,7 +181,7 @@ export { BORROWER_CHIP } from "@/lib/ui/borrower-chip";
 /** Home: the corrections this person may decide (their branches), oldest first; Admin also those routed to Admin. */
 export async function borrowerToDo(user: CurrentUser, take = 5) {
   if (!can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER)) return { count: 0, items: [] as { pn: string; borrowerName: string; fields: string; since: string }[] };
-  const scope = user.scopeBranchIds === null ? {} : { branchId: { in: user.scopeBranchIds } };
+  const scope = loanScope(user);
   const rows = await prisma.sourceChange.findMany({
     where: { state: "OPEN", category: "BORROWER", loan: scope }, orderBy: { firstSeenAt: "asc" },
     include: { loan: { select: { pn: true, borrowerName: true } } },

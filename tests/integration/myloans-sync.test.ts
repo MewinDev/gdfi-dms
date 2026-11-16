@@ -29,6 +29,8 @@ const PN = "GD1652026901003"; // Angono, Renewal, ₱1,000,000, Auto Financing: 
 const sys = { actor: SYSTEM_ACTOR, mode: "MANUAL" as const, trigger: "button" as const };
 
 beforeAll(async () => {
+  // This file counts exactly who is told: the seeded LA Supervisor/Head is parked (afterAll restores).
+  await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
   la = await asUser("test.la@gdfi.ph");
   dp = await asUser("test.dp@gdfi.ph");
   admin = await asUser("test.admin@gdfi.ph");
@@ -49,6 +51,7 @@ beforeEach(async () => {
 });
 afterAll(async () => {
   await cleanLoans();
+  await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
   await setSetting("myloans.lastRun", null);
   await prisma.$disconnect();
 });

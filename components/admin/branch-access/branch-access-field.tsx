@@ -32,8 +32,10 @@ function Tri({ id, state, disabled, onChange, labelText, describedBy }: { id: st
 }
 
 export function BranchAccessField({
-  tree, hiddenPlaces, initial, others, adminRoleIds, roleSelectId, error, homeError, allByDefaultRoleIds,
+  tree, hiddenPlaces, initial, others, adminRoleIds, roleSelectId, error, homeError, allByDefaultRoleIds, allowAll = true,
 }: {
+  /** May "All branches" be turned on or off here (D-023: the Superadmin)? Otherwise it stays as it is. */
+  allowAll?: boolean;
   /** New user only: roles whose default is All branches (the choice follows the role picked). */
   allByDefaultRoleIds?: string[];
   tree: AccessTreeDivision[];
@@ -151,15 +153,16 @@ export function BranchAccessField({
 
       <div className="flex flex-wrap gap-x-6 gap-y-1" role="radiogroup" aria-label="Branch access">
         <label className="inline-flex min-h-11 items-center gap-2.5 text-[15px]">
-          <input type="radio" name={`${uid}-mode`} checked={all || isAdmin} disabled={isAdmin} onChange={() => setAll(true)} className="h-5 w-5 accent-[var(--navy)]" />
+          <input type="radio" name={`${uid}-mode`} checked={all || isAdmin} disabled={isAdmin || !allowAll} onChange={() => setAll(true)} className="h-5 w-5 accent-[var(--navy)]" />
           All branches
         </label>
         <label className="inline-flex min-h-11 items-center gap-2.5 text-[15px]">
-          <input type="radio" name={`${uid}-mode`} checked={!all && !isAdmin} disabled={isAdmin} onChange={() => setAll(false)} className="h-5 w-5 accent-[var(--navy)]" />
+          <input type="radio" name={`${uid}-mode`} checked={!all && !isAdmin} disabled={isAdmin || !allowAll} onChange={() => setAll(false)} className="h-5 w-5 accent-[var(--navy)]" />
           Selected
         </label>
       </div>
 
+      {!allowAll && <p className="help" data-all-locked>Only the Superadmin turns &ldquo;All branches&rdquo; on or off.</p>}
       <p className="text-sm font-semibold text-navy" data-access-summary aria-live="polite">{summary}</p>
 
       {!all && !isAdmin && (

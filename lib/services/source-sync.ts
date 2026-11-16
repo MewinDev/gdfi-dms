@@ -9,6 +9,8 @@ import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
+import { worksAtWhere } from "@/lib/branches/access";
 import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloans";
 import { mapLoan } from "@/lib/myloans/live-mapping";
 import { MINOR_ACCOUNT_COLUMNS, sourceTime } from "@/lib/myloans/account";
@@ -81,10 +83,13 @@ async function txnsNow(db: Tx | typeof prisma, loanId: string): Promise<TxnNow[]
   return rows.map((t) => ({ id: t.id, code: t.type.code, name: t.type.name, status: t.status, stateLine: `${t.type.name}: ${stateLine(t)}` }));
 }
 
-/** People who review MyLoans changes (every role with "Review MyLoans changes"). */
-export async function reviewerIds(db: Tx | typeof prisma): Promise<string[]> {
+/**
+ * People who review MyLoans changes for a loan's branch: "Review MyLoans changes", and the branch in their
+ * access (D-011: approvers handle their assigned branches; All branches covers every branch).
+ */
+export async function reviewerIds(db: Tx | typeof prisma, branchId: string): Promise<string[]> {
   const rows = await db.user.findMany({
-    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.SOURCE_REVIEW } } }, select: { id: true },
+    where: andWhere(holdsWhere(PERMISSIONS.SOURCE_REVIEW), worksAtWhere(branchId)), select: { id: true },
   });
   return rows.map((r) => r.id);
 }
@@ -311,7 +316,7 @@ async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Ex
   });
   // Field names only: amounts are never in the notification or the email.
   await notify(tx, {
-    userIds: [...(await reviewerIds(tx)), ...(await branchLaUserIds(tx, loan.branchId)), ...(await liveDpIds(tx, a.loanId))], loanId: a.loanId,
+    userIds: [...(await reviewerIds(tx, loan.branchId)), ...(await branchLaUserIds(tx, loan.branchId)), ...(await liveDpIds(tx, a.loanId))], loanId: a.loanId,
     title: `${a.pn}: MyLoans changed this loan`, body: `${what}. Admin is reviewing.`, link: `/loans/${a.pn}?tab=todo&review=1`,
     email: { event: "source_changed", vars: { pn: a.pn, transaction: "the loan file", reason: `${what}.`, status: category === "STATUS" ? "cancelled or not released" : category === "REPLACEMENT" ? "replaced" : "changed" } },
   });

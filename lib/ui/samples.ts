@@ -5,6 +5,7 @@ import { isTestMode } from "@/lib/test-mode";
 import { dataCheckSamples, sampleLoans, type SampleLoan } from "@/lib/myloans/samples";
 import { inBranches, parseAmount } from "@/lib/myloans/data-check";
 import type { CurrentUser } from "@/lib/auth/current-user";
+import { hasAllBranches } from "@/lib/auth/scope";
 import type { SampleCard } from "@/components/loan/sample-loans";
 import { peso } from "./plain";
 
@@ -30,7 +31,7 @@ function toCards(list: SampleLoan[], opened: Set<string>): SampleCard[] {
  * The data-check samples are kept whole: some of them test the refusals, "outside your branches" too.
  */
 export function samplesForUser(list: SampleLoan[], user: Pick<CurrentUser, "scopeBranchIds" | "branchNames" | "branchCodes">): SampleLoan[] {
-  if (user.scopeBranchIds === null) return list;
+  if (hasAllBranches(user)) return list;
   const allowed = user.branchNames.map((name, i) => ({ name, code: user.branchCodes[i] ?? null }));
   return list.filter((s) => s.record && inBranches({ branchCode: s.record.branchCode ?? null, branchName: s.record.branchName }, allowed));
 }

@@ -27,7 +27,8 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 |---|---|---|
 | Admin | Admin | All branches |
 | Finance | Finance | All branches |
-| Branch Supervisor | Branch Supervisor (the built-in role: loans of their branches, move a hold to another person, resolve any problem, Monitoring, TAT report) | Antipolo (101), Angono (165) |
+| Superadmin | Superadmin (the permission matrix, per-user overrides, All branches; makes the kit's sample roles) | All branches |
+| Branch Supervisor | LA Supervisor/Head (the built-in role: every LA tick and approving myloans changes; plus, as per-person grants kept from the former Branch Supervisor role: move a hold to another person, resolve any problem, Monitoring, TAT report) | Antipolo (101), Angono (165) |
 | LA 1 | Loan Associate | Antipolo (101), Angono (165) |
 | LA 2 | Loan Associate | Antipolo (101), Angono (165) |
 | LA Alaminos (was "LA Davao") | Loan Associate | Alaminos (390) |
@@ -37,8 +38,8 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | Inactive LA | Loan Associate, inactive (not in the list) | Antipolo (101), Angono (165) |
 | DP 3 | Document Processor, on leave for a week | Alaminos (390) |
 | DP 4 | Document Processor, own capacity 5 | A. Mabini (168) |
-| Operations Monitor | Operations Monitor (read-only: Monitoring and LTO advisories) | All branches |
-| Area Supervisor Luzon 1 | Branch Supervisor | The whole Area LUZON 1 (NGMA + RIZAL) in Branch Division, plus Alaminos (390); home Antipolo |
+| Operations Monitor | Monitoring (read-only: Monitoring and LTO advisories) | All branches |
+| Area Supervisor Luzon 1 | LA Supervisor/Head | The whole Area LUZON 1 (NGMA + RIZAL) in Branch Division, plus Alaminos (390); home Antipolo |
 | LA Luzon 1 (not Amang Rodriguez) | Loan Associate | The whole Area LUZON 1 (NGMA + RIZAL) except Amang Rodriguez (174); home Angono |
 | Roving LA | Loan Associate | All branches |
 | LA Alicia | Loan Associate | Alicia (709), Alicia-Inactive (718) |

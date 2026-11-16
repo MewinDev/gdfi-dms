@@ -22,7 +22,7 @@ async function cleanup() {
   for (const [key, d] of Object.entries(ROLE_DEFAULTS)) {
     await prisma.role.update({ where: { key }, data: { permissions: [...d.permissions], branchAccess: d.branchAccess, description: d.description, active: true } });
   }
-  await prisma.user.updateMany({ where: { email: "test.admin@gdfi.ph" }, data: { active: true } });
+  await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph"] } }, data: { active: true } });
 }
 
 const refused = async (p: Promise<unknown>, msg: RegExp) => {
@@ -45,7 +45,8 @@ async function roleWithPeople(name: string, permissions: string[], n: number) {
 beforeAll(async () => {
   process.env.TEST_MODE = "true";
   await cleanup();
-  admin = await asUser("test.admin@gdfi.ph");
+  // Managing roles is the Superadmin's (D-023); this actor is the role manager.
+  admin = await asUser("test.superadmin@gdfi.ph");
 });
 afterEach(cleanup);
 afterAll(async () => {
@@ -77,37 +78,50 @@ describe("Impact preview", () => {
 });
 
 describe("Lock-out protection", () => {
-  it("the editor's own role cannot lose Manage roles", async () => {
-    const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
-    const r = await checkRoleChange(admin, adminRole.id, ROLE_DEFAULTS.ADMIN.permissions.filter((k) => k !== P.ROLES_MANAGE));
+  // Since D-023 the Superadmin role holds "Manage permissions"; Admin and Superadmin hold "Change branch access".
+  const restoreSuperadmin = () => prisma.role.update({ where: { key: "SUPERADMIN" }, data: { permissions: ROLE_DEFAULTS.SUPERADMIN.permissions } });
+  const reactivate = () => prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph"] } }, data: { active: true } });
+
+  it("the editor's own role cannot lose Manage permissions", async () => {
+    const saRole = await prisma.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } });
+    const without = ROLE_DEFAULTS.SUPERADMIN.permissions.filter((k) => k !== P.ROLES_MANAGE);
+    const r = await checkRoleChange(admin, saRole.id, without);
     expect(r.lockout).toMatch(/your own role/);
-    await refused(saveRole(admin, adminRole.id, { name: "Admin", description: "", branchAccess: "ALL", permissions: ROLE_DEFAULTS.ADMIN.permissions.filter((k) => k !== P.ROLES_MANAGE) }), /your own role/);
+    await refused(saveRole(admin, saRole.id, { name: "Superadmin", description: "", branchAccess: "ALL", permissions: without }), /your own role/);
   });
 
-  it("the last role that can manage roles keeps the tick, with the reason", async () => {
+  it("the last role that can manage permissions keeps the tick, with the reason", async () => {
     const { roleId, userIds } = await roleWithPeople("Z Role Keeper", [P.USERS_VIEW, P.ROLES_MANAGE], 1);
     const keeper = await asUser((await prisma.user.findUniqueOrThrow({ where: { id: userIds[0] } })).email);
-    const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
-    // The keeper takes Manage roles off Admin: allowed, the keeper's role still has it.
-    await saveRole(keeper, adminRole.id, { name: "Admin", description: adminRole.description, branchAccess: "ALL", permissions: ROLE_DEFAULTS.ADMIN.permissions.filter((k) => k !== P.ROLES_MANAGE) });
-    // Now Admin cannot take it off the keeper's role: it is the last one.
-    const r = await checkRoleChange(admin, roleId, [P.USERS_VIEW]);
-    expect(r.lockout).toBe('Z Role Keeper is the last role that can manage roles. Keep "Manage roles" ticked, or tick it on another role first.');
-    await refused(saveRole(admin, roleId, { name: "Z Role Keeper", description: "", branchAccess: "ALL", permissions: [P.USERS_VIEW] }), /last role that can manage roles/);
-    // Nor make it inactive.
-    expect((await checkRoleChange(admin, roleId, [P.USERS_VIEW, P.ROLES_MANAGE], false)).lockout).toMatch(/last role that can manage roles/);
-    await prisma.user.deleteMany({ where: { roleId } });
-    await refused(setRoleActive(admin, roleId, false), /last role that can manage roles/);
+    const saRole = await prisma.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } });
+    try {
+      // The keeper takes Manage permissions off Superadmin: allowed, the keeper's role still has it.
+      await saveRole(keeper, saRole.id, { name: "Superadmin", description: saRole.description, branchAccess: "ALL", permissions: ROLE_DEFAULTS.SUPERADMIN.permissions.filter((k) => k !== P.ROLES_MANAGE) });
+      // Now nobody can take it off the keeper's role: it is the last one.
+      const r = await checkRoleChange(admin, roleId, [P.USERS_VIEW]);
+      expect(r.lockout).toBe('Z Role Keeper is the last role that can manage permissions. Keep "Manage permissions" ticked, or tick it on another role first.');
+      await refused(saveRole(admin, roleId, { name: "Z Role Keeper", description: "", branchAccess: "ALL", permissions: [P.USERS_VIEW] }), /last role that can manage permissions/);
+      // Nor make it inactive.
+      expect((await checkRoleChange(admin, roleId, [P.USERS_VIEW, P.ROLES_MANAGE], false)).lockout).toMatch(/last role that can manage permissions/);
+      await prisma.user.deleteMany({ where: { roleId } });
+      await refused(setRoleActive(admin, roleId, false), /last role that can manage permissions/);
+    } finally {
+      await restoreSuperadmin();
+    }
   });
 
   it("the last active person who can change branch access cannot be made inactive", async () => {
     const { userIds } = await roleWithPeople("Z Access Keeper", [P.USERS_VIEW, P.USERS_EDIT, P.ACCESS_MANAGE], 1);
-    // Every Admin inactive: the keeper is the only active person with Change branch access.
-    await prisma.user.updateMany({ where: { role: { key: "ADMIN" } }, data: { active: false } });
-    await refused(setRowActive(admin, "user", userIds[0], false), /last active person who can change branch access/);
-    // And their role cannot lose the tick.
-    const role = await prisma.role.findFirstOrThrow({ where: { name: "Z Access Keeper" } });
-    expect((await checkRoleChange(admin, role.id, [P.USERS_VIEW, P.USERS_EDIT])).lockout).toMatch(/Nobody active could change branch access|last role/);
+    // Every Admin and Superadmin inactive: the keeper is the only active person with Change branch access.
+    await prisma.user.updateMany({ where: { role: { key: { in: ["ADMIN", "SUPERADMIN"] } } }, data: { active: false } });
+    try {
+      await refused(setRowActive(admin, "user", userIds[0], false), /last active person who can change branch access/);
+      // And their role cannot lose the tick.
+      const role = await prisma.role.findFirstOrThrow({ where: { name: "Z Access Keeper" } });
+      expect((await checkRoleChange(admin, role.id, [P.USERS_VIEW, P.USERS_EDIT])).lockout).toMatch(/Nobody active could change branch access|last role/);
+    } finally {
+      await reactivate();
+    }
   });
 });
 

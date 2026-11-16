@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_PERMISSIONS, ALL_PERMISSIONS, PERMISSIONS as P, PERMISSION_DEFS, PERMISSION_GROUPS, RENAMED_PERMISSIONS, ROLE_DEFAULTS, WORKFLOW_PERMISSIONS,
-  SUPERVISOR_TICKS, changesOf, dependentsOf, normalizePermissions, permissionLabel, plainWords, viewOf, withRequirements,
+  SUPERVISOR_TICKS, OPEN_ITEM_APPROVER_KEYS, FORMER_SUPERVISOR_KEYS, changesOf, dependentsOf, normalizePermissions, permissionLabel, plainWords, viewOf, withRequirements,
 } from "./permissions";
 
 describe("Decisions batch (10 November 2026): Print liquidation report, Branch Supervisor", () => {
@@ -14,19 +14,20 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
     }
   });
 
-  it("Branch Supervisor: the plain ticks map to these keys, and never money, Settings, users, roles or branch imports", () => {
+  it("LA Supervisor/Head (key SUP, D-002): every LA tick plus approving Open Items; never money, Settings, users, roles or branch imports", () => {
     const sup = ROLE_DEFAULTS.SUP;
-    expect(sup.name).toBe("Branch Supervisor");
+    expect(sup.name).toBe("LA Supervisor/Head");
     expect(sup.branchAccess).toBe("ASSIGNED");
     expect([...sup.permissions].sort()).toEqual([...new Set(SUPERVISOR_TICKS.flatMap((t) => t.keys))].sort());
     expect(normalizePermissions(sup.permissions).sort()).toEqual([...sup.permissions].sort());
-    for (const k of [P.FUNDS_CA_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_CA_VIEW, P.FUNDS_FT_VIEW, P.ROLES_MANAGE, P.USERS_EDIT, P.USERS_VIEW, P.BRANCHES_IMPORT, P.SETTINGS_SYSTEM, P.LOANS_OPEN]) {
+    for (const k of [P.FUNDS_CA_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_CA_VIEW, P.FUNDS_FT_VIEW, P.ROLES_MANAGE, P.USERS_EDIT, P.USERS_VIEW, P.BRANCHES_IMPORT, P.SETTINGS_SYSTEM]) {
       expect(sup.permissions, k).not.toContain(k);
     }
+    for (const k of ROLE_DEFAULTS.LA.permissions) expect(sup.permissions, k).toContain(k);
+    for (const k of OPEN_ITEM_APPROVER_KEYS) expect(sup.permissions, k).toContain(k);
     expect(SUPERVISOR_TICKS.map((t) => t.plain)).toEqual([
-      "See loans and open loan files (within their branches)", "Move a hold to another person", "Resolve any problem (at their branches)",
-      "See the Monitoring pages for DPs and LTO offices (their branches)", "See the TAT report",
-      "Review borrower detail corrections from MyLoans (their branches)",
+      "Everything a Loan Associate can do (within their branches)",
+      "Approve or reject myloans changes (Open Items) for their branches",
     ]);
   });
 });
@@ -41,8 +42,8 @@ const OLD: Record<string, string[]> = {
   VAULT: ["loans:view", "workflow:vault"],
   DIG: ["loans:view", "workflow:dig"],
   QA: ["loans:view", "workflow:qa"],
-  APPR: ["loans:view", "workflow:appr"],
 };
+// APPR (Approvers, Records, Compliance) was retired by D-010: its people moved to Finance with the same abilities.
 
 /** Each old check → the new keys that now make the same decision. */
 const OLD_TO_NEW: Record<string, string[]> = {
@@ -77,7 +78,9 @@ describe("can() for each seeded role matches the previous behaviour", () => {
     const admin = effectivePermissions({ permissions: ROLE_DEFAULTS.ADMIN.permissions });
     expect([...admin].sort()).toEqual([...ADMIN_PERMISSIONS].sort());
     for (const k of WORKFLOW_PERMISSIONS) expect(admin.has(k)).toBe(false);
-    expect(admin.has(P.ROLES_MANAGE)).toBe(true);
+    // D-023: the matrix, overrides and All branches are the Superadmin's; Admin keeps staffing.
+    expect(admin.has(P.ROLES_MANAGE)).toBe(false);
+    expect(admin.has(P.ACCESS_ALL_BRANCHES)).toBe(false);
     expect(admin.has(P.ACCESS_MANAGE)).toBe(true);
   });
 
@@ -174,16 +177,17 @@ describe("Holds and Journey amounts permissions", () => {
     expect(WORKFLOW_PERMISSIONS).toEqual(expect.arrayContaining([P.HOLDS_RAISE, P.HOLDS_RESOLVE]));
     expect(ADMIN_PERMISSIONS).not.toContain(P.HOLDS_RAISE);
     expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_TRANSFER);
-    // Decision 10 November 2026: Finance no longer moves holds; the Branch Supervisor does (and Admin).
+    // Decision 10 November 2026: Finance no longer moves holds; Admin does. The former Branch Supervisors keep
+    // it as a per-person grant (D-010); the LA Supervisor/Head default is LA + Open Items (D-002).
     expect(ROLE_DEFAULTS.FIN.permissions).not.toContain(P.HOLDS_TRANSFER);
-    expect(ROLE_DEFAULTS.SUP.permissions).toContain(P.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.SUP.permissions).not.toContain(P.HOLDS_TRANSFER);
+    expect(FORMER_SUPERVISOR_KEYS).toContain(P.HOLDS_TRANSFER);
     expect(permissionLabel(P.HOLDS_TRANSFER)).toBe("Move a hold to another person");
     expect(ALL_PERMISSIONS as readonly string[]).not.toContain("holds:resolve_any");
     expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_MANAGE);
   });
   it("cash amounts in the Journey: Finance, Approvers and Admin by default; a normal switch under Funds", () => {
     expect(ROLE_DEFAULTS.FIN.permissions).toContain(P.JOURNEY_VIEW_AMOUNTS);
-    expect(ROLE_DEFAULTS.APPR.permissions).toContain(P.JOURNEY_VIEW_AMOUNTS);
     expect(ADMIN_PERMISSIONS).toContain(P.JOURNEY_VIEW_AMOUNTS);
     for (const k of ["LA", "DP", "VAULT", "DIG", "QA"]) expect(ROLE_DEFAULTS[k].permissions).not.toContain(P.JOURNEY_VIEW_AMOUNTS);
   });
@@ -226,19 +230,24 @@ describe("The catalogue (Settings > Roles)", () => {
     }
   });
 
-  it("Refresh a loan from MyLoans: everyone who saw the button keeps it; Finance, Approvers and the Monitor do not", () => {
-    for (const k of ["LA", "ADMIN", "DP", "VAULT", "DIG", "QA"]) expect([k, ROLE_DEFAULTS[k].permissions.includes(P.LOANS_REFRESH)]).toEqual([k, true]);
-    for (const k of ["FIN", "APPR", "MONITOR"]) expect([k, ROLE_DEFAULTS[k].permissions.includes(P.LOANS_REFRESH)]).toEqual([k, false]);
+  it("Refresh a loan from MyLoans: everyone who saw the button keeps it; Finance and Monitoring do not", () => {
+    for (const k of ["LA", "ADMIN", "SUPERADMIN", "SUP", "DP", "VAULT", "DIG", "QA", "ARCHIVER"]) expect([k, ROLE_DEFAULTS[k].permissions.includes(P.LOANS_REFRESH)]).toEqual([k, true]);
+    for (const k of ["FIN", "MONITOR"]) expect([k, ROLE_DEFAULTS[k].permissions.includes(P.LOANS_REFRESH)]).toEqual([k, false]);
     // The "Last checked" line stays for everyone who sees loan files.
     for (const [k, d] of Object.entries(ROLE_DEFAULTS)) expect([k, d.permissions.includes(P.MYLOANS_VIEW)]).toEqual([k, d.permissions.includes(P.LOANS_VIEW)]);
   });
 
-  it("admin-only things stay on Admin only by default", () => {
-    const adminOnly = [P.ROLES_MANAGE, P.ACCESS_MANAGE, P.USERS_EDIT, P.BRANCHES_MANAGE, P.BRANCHES_IMPORT, P.BRANCHES_REVIEW, P.SOURCE_MANAGE, P.MYLOANS_SYNC, P.SOURCE_REVIEW, P.SETTINGS_PN_FORMAT, P.EMAIL_MANAGE, P.EMAIL_VIEW, P.REPORTS_TAT_EXPORT];
+  it("admin things stay on Admin and Superadmin by default; the matrix and All branches on Superadmin only (D-023)", () => {
+    const adminOnly = [P.ACCESS_MANAGE, P.USERS_EDIT, P.BRANCHES_MANAGE, P.BRANCHES_IMPORT, P.BRANCHES_REVIEW, P.SOURCE_MANAGE, P.MYLOANS_SYNC, P.SETTINGS_PN_FORMAT, P.EMAIL_MANAGE, P.EMAIL_VIEW, P.REPORTS_TAT_EXPORT];
     for (const k of adminOnly) {
       expect([k, ADMIN_PERMISSIONS.includes(k)]).toEqual([k, true]);
-      for (const [r, d] of Object.entries(ROLE_DEFAULTS)) if (r !== "ADMIN") expect([r, k, d.permissions.includes(k)]).toEqual([r, k, false]);
+      for (const [r, d] of Object.entries(ROLE_DEFAULTS)) if (r !== "ADMIN" && r !== "SUPERADMIN") expect([r, k, d.permissions.includes(k)]).toEqual([r, k, false]);
     }
+    for (const k of [P.ROLES_MANAGE, P.ACCESS_ALL_BRANCHES]) {
+      for (const [r, d] of Object.entries(ROLE_DEFAULTS)) expect([r, k, d.permissions.includes(k)]).toEqual([r, k, r === "SUPERADMIN"]);
+    }
+    // Approving Open Items: the LA Supervisor/Head (D-010); Admin keeps it until piece 8 (Open Items).
+    expect(ROLE_DEFAULTS.SUP.permissions).toContain(P.SOURCE_REVIEW);
     // Only the Operations Monitor is told about LTO advisories.
     expect(ADMIN_PERMISSIONS).not.toContain(P.LTO_REPORTS_NOTIFY);
     expect(ROLE_DEFAULTS.MONITOR.permissions).toContain(P.LTO_REPORTS_NOTIFY);

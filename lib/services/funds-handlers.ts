@@ -1,6 +1,8 @@
 import "server-only";
 import { prisma, type Tx } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getSetting } from "@/lib/settings";
+import { andWhere, holdsAnyWhere, holdsWhere } from "@/lib/auth/holders";
 import { bandRolesFor } from "@/lib/funds/rules";
 import { STEP_KEY, TYPE_ID, TYPE_KEYS, TYPE_NOUN, stepKeys, type FundsStep, type TypeKey, type TypeRef } from "@/lib/funds/access";
 
@@ -15,13 +17,13 @@ type Db = Tx | typeof prisma;
 /** Active people whose active role has the step's tick for this type (either built-in type's tick for a type added later). */
 export async function handlerIds(db: Db, step: FundsStep, type: TypeRef | string | null | undefined): Promise<string[]> {
   const keys = stepKeys(step, type);
-  const rows = await db.user.findMany({ where: { active: true, role: { active: true, permissions: { hasSome: keys } } }, select: { id: true } });
+  const rows = await db.user.findMany({ where: holdsAnyWhere(keys), select: { id: true } });
   return rows.map((r) => r.id);
 }
 
 /** The people who can manage roles (Admin): told when nobody can handle a step of a type. */
 export async function roleManagerIds(db: Db): Promise<string[]> {
-  const rows = await db.user.findMany({ where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.ROLES_MANAGE } } }, select: { id: true } });
+  const rows = await db.user.findMany({ where: holdsWhere(PERMISSIONS.ACCESS_MANAGE), select: { id: true } });
   return rows.map((r) => r.id);
 }
 
@@ -36,10 +38,12 @@ export async function handlersOrAdmins(db: Db, step: FundsStep, type: TypeRef | 
  * roles of the type's approval band for that amount. Nobody (no band, nobody in the band's role): the Admins.
  */
 export async function typeBandApprovers(db: Db, amountCents: number, type: TypeRef | string | null | undefined): Promise<string[]> {
+  // Approval bands off (the default, D-024): everyone who may approve the type (and handles it).
+  if (!(await getSetting("funds.approvalBandsOn", db))) return handlersOrAdmins(db, "approve", type);
   const fundsTypeId = bandTypeId(type);
   const roleIds = bandRolesFor(amountCents, await db.approvalBand.findMany({ where: { fundsTypeId } }));
   if (roleIds.length) {
-    const rows = await db.user.findMany({ where: { active: true, roleId: { in: roleIds }, role: { active: true, permissions: { hasSome: stepKeys("approve", type) } } }, select: { id: true } });
+    const rows = await db.user.findMany({ where: andWhere({ roleId: { in: roleIds } }, holdsAnyWhere(stepKeys("approve", type))), select: { id: true } });
     if (rows.length) return rows.map((r) => r.id);
   }
   return roleManagerIds(db);

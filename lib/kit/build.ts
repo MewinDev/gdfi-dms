@@ -28,6 +28,8 @@ import { saveSettingsRow } from "@/lib/services/admin";
 import { setRowActive } from "@/lib/services/settings-status";
 import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, KIT_OTHER_SAMPLES, SUPERVISOR_ROLE_KEY, SUPERVISOR_ROLE_NAME, NO_REFRESH_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
 import { kitRefusal } from "./guard";
+import { ticksFromRole } from "@/lib/auth/effective";
+import { grantFormerSupervisorTicks } from "./supervisor";
 import { branchGrants, writeUserAccess, type AccessInput } from "@/lib/services/access";
 import type { GrantLike } from "@/lib/branches/access";
 import { shiftBusinessDays } from "./rebase";
@@ -64,14 +66,18 @@ export async function kitAccess(a: { branches: string[] | "ALL"; access?: { area
 async function createAccounts(log: Log): Promise<Users> {
   const branchId = async (code: string) => (await prisma.branch.findUniqueOrThrow({ where: { code } })).id;
   const create = async (a: (typeof KIT_ACCOUNTS)[number], roleId: string) => {
-    const made = await prisma.user.create({ data: { email: a.email, name: a.name, roleId, isTestUser: true } });
+    const role = await prisma.role.findUniqueOrThrow({ where: { id: roleId } });
+    // The fund types its role works with (D-009), as the role migration sets them.
+    const made = await prisma.user.create({ data: { email: a.email, name: a.name, roleId, isTestUser: true, ...ticksFromRole(role.permissions) } });
     await prisma.$transaction(async (tx) => writeUserAccess(tx, made.id, await kitAccess(a, branchId)));
+    // Supervisors keep the former Branch Supervisor ticks as per-user grants (D-010), as the migration gives them.
+    if (a.role === "SUPERVISOR") await grantFormerSupervisorTicks(made.id);
   };
   const roleId = async (key: string) => (await prisma.role.findUniqueOrThrow({ where: { key } })).id;
-  // The Admin first: it makes the kit's own sample role through the Roles screen's own code.
-  const adminAcc = KIT_ACCOUNTS.find((a) => a.key === "admin")!;
-  await create(adminAcc, await roleId("ADMIN"));
-  const admin = await asUser(adminAcc.email);
+  // The Superadmin first: it makes the kit's own sample roles through the Roles screen's own code (D-023).
+  const superAcc = KIT_ACCOUNTS.find((a) => a.key === "superadmin")!;
+  await create(superAcc, await roleId("SUPERADMIN"));
+  const admin = await asUser(superAcc.email);
   // The Branch Supervisors use the built-in Branch Supervisor role (or one of that name made by hand before).
   const supId = (await prisma.role.findUnique({ where: { key: SUPERVISOR_ROLE_KEY } }))?.id ?? (await prisma.role.findFirstOrThrow({ where: { name: SUPERVISOR_ROLE_NAME } })).id;
   // "LA (no refresh)": every Loan Associate tick except Refresh, so Admin can tick it and see the button appear.
@@ -89,7 +95,7 @@ async function createAccounts(log: Log): Promise<Users> {
     await prisma.approvalBand.upsert({ where: { fundsTypeId_fromCents_roleId: { fundsTypeId: band.fundsTypeId, fromCents: band.fromCents, roleId: own } }, create: { fundsTypeId: band.fundsTypeId, fromCents: band.fromCents, roleId: own }, update: {} });
   }
   for (const a of KIT_ACCOUNTS) {
-    if (a.key === "admin") continue;
+    if (a.key === "superadmin") continue;
     await create(a, await kitRole(a.role));
   }
   const users = {} as Users;

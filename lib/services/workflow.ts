@@ -4,6 +4,7 @@ import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds, supervisorUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { assignDeadline } from "@/lib/workflow/tat";
 import { businessDate, fmtDate } from "@/lib/time";
@@ -28,8 +29,8 @@ function requireAllowed(user: CurrentUser, p: Permission) {
   if (!can(user, p)) throw new UserError("Your role does not allow this step.");
 }
 
-/** Who can be a processor: active people whose role is active and has "Receive and process transactions". */
-const PROCESSOR_ROLE = { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } };
+/** Who can be a processor: holds "Receive and process transactions" (lib/auth/holders.ts: role tick, overrides). */
+const processor = (id: string) => andWhere({ id }, holdsWhere(PERMISSIONS.DP_RECEIVE));
 
 async function loadTxnInScope(user: CurrentUser, transactionId: string) {
   const txn = await prisma.loanTransaction.findUnique({
@@ -544,14 +545,14 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
   if (!dpBranch?.active || dpBranch.hidden) throw new UserError("Pick a DP branch.", "dpBranchId");
   // The processor works at that branch: it is in their branch access (or they have All branches).
   const dp = await prisma.user.findFirst({
-    where: { id: input.dpUserId, active: true, role: PROCESSOR_ROLE, ...worksAtWhere(dpBranch.id) },
+    where: andWhere(processor(input.dpUserId), worksAtWhere(dpBranch.id)),
   });
   if (!dp) throw new UserError("Pick an active DP of the selected DP branch.", "dpUserId");
   // On leave (Settings, Processor capacity): shown disabled in the Send panel, and refused here too.
   if (onLeaveToday(dp, businessDate(new Date()))) throw new UserError(`${dp.name} is ${leaveText(dp.dpLeaveUntil, fmtDate).toLowerCase()}. Pick another processor.`, "dpUserId");
   let secondary: { id: string; name: string } | null = null;
   if (input.pasuyo) {
-    secondary = await prisma.user.findFirst({ where: { id: input.secondaryDpUserId ?? "", active: true, role: PROCESSOR_ROLE }, select: { id: true, name: true } });
+    secondary = await prisma.user.findFirst({ where: processor(input.secondaryDpUserId ?? ""), select: { id: true, name: true } });
     if (!secondary) throw new UserError("Pasuyo: pick the secondary DP.", "secondaryDpUserId");
     if (secondary.id === dp.id) throw new UserError("Pasuyo: the secondary DP must be a different person.", "secondaryDpUserId");
     if (!input.pasuyoReason?.trim()) throw new UserError("Pasuyo: enter the reason.", "pasuyoReason");

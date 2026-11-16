@@ -3,6 +3,7 @@ import { advisoryWarnings } from "@/lib/services/lto-advisories";
 import { prisma } from "@/lib/db";
 import { can, type CurrentUser, inScope } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { holdsWhere } from "@/lib/auth/holders";
 import type { LoanDetail } from "@/lib/services/queries";
 import type { TatMap } from "@/lib/workflow/tat";
 import { flagKindChoices } from "@/lib/services/expense-kinds";
@@ -55,7 +56,7 @@ export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText 
     : [];
   const processors = changeable
     ? (await prisma.user.findMany({
-        where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } }, orderBy: { name: "asc" },
+        where: holdsWhere(PERMISSIONS.DP_RECEIVE), orderBy: { name: "asc" },
         select: { id: true, name: true, branches: { select: { branch: { select: { name: true } } } } },
       })).map((p) => ({ id: p.id, name: p.name, branches: p.branches.map((b) => b.branch.name).join(", ") }))
     : [];

@@ -2,7 +2,7 @@
 
 Every feature is a tick on a role: how the ticks work, the full catalogue, the defaults and the audit of the permissions pass.
 
-Last updated: 16 November 2026 (PHT)
+Last updated: 17 November 2026 (PHT)
 
 ## Roles are just ticks
 
@@ -62,35 +62,35 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See loan files | Open and read loan files, Home and Updates. Which branches depends on the person's Branch access. | Loans, Loan File, Home, Updates | - | `loans:view` | LA, Admin, DP, Finance, Vault, Digital Records, QA, Approvers, Branch Supervisor |
-| Find a loan | Search the loan files in the DMS, and look up a full PN in MyLoans to see the preview. | Find loan, Search | See loan files | `loans:search` | LA, Admin, Branch Supervisor |
-| Open a loan file | Start a new loan file from a MyLoans loan. | Search, Open loan file | Find a loan | `loans:open` | LA |
-| Change an automatic result | Supervisor override of the classification and transactions, with a reason. | Loan File, Change an automatic result | See loan files | `rules:override` | Admin |
+| See loan files | Open and read loan files, Home and Updates. Which branches depends on the person's Branch access. | Loans, Loan File, Home, Updates | - | `loans:view` | SUPERADMIN, LA, Admin, DP, Finance, Vault, Digital Records, QA, ARCHIVER, Branch Supervisor |
+| Find a loan | Search the loan files in the DMS, and look up a full PN in MyLoans to see the preview. | Find loan, Search | See loan files | `loans:search` | SUPERADMIN, LA, Admin, Branch Supervisor |
+| Open a loan file | Start a new loan file from a MyLoans loan. | Search, Open loan file | Find a loan | `loans:open` | LA, Branch Supervisor |
+| Change an automatic result | Supervisor override of the classification and transactions, with a reason. | Loan File, Change an automatic result | See loan files | `rules:override` | SUPERADMIN, Admin |
 
 ### Transactions and papers
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| Tick papers | Tick the papers in hand, report and resolve problems. | Loan File, To do and Papers | See loan files | `checklist:tick` | LA |
-| Mark a paper Missing | On Check papers: mark a paper Missing with a reason and remarks, so the file can still be sent. Edits after sending are kept in the history. | Loan File, Check papers | Tick papers | `papers:mark_missing` | LA |
-| Receive a missing paper | Mark a missing paper Received, with the date it arrived. The reason and remarks stay in the history. | Loan File, Check papers and Missing papers | See loan files | `papers:receive_late` | LA, Admin |
-| Add a transaction | Add a custom transaction type to a loan file. | Loan File, Add a transaction | Tick papers | `transactions:add` | LA |
-| Mark as done | Record the EDST reference, and mark custom transactions done. | Loan File, EDST and Mark as done | Tick papers | `transactions:complete` | LA |
-| Raise a problem | Open a problem on a transaction the person works on. | Loan File, Job | See loan files | `problems:raise` | LA, DP |
-| Resolve own problems | Resolve problems on transactions the person works on. | Loan File, Job | Raise a problem | `problems:resolve` | LA, DP |
-| Resolve any problem | Resolve a problem on any transaction in the person's branches. People with this are also told about problems, holds and overdue work there. | Loan File, Job; notifications | See loan files | `problems:resolve_any` | Admin, Branch Supervisor |
-| Mark outside our control | Tag a problem for reports. It does not stop the clock. | Job, Problem | See loan files | `problems:mark_outside_control` | Admin |
-| Put work on hold | Put a transaction on hold while it waits on something that is not a fault. Only on work the person does. The clock keeps counting. | Loan File, Job | See loan files | `holds:raise` | LA, DP |
-| Resume own holds | Resume a hold the person owns, or add the remarks to an older hold of theirs. | Loan File, Job, Open items | Put work on hold | `holds:resolve` | LA, DP |
-| Move a hold to another person | Give a hold to another person of the same work (for example when the owner is on leave). Only in the person's branches, and only to someone who also has access to that branch. It never resumes the hold. | Loan File, Open items | See loan files | `holds:transfer` | Admin, Branch Supervisor |
+| Tick papers | Tick the papers in hand, report and resolve problems. | Loan File, To do and Papers | See loan files | `checklist:tick` | LA, Branch Supervisor |
+| Mark a paper Missing | On Check papers: mark a paper Missing with a reason and remarks, so the file can still be sent. Edits after sending are kept in the history. | Loan File, Check papers | Tick papers | `papers:mark_missing` | LA, Branch Supervisor |
+| Receive a missing paper | Mark a missing paper Received, with the date it arrived. The reason and remarks stay in the history. | Loan File, Check papers and Missing papers | See loan files | `papers:receive_late` | SUPERADMIN, LA, Admin, Branch Supervisor |
+| Add a transaction | Add a custom transaction type to a loan file. | Loan File, Add a transaction | Tick papers | `transactions:add` | LA, Branch Supervisor |
+| Mark as done | Record the EDST reference, and mark custom transactions done. | Loan File, EDST and Mark as done | Tick papers | `transactions:complete` | LA, Branch Supervisor |
+| Raise a problem | Open a problem on a transaction the person works on. | Loan File, Job | See loan files | `problems:raise` | LA, DP, Branch Supervisor |
+| Resolve own problems | Resolve problems on transactions the person works on. | Loan File, Job | Raise a problem | `problems:resolve` | LA, DP, Branch Supervisor |
+| Resolve any problem | Resolve a problem on any transaction in the person's branches. People with this are also told about problems, holds and overdue work there. | Loan File, Job; notifications | See loan files | `problems:resolve_any` | SUPERADMIN, Admin |
+| Mark outside our control | Tag a problem for reports. It does not stop the clock. | Job, Problem | See loan files | `problems:mark_outside_control` | SUPERADMIN, Admin |
+| Put work on hold | Put a transaction on hold while it waits on something that is not a fault. Only on work the person does. The clock keeps counting. | Loan File, Job | See loan files | `holds:raise` | LA, DP, Branch Supervisor |
+| Resume own holds | Resume a hold the person owns, or add the remarks to an older hold of theirs. | Loan File, Job, Open items | Put work on hold | `holds:resolve` | LA, DP, Branch Supervisor |
+| Move a hold to another person | Give a hold to another person of the same work (for example when the owner is on leave). Only in the person's branches, and only to someone who also has access to that branch. It never resumes the hold. | Loan File, Open items | See loan files | `holds:transfer` | SUPERADMIN, Admin |
 
 ### Send to DP and returns
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| Send to a processor | Pick a Document Processor and send the papers. Also asks Finance for a cash advance. | Loan File, Send | Tick papers | `processing:send` | LA |
-| Flag funds | Say whether a transaction needs funds when sending it. No amount. | Loan File, Send | Tick papers | `funds:flag` | LA |
-| Accept returned papers | Be the Loan Associate who receives papers back from a processor, and get branch updates. | Receive package | See loan files | `processing:accept_returns` | LA |
+| Send to a processor | Pick a Document Processor and send the papers. Also asks Finance for a cash advance. | Loan File, Send | Tick papers | `processing:send` | LA, Branch Supervisor |
+| Flag funds | Say whether a transaction needs funds when sending it. No amount. | Loan File, Send | Tick papers | `funds:flag` | LA, Branch Supervisor |
+| Accept returned papers | Be the Loan Associate who receives papers back from a processor, and get branch updates. | Receive package | See loan files | `processing:accept_returns` | LA, Branch Supervisor |
 
 ### DP work
 
@@ -100,7 +100,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Work on jobs | Accept, decline, return, log attempts, complete and forward assigned jobs. | My jobs, Job | Receive and process transactions | `jobs:work` | DP |
 | Pass a job to a second processor | Pasuyo: hand an accepted job to another processor, with a reason. | Job, Pasuyo | Work on jobs | `jobs:pasuyo` | DP |
 | Return a job to the LA for missing papers | After accepting: send the job back to the Loan Associate when a paper is missing or wrong. The clock keeps counting. | Job, Return to LA | Work on jobs | `jobs:return_to_la` | DP |
-| File an LTO advisory | Report a problem at an LTO office (system down, closed, long queue) from a job at an LTO stage. It warns others; it never blocks anything. | Job at an LTO stage | - | `ltoreports:create` | Admin, DP |
+| File an LTO advisory | Report a problem at an LTO office (system down, closed, long queue) from a job at an LTO stage. It warns others; it never blocks anything. | Job at an LTO stage | - | `ltoreports:create` | SUPERADMIN, Admin, DP |
 
 ### Funds
 
@@ -109,95 +109,96 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Request a cash advance | Ask for one advance covering several jobs, top-ups and carry-overs. | My funds, Job | Work on jobs | `funds:request` | DP |
 | Liquidate | Record receipts and return cash. | My funds | Request a cash advance | `funds:liquidate` | DP |
 | Grant a funds exception | Let a processor with an overdue advance submit one more request (both types). | Funds | - | `funds:exception` | Finance |
-| See expense kinds | See Settings, Expense kinds: what a cash advance or fund transfer can be for, and each kind's amount. | Settings, Expense kinds | - | `funds:kinds_view` | LA, Admin, DP, Finance, Approvers |
-| Add and manage expense kinds (Change; View is See expense kinds) | Add, rename, reorder or switch off expense kinds and set their amount; "+ Add new kind" on the funds screens; change a fixed amount on one request. | Settings, Expense kinds; Funds, To approve; My funds | See expense kinds | `funds:kinds_manage` | Admin, Finance, Approvers |
-| See cash amounts in the Journey | Show peso amounts in a loan's Journey. Without it, the Journey shows the funds status only. | Loan File, Journey; LTO monitor amounts | See loan files | `journey:view_amounts` | Admin, Finance, Approvers |
-| See cash advances | The Funds page for cash advances: every request in the person's branches, the counts and the receipts. | Funds, Receipts | See loan files | `funds:ca_view` | Admin, Finance |
+| See expense kinds | See Settings, Expense kinds: what a cash advance or fund transfer can be for, and each kind's amount. | Settings, Expense kinds | - | `funds:kinds_view` | SUPERADMIN, LA, Admin, DP, Finance, Branch Supervisor |
+| Add and manage expense kinds (Change; View is See expense kinds) | Add, rename, reorder or switch off expense kinds and set their amount; "+ Add new kind" on the funds screens; change a fixed amount on one request. | Settings, Expense kinds; Funds, To approve; My funds | See expense kinds | `funds:kinds_manage` | SUPERADMIN, Admin, Finance |
+| See cash amounts in the Journey | Show peso amounts in a loan's Journey. Without it, the Journey shows the funds status only. | Loan File, Journey; LTO monitor amounts | See loan files | `journey:view_amounts` | SUPERADMIN, Admin, Finance |
+| See cash advances | The Funds page for cash advances: every request in the person's branches, the counts and the receipts. | Funds, Receipts | See loan files | `funds:ca_view` | SUPERADMIN, Admin, Finance |
 | Approve cash advances | Approve or deny cash advances (and their top-ups and carry-overs) within the approval bands of this type. | Funds, To approve | See cash advances | `funds:ca_approve` | Finance |
 | Release cash advances | Release the approved money (and approved top-ups) of cash advances. | Funds, To release | See cash advances | `funds:ca_release` | Finance |
 | Settle and close cash advances | Confirm returned cash and close cash advances. Told when liquidation is submitted or overdue. | Funds, Outstanding | See cash advances | `funds:ca_settle` | Finance |
 | Edit lines of cash advances | Change or add a line before the request is decided. | Funds, To approve | See cash advances | `funds:ca_edit_lines` | Finance |
 | Change type of cash advances | Change the type before release, with remarks. Changing into the other type needs that type's Change type tick too. | Funds, To approve and To release | See cash advances | `funds:ca_change_type` | Finance |
-| Print liquidation report for cash advances | Open and print the liquidation report of cash advances. | Funds, Outstanding and History, Print; the liquidation report page | See cash advances | `funds:ca_print` | Admin, Finance |
-| See fund transfers | The Funds page for fund transfers: every request in the person's branches, the counts and the receipts. | Funds, Receipts | See loan files | `funds:ft_view` | Admin, Finance |
+| Print liquidation report for cash advances | Open and print the liquidation report of cash advances. | Funds, Outstanding and History, Print; the liquidation report page | See cash advances | `funds:ca_print` | SUPERADMIN, Admin, Finance |
+| See fund transfers | The Funds page for fund transfers: every request in the person's branches, the counts and the receipts. | Funds, Receipts | See loan files | `funds:ft_view` | SUPERADMIN, Admin, Finance |
 | Approve fund transfers | Approve or deny fund transfers (and their top-ups and carry-overs) within the approval bands of this type. | Funds, To approve | See fund transfers | `funds:ft_approve` | Finance |
 | Release fund transfers | Release the approved money (and approved top-ups) of fund transfers. | Funds, To release | See fund transfers | `funds:ft_release` | Finance |
 | Settle and close fund transfers | Confirm returned cash and close fund transfers. Told when liquidation is submitted or overdue. | Funds, Outstanding | See fund transfers | `funds:ft_settle` | Finance |
 | Edit lines of fund transfers | Change or add a line before the request is decided. | Funds, To approve | See fund transfers | `funds:ft_edit_lines` | Finance |
 | Change type of fund transfers | Change the type before release, with remarks. Changing into the other type needs that type's Change type tick too. | Funds, To approve and To release | See fund transfers | `funds:ft_change_type` | Finance |
-| Print liquidation report for fund transfers | Open and print the liquidation report of fund transfers. | Funds, Outstanding and History, Print; the liquidation report page | See fund transfers | `funds:ft_print` | Admin, Finance |
+| Print liquidation report for fund transfers | Open and print the liquidation report of fund transfers. | Funds, Outstanding and History, Print; the liquidation report page | See fund transfers | `funds:ft_print` | SUPERADMIN, Admin, Finance |
 
 ### Monitoring
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See the DP monitor | Each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only. | Monitoring, DPs | - | `monitor:dp` | Admin, Operations Monitor, Branch Supervisor |
-| See the LTO monitor | Jobs at each LTO office, time at the LTO and advisories. | Monitoring, LTO offices | - | `monitor:lto` | Admin, Operations Monitor, Branch Supervisor |
-| Manage LTO advisories (Change; View is See the LTO monitor) | Resolve or edit any LTO advisory, and file one from the Monitoring page. People with this are told when an advisory is filed. | Monitoring, LTO offices | See the LTO monitor | `ltoreports:manage` | Admin, Operations Monitor |
+| See the DP monitor | Each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only. | Monitoring, DPs | - | `monitor:dp` | SUPERADMIN, Admin, Operations Monitor |
+| See the LTO monitor | Jobs at each LTO office, time at the LTO and advisories. | Monitoring, LTO offices | - | `monitor:lto` | SUPERADMIN, Admin, Operations Monitor |
+| Manage LTO advisories (Change; View is See the LTO monitor) | Resolve or edit any LTO advisory, and file one from the Monitoring page. People with this are told when an advisory is filed. | Monitoring, LTO offices | See the LTO monitor | `ltoreports:manage` | SUPERADMIN, Admin, Operations Monitor |
 | Be told about LTO advisories | Get a notification (and an email when emails are on) when an LTO advisory is filed or resolved. Processors are never told. | Notifications | See the LTO monitor | `ltoreports:notify` | Operations Monitor |
-| Set processor capacity and leave | The default number of open jobs, a processor's own capacity, and On leave. | Settings, Processor capacity | - | `dpcapacity:manage` | Admin |
+| Set processor capacity and leave | The default number of open jobs, a processor's own capacity, and On leave. | Settings, Processor capacity | - | `dpcapacity:manage` | SUPERADMIN, Admin |
 
 ### Reports
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | Admin, Branch Supervisor |
-| See the audit log | Every automatic decision and user action (the technical log). | Audit log | - | `audit:view` | Admin |
+| See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | SUPERADMIN, Admin |
+| See the audit log | Every automatic decision and user action (the technical log). | Audit log | - | `audit:view` | SUPERADMIN, Admin |
 
 ### MyLoans and sync
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See when MyLoans was last checked | Show "MyLoans · Last checked" on a loan file. | Loan File, top strip | See loan files | `myloans:view` | LA, Admin, DP, Finance, Vault, Digital Records, QA, Approvers, Branch Supervisor |
-| Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | LA, Admin, DP, Vault, Digital Records, QA, Branch Supervisor |
-| Review MyLoans changes | Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin |
+| See when MyLoans was last checked | Show "MyLoans · Last checked" on a loan file. | Loan File, top strip | See loan files | `myloans:view` | SUPERADMIN, LA, Admin, DP, Finance, Vault, Digital Records, QA, ARCHIVER, Branch Supervisor |
+| Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | SUPERADMIN, LA, Admin, DP, Vault, Digital Records, QA, ARCHIVER, Branch Supervisor |
+| Review MyLoans changes | Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin, Branch Supervisor |
 | Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches; when nobody in the branch has this tick, Admin reviews it. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, Finance, Branch Supervisor |
-| Change MyLoans sync settings | How often loans are checked against MyLoans and the business hours. | Settings, MyLoans sync | - | `myloans:manage` | Admin |
-| Run the MyLoans sync now | The Run now button: check every open loan against MyLoans at once. | Settings, MyLoans sync, Run now | - | `myloans:sync` | Admin |
+| Change MyLoans sync settings | How often loans are checked against MyLoans and the business hours. | Settings, MyLoans sync | - | `myloans:manage` | SUPERADMIN, Admin |
+| Run the MyLoans sync now | The Run now button: check every open loan against MyLoans at once. | Settings, MyLoans sync, Run now | - | `myloans:sync` | SUPERADMIN, Admin |
 
 ### Branches and access
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See branches | See Settings, Branches: codes, areas, divisions and the sync history. | Settings, Branches | - | `branches:view` | Admin |
-| Change branches (Change; View is See branches) | Edit the DMS fields of a branch, add one by hand, hide a test branch. | Settings, Branches | See branches | `branches:manage` | Admin |
-| Import branches from MyLoans | Import the MyLoans branch file, run Branches from MyLoans and set its schedule. | Settings, Branches, Import from MyLoans | See branches | `branches:import` | Admin |
-| Decide branch changes | The Branch review: accept or ignore new, renamed, closed or moved branches from MyLoans. | Settings, Branches, Branch review | See branches | `branches:review` | Admin |
-| See users | See the Users page. | Users | - | `users:view` | Admin |
-| Add or edit users (Change; View is See users) | Add users, change their name, role and status. | Users, Add and Edit | See users | `users:edit` | Admin |
-| Change branch access | Choose which branches a person works in: All, divisions, areas, branches, exceptions and the home branch. | Users, Edit, Branch access; Copy access | Add or edit users | `access:manage` | Admin |
-| Manage roles | Add roles and change what each one may see and do. | Settings, Roles | See users | `roles:manage` | Admin |
+| See branches | See Settings, Branches: codes, areas, divisions and the sync history. | Settings, Branches | - | `branches:view` | SUPERADMIN, Admin |
+| Change branches (Change; View is See branches) | Edit the DMS fields of a branch, add one by hand, hide a test branch. | Settings, Branches | See branches | `branches:manage` | SUPERADMIN, Admin |
+| Import branches from MyLoans | Import the MyLoans branch file, run Branches from MyLoans and set its schedule. | Settings, Branches, Import from MyLoans | See branches | `branches:import` | SUPERADMIN, Admin |
+| Decide branch changes | The Branch review: accept or ignore new, renamed, closed or moved branches from MyLoans. | Settings, Branches, Branch review | See branches | `branches:review` | SUPERADMIN, Admin |
+| See users | See the Users page. | Users | - | `users:view` | SUPERADMIN, Admin |
+| Add or edit users (Change; View is See users) | Add users, change their name, role and status. | Users, Add and Edit | See users | `users:edit` | SUPERADMIN, Admin |
+| Change branch access | Choose which branches a person works in (divisions, areas, branches, exceptions, home branch) and whether they handle cash advances and fund transfers. Never your own. | Users, Edit, Branch access; Copy access | Add or edit users | `access:manage` | SUPERADMIN, Admin |
+| Give All branches | Give a person access to every branch. Never your own. | Users, Edit, Branch access | Change branch access | `access:all_branches` | SUPERADMIN |
+| Manage permissions | The permission matrix (what each role may see and do), per-user overrides, and who can approve LA Open Items. Never your own. | Settings, Permissions; Roles; Users, Edit, Permissions | See users | `roles:manage` | SUPERADMIN |
 
 ### Settings and Admin
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| Change loan types | Display names of the MyLoans loan types. | Settings, Loan types | - | `settings:loan_types` | Admin |
-| Change transaction types | Rename, add custom types, who does them. | Settings, Transaction types | - | `settings:transaction_types` | Admin |
-| Change document types | The kinds of paper checklist items use. | Settings, Document types | - | `settings:document_types` | Admin |
-| Change checklist items | The papers for each transaction, required or optional. | Settings, Checklist items | - | `settings:checklist` | Admin |
-| Change turnaround times | Target business days for each step. | Settings, Turnaround times | - | `settings:tat` | Admin |
-| Change holidays | Days skipped when counting turnaround times. | Settings, Holidays | - | `settings:holidays` | Admin |
-| Change cash-advance rules | Suggested and maximum amounts, carry-over and liquidation days, approval bands. | Settings, Cash advance | - | `settings:cash_advance` | Admin |
-| Change LTO offices | Offices a processor can be sent to. | Settings, LTO offices | - | `settings:lto` | Admin |
-| Change problem reasons | The reasons a job can be stuck. | Settings, Problem reasons | - | `settings:problem_reasons` | Admin |
-| Change hold reasons | Add, rename, reorder or switch off the reasons a transaction can be on hold. | Settings, Hold reasons | - | `holds:manage` | Admin |
-| Change return reasons | Why a processor returns a job to the Loan Associate for papers. | Settings, Return reasons | - | `settings:return_reasons` | Admin |
-| Change missing paper reasons | The reasons a Loan Associate can pick when marking a paper Missing. | Settings, Missing paper reasons | - | `settings:missing_reasons` | Admin |
-| Change funds types | Rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off. | Settings, Funds types | - | `fundtypes:manage` | Admin |
-| Change processing stages | The stages of each transaction type, their evidence and targets. | Settings, Processing stages | - | `stages:manage` | Admin |
-| Change system switches | MyLoans test switches, the simulator switch, sample MyLoans changes. | Settings, System | - | `settings:system` | Admin |
-| Change the PN format | The parts of a PN (prefix, branch code, year, system digit, running number) and the PN check. | Settings, System, PN format | - | `settings:pn_format` | Admin |
-| Import data | Import / Export files, for the lists this role may change. | Settings, Import / Export | - | `settings:import` | Admin |
-| Use the test simulator | Move sample loans through the processor and vault steps, and simulate MyLoans changes. Only in test mode. | Loan File, Simulator (test mode) | See loan files | `simulator:use` | Admin |
-| Use the Test kit | Back to the starting state, backups, and the data-check samples. Only in test mode, on a local test setup. | Settings, Test kit (local only) | - | `testdata:reset` | Admin |
+| Change loan types | Display names of the MyLoans loan types. | Settings, Loan types | - | `settings:loan_types` | SUPERADMIN, Admin |
+| Change transaction types | Rename, add custom types, who does them. | Settings, Transaction types | - | `settings:transaction_types` | SUPERADMIN, Admin |
+| Change document types | The kinds of paper checklist items use. | Settings, Document types | - | `settings:document_types` | SUPERADMIN, Admin |
+| Change checklist items | The papers for each transaction, required or optional. | Settings, Checklist items | - | `settings:checklist` | SUPERADMIN, Admin |
+| Change turnaround times | Target business days for each step. | Settings, Turnaround times | - | `settings:tat` | SUPERADMIN, Admin |
+| Change holidays | Days skipped when counting turnaround times. | Settings, Holidays | - | `settings:holidays` | SUPERADMIN, Admin |
+| Change cash-advance rules | Suggested and maximum amounts, carry-over and liquidation days, approval bands. | Settings, Cash advance | - | `settings:cash_advance` | SUPERADMIN, Admin |
+| Change LTO offices | Offices a processor can be sent to. | Settings, LTO offices | - | `settings:lto` | SUPERADMIN, Admin |
+| Change problem reasons | The reasons a job can be stuck. | Settings, Problem reasons | - | `settings:problem_reasons` | SUPERADMIN, Admin |
+| Change hold reasons | Add, rename, reorder or switch off the reasons a transaction can be on hold. | Settings, Hold reasons | - | `holds:manage` | SUPERADMIN, Admin |
+| Change return reasons | Why a processor returns a job to the Loan Associate for papers. | Settings, Return reasons | - | `settings:return_reasons` | SUPERADMIN, Admin |
+| Change missing paper reasons | The reasons a Loan Associate can pick when marking a paper Missing. | Settings, Missing paper reasons | - | `settings:missing_reasons` | SUPERADMIN, Admin |
+| Change funds types | Rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off. | Settings, Funds types | - | `fundtypes:manage` | SUPERADMIN, Admin |
+| Change processing stages | The stages of each transaction type, their evidence and targets. | Settings, Processing stages | - | `stages:manage` | SUPERADMIN, Admin |
+| Change system switches | MyLoans test switches, the simulator switch, sample MyLoans changes. | Settings, System | - | `settings:system` | SUPERADMIN, Admin |
+| Change the PN format | The parts of a PN (prefix, branch code, year, system digit, running number) and the PN check. | Settings, System, PN format | - | `settings:pn_format` | SUPERADMIN, Admin |
+| Import data | Import / Export files, for the lists this role may change. | Settings, Import / Export | - | `settings:import` | SUPERADMIN, Admin |
+| Use the test simulator | Move sample loans through the processor and vault steps, and simulate MyLoans changes. Only in test mode. | Loan File, Simulator (test mode) | See loan files | `simulator:use` | SUPERADMIN, Admin |
+| Use the Test kit | Back to the starting state, backups, and the data-check samples. Only in test mode, on a local test setup. | Settings, Test kit (local only) | - | `testdata:reset` | SUPERADMIN, Admin |
 
 ### Email
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See email settings | See which emails are on, their messages and the recent emails. | Settings, Email | - | `email:view` | Admin |
-| Change email settings (Change; View is See email settings) | Turn emails on or off, choose events, edit messages, send a test email, resend. | Settings, Email | See email settings | `email:manage` | Admin |
+| See email settings | See which emails are on, their messages and the recent emails. | Settings, Email | - | `email:view` | SUPERADMIN, Admin |
+| Change email settings (Change; View is See email settings) | Turn emails on or off, choose events, edit messages, send a test email, resend. | Settings, Email | See email settings | `email:manage` | SUPERADMIN, Admin |
 
 ## Audit: before and after this pass
 
@@ -269,7 +270,8 @@ One row per feature. **Permission today** is what decided it before the permissi
 | See users | Users | users:view | `users:view` |  |
 | Add or edit users | Users, Add and Edit | users:edit | `users:edit` |  |
 | Change branch access | Users, Edit, Branch access; Copy access | users:edit | `access:manage` | Split or renamed |
-| Manage roles | Settings, Roles | roles:manage | `roles:manage` |  |
+| Give All branches | Users, Edit, Branch access | access:manage | `access:all_branches` | Split or renamed |
+| Manage permissions | Settings, Permissions; Roles; Users, Edit, Permissions | roles:manage | `roles:manage` |  |
 | Change loan types | Settings, Loan types | settings:loan_types | `settings:loan_types` |  |
 | Change transaction types | Settings, Transaction types | settings:transaction_types | `settings:transaction_types` |  |
 | Change document types | Settings, Document types | settings:document_types | `settings:document_types` |  |

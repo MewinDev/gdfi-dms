@@ -4,6 +4,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
+import { grantFormerSupervisorTicks } from "@/lib/kit/supervisor";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { openLoanFile } from "@/lib/services/loan-file";
@@ -46,7 +47,9 @@ beforeAll(async () => {
   await prisma.user.create({ data: { email: "zz.sup@gdfi.ph", name: "Z Supervisor", roleId: supRole.id, isTestUser: true, branches: { create: [{ branchId: otherBranch }] } } });
   // The built-in Branch Supervisor of the loan's branch, and an LA of another branch only.
   const builtInSup = await prisma.role.findUniqueOrThrow({ where: { key: "SUP" } });
-  await prisma.user.create({ data: { email: "zz.branchsup@gdfi.ph", name: "Z Angono Supervisor", roleId: builtInSup.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });
+  const madeSup = await prisma.user.create({ data: { email: "zz.branchsup@gdfi.ph", name: "Z Angono Supervisor", roleId: builtInSup.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });
+  // A former Branch Supervisor: the role migration (D-010) keeps their supervisor ticks as per-person grants.
+  await grantFormerSupervisorTicks(madeSup.id);
   await prisma.user.create({ data: { email: "zz.laother@gdfi.ph", name: "Antipolo Only LA", roleId: laRole.id, isTestUser: true, branches: { create: [{ branchId: otherBranch }] } } });
   branchSup = await asUser("zz.branchsup@gdfi.ph");
   laOther = await asUser("zz.laother@gdfi.ph");
@@ -175,7 +178,11 @@ describe("1b. The Branch Supervisor moves holds inside their branches only; who 
     expect(holdMoverHealthText(1)).toBe("1 active branch has nobody who can move a hold.");
     expect(holdMoverHealthText(3)).toBe("3 active branches have nobody who can move a hold.");
     const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
+    const saRole = await prisma.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } }); // also All branches with holds:transfer
     await prisma.role.update({ where: { id: adminRole.id }, data: { permissions: adminRole.permissions.filter((k) => k !== PERMISSIONS.HOLDS_TRANSFER) } });
+    await prisma.role.update({ where: { id: saRole.id }, data: { permissions: saRole.permissions.filter((k) => k !== PERMISSIONS.HOLDS_TRANSFER) } });
+    // This test sets up who moves holds: the seeded test LA Supervisor/Head (who kept "Move a hold", D-010) is parked.
+    await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
     try {
       const missing = await branchesWithoutHoldMover();
       const names = missing.map((b) => b.name);
@@ -190,6 +197,8 @@ describe("1b. The Branch Supervisor moves holds inside their branches only; who 
       expect((await branchesWithoutHoldMover()).map((b) => b.name)).toContain("Angono");
     } finally {
       await prisma.role.update({ where: { id: adminRole.id }, data: { permissions: adminRole.permissions } });
+      await prisma.role.update({ where: { id: saRole.id }, data: { permissions: saRole.permissions } });
+      await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
       await prisma.user.update({ where: { id: branchSup.id }, data: { active: true } });
     }
   });

@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { PERMISSIONS, ROLE_DEFAULTS } from "@/lib/auth/permissions";
+import { PERMISSIONS, ROLE_DEFAULTS, FORMER_SUPERVISOR_KEYS } from "@/lib/auth/permissions";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob } from "@/lib/services/jobs";
@@ -192,16 +192,17 @@ describe("B. Built-in Branch Supervisor; Finance no longer moves holds", () => {
   // These were the role steps of migration 20261119090006_decisions_batch. Since the squash
   // (20261119090014_baseline, docs/db/squash-notes.md) a new database gets its built-in roles from the
   // seed (ROLE_DEFAULTS, the same as "Reset to default"); the one-off steps for older databases are gone.
-  it("the built-in Branch Supervisor role has the default ticks and Assigned branches", async () => {
+  it("the built-in Branch Supervisor role is now the LA Supervisor/Head (D-002, D-010): default ticks, Assigned branches", async () => {
     const sup = await prisma.role.findUniqueOrThrow({ where: { key: "SUP" } });
-    expect(sup).toMatchObject({ name: "Branch Supervisor", builtIn: true, branchAccess: "ASSIGNED", active: true });
+    expect(sup).toMatchObject({ name: "LA Supervisor/Head", builtIn: true, branchAccess: "ASSIGNED", active: true });
     expect([...sup.permissions].sort()).toEqual([...ROLE_DEFAULTS.SUP.permissions].sort());
-    expect(await prisma.role.count({ where: { name: "Branch Supervisor" } })).toBe(1);
+    expect(await prisma.role.count({ where: { name: "LA Supervisor/Head" } })).toBe(1);
   });
 
-  it("'Move a hold to another person': the built-in Finance role does not have it; Admin and the Branch Supervisor do", () => {
+  it("'Move a hold to another person': not Finance; Admin by default; the former Branch Supervisors keep it as a grant (D-010)", () => {
     expect(ROLE_DEFAULTS.FIN.permissions).not.toContain(PERMISSIONS.HOLDS_TRANSFER);
-    expect(ROLE_DEFAULTS.SUP.permissions).toContain(PERMISSIONS.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.SUP.permissions).not.toContain(PERMISSIONS.HOLDS_TRANSFER);
+    expect(FORMER_SUPERVISOR_KEYS).toContain(PERMISSIONS.HOLDS_TRANSFER);
     expect(ROLE_DEFAULTS.ADMIN.permissions).toContain(PERMISSIONS.HOLDS_TRANSFER);
   });
 });

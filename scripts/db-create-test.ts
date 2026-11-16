@@ -35,4 +35,6 @@ runBin("prisma", ["migrate", "deploy"], env);
 runBin("tsx", ["scripts/migrate-check.ts"], env); // the search indexes are still there
 console.log("- Migrations applied.");
 runBin("tsx", ["--require=./scripts/server-only-stub.cjs", "prisma/seed.ts"], env);
+// Data migrations the seed does not do (an existing database keeps its role ticks): D-010 / D-023 roles.
+runBin("tsx", ["--require=./scripts/server-only-stub.cjs", "scripts/migrate-roles-d010.ts", "--apply"], env);
 console.log(`Done: ${name} is ready for npm test and npm run test:e2e.`);

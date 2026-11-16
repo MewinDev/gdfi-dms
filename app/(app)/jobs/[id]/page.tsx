@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { can, requirePageAny } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { canSeeJob, LTO_BLOCK_MESSAGE, lineTotals, loadAssignment, ltoBlocked } from "@/lib/services/jobs";
 import { heldFor } from "@/lib/services/pasuyo";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
@@ -110,7 +111,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     canPass ? prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : [],
     canPass
       ? prisma.user.findMany({
-          where: { active: true, id: { notIn: [user.id, a.dpUserId, ...(a.secondaryDpUserId ? [a.secondaryDpUserId] : [])] }, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } },
+          where: andWhere({ id: { notIn: [user.id, a.dpUserId, ...(a.secondaryDpUserId ? [a.secondaryDpUserId] : [])] } }, holdsWhere(PERMISSIONS.DP_RECEIVE)),
           orderBy: { name: "asc" }, select: { id: true, name: true, allBranches: true, role: { select: { key: true } }, branches: { select: { branchId: true } } },
         })
       : [],
@@ -197,7 +198,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     ? await (async () => {
         const [branches, receivers] = await Promise.all([
           prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-          prisma.user.findMany({ where: { active: true, role: receiverWhere("").role }, orderBy: { name: "asc" }, select: { id: true, name: true, allBranches: true, branches: { select: { branchId: true } } } }),
+          prisma.user.findMany({ where: holdsWhere(PERMISSIONS.RETURNS_ACCEPT), orderBy: { name: "asc" }, select: { id: true, name: true, allBranches: true, branches: { select: { branchId: true } } } }),
         ]);
         // Any branch (forwarding is not limited by the DP's own access), then an LA who works there.
         return branches.map((b) => ({ ...b, las: receivers.filter((r) => r.allBranches || r.branches.some((x) => x.branchId === b.id)).map((r) => ({ id: r.id, name: r.name })) })).filter((b) => b.las.length > 0);

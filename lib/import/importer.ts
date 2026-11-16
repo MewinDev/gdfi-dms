@@ -7,7 +7,6 @@ import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { LIST_PERMISSION, PERMISSIONS } from "@/lib/auth/permissions";
-import { effectivePermissions } from "@/lib/auth/access";
 import { SETTINGS_SCHEMAS, USER_SCHEMA, checkSettingsRow, type SettingsKind } from "@/lib/services/admin";
 import { applyAccess, branchGrants, checkAccess, type AccessInput } from "@/lib/services/access";
 import { applyChange, loadSnapshot, lockoutRefusal } from "@/lib/services/lockout";
@@ -17,6 +16,7 @@ import { OTHER, amountModeText, codeFromName, nameKey, sortKinds, type AmountMod
 import { IMPORT_LISTS, MAX_BYTES, MAX_ROWS, type ImportColumn, type ImportListKey } from "./columns";
 import { looksLikeFormula, parseCsv, toCsv } from "./csv";
 import { newUsersAreTestUsers } from "@/lib/auth/mode";
+import { refuseAllBranchesChange, refuseRoleEscalation } from "@/lib/services/user-rights";
 
 type Db = Prisma.TransactionClient;
 
@@ -701,7 +701,7 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
           : keepBranches && cur
             ? { all: cur.allBranches, grants: [...groups, ...branchGrants(curBranchIds)], homeBranchId: home?.id ?? cur.homeBranchId }
             : keepBranches
-              ? { all: role?.branchAccess === "ALL", grants: [], homeBranchId: home?.id ?? null }
+              ? { all: role?.branchAccess === "ALL" && can(user, PERMISSIONS.ACCESS_ALL_BRANCHES), grants: [], homeBranchId: home?.id ?? null }
               : { all: false, grants: [...groups, ...branchGrants(branchIds)], homeBranchId: home?.id ?? (cur?.homeBranchId && branchIds.includes(cur.homeBranchId) ? cur.homeBranchId : null) };
         if (role && !row.problems.length) {
           try {
@@ -714,8 +714,16 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
         if (role && !role.active && cur?.roleId !== role.id) row.bad("role", `${role.name} is inactive. Use an active role.`);
         if (cur && cur.id === user.id) {
           if (!active) row.bad("status", "you cannot make yourself inactive.");
-          if (role && can(user, PERMISSIONS.ROLES_MANAGE) && !effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE)) row.bad("role", "you cannot take \"Manage roles\" away from yourself.");
+          // Nobody changes their own role, access or scope (D-023).
+          if (role && role.id !== cur.roleId) row.bad("role", "you cannot change your own role.");
         }
+        const msgOf = (e: unknown) => (e instanceof UserError ? e.message.replace(/^./, (c) => c.toLowerCase()) : null);
+        // Giving a role: never more than you have yourself, unless you manage permissions (D-023).
+        if (role && (!cur || cur.roleId !== role.id)) {
+          try { refuseRoleEscalation(user, role); } catch (e) { const m = msgOf(e); if (!m) throw e; row.bad("role", m); }
+        }
+        // "All branches" on or off: the Superadmin's (D-023).
+        try { refuseAllBranchesChange(user, cur?.allBranches ?? false, access.all); } catch (e) { const m = msgOf(e); if (!m) throw e; row.bad("branches", m); }
         if (cur && role) {
           const change = { kind: "user" as const, userId: cur.id, roleId: role.id, active };
           const why = lockoutRefusal(snap, change);
@@ -726,6 +734,10 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
         const codesText = (all: boolean, ids: string[]) => (all ? "ALL" : ids.map((x) => codeOf.get(x) ?? x).sort().join(";"));
         const beforeBranches = cur ? codesText(cur.allBranches, curBranchIds) : "";
         const afterBranches = codesText(access.all, access.grants.filter((g) => g.kind === "BRANCH" && !g.exclude).map((g) => g.branchId!));
+        if (cur && cur.id === user.id && (afterBranches !== beforeBranches || (!!homeCode && (access.homeBranchId ?? null) !== (cur.homeBranchId ?? null)))) {
+          row.bad("branches", "you cannot change your own branch access.");
+          finish(row, email, null); continue;
+        }
         if (!mayAccess && (cur ? afterBranches !== beforeBranches || (access.homeBranchId ?? null) !== (cur.homeBranchId ?? null) && !!homeCode : !keepBranches || !!homeCode)) {
           row.bad("branches", "your role cannot change branch access. Ask an Admin to turn on \"Change branch access\" for your role.");
           finish(row, email, null); continue;

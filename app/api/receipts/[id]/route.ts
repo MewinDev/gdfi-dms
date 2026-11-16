@@ -1,18 +1,19 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { canFunds } from "@/lib/funds/access";
+import { mayOpenReceipt } from "@/lib/services/file-access";
 import { receiptStore } from "@/lib/storage/receipts";
 
 /**
  * A receipt file. Only the processor who owns the advance, and people who may see that request's type
- * (See cash advances or See fund transfers), can open it. Served inline with its checked content type, never as HTML.
+ * (See cash advances or See fund transfers) AND whose branch access covers the advance's branch (D-019),
+ * can open it. Anything else is "not found" (404). Served inline with its checked content type, never as HTML.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return new Response("Sign in first.", { status: 401 });
   const { id } = await ctx.params;
-  const r = await prisma.receipt.findUnique({ where: { id }, include: { line: { include: { advance: { select: { requestedById: true, fundsTypeId: true } } } } } });
-  const allowed = r && (r.line.advance.requestedById === user.id || canFunds(user, "view", r.line.advance));
+  const r = await prisma.receipt.findUnique({ where: { id }, include: { line: { include: { advance: { select: { requestedById: true, fundsTypeId: true, branchId: true } } } } } });
+  const allowed = r && mayOpenReceipt(user, r.line.advance);
   if (!r || !allowed || !r.fileKey) return new Response("Not found.", { status: 404 });
   let bytes: Uint8Array;
   try {

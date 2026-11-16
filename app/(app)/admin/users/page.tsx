@@ -12,7 +12,10 @@ import { ImportStep } from "@/components/admin/import-step";
 import { UsersToolbar } from "@/components/admin/users-toolbar";
 import { shortRoleName } from "@/lib/ui/roles";
 import { can } from "@/lib/auth/current-user";
-import { permissionLabel, plainWords } from "@/lib/auth/permissions";
+import { OPEN_ITEM_APPROVER_KEYS, VISIBLE_PERMISSION_GROUPS, permissionLabel, plainWords } from "@/lib/auth/permissions";
+import { userPermissions, keySource } from "@/lib/auth/effective";
+import { approverState } from "@/lib/services/user-rights";
+import { UserPermissionsPanel, type PermissionGroupRows } from "@/components/admin/user-permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { accessTreeData } from "@/lib/services/access";
 import { accessSummary } from "@/lib/branches/access";
@@ -132,7 +135,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
         </>
       )}
 
-      {sp.open && (sp.open === "roles" || canEdit) && <UsersModal sp={sp} meId={me.id} canAccess={can(me, PERMISSIONS.ACCESS_MANAGE)} listHref={listHref} roles={roles} canManageRoles={canManageRoles} />}
+      {sp.open && (sp.open === "roles" || canEdit) && <UsersModal sp={sp} meId={me.id} canAccess={can(me, PERMISSIONS.ACCESS_MANAGE)} canAllBranches={can(me, PERMISSIONS.ACCESS_ALL_BRANCHES)} listHref={listHref} roles={roles} canManageRoles={canManageRoles} />}
     </div>
   );
 }
@@ -180,8 +183,9 @@ function StatusCell({ active, test }: { active: boolean; test: boolean }) {
 }
 
 async function UsersModal({
-  sp, meId, listHref, roles, canManageRoles, canAccess,
+  sp, meId, listHref, roles, canManageRoles, canAccess, canAllBranches,
 }: {
+  canAllBranches: boolean;
   sp: SP;
   meId: string;
   /** Change branch access (access:manage): otherwise the access is shown read only and not sent. */
@@ -221,7 +225,7 @@ async function UsersModal({
   if (sp.open !== "user" || !sp.edit) return null;
 
   const isNew = sp.edit === "new";
-  const u = isNew ? null : await prisma.user.findUnique({ where: { id: sp.edit }, include: { accessGrants: true, role: true } });
+  const u = isNew ? null : await prisma.user.findUnique({ where: { id: sp.edit }, include: { accessGrants: true, role: true, permissionOverrides: true } });
   if (!isNew && !u) return null;
   // Active roles only; an inactive role already on this user is shown with an "Inactive" tag.
   const roleOpts = roles
@@ -234,14 +238,16 @@ async function UsersModal({
     ? { all: u.allBranches, grants: u.accessGrants.map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude })), homeBranchId: u.homeBranchId }
     : { all: firstRole?.branchAccess === "ALL", grants: [], homeBranchId: null };
   const homeName = u?.homeBranchId ? (await prisma.branch.findUnique({ where: { id: u.homeBranchId }, select: { name: true, code: true } })) : null;
-  const readOnlyAccess = canAccess ? undefined : u
+  // Nobody edits their own access or scope (D-023).
+  const self = !!u && u.id === meId;
+  const readOnlyAccess = canAccess && !self ? undefined : u
     ? `${accessSummary(initial.grants, await prisma.userBranch.count({ where: { userId: u.id } }), initial.all)}${homeName ? ` · home branch ${homeName.name}` : ""}`
     : "The role's default: All branches when the role is set to All, otherwise none yet. Someone who may change branch access sets it.";
   return (
     <SettingsModal
       id="settings-modal"
       title={isNew ? "Add user" : `Edit ${u!.name}`}
-      help={isNew ? "New users start as test users. Built-in roles that may sign in: Admin and Loan Associate. Custom roles: test users in test mode." : "Change the name, role, branch access or status."}
+      help={isNew ? "Every built-in role may sign in. A new person handles no fund type until it is ticked. All branches and permissions: the Superadmin." : "Change the name, role, branch access, fund types or status. Permissions are below."}
       closeHref={listHref}
       returnFocusId={isNew ? "users-add" : `edit-${u!.id}`}
       footer={{ kind: "save", formId: "user-form", cancelHref: listHref }}
@@ -254,8 +260,39 @@ async function UsersModal({
         roles={roleOpts}
         access={{ ...tree, initial, readOnlySummary: readOnlyAccess }}
         effect={u ? await inactiveEffect("user", u.id) : ""}
+        allowAll={canAllBranches && !self}
+        fundTypes={{
+          handlesCa: u?.handlesCa ?? false, handlesFt: u?.handlesFt ?? false, editable: canAccess && !self,
+          readOnlyReason: self ? "You cannot change your own." : canAccess ? undefined : "Read only: needs \u201cChange branch access\u201d.",
+        }}
       />
+      {u && <UserPermissionsPanel {...permissionsPanelProps(u, canManageRoles, self)} />}
       {u && u.id === meId && <p className="mt-4 text-sm text-ink-2">This is you. You cannot make yourself inactive.</p>}
     </SettingsModal>
   );
+}
+
+/** The Permissions panel (D-008): each permission as Inherited / Granted / Denied, and the approver tick. */
+function permissionsPanelProps(
+  u: { id: string; name: string; handlesCa: boolean; handlesFt: boolean; role: { permissions: string[] }; permissionOverrides: { key: string; effect: "GRANT" | "DENY"; note: string }[] },
+  canManage: boolean, self: boolean,
+) {
+  const effective = userPermissions(u.role.permissions, u.permissionOverrides, u);
+  const roleKeys = [...effectivePermissions(u.role)];
+  const groups: PermissionGroupRows[] = VISIBLE_PERMISSION_GROUPS.map((g) => ({
+    key: g.key, label: g.label,
+    rows: g.items.map((i) => {
+      const o = u.permissionOverrides.find((x) => x.key === i.key);
+      return { key: i.key, label: i.label, help: i.help, inRole: keySource(i.key, roleKeys, []) === "INHERITED", effective: effective.has(i.key), value: o?.effect ?? ("INHERIT" as const), note: o?.note ?? "" };
+    }),
+  }));
+  const approver = { keys: OPEN_ITEM_APPROVER_KEYS as string[], ...approverState(roleKeys, u.permissionOverrides) };
+  const fundTypeNote = !u.handlesCa || !u.handlesFt
+    ? `Cash advance and fund transfer permissions count only for the fund types ticked above (${[u.handlesCa && "CA", u.handlesFt && "FT"].filter(Boolean).join(" and ") || "none"}).`
+    : undefined;
+  return {
+    userId: u.id, userName: u.name, groups, approver, fundTypeNote,
+    editable: canManage && !self,
+    readOnlyReason: self ? "This is you: nobody changes their own permissions." : !canManage ? "Read only: only someone who can manage permissions (the Superadmin) changes them." : undefined,
+  };
 }

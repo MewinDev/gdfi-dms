@@ -4,7 +4,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { can, requirePageAny, type CurrentUser } from "@/lib/auth/current-user";
-import { ALL_PERMISSIONS, AREA_PERMISSIONS, SETTINGS_PERMISSIONS } from "@/lib/auth/permissions";
+import { ALL_PERMISSIONS, AREA_PERMISSIONS, SETTINGS_PERMISSIONS, VISIBLE_PERMISSION_GROUPS } from "@/lib/auth/permissions";
+import { PermissionMatrix } from "@/components/admin/permission-matrix";
 import { effectivePermissions } from "@/lib/auth/access";
 import { RolesList } from "@/components/admin/roles-list";
 import { RoleEditor } from "@/components/admin/role-editor";
@@ -66,6 +67,7 @@ const AREAS = [
   { key: "tat", title: "Turnaround times", desc: "Target business days for each step.", help: "Business days skip weekends and holidays. 0 means the same day.", Icon: ClockIcon },
   { key: "loan-types", title: "Loan types", desc: "Display names for the MyLoans loan types.", help: `The Data Check accepts only New and Renewal. The mortgage thresholds are fixed by the rule “${RULE_NAMES.MORTGAGE_THRESHOLD.title}”: ${pesoWhole(MORTGAGE_THRESHOLDS.New)} for New, ${pesoWhole(MORTGAGE_THRESHOLDS.Renewal)} for Renewal.`, Icon: TagIcon },
   { key: "dp-capacity", title: "Processor capacity", desc: "How many open jobs a processor takes, and who is on leave.", help: "Used by the Monitoring page and the Send panel. Open jobs = assigned + in process + on hold. A processor on leave is shown disabled in the Send panel and counts as 0% available. A past \"until\" day ends the leave by itself.", Icon: UsersIcon },
+  { key: "permissions", title: "Permissions", desc: "Every role against every permission, with tickboxes.", help: "The permission matrix (D-003). Ticks apply on each person's next click or page. Per-person changes (Granted / Denied) are on Users, Edit. Only the Superadmin changes it.", Icon: UsersIcon },
   { key: "roles", title: "Roles and access", desc: "What each role may do, and which branches it sees.", help: "Who can do what. A change applies on each person's next click or page.", Icon: UsersIcon },
   { key: "lto", title: "LTO offices", desc: "LTO offices a processor can be sent to.", help: "Add an office or rename it. Nothing is deleted: make it inactive instead.", Icon: MapPinIcon },
   { key: "cash-advance", title: "Cash-advance rules", desc: "Suggested and maximum amounts, carry-over and liquidation.", help: "Used when the processor asks Finance for funds. More than the maximum needs a typed reason.", Icon: CoinsIcon },
@@ -196,6 +198,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     "test-data": { main: testMode ? "Test mode only" : "Off", extra: "" },
     "test-kit": { main: "Local test setup only", extra: "" },
     "dp-capacity": await capacityStatusLine(),
+    permissions: { main: `${roles[0]} roles × ${VISIBLE_PERMISSION_GROUPS.reduce((s, g) => s + g.items.length, 0)} permissions`, extra: "" },
     roles: { main: `${roles[0]} role${roles[0] === 1 ? "" : "s"} · ${customRoles} custom`, extra: roles[1] > 0 ? `+${roles[1]} inactive` : "" },
   };
 }
@@ -244,6 +247,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
   }
 
   if (area.key === "roles") return <RolesArea edit={edit} common={common} />;
+  if (area.key === "permissions") return <PermissionsArea common={common} user={user} />;
   if (area.key === "dp-capacity") {
     return <SettingsModal {...common} footer={{ kind: "done" }}><CapacityArea /></SettingsModal>;
   }
@@ -314,6 +318,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
           carryOverLimitDays={await getSetting("funds.carryOverLimitDays")}
           liquidationDueDays={await getSetting("funds.liquidationDueDays")}
           blockLtoUntilFunded={await getSetting("funds.blockLtoUntilFunded")}
+          approvalBandsOn={await getSetting("funds.approvalBandsOn")}
         />
       )}
       {area.key === "approval-bands" && (
@@ -979,5 +984,22 @@ async function WhoHandles() {
         </div>
       ))}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Permissions: the matrix (D-003), roles across, permissions down.
+// ---------------------------------------------------------------------------
+
+async function PermissionsArea({ common, user }: { common: { id: string; title: string; help: string; closeHref: string; returnFocusId: string }; user: CurrentUser }) {
+  const roles = await prisma.role.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { _count: { select: { users: { where: { active: true } } } } } });
+  const rows = roles.map((r) => ({ id: r.id, name: r.name, builtIn: r.builtIn, active: r.active, people: r._count.users, permissions: [...effectivePermissions(r)] }));
+  const groups = VISIBLE_PERMISSION_GROUPS.map((g) => ({ key: g.key, label: g.label, items: g.items.map((i) => ({ key: i.key, label: i.label, help: i.help })) }));
+  // A new key after each save, so the grid starts again from what is stored.
+  const version = roles.map((r) => `${r.id}:${r.updatedAt.getTime()}`).join(",");
+  return (
+    <SettingsModal {...common} footer={{ kind: "done" }}>
+      <PermissionMatrix key={version} roles={rows} groups={groups} editable={can(user, PERMISSIONS.ROLES_MANAGE)} />
+    </SettingsModal>
   );
 }

@@ -63,7 +63,7 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 | GD3902026903028 | Auto Financing at Alaminos. |
 | GD3902026903029 | Renewal at Alaminos, ₱1,000,000: Mortgage needed. |
 | GD3902026903030 | Released 4 business days ago at Alaminos: late (TAT). |
-| GD3902026903031 | Alaminos is outside Luzon 1: LA Luzon 1 is refused (Outside your branch access). LA Alaminos or Roving LA can open it; Area Supervisor Luzon 1 then sees it (that role views loans but does not open them). |
+| GD3902026903031 | Alaminos is outside Luzon 1: LA Luzon 1 is refused (Outside your branch access). LA Alaminos, Roving LA or Area Supervisor Luzon 1 can open it (the supervisor is an LA Supervisor/Head since D-002: every LA tick; Alaminos is in their access). |
 
 ### Amang Rodriguez (174)
 
@@ -119,7 +119,7 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 1. **Approve asks first.** Approve opens "Approve this request?" with the amount in bold and one grey line (number · processor · kind · borrower). Focus is on Cancel; Cancel and Esc change nothing. Approve (gold) says "Approving..." and approves once, even on a double tap: one history line and one notice. After a lowered amount, the window shows the changed total. On a phone it is a bottom sheet.
 2. **Request numbers.** The cash advance is CA-2026-0001 (or the next CA number) and the fund transfer FT-2026-0001 (its own series). After Change type the request has the next number of the new type and "Formerly CA-..." under it and in its history; searching the old number finds it.
 3. **Print liquidation report.** Without the tick there is no Print button, and the report link says "Ask an Admin to turn on 'Print liquidation report' for your role." Finance and Admin print as before.
-4. **Moving a hold.** Finance has no Transfer hold any more. The Branch Supervisor (Antipolo and Angono) and the Area Supervisor (Luzon 1 plus Alaminos) have Transfer hold on loans of their branches and can give the hold only to someone who also has access to that branch. Neither can resume it.
+4. **Moving a hold.** Finance has no Transfer hold any more. The Branch Supervisor (Antipolo and Angono) and the Area Supervisor (Luzon 1 plus Alaminos) are on the LA Supervisor/Head role (D-010) and keep Transfer hold as a per-person grant: they have Transfer hold on loans of their branches and can give the hold only to someone who also has access to that branch. Neither can resume it.
 5. **Who can move holds.** With Admin's tick on, no line shows (Admin has All branches). With it off, "N active branches have nobody who can move a hold." shows with **Show branches**; the supervisors' branches are not in the list.
 6. **Journey filters.** All · Needs attention and the transaction pills. There is no "Mine".
 

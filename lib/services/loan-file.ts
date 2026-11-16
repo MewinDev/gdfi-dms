@@ -2,7 +2,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
-import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
+import { can, hasAllBranches, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloans";
 import { getPnFormat, parsePn, pnHeadline } from "@/lib/pn";
@@ -80,7 +80,7 @@ async function inactiveRefusal(record: MyLoansRecord): Promise<{ field: DataChec
 }
 
 function allowedBranches(user: CurrentUser): { code: string | null; name: string }[] | null {
-  return user.scopeBranchIds === null ? null : user.branchNames.map((name, i) => ({ name, code: user.branchCodes[i] ?? null }));
+  return hasAllBranches(user) ? null : user.branchNames.map((name, i) => ({ name, code: user.branchCodes[i] ?? null }));
 }
 
 /**

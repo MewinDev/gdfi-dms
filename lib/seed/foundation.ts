@@ -1,25 +1,25 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { ADMIN_PERMISSIONS, ALL_PERMISSIONS, normalizePermissions, PERMISSIONS as P, ROLE_DEFAULTS, type Permission } from "@/lib/auth/permissions";
 import { writeUserAccess } from "@/lib/services/access";
 import { setSetting } from "@/lib/settings";
 import { KIT_EMAIL_DOMAIN } from "@/lib/kit/catalog";
 import { kitAccess } from "@/lib/kit/build";
+import { ticksFromRole } from "@/lib/auth/effective";
+import { applyRoleMigration } from "@/lib/services/role-migration";
+import { permissionLabel } from "@/lib/auth/permissions";
 import { applyStageSpread } from "./stage-spread";
 
 /**
  * The foundation layer of npm run db:reset-seed (scripts/db-reset-seed.ts), run after the seed and the
  * scenario kit on the local development database. FAKE data only (example.test addresses).
  *
- * Step 2 version, on today's schema. Piece 2 of IMPLEMENTATION_PLAN.md (permission core) replaces the
- * old roles properly (D-010); until then the kit's old roles (Branch Supervisor, Operations Monitor,
- * approver roles) are left as they are, and this layer only:
- *   - adds the decided roles that do not exist yet (Superadmin, LA Supervisor/Head, Archiver, D-002);
- *   - sets v2 section 7 default ticks with today's permission keys;
- *   - lets all ten decided roles sign in;
- *   - adds one fake user for each decided role the scenario kit has no user for;
+ * The built-in roles come from the seed (ROLE_DEFAULTS: the ten decided roles, D-002, and Monitoring);
+ * the Superadmin and the LA Supervisors/Heads come from the scenario kit. This layer:
+ *   - adds one fake user for each decided role the scenario kit has none for (Custodian, QA, Digicur, Archiver);
  *   - myloans interval 30 minutes (D-005; today's setting is myloans.backgroundMinutes);
- *   - the LTO offices from the templates, LTO-PASIG marked as a sample (D-020).
+ *   - the LTO offices from the templates, LTO-PASIG marked as a sample (D-020);
+ *   - sample loans at every reachable stage (lib/seed/stage-spread.ts);
+ *   - the D-010 role migration (lib/services/role-migration.ts), with the people it moved in the log.
  */
 
 type Log = (line: string) => void;
@@ -29,7 +29,7 @@ export const DECIDED_ROLES = [
   { decided: "Superadmin", key: "SUPERADMIN" },
   { decided: "Admin", key: "ADMIN" },
   { decided: "LA", key: "LA" },
-  { decided: "LA Supervisor/Head", key: "LA_HEAD" },
+  { decided: "LA Supervisor/Head", key: "SUP" },
   { decided: "DP", key: "DP" },
   { decided: "Finance", key: "FIN" },
   { decided: "Custodian", key: "VAULT" },
@@ -38,29 +38,8 @@ export const DECIDED_ROLES = [
   { decided: "Archiver", key: "ARCHIVER" },
 ] as const;
 
-/** Keys only the Superadmin holds (v2 section 7: users, roles, permissions, the myloans integration); Open Items go to the LA Supervisor/Head. */
-const NOT_FOR_ADMIN: Permission[] = [P.ROLES_MANAGE, P.ACCESS_MANAGE, P.USERS_EDIT, P.SOURCE_MANAGE, P.MYLOANS_SYNC, P.SOURCE_REVIEW, P.SOURCE_REVIEW_BORROWER];
-
-export function foundationPermissions(): Record<string, Permission[]> {
-  const admin = ADMIN_PERMISSIONS.filter((k) => !NOT_FOR_ADMIN.includes(k));
-  return {
-    SUPERADMIN: [...ALL_PERMISSIONS],
-    ADMIN: normalizePermissions(admin),
-    LA_HEAD: normalizePermissions([...ROLE_DEFAULTS.LA.permissions, P.SOURCE_REVIEW, P.SOURCE_REVIEW_BORROWER]),
-    ARCHIVER: normalizePermissions([P.LOANS_VIEW, P.MYLOANS_VIEW]),
-  };
-}
-
-const NEW_ROLES: Record<string, { name: string; description: string; sortOrder: number; branchAccess: "ASSIGNED" | "ALL" }> = {
-  SUPERADMIN: { name: "Superadmin", description: "Full system access: users, roles, permissions, settings, the myloans integration (v2 section 7).", sortOrder: 0, branchAccess: "ALL" },
-  LA_HEAD: { name: "LA Supervisor/Head", description: "Every Loan Associate permission plus approving or rejecting myloans changes (D-002).", sortOrder: 11, branchAccess: "ASSIGNED" },
-  ARCHIVER: { name: "Archiver", description: "Files and warehouses documents (work steps come with the archive module).", sortOrder: 12, branchAccess: "ALL" },
-};
-
 /** One fake user per decided role that the scenario kit has no user for. */
 const FOUNDATION_USERS: { key: string; slug: string; name: string; branches: string[] | "ALL" }[] = [
-  { key: "SUPERADMIN", slug: "superadmin", name: "Superadmin", branches: "ALL" },
-  { key: "LA_HEAD", slug: "la.head", name: "LA Head Antipolo", branches: ["101", "165"] },
   { key: "VAULT", slug: "custodian", name: "Custodian", branches: "ALL" },
   { key: "QA", slug: "qa", name: "QA", branches: "ALL" },
   { key: "DIG", slug: "digicur", name: "Digicur", branches: "ALL" },
@@ -81,25 +60,11 @@ const TEMPLATE_LTO: { code: string; name: string; city: string; km: number | nul
 ];
 
 export async function applyFoundationSeed(log: Log = console.log): Promise<void> {
-  const perms = foundationPermissions();
-
-  // Roles: the three new ones, v2 ticks, and sign-in for all ten.
-  for (const [key, r] of Object.entries(NEW_ROLES)) {
-    await prisma.role.upsert({
-      where: { key },
-      create: { key, ...r, permissions: perms[key], canSignIn: true, builtIn: false },
-      update: { ...r, permissions: perms[key], canSignIn: true, active: true },
-    });
-  }
-  await prisma.role.update({ where: { key: "ADMIN" }, data: { permissions: perms.ADMIN } });
-  await prisma.role.updateMany({ where: { key: { in: DECIDED_ROLES.map((d) => d.key) } }, data: { canSignIn: true } });
-  log(`Roles: added Superadmin, LA Supervisor/Head and Archiver; Admin no longer manages users, roles, access or the myloans integration (Superadmin does); all ten decided roles can sign in. The kit's old roles are kept until piece 2 (D-010).`);
-
   // Users.
   for (const u of FOUNDATION_USERS) {
     const role = await prisma.role.findUniqueOrThrow({ where: { key: u.key } });
     const email = `fdn.${u.slug}${KIT_EMAIL_DOMAIN}`;
-    const user = await prisma.user.upsert({ where: { email }, create: { email, name: u.name, roleId: role.id, isTestUser: true }, update: { name: u.name, roleId: role.id, active: true } });
+    const user = await prisma.user.upsert({ where: { email }, create: { email, name: u.name, roleId: role.id, isTestUser: true, ...ticksFromRole(role.permissions) }, update: { name: u.name, roleId: role.id, active: true } });
     const access = await kitAccess({ branches: u.branches }, async (code) => (await prisma.branch.findUniqueOrThrow({ where: { code } })).id);
     await prisma.$transaction((tx) => writeUserAccess(tx, user.id, access));
   }
@@ -118,6 +83,13 @@ export async function applyFoundationSeed(log: Log = console.log): Promise<void>
 
   // Sample loans at every loan-file stage the app can reach today (some near or over TAT).
   await applyStageSpread(log);
+
+  // The D-010 role migration on this data (the same code as npm run roles:migrate -- --apply).
+  const plan = await applyRoleMigration({ id: null, label: "db:reset-seed (role migration D-010)" });
+  log(`Role migration (D-010): ${plan.moves.length} people moved; roles updated: ${plan.roleUpdates.map((r) => `${r.key}${r.deactivate ? " (inactive)" : ` -> ${r.name}`}`).join(", ") || "none"}.`);
+  for (const m of plan.moves) {
+    log(`  ${m.name} <${m.email}>: ${m.fromRole} -> ${m.toRole}${m.grants.length ? `; granted ${m.grants.map(permissionLabel).join(", ")}` : ""}${m.denies.length ? `; denied ${m.denies.map(permissionLabel).join(", ")}` : ""}`);
+  }
 }
 
 /** Users per decided role, for the summary. */

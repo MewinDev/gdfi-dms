@@ -27,6 +27,7 @@ Sign in at `/login`, under **Test sign-in**. The accounts are grouped by role, w
 
 | Account | Role | Branch access |
 |---|---|---|
+| Superadmin | Superadmin | All branches |
 | Admin | Admin | All branches |
 | Finance | Finance | All branches |
 | Approver Small | Approver (lowest band) | All branches |
@@ -35,9 +36,9 @@ Sign in at `/login`, under **Test sign-in**. The accounts are grouped by role, w
 | Finance Transfer | Finance (fund transfer) | All branches |
 | Approver Cash | Approver (cash advance) | All branches |
 | Approver Transfer | Approver (fund transfer) | All branches |
-| Operations Monitor | Operations Monitor | All branches |
-| Branch Supervisor | Branch Supervisor | Antipolo and Angono |
-| Area Supervisor Luzon 1 | Supervisor (Branch Supervisor role) | Whole Luzon 1 area plus Alaminos |
+| Operations Monitor | Monitoring (read-only) | All branches |
+| Branch Supervisor | LA Supervisor/Head | Antipolo and Angono |
+| Area Supervisor Luzon 1 | Supervisor (LA Supervisor/Head role) | Whole Luzon 1 area plus Alaminos |
 | LA Antipolo | Loan Associate | Antipolo (101) |
 | LA Angono | Loan Associate | Angono (165) |
 | LA A. Mabini | Loan Associate | A. Mabini (168) |

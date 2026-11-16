@@ -67,7 +67,8 @@ export async function applyStageSpread(log: Log = console.log): Promise<void> {
   const daysAgo = (n: number, hhmm = "09:00") => new Date(`${shiftBusinessDays(today, -n, holidays)}T${hhmm}:00+08:00`);
   const la = await asUser(`kit.la1${KIT_EMAIL_DOMAIN}`);
   const dp = await asUser(`kit.dp1${KIT_EMAIL_DOMAIN}`);
-  const superadmin = await asUser(`fdn.superadmin${KIT_EMAIL_DOMAIN}`);
+  // The kit Admin: decides the myloans cancellation (Admin keeps that until piece 8) and runs the test simulator.
+  const superadmin = await asUser(`kit.admin${KIT_EMAIL_DOMAIN}`);
 
   // The sample MyLoans gets one record per loan (released 1 business day ago, or 5 for "over" at the checklist).
   const branch = await prisma.branch.findUniqueOrThrow({ where: { code: BRANCH } });
