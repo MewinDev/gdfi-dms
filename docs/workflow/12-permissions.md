@@ -2,7 +2,7 @@
 
 Every feature is a tick on a role: how the ticks work, the full catalogue, the defaults and the audit of the permissions pass.
 
-Last updated: 11 November 2026 (PHT)
+Last updated: 16 November 2026 (PHT)
 
 ## Roles are just ticks
 
@@ -301,7 +301,7 @@ Every server action and API route checks a permission (a test scans `app/actions
 | `app/api/health/route.ts` GET | Health check for the host: ok, environment, database up or down. No data. | `health` |
 | `app/api/cron/myloans-sync/route.ts` POST | Scheduled MyLoans sync: its own secret (CRON_SECRET header), not a person. | `cronAllowed` |
 | `app/api/cron/email-reminders/route.ts` POST | Scheduled email reminders: its own secret (CRON_SECRET header), not a person. | `cronAllowed` |
-| `app/login/actions.ts` testSignIn | Test sign-in: before anyone is signed in (the test provider refuses outside test mode). | `testProvider.resolveUser` |
+| `app/login/actions.ts` testSignIn | Test sign-in: before anyone is signed in (the test provider refuses unless test sign-in is allowed: AUTH_MODE=test and APP_ENV=local, lib/auth/mode.ts). | `testProvider.resolveUser` |
 | `app/login/actions.ts` signOut | Sign out: anyone may end their own session. | `cookies()).delete(SESSION_COOKIE)` |
 | `app/actions/loan.ts` markNotificationsReadAction | Marks the signed-in person's own notifications as read. | `getCurrentUser` |
 | `app/actions/email.ts` myEmailPreferenceAction | The signed-in person's own email choice (non-urgent emails on or off). | `getCurrentUser` |

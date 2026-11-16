@@ -16,6 +16,7 @@ import { checkKind } from "@/lib/services/expense-kinds";
 import { OTHER, amountModeText, codeFromName, nameKey, sortKinds, type AmountMode } from "@/lib/funds/kinds";
 import { IMPORT_LISTS, MAX_BYTES, MAX_ROWS, type ImportColumn, type ImportListKey } from "./columns";
 import { looksLikeFormula, parseCsv, toCsv } from "./csv";
+import { newUsersAreTestUsers } from "@/lib/auth/mode";
 
 type Db = Prisma.TransactionClient;
 
@@ -740,7 +741,7 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
             // Never sets passwords or sign-in; new users are kept as test users like the Add user form.
             const saved = cur
               ? await tx.user.update({ where: { id: cur.id }, data: { name: data.name, roleId: role.id, ...(cur.active !== active ? statusData(active, actor) : {}) } })
-              : await tx.user.create({ data: { name: data.name, email: data.email, roleId: role.id, isTestUser: true, ...statusData(active, actor) } });
+              : await tx.user.create({ data: { name: data.name, email: data.email, roleId: role.id, isTestUser: newUsersAreTestUsers(), ...statusData(active, actor) } });
             await applyAccess(tx, { id: actor.id, label: user.name }, saved.id, role, access, { isNew: !cur });
           },
         });

@@ -108,7 +108,7 @@ There is no sync and no import job: the MyLoans API is called only when an LA se
 
 ## Switch authentication
 
-`AUTH_MODE=test` shows the Test sign-in panel. Pages only call `getCurrentUser()` / `requirePermission()` (`lib/auth/current-user.ts`); identity providers live in `lib/auth/providers.ts`. To enable Microsoft Entra ID, implement the OIDC flow in `entraProvider` (TODO marked), set `AUTH_MODE=entra` and the `ENTRA_*` variables. The session cookie, roles, branches and permission checks do not change.
+`AUTH_MODE=test` shows the Test sign-in panel, **only when `APP_ENV=local`**: test sign-in has no password, so staging and production refuse to start with it, and users added in the app or by import there are real users, never test users (`lib/auth/mode.ts`, D-021). Pages only call `getCurrentUser()` / `requirePermission()` (`lib/auth/current-user.ts`); identity providers live in `lib/auth/providers.ts`. To enable Microsoft Entra ID, implement the OIDC flow in `entraProvider` (TODO marked), set `AUTH_MODE=entra` and the `ENTRA_*` variables. The session cookie, roles, branches and permission checks do not change.
 
 ## Move to Supabase (live)
 
@@ -230,7 +230,7 @@ Full-height shells use `100dvh`. Checked with no horizontal scroll at 1440, 1280
 16. **Admin sees loans read-only** and cannot run LA steps (server-enforced). Admin can search MyLoans and see a preview, but only an LA can open a Loan File.
 17. **Overrides** cannot remove a transaction that is already with a DP.
 18. **Report a problem** (redesign) adds one server action, `reportProblemAction`, for "Wrong details" and "Something else". It follows the existing exception pattern (audited, Supervisor notified). "Missing paper" still uses the existing Legal Docs Completion action.
-19. **Test users added in Users** are marked test users and can use the Test sign-in "Other test user" picker if their role can sign in.
+19. **Users added in Users** (or by the users import) are marked test users **only in local development** (`APP_ENV=local` with test sign-in), so they can use the Test sign-in "Other test user" picker if their role can sign in. In staging and production they are real users.
 20. **Retention** defaults to 10 years per document type (editable later; no screen yet).
 21. Release dates in MyLoans are treated as dates in Asia/Manila.
 

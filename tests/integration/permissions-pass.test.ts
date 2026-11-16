@@ -198,7 +198,8 @@ describe("roles are just ticks", () => {
     const walk = (d: string) => { for (const n of readdirSync(d)) { const p = path.join(d, n); if (statSync(p).isDirectory()) walk(p); else if (/\.(ts|tsx)$/.test(n) && !/\.test\.tsx?$/.test(n)) files.push(p); } };
     for (const d of ["app", "components", "lib"]) walk(d);
     const bad = /role\.key\s*[!=]==|roleKey\s*[!=]==|\.key\s*===\s*"(ADMIN|LA|DP|FIN|MONITOR|APPR|VAULT|DIG|QA)"|key:\s*"(ADMIN|LA|DP|FIN|MONITOR|APPR|VAULT|DIG|QA)"\s*[,}]|isLockedAdminRole|ADMIN_ROLE_KEY|MONITOR_ROLE_KEY/;
-    const hits = files.filter((f) => !f.includes(`${path.sep}kit${path.sep}`)).flatMap((f) => readFileSync(f, "utf8").split("\n").map((l, i) => [f, i + 1, l] as const).filter(([, , l]) => bad.test(l)).map(([f, n, l]) => `${f}:${n} ${l.trim()}`));
+    // lib/kit and lib/seed (npm run db:reset-seed) only build sample data; they never decide access.
+    const hits = files.filter((f) => !f.includes(`${path.sep}kit${path.sep}`) && !f.includes(`${path.sep}seed${path.sep}`)).flatMap((f) => readFileSync(f, "utf8").split("\n").map((l, i) => [f, i + 1, l] as const).filter(([, , l]) => bad.test(l)).map(([f, n, l]) => `${f}:${n} ${l.trim()}`));
     expect(hits).toEqual([]);
   });
 });

@@ -17,6 +17,7 @@ import { inactiveRefusal } from "./settings-status";
 import { checkLockout } from "./lockout";
 import { applyAccess, branchGrants, parseAccess, type AccessInput } from "./access";
 import { rebuildAccess } from "@/lib/branches/access";
+import { newUsersAreTestUsers } from "@/lib/auth/mode";
 import { KIND_SCHEMA, saveExpenseKind } from "./expense-kinds";
 import { decimalToCents, peso } from "@/lib/funds/rules";
 
@@ -100,7 +101,7 @@ export async function saveUser(user: CurrentUser, id: string | null, raw: Record
             ...(before && before.active !== d.active ? (d.active ? { deactivatedAt: null, deactivatedById: null } : { deactivatedAt: new Date(), deactivatedById: user.id }) : {}),
           },
         })
-      : await tx.user.create({ data: { name: d.name, email: d.email, roleId: role.id, active: d.active, isTestUser: true } });
+      : await tx.user.create({ data: { name: d.name, email: d.email, roleId: role.id, active: d.active, isTestUser: newUsersAreTestUsers() } });
     if (before && before.active !== d.active) {
       await writeAudit(tx, {
         actor: actorOf(user), mode: "MANUAL", action: d.active ? "made_active" : "made_inactive", entityType: "user", entityId: saved.id,

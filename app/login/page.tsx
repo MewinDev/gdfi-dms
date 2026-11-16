@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { prisma } from "@/lib/db";
-import { authMode } from "@/lib/auth/providers";
+import { testSignInAllowed } from "@/lib/auth/mode";
 import { maySignIn } from "@/lib/auth/access";
 import { isTestMode } from "@/lib/test-mode";
 import { testSignIn } from "./actions";
@@ -22,7 +22,7 @@ function MicrosoftMark() {
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
   const { next, error } = await searchParams;
-  const testMode = authMode() === "test";
+  const testMode = testSignInAllowed(); // local development only (D-021)
   const testUsers = testMode
     ? await prisma.user.findMany({
         where: { isTestUser: true, active: true },

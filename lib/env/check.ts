@@ -125,7 +125,8 @@ export function checkEnv(env: Env): EnvReport {
   const missingGraph = GRAPH_NAMES.filter((n) => !set(n));
   if (missingGraph.length) warnings.push(`${missingGraph.join(", ")} ${missingGraph.length === 1 ? "is" : "are"} not set: emails stay Not set up.`);
   if (strict && env.EMAIL_AUTO_DRAIN?.trim() === "false") warnings.push("EMAIL_AUTO_DRAIN is false: emails wait for the scheduled sender (POST /api/cron/email-reminders).");
-  if (appEnv === "production" && (env.AUTH_MODE?.trim() || "test") === "test") warnings.push("AUTH_MODE is test: the test sign-in buttons are on. Switch to entra once Microsoft sign-in is set up.");
+  // Test sign-in (no password) is for local development only (D-021): staging and production refuse to start with it.
+  if (strict && !bad.has("AUTH_MODE") && env.AUTH_MODE?.trim() === "test") errors.push(`AUTH_MODE must not be test ${where}: test sign-in has no password and is for local development only. Set AUTH_MODE=entra.`);
 
   return { appEnv, errors, warnings };
 }
