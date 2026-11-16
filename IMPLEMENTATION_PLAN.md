@@ -5,7 +5,7 @@ Branch: `feature/foundation-settings-rbac-myloans`
 Inputs:
 - `FOUNDATION_CHECK.md` and `FLOWCHART_ALIGNMENT.md` (Step 1);
 - `docs/DECISIONS.md` D-001 to D-021;
-- the myloans contract in `docs/myloans-api-contract.sql`;
+- the myloans contract in `docs/myloans-api-contract.sql` (the agreed target is pending paste, D-022) and the reply in `docs/MYLOANS_REPLY_2.md`;
 - the questions for the myloans team in `docs/MYLOANS_QUESTIONS.md`.
 
 Rules this plan follows:
@@ -240,124 +240,189 @@ Finance runs first, then all roles. A user with no scope sees nothing.
 
 ---
 
-## 7. Piece 6: myloans mock (APIs 1–5, exact contract)
+## 7. Piece 6: myloans mock (agreed contract, D-022)
+
+> Rewritten on 16 Nov 2026 for the myloans team's updated answers and query (D-022). This is plan only; no sync code yet.
+> **Waiting on:** the updated query text and the answers. `docs/myloans-api-contract.sql` and `docs/MYLOANS_ANSWERS.md` are replaced or created when they are pasted. The field names below come from the project owner's summary of them.
 
 **What it is.** A local HTTP mock served by the app at `/api/dev/myloans/api/dms/v1/...`.
 - It refuses unless `APP_ENV=local` and `MYLOANS_MODE=mock`.
 - The **real** HTTP adapter points at it, so the production code path is exercised. It is swappable by changing `MYLOANS_BASE_URL`.
 
-**Endpoints and behaviour (from `docs/myloans-api-contract.sql`):**
+**Endpoints and behaviour:**
 
-| API | Behaviour |
+| Call | Behaviour |
 |---|---|
-| API 1 `GET /loans/{pnNo}` | 404 when not found; **422** with `transactionStatusId` when not selectable; 200 with the loan. **Can return more than one row** for a PN when a superseded copy shares it (to test D-016 #3) |
-| API 2 `GET /loans/changes?since=&cursor=&limit=500` | Rows ordered by `sourceUpdatedAt`, `externalLoanId`; `nextCursor` when the page is full; `maxSourceUpdatedAt`. Refuses neither / both of `pnNo` and `since` |
-| API 3 `GET /loans/{pnNo}/freshness` | `pnNo`, `transactionStatusId`, `transactionIsActive`, `sourceUpdatedAt`, `contentHash` |
-| API 4 `GET /branches?since=` | Branches |
-| API 5 `GET /products?since=` | Products |
+| API 1 `GET /loans/{pnNo}` | 404 when not found; 422 with the status when not selectable; 200 with the loan. **Up to 2 rows** for one PN # |
+| API 2 change mode `GET /loans/changes?since=&afterId=&limit=500` | `since` is **fixed for the whole run**. Pages by `ExternalLoanId` (`afterId` is a bigint). Returns `runStartedAt` on page 1. A page with fewer than 500 rows is the last |
+| API 2 pool mode (first load) `GET /loans/changes?releasedSince=&afterId=&limit=500` | Released loans since the cutoff, for the one-time first load (D-022 #9) |
+| API 3 `GET /loans/{pnNo}/freshness` | Freshness check |
+| API 4 `GET /branches` | Branches |
+| API 5 `GET /products` | Products |
 
-**ContentHash** is computed the way the contract does: SHA-256 over the UTF-16LE text of the same CONCAT, with fields in order, `~` for NULL and `|` separators. It is returned as lowercase hex, pending B1 in `docs/MYLOANS_QUESTIONS.md`.
+**Fields the mock returns:**
+- `CIN`, `ExternalLoanId`, `PNNo`
+- `FeedState` (5 values, below)
+- `ReplacedByExternalLoanId`
+- `BirthDateHash` (never a birth date)
+- `LoanID`, `LoanClass`, `LoanTypeId`, `LoanType` (name)
+- `TotalLoanAmount`
+- `ReleaseDate` (**datetimeoffset**)
+- `ProductCode`, `ProductName`
+- `BranchID` and branch / area / division / company names
+- `SourceUpdatedAt`, `ContentHash` (hex)
 
-**Data** lives in a mock table (`MockMyloansLoan`, local only) seeded with fake loans. Scenario builders:
+**FeedState values:**
 
-| Scenario | What it tests |
+| Value | Meaning |
 |---|---|
-| Superseded copy sharing a PN # (old id superseded, new id live) | A3 / matching |
-| Cancellation (status changes from 12; `is_active` 0) | D-013 |
-| Timestamp-only change (same hash) | D-016 repeats |
-| Several rows with **identical** `SourceUpdatedAt` across a page boundary | paging ties |
-| A run of **exactly 500** rows (full page, then an empty page) | paging end |
-| A duplicate `ExternalLoanId` in one page (the join fan-out) | D-016 #6 |
-| A product rename (API 5) and a branch rename (API 4) | D-012 |
-| A borrower name correction; amount and type changes that flip the Mortgage result | Open Items, chart 9b |
+| `Released` | Selectable |
+| `Cancelled` | Cancelled in myloans |
+| `Superseded` | Replaced by another myloans record |
+| `Inactive` | No longer active |
+| `NotReleased` | Not yet released |
+
+**ContentHash** is computed in the mock the way the agreed query does, as lowercase hex. The exact input list follows the agreed query once it is pasted; until then the mock includes `ReplacedByExternalLoanId` (requested in `docs/MYLOANS_REPLY_2.md`).
+
+**Scenario builders** (fake data only, in a local-only mock table):
+
+| Scenario | What it covers |
+|---|---|
+| **Cancel-then-redo** | Old row becomes `Cancelled` with its hash unchanged; a **new ExternalLoanId with the same CIN** and a new PN # arrives as `Released` |
+| `NotReleased` row (and later `Released`) | FeedState handling |
+| **Superseded with `ReplacedByExternalLoanId`** | Replacement case (a) |
+| Timestamp-only change (same hash) | No action |
+| Runs with pages of **exactly 500** rows (full page, then a short or empty page) | Paging end |
+| **Pool mode**: released loans since the cutoff, more than 500 | First load |
+| API 1 returning **2 rows** for one PN # (one selectable) | Safeguard |
+| A duplicate `ExternalLoanId` within one run | Safeguard |
+| `LoanID` / `LoanClass` change | Loan-type Open Item |
+| Empty `LoanTypeId` | "Can't classify" |
+| `BirthDateHash` change | Birth date Open Item |
+| Branch / area / division / company / product renames | Reference data changes log |
 
 Settings → Test data has a "myloans mock" panel (local only) to fire each scenario.
 
-**Tests:** contract tests on the mock (status codes, ordering, cursor, exactly-500, refusal) and on the adapter's zod parsing of every response.
+**Tests:** contract tests on the mock (status codes, `afterId` paging, fixed `since`, `runStartedAt`, exactly 500, pool mode, 2-row API 1) and on the adapter's zod parsing of every response.
 
 ---
 
-## 8. Piece 7: myloans sync on API 2 (D-005, D-016)
+## 8. Piece 7: myloans sync (D-005, D-016 as amended by D-022)
 
-### 8.1 Job design
+### 8.1 Identity: linked on CIN
 
-The external scheduler calls `POST /api/cron/myloans-sync` every **5 minutes** (fixed, with `CRON_SECRET`). The route:
-
-1. **Interval check.** It runs a sync only if `now ≥ lastSuccessfulStart + myloans.intervalMinutes`. Because the interval is read each time, a change applies without a restart.
-2. **Lease.** It takes a **lease row** (`SyncLease`: owner, expiresAt). This replaces the 30-minute database transaction that held the advisory lock (`source-sync.ts:863-867`).
-3. **Paging.** It calls API 2 from `checkpoint − 5 min` and pages with the cursor until a page has fewer than 500 rows.
-4. **Per page,** in one short database transaction:
-   - zod-validate every row;
-   - drop and count `isSuperseded = 1` rows (but see Q-N1);
-   - detect a **duplicate `externalLoanId` within the run** (an in-memory set across pages; also by `(sourceUpdatedAt, id)`). The duplicate is logged and the Admin alerted; neither copy is applied;
-   - match on `externalLoanId`;
-   - handle each row as in 8.2.
-5. **Commit the checkpoint** only after **all pages succeed**. The new checkpoint is the **maximum** `sourceUpdatedAt` of the run. A run with no rows keeps the old checkpoint.
-6. **On failure:**
-   - keep the checkpoint;
-   - retry with backoff (the existing `resilience.ts`: 2 retries, `Retry-After`, breaker);
-   - timeout from env;
-   - count consecutive failed runs; at `myloans.alertAfterFailedRuns` (default 3) notify the Admin and Superadmin in-app and by email.
-7. **Run log.** Write a `SyncRun` row (8.3).
-
-The rotating-batch polling, the tiers, the `nextCheckAt` queue and the hourly ceiling for background polling are **removed**. On-demand refresh (open, Refresh button) uses **API 3**, then API 1 only if the timestamp is newer and the hash differs.
-
-### 8.2 Row handling
-
-| Case | Action |
+| Change | Detail |
 |---|---|
-| `externalLoanId` known, same `contentHash` | Nothing, not even the timestamp |
-| Known, newer `sourceUpdatedAt`, same hash | Update `Loan.sourceUpdatedAt` only |
-| Known, different hash | Diff the **monitored fields** (setting, D-012) against DMS values. For each differing field, create an Open Item (piece 8). Hash differs but no stored field differs → one Open Item "Changed in myloans: field not shown in DMS" (birth date, see MYLOANS_QUESTIONS B3 / D) |
-| Known, reference-only difference (branch / product / area / division / company **name**) | Applied automatically and written to the **Reference data changes** log + in-app notice (D-012). Loan rows carry `BranchID` and `ProductCode` only, so names come through APIs 4 and 5 |
-| Known, status or active change (cancelled / no longer released) | Open Item + loan flag `cancellationPending` + Forward blocked (D-013) |
-| Unknown, `isSelectable = 1` | Upsert into `SourceLoanCandidate` (minimal fields: externalLoanId, pn, branchId, borrower display name, release date, amount, hash, sourceUpdatedAt). Shown in the branch pool as **"Released. Not yet in DMS"** (D-016 #5). Not a DMS transaction until an LA accepts (piece 10) |
-| Unknown, not selectable | Ignored; candidate removed if present |
+| Link key | A DMS loan file is linked to myloans by **CIN** (unique in the DMS) |
+| `ExternalLoanId` and PN # | Stored as **current values with history** in a new `LoanSourceIdentity` table: `loanId`, `externalLoanId`, `pn`, `validFrom`, `validTo`, `reason` (FIRST_OPEN / REPLACED / CORRECTED), `openItemId`, `changedById` |
+| `Loan` columns | `cin` (unique), `externalLoanId` (current), `pn` (current; stays unique), `contentHash` (char(64) hex), `feedState`, `sourceUpdatedAt`, `releaseDate` (Manila date), `releasedAt` (offset as received), `birthDateHash`, `loanTypeId`, `cancellationPending` |
+| Updates | PN # and ExternalLoanId change only through an approved "myloans record replaced" Open Item |
 
-**Only open loans are synced.** A loan stops syncing once it is "Loan closed/released" (D-006). Whether checks slow down once the loan is "Processing complete" is Q-N8.
+### 8.2 Job design
 
-### 8.3 Data
+The external scheduler calls `POST /api/cron/myloans-sync` every 5 minutes (fixed, `CRON_SECRET`). The route:
+
+1. **Interval check.** It runs only if `now ≥ lastSuccessfulStart + myloans.intervalMinutes`. A change to the interval applies without a restart.
+2. **Lease.** It takes a lease row (`SyncLease`). This replaces the 30-minute database transaction that held the advisory lock.
+3. **Fixed `since` for the run.** `since` = the saved checkpoint. Every page of the run uses the same `since`.
+4. **Paging.** Pages by `ExternalLoanId` with `afterId` (the last id of the previous page), until a page has fewer than 500 rows.
+5. **Per page,** in one short database transaction:
+   - zod-validate every row;
+   - collect ExternalLoanIds for the duplicate check (across pages);
+   - handle each row as in 8.3.
+6. **Commit.** Only after **all pages succeed**: new checkpoint = **page 1's `runStartedAt` minus 5 minutes** (D-022 #4); save `lastSuccessfulStart`; reset the failure count.
+7. **On failure:**
+   - keep the old checkpoint; no partial checkpoint is ever written;
+   - retry with backoff and `Retry-After`; timeout;
+   - after `myloans.alertAfterFailedRuns` consecutive failures (default 3), alert the Admin and Superadmin in-app and by email.
+8. **Run log.** Write a `SyncRun` row: start, end, pages, rows, Open Items created, timestamp-only updates, replacements, duplicates, errors, checkpoint before and after.
+
+The rotating-batch polling, tiers, `nextCheckAt` and the background hourly ceiling are removed. On-demand refresh (open, Refresh button) uses API 3, then API 1 only when the timestamp is newer and the hash differs.
+
+### 8.3 Row handling
+
+The rules apply in this order:
+
+| # | Case | Action |
+|---|---|---|
+| 0 | **Duplicate `ExternalLoanId` within the run** | Alert the Admin; **no Open Items** for that id in this run; logged on the run (D-022 #10) |
+| 1 | Known loan (by CIN and ExternalLoanId), **same `ContentHash`** | **No action** (D-022 #4) |
+| 2 | Known, newer `SourceUpdatedAt`, same hash | Not reachable when the hash is the same (#1). Kept as a guard: update `sourceUpdatedAt` only |
+| 3 | **Replacement (a):** a row we hold has `ReplacedByExternalLoanId` | Open Item **"myloans record replaced"** showing **old and new PN #** (and ExternalLoanId). Forward blocked. On approval: re-link `externalLoanId` / `pn` (history row) and fetch the new record |
+| 4 | **Replacement (b):** a **new ExternalLoanId** with a **CIN we already hold** | Same Open Item as #3. Covers **cancel-then-redo**, where the old row stays `Cancelled` with an **unchanged hash** (so #1 would skip it) |
+| 5 | Known, `FeedState` changes **away from `Released`** (to Cancelled / Superseded / Inactive / NotReleased) | Open Item + loan flag **"Cancellation pending review"** (wording per state) + **Forward blocked** (D-013). DMS data unchanged until approved. When #3 or #4 also applies, **one** item is raised: "record replaced" |
+| 6 | Known, different hash | Per monitored field that differs: one Open Item (field, DMS value, myloans value, `SourceUpdatedAt`). See the special fields below |
+| 7 | Unknown CIN, `FeedState = Released` | Upsert into `SourceLoanCandidate`. Shown in the branch pool as "Released. Not yet in DMS", only if released on or after the **branch pool cutoff date** (#9). No DMS transaction until an LA accepts |
+| 8 | Unknown CIN, any other FeedState | Ignored. Any existing candidate is removed |
+| 9 | Reference names (branch / area / division / company / product) differ from the lookups | Update the lookup automatically; write the **Reference data changes** log (old, new, when, source = feed); in-app notice to Admin and LA Supervisor/Head (D-012). Never an Open Item |
+
+**Special fields in case #6:**
+
+| Field change | Open Item |
+|---|---|
+| `BirthDateHash` | **"Birth date changed in myloans"**, with no values. The birth date never arrives |
+| `LoanID` or `LoanClass` | Shows the **LoanType name** (old → new), for example "New → Renewal", plus the rule effect |
+| `LoanTypeId` empty | A **"Can't classify"** alert on the loan file and to the approvers. The rules are not re-run until it is fixed |
+| `ReleaseDate` | Received as datetimeoffset, converted to the **Manila date** for display, TAT and rules (D-022 #5). Compared as a Manila date, so a change of offset alone is not a change |
+
+### 8.4 First load and the branch pool cutoff
+
+- **Setting `myloans.branchPoolCutoffDate`** (Superadmin only; audited). Default = go-live date minus 30 days. The go-live date is a setting too.
+- **One-time first load:** API 2 pool mode with `releasedSince` = the cutoff. It fills `SourceLoanCandidate` and sets the first checkpoint from that run's `runStartedAt` − 5 min.
+- **After the first load,** new releases arrive through the normal API 2 change mode.
+- Loans released before the cutoff can still be opened by PN # search (API 1).
+
+### 8.5 API 1 safeguard (PN # search and refresh)
+
+- Up to 2 rows can come back.
+- With 2 rows, use the one with `IsSelectable = 1` and alert the Admin.
+- With 2 rows and none selectable, show the status of the newest, and alert.
+
+### 8.6 Data
 
 | Model | Columns |
 |---|---|
-| `Loan` (new columns) | `externalLoanId` (unique, nullable for older rows), `contentHash` (char(64) hex), `borrowerFirstName` / `MiddleName` / `LastName` / `Suffix`, `borrowerCompanyName`, `sourceLoanNo` (LoanID), `cancellationPending`. `borrowerName` is kept as a generated display value |
-| `SyncRun` | `id`, `kind` (`LOANS` / `BRANCHES` / `PRODUCTS`), `startedAt`, `endedAt`, `status`, `pages`, `rows`, `superseded`, `duplicates`, `openItemsCreated`, `timestampOnly`, `candidates`, `errors` (json), `checkpointBefore`, `checkpointAfter` |
-| `SyncState` | Per kind: `checkpoint`, `lastSuccessfulStart`, `consecutiveFailures` |
+| `Loan` and `LoanSourceIdentity` | As in 8.1 |
+| `SyncRun` | As in 8.2 |
+| `SyncState` | Per kind: `checkpoint`, `lastSuccessfulStart`, `consecutiveFailures`, `firstLoadDoneAt` |
 | `SyncLease` | `owner`, `expiresAt` |
-| `SourceLoanCandidate` | Described in 8.2 |
+| `SourceLoanCandidate` | `cin`, `externalLoanId`, `pn`, `branchId`, display name, release date, amount, hash, `sourceUpdatedAt` |
+| `ReferenceChange` | entity, entityId, field, old, new, at, source, syncRunId |
 
-Retired after migrating dev rows: the `myloans.state`, `lastRun`, `tierMinutes`, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hourlyCeiling` and `businessHoursOnly` settings; the `Loan.nextCheckAt` / tier columns; and `MyLoansCallHour` if nothing else uses it. `LoanSourceSnapshot` is trimmed to the fields the DMS uses, which also reduces stored personal data.
+The old sync settings (tiers, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hourlyCeiling`, `businessHoursOnly`, `myloans.state`) and the tier columns are retired. `LoanSourceSnapshot` is trimmed to the fields the DMS uses.
 
-### 8.4 Settings
+### 8.7 Settings
 
 | Setting | Rule |
 |---|---|
-| `myloans.intervalMinutes` | Default 30. A value below 30 or above 60 shows a **warning but saves**. Audited; live |
+| `myloans.intervalMinutes` | Default 30; a warning below 30 or above 60, but it saves; audited; live |
 | `myloans.alertAfterFailedRuns` | Default 3 |
+| `myloans.branchPoolCutoffDate` | Superadmin only |
 | `myloans.paused` | Kept |
-| `myloans.monitoredFields` | Tickboxes over the loan and borrower fields of the contract: PN, status, active, CIN, CIF, name parts, LoanID, loan type, company name, amount, release date, product code, branch ID. Birth date is not offered until decided |
+| `myloans.monitoredFields` | Tickboxes over the loan and borrower fields, including **Birth date (hash only)** |
 
-### 8.5 Screens
+### 8.8 Screens
 
 | Screen | Contents | Who |
 |---|---|---|
-| **Settings → myloans** | Interval (with the warning), alert threshold, monitored fields, pause, "Run now" | Superadmin |
-| **Sync runs** | Table of `SyncRun` with filters. Opening a run shows its errors and duplicates | Admin, Superadmin |
+| **Settings → myloans** | Interval (with the warning), alert threshold, cutoff date, monitored fields, pause, Run now | Superadmin |
+| **Sync runs** | Table of runs; run detail with errors, duplicates and replacements | Admin, Superadmin |
 
-### 8.6 Tests
+### 8.9 Tests
 
-- checkpoint saved only after all pages; a failure in the middle keeps the old one;
-- the overlap re-delivers rows harmlessly;
-- same hash means no action; timestamp-only updates the timestamp;
-- a different hash creates per-field items;
-- matching on `externalLoanId` when the PN changes;
-- superseded rows ignored; duplicate within a run alerts and does not crash;
-- exactly 500 rows; identical timestamps across a page boundary;
-- a cancellation raises the flag;
-- alert after N failures;
-- an interval change takes effect without a restart;
-- a warning below 30 or above 60;
-- the lease stops two runs at once.
+| Area | Tests |
+|---|---|
+| Checkpoint | `runStartedAt` − 5 min saved only after all pages; a failure on page 2 keeps the old checkpoint; `since` stays fixed across pages |
+| Repeats and paging | Same hash means no action (repeat delivery from the overlap); `afterId` paging through exactly 500 rows and through a short last page |
+| FeedState | All five states; any change away from Released → Open Item + Forward blocked + DMS unchanged until approved |
+| **Cancel-then-redo** | The old row arrives `Cancelled` with an **unchanged hash**, and a new ExternalLoanId with the **same CIN** arrives `Released` → one "myloans record replaced" item with old and new PN #. On approval, PN # / ExternalLoanId are re-linked with a history row |
+| Replacement (a) | `ReplacedByExternalLoanId` on a held row → the same item |
+| Special fields | Birth date hash change → item with no values; LoanID / LoanClass change → shows LoanType names; empty LoanTypeId → "Can't classify" |
+| ReleaseDate | 2026-11-30T17:00:00Z becomes Manila 1 December (month end); 2026-12-31T16:30:00Z becomes 1 January (year end) |
+| Reference renames | Lookup updated, logged and noticed; no Open Item |
+| First load | Pool mode honours the cutoff; the first checkpoint is set |
+| Safeguards | API 1 two rows → selectable one picked and alert; duplicate ExternalLoanId → alert, no items, run completes |
+| Other | Failure alert after N runs; interval change live; warning band; lease |
 
 ---
 
@@ -514,9 +579,9 @@ The existing `DpAssignment` / `DocumentMovement` records keep working. The engin
 - **API 1 answers:**
   - 404 → "Not found";
   - 422 → a status card with the status;
-  - several rows → use the non-superseded row and log a warning.
-- **On open**, save `externalLoanId` and `contentHash`. Duplicates are prevented by the database (`Loan.pn` and `Loan.externalLoanId` unique; race handled).
-- **IsSelectable** from the API replaces the status-12-only check.
+  - up to 2 rows → use the one with `IsSelectable = 1` and alert the Admin (8.5).
+- **On open**, save `cin`, `externalLoanId` (with the first `LoanSourceIdentity` row) and `contentHash`. Duplicates are prevented by the database (`Loan.cin` and `Loan.pn` unique; race handled).
+- **IsSelectable** (`FeedState = Released`) from the API replaces the status-12-only check. `ReleaseDate` is converted to the Manila date.
 - **`PnSearchLog`:** user, PN typed, outcome (INVALID / FOUND_IN_DMS / NOT_FOUND / NOT_SELECTABLE / OPENED), status id, time. Shown under Reports, scoped.
 - **"Released. Not yet in DMS"** from the pool: Accept opens the file the same way.
 - **LoanTransaction uniqueness:** a partial unique index on (`loanId`, `typeId`) for non-removed transactions. It goes on the never-drop list.
@@ -577,7 +642,7 @@ Some are carried from Step 1; some are new from the contract.
 
 | # | Question | My proposal |
 |---|---|---|
-| Q-N1 | **Superseded copies vs "ignore IsSuperseded = 1".** If the loan the DMS saved becomes the superseded copy and a **new** `ExternalLoanId` becomes live (same PN), ignoring superseded rows would make the DMS loan stop syncing, and the new id would appear as "Released. Not yet in DMS" although the PN is already open. (myloans question A3) | When a superseded row matches a DMS loan, or a selectable row's PN is already in the DMS under another id, raise an Open Item **"myloans record replaced"**. Re-link to the new id only on approval |
+| Q-N1 | ~~Superseded copies vs "ignore IsSuperseded = 1"~~ | **Resolved by D-022:** link on CIN; "myloans record replaced" when a held row has `ReplacedByExternalLoanId` or a new ExternalLoanId arrives with a held CIN (8.3 #3–#4) |
 | Q-N2 | A product rename (API 5) is auto-applied (D-012), but Rule 1 classifies from the product name. Should a rename that would **change Financing / Refinancing** for an open loan raise an Open Item instead? | Yes: auto-apply the name, and raise an Open Item only when the rule result would change |
 | Q-N3 | A cash advance covering several transactions: is liquidation due N days after the **last** LTO completion, or per transaction? | Last |
 | Q-N4 | Who edits branch scope, CA / FT ticks and the approver tick: Superadmin only, or Admin too? | Superadmin only (D-008); Admin read-only |
@@ -589,4 +654,6 @@ Some are carried from Step 1; some are new from the contract.
 | Q-N10 | A newer change while an Open Item is pending: supersede (recommended) or update in place? | Supersede (9.2) |
 | Q-N11 | Where is "Processing complete" set, and what signals "fully paid"? (Q15) | Later module; not needed for the foundation |
 | Q-N12 | Rule 4 exact decimals now? (Q16) | Yes, in piece 10 (½ day) |
-| Q-N13 | Birth date: options D1 / D2 / D3 in `docs/MYLOANS_QUESTIONS.md` §D | D2 (compare without storing) |
+| Q-N13 | ~~Birth date: options D1 / D2 / D3~~ | **Resolved by D-022:** the birth date never arrives; `BirthDateHash` flags a change with no values |
+| Q-N14 | **Source of Financing / Refinancing and API 5** (myloans A7.3). Rule 1 needs the product name, or a myloans flag. Still open with the myloans team. **Blocks the LA module** | Ask in `docs/MYLOANS_REPLY_2.md`; until answered, Rule 1 keeps using the product name from the feed |
+| Q-N15 | When a loan changes away from Released **and** is replaced (cancel-then-redo), raise one item or two? | One item, "myloans record replaced" (8.3 #5) |

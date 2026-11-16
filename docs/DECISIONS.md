@@ -273,3 +273,56 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
 - **Date:** 16 November 2026
 - **Decision:** the sign-in fix is the first item built in Step 4.
 - **Reason:** production currently only warns when test sign-in is on (`FOUNDATION_CHECK.md` B.8).
+
+## D-022 myloans: build the DMS side to the agreed contract
+
+- **Date:** 16 November 2026
+- **Decision:** the DMS side is built to the contract agreed with the myloans team after their updated answers and query. The query is reference only and is never run by the DMS (`docs/myloans-api-contract.sql`; answers in `docs/MYLOANS_ANSWERS.md`, both to be saved when pasted).
+
+  1. **Link loans on CIN.** ExternalLoanId and PN # are stored as current values **with history**.
+  2. **FeedState has five values:** Released, Cancelled, Superseded, Inactive, NotReleased. Released = selectable. Any change away from Released raises an Open Item and blocks Forward (D-013). DMS data is unchanged until approved.
+  3. **Replacement detection:** "myloans record replaced" is raised, showing the old and new PN #, when **either**:
+     - (a) a row we hold has `ReplacedByExternalLoanId`; **or**
+     - (b) a new ExternalLoanId arrives with a CIN we already hold.
+
+     Case (b) covers cancel-then-redo, where the old row stays Cancelled and its hash does not change. This has its own test.
+  4. **Paging and checkpoint:**
+     - pages by ExternalLoanId with `@AfterId`; `@Since` is fixed for the whole run;
+     - checkpoint = page 1's `RunStartedAt` minus 5 minutes, saved only after all pages succeed;
+     - same hash → no action.
+  5. **ReleaseDate** arrives as datetimeoffset. It is converted to the Manila date for display, TAT and rules.
+  6. **The birth date never arrives.** `BirthDateHash` identifies a change: "Birth date changed in myloans", with no values.
+  7. **LoanID or LoanClass changes** → an Open Item showing the LoanType name. An empty LoanTypeId → a "Can't classify" alert.
+  8. **Reference names** (branch / area / division / company / product) from the feed update the lookups automatically and go in the Reference data changes log (D-012).
+  9. **Go-live cutoff:** setting "Branch pool cutoff date" (Superadmin), default = go-live date minus 30 days. A one-time first load uses `@ReleasedSince`; ongoing new releases come from API 2.
+  10. **Safeguards kept:**
+      - API 1 returns up to 2 rows; with 2, the one with `IsSelectable = 1` is picked and an alert raised;
+      - a duplicate ExternalLoanId in one run → an alert and no Open Items.
+  11. **The local mock follows this exact contract,** including:
+      - cancel-then-redo;
+      - NotReleased;
+      - superseded with ReplacedBy;
+      - a timestamp-only change;
+      - pages of exactly 500;
+      - the pool mode.
+- **Reason:** the myloans team's updated answers and query.
+- **Replaces parts of D-016:**
+  - matching on ExternalLoanId → linking on CIN;
+  - "ignore IsSuperseded = 1" → FeedState and replacement detection;
+  - checkpoint = maxSourceUpdatedAt − 5 min → RunStartedAt − 5 min;
+  - paging cursor (SourceUpdatedAt, ExternalLoanId) → `@AfterId` with a fixed `@Since`.
+- **Resolves:**
+  - `IMPLEMENTATION_PLAN.md` Q-N1 (superseded copies);
+  - Q-N13 (birth date: neither stored nor received; the hash only).
+- **Requested from myloans** (`docs/MYLOANS_REPLY_2.md`):
+  - add ReplacedByExternalLoanId to the ContentHash before it is frozen;
+  - correct the FeedState header;
+  - make `@AfterId` a bigint;
+  - indexes on `Transactions.application_code`, `LOANS.CIN` and `Transactions.pn_no`.
+- **Still open with myloans:**
+  - hard deletes;
+  - the released amount;
+  - **the source of Financing / Refinancing and API 5. This blocks the LA module;**
+  - timing, limits, credentials;
+  - the empty-page / nextCursor format.
+- **Scope of this change:** docs and plan only; no sync code yet.
