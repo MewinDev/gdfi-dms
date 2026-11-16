@@ -5,6 +5,7 @@ import { writeUserAccess } from "@/lib/services/access";
 import { setSetting } from "@/lib/settings";
 import { KIT_EMAIL_DOMAIN } from "@/lib/kit/catalog";
 import { kitAccess } from "@/lib/kit/build";
+import { applyStageSpread } from "./stage-spread";
 
 /**
  * The foundation layer of npm run db:reset-seed (scripts/db-reset-seed.ts), run after the seed and the
@@ -114,6 +115,9 @@ export async function applyFoundationSeed(log: Log = console.log): Promise<void>
     await prisma.ltoOffice.upsert({ where: { code: o.code }, create: { code: o.code, ...data }, update: data });
   }
   log(`LTO offices: ${TEMPLATE_LTO.length} from the templates (LTO-PASIG named as a SAMPLE: the sources say 10, 50 and 2 km). Loan types stay New and Renewal; the template's "Test" loan type is a placeholder and is not seeded.`);
+
+  // Sample loans at every loan-file stage the app can reach today (some near or over TAT).
+  await applyStageSpread(log);
 }
 
 /** Users per decided role, for the summary. */
