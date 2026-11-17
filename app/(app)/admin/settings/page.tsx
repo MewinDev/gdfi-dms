@@ -1,3 +1,6 @@
+import { CalendarArea } from "@/components/admin/calendar-area";
+import { calendarRows } from "@/lib/services/calendar";
+import { loadCalendar } from "@/lib/calendar/load";
 import { PAUSE_RULE_TEXT } from "@/lib/calendar/core";
 import { ensureTypeStages } from "@/lib/services/job-stages";
 import type { Metadata } from "next";
@@ -67,7 +70,7 @@ const AREAS = [
   { key: "document-types", title: "Document types", desc: "The kinds of paper that checklist items use.", help: "Add or change a paper type. A short code locks once a checklist item or loan file uses it.", Icon: FileTextIcon },
   { key: "checklist", title: "Checklist items", desc: "The papers for each transaction, required or optional.", help: "Changes apply to loan files opened from now on. Open loan files keep their papers and settings.", Icon: ChecklistIcon },
   { key: "processing-stages", title: "Processing stages", desc: "The stages a processor works through, with evidence.", help: "Stages run in order. LTO drop off and LTO pickup are added while a type needs LTO processing; Check and verify is always last. Changes apply to jobs not yet started.", Icon: ListIcon },
-  { key: "tat", title: "Turnaround times", desc: "Target business days for each step.", help: "Business days skip weekends and holidays. 0 means the same day.", Icon: ClockIcon },
+  { key: "tat", title: "Turnaround times", desc: "Target working days for each step.", help: "Working days follow Settings, Holidays and working days. 0 means the same day.", Icon: ClockIcon },
   { key: "loan-types", title: "Loan types", desc: "Display names for the MyLoans loan types.", help: `The Data Check accepts only New and Renewal. The mortgage thresholds are fixed by the rule “${RULE_NAMES.MORTGAGE_THRESHOLD.title}”: ${pesoWhole(MORTGAGE_THRESHOLDS.New)} for New, ${pesoWhole(MORTGAGE_THRESHOLDS.Renewal)} for Renewal.`, Icon: TagIcon },
   { key: "dp-capacity", title: "Processor capacity", desc: "How many open jobs a processor takes, and who is on leave.", help: "Used by the Monitoring page and the Send panel. Open jobs = assigned + in process + on hold. A processor on leave is shown disabled in the Send panel and counts as 0% available. A past \"until\" day ends the leave by itself.", Icon: UsersIcon },
   { key: "classification", title: "Product classification", desc: "Keywords that decide Financing or Refinancing.", help: "The product name decides it: a Refinancing keyword first, then a Financing keyword, else the default (D-031). Saving re-checks open loan files; a changed result is flagged, never applied by itself.", Icon: TagIcon },
@@ -82,7 +85,7 @@ const AREAS = [
   { key: "hold-reasons", title: "Hold reasons", desc: "Why a job can wait (not a fault).", help: "Offered when someone puts work on hold (remarks are required for every reason). Add, rename, reorder (Order) or switch off; a switched-off reason stays on old holds, which keep the name they had. The list was seeded as \"Proposed, to be confirmed with the team\"; saving a reason confirms it. The turnaround time keeps counting.", Icon: PauseIcon },
   { key: "missing-reasons", title: "Missing paper reasons", desc: "Why a paper is missing from the file.", help: "Offered when a Loan Associate marks a paper Missing. Remarks are always required too, for every reason. Nothing is deleted: make it inactive instead.", Icon: AlertIcon },
   { key: "return-reasons", title: "Return reasons", desc: "Why a processor returns a job to the Loan Associate.", help: "Offered when a processor returns an accepted job for papers. The turnaround time keeps counting. Nothing is deleted: make it inactive instead.", Icon: ArrowLeftIcon },
-  { key: "holidays", title: "Holidays", desc: "Days skipped when counting turnaround times.", help: "Add or change a holiday. An inactive holiday is no longer skipped.", Icon: CalendarIcon },
+  { key: "holidays", title: "Holidays and working days", desc: "Working days, holidays and office closures: one calendar for every count.", help: "Check shows which saved due dates a change moves before you save it.", Icon: CalendarIcon },
   { key: "system", title: "System and test mode", desc: "PN format, MyLoans adapter, simulator and test switches.", help: "These switches save as soon as you press them.", Icon: SettingsIcon },
   { key: "myloans-sync", title: "MyLoans sync", desc: "How often loan files are checked against MyLoans.", help: "Only the loans someone opened are checked, never the whole MyLoans. A change that matters waits for Admin to review it.", Icon: RefreshIcon },
   { key: "email", title: "Email notifications", desc: "Emails for the updates people already get in GDFI DMS.", help: "Email is another way to get the same updates. Turn it on when the system goes live.", Icon: BellIcon },
@@ -255,6 +258,15 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
   if (area.key === "roles") return <RolesArea edit={edit} common={common} />;
   if (area.key === "permissions") return <PermissionsArea common={common} user={user} />;
   if (area.key === "classification") return <ClassificationArea common={common} user={user} test={test} />;
+  if (area.key === "holidays") {
+    // D-041: the working days, holidays and office closures (Check, then Save), not the plain list.
+    const [cal, rows, branches, backdateMax] = await Promise.all([loadCalendar(), calendarRows(), prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }), getSetting("calendar.backdateMaxDays")]);
+    return (
+      <SettingsModal {...common} footer={{ kind: "done" }}>
+        <CalendarArea canEdit={can(user, PERMISSIONS.SETTINGS_HOLIDAYS)} weekdays={[...cal.workingWeekdays]} branches={branches} rows={rows} today={businessDate(new Date())} backdateMax={backdateMax} />
+      </SettingsModal>
+    );
+  }
   if (area.key === "dp-capacity") {
     return <SettingsModal {...common} footer={{ kind: "done" }}><CapacityArea /></SettingsModal>;
   }

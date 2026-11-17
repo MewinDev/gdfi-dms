@@ -2,7 +2,11 @@ import "server-only";
 import { AuthzError } from "@/lib/auth/current-user";
 import { MissingPapersError, NotInScopeError, UserError } from "@/lib/services/errors";
 
-export type ActionState = { ok: boolean; message?: string; error?: string; field?: string; at?: number; missing?: string[]; needsRemarks?: string[] } | null;
+export type ActionState = {
+  ok: boolean; message?: string; error?: string; field?: string; at?: number; missing?: string[]; needsRemarks?: string[];
+  /** A Check (preview) or Save of a calendar change (D-041): how many saved due dates move, how many were overdue. */
+  preview?: { extend: number; overdue: number; saved: boolean };
+} | null;
 
 /** Runs a server action body and turns errors into friendly messages (never stack traces). */
 export async function runAction(fn: () => Promise<string | void>): Promise<ActionState> {
