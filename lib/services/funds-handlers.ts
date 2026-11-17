@@ -102,3 +102,23 @@ export const gapText = (type: TypeKey, step: HandlerStep) => `Nobody can ${STEP_
 export async function fundsGaps(db: Db = prisma): Promise<string[]> {
   return (await fundsHandlers(db)).flatMap((h) => h.gaps);
 }
+
+/**
+ * Branches where nobody handles a fund type (D-035): no active person who handles the type (Handles CA / FT)
+ * and holds its approve or release tick has the branch in their access ("All branches" covers every branch,
+ * new ones too). Shown on Settings, Branches and on the Superadmin's Home, like the approver warning.
+ */
+export async function branchesWithoutHandler(type: TypeKey, db: Db = prisma): Promise<{ id: string; name: string; code: string | null }[]> {
+  const keys = type === "CA" ? [PERMISSIONS.FUNDS_CA_APPROVE, PERMISSIONS.FUNDS_CA_RELEASE] : [PERMISSIONS.FUNDS_FT_APPROVE, PERMISSIONS.FUNDS_FT_RELEASE];
+  const people = await db.user.findMany({ where: holdsAnyWhere(keys), select: { allBranches: true, branches: { select: { branchId: true } } } });
+  if (people.some((p) => p.allBranches)) return [];
+  const covered = new Set(people.flatMap((p) => p.branches.map((b) => b.branchId)));
+  const branches = await db.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } });
+  return branches.filter((b) => !covered.has(b.id));
+}
+
+/** "3 active branches have no CA handler." (empty at 0). */
+export function noHandlerText(type: TypeKey, n: number): string {
+  if (n <= 0) return "";
+  return `${n} active branch${n === 1 ? " has" : "es have"} no ${type} handler.`;
+}

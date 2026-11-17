@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { branchesWithoutApprover, noApproverText } from "@/lib/services/borrower-review";
+import { branchesWithoutHandler, noHandlerText } from "@/lib/services/funds-handlers";
 import { AlertCard } from "@/components/home/home-ui";
 import { UsersIcon } from "@/components/ui/icons";
 
@@ -9,14 +10,20 @@ import { UsersIcon } from "@/components/ui/icons";
  *   - only one active Superadmin left (D-028: keep two, so one can fix the other's access).
  */
 export async function setupWarnings(): Promise<string[]> {
-  const [noApprover, supers] = await Promise.all([
+  const [noApprover, supers, noCa, noFt] = await Promise.all([
     branchesWithoutApprover(),
     prisma.user.count({ where: { active: true, role: { key: "SUPERADMIN", active: true } } }),
+    branchesWithoutHandler("CA"),
+    branchesWithoutHandler("FT"),
   ]);
   const out: string[] = [];
   if (noApprover.length) {
     const names = noApprover.slice(0, 5).map((b) => b.name).join(", ");
     out.push(`${noApproverText(noApprover.length)} ${names}${noApprover.length > 5 ? " and more" : ""}. Give someone of the branch the approver tick on Users, Edit.`);
+  }
+  // Funds (D-035): branches where nobody handles a fund type.
+  for (const [t, list] of [["CA", noCa], ["FT", noFt]] as const) {
+    if (list.length) out.push(`${noHandlerText(t, list.length)} ${list.slice(0, 5).map((b) => b.name).join(", ")}${list.length > 5 ? " and more" : ""}. Give a Finance person the branch and Handles ${t} on Users, Edit.`);
   }
   if (supers === 1) out.push("Only one active Superadmin is left. Add a second one on Users, so someone can always fix the other's access.");
   if (supers === 0) out.push("No active Superadmin. Nobody can change the permission matrix: ask IT to add one.");

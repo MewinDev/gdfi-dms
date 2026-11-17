@@ -8,6 +8,7 @@ import { getMyLoansAdapter } from "@/lib/myloans";
 import { branchWorkload, recentBranchRuns, reviewRows, openReviewCount } from "@/lib/services/branches";
 import { inactiveEffect } from "@/lib/services/settings-status";
 import { branchesWithoutApprover, noApproverText } from "@/lib/services/borrower-review";
+import { branchesWithoutHandler, noHandlerText } from "@/lib/services/funds-handlers";
 import { SettingsModal } from "@/components/admin/settings-modal";
 import { SettingsEditForm, type FieldDef } from "@/components/admin/forms";
 import { StatusPanel } from "@/components/admin/status-panel";
@@ -73,11 +74,11 @@ export interface BranchMay { manage: boolean; import: boolean; review: boolean }
  * "N active branches have no approver assigned." (D-029): nobody with the approver tick has the branch in
  * their own access. Items there stay visible to approvers with All branches; this line is so it gets fixed.
  */
-export function NoApproverLine({ branches }: { branches: { id: string; name: string; code: string | null }[] }) {
+export function NoApproverLine({ branches, text, fix, kind }: { branches: { id: string; name: string; code: string | null }[]; text?: string; fix?: string; kind?: "CA" | "FT" }) {
   return (
-    <div role="status" className="rounded-xl border border-act-line bg-act-bg px-4 py-2.5 text-sm text-ink" data-no-approver={branches.length}>
-      <p className="font-semibold">{noApproverText(branches.length)}</p>
-      <p className="mt-0.5 text-ink-2">Approvers with All branches still see and decide their MyLoans changes. To fix it, a Superadmin gives someone of the branch the approver tick on Users, Edit.</p>
+    <div role="status" className="rounded-xl border border-act-line bg-act-bg px-4 py-2.5 text-sm text-ink" {...(kind ? { "data-no-handler": kind } : { "data-no-approver": branches.length })}>
+      <p className="font-semibold">{text ?? noApproverText(branches.length)}</p>
+      <p className="mt-0.5 text-ink-2">{fix ?? "Approvers with All branches still see and decide their MyLoans changes. To fix it, a Superadmin gives someone of the branch the approver tick on Users, Edit."}</p>
       <details className="mt-1">
         <summary className="link cursor-pointer text-sm">Show branches</summary>
         <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-ink-2" data-no-approver-branches>
@@ -89,11 +90,13 @@ export function NoApproverLine({ branches }: { branches: { id: string; name: str
 }
 
 async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay }) {
-  const [rows, areas, openReview, noApprover] = await Promise.all([
+  const [rows, areas, openReview, noApprover, noCa, noFt] = await Promise.all([
     prisma.branch.findMany({ include: { area: true, division: true, usualLtoOffice: true } }),
     prisma.area.findMany({ orderBy: { name: "asc" } }),
     openReviewCount(),
     branchesWithoutApprover(),
+    branchesWithoutHandler("CA"),
+    branchesWithoutHandler("FT"),
   ]);
   const q = (filter.q ?? "").trim().toLowerCase();
   const show = filter.show ?? "active";
@@ -123,6 +126,8 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
         </p>
       )}
       {noApprover.length > 0 && <NoApproverLine branches={noApprover} />}
+      {noCa.length > 0 && <NoApproverLine branches={noCa} text={noHandlerText("CA", noCa.length)} fix="To fix it, give a Finance person of the branch (or All branches) the branch and Handles CA on Users, Edit." kind="CA" />}
+      {noFt.length > 0 && <NoApproverLine branches={noFt} text={noHandlerText("FT", noFt.length)} fix="To fix it, give a Finance person of the branch (or All branches) the branch and Handles FT on Users, Edit." kind="FT" />}
       <form method="get" action={BASE} className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end" aria-label="Filter branches">
         <input type="hidden" name="open" value="branches" />
         <div className="flex h-[46px] min-w-0 items-center gap-2.5 rounded-xl border border-line-input bg-fill-soft px-4 focus-within:border-navy focus-within:bg-white sm:flex-1">

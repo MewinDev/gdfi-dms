@@ -501,3 +501,15 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
 - **Keyword tickbox "Whole word only"** (refines D-031). Each keyword matches at the **start of a word**, or, ticked, only as a **whole word**. Hyphens inside a word are ignored and a hyphen is also a word break, so "Re-Financing" = refinancing and "Pre-Financing" contains the word "Financing". Starting values: `refinanc` (starts a word), `refi` (whole word only), `financ` (starts a word). Order unchanged: Refinancing, then Financing, then the default (Refinancing, labelled "Classified by default"). "Test keyword rules" shows which keyword matched and whether it is whole-word. **Reason:** "refi" must not match "Refinery"; the user chose "start of a word" for "contains" so that "Pre-Financing" is Financing.
 - **LA Supervisor/Head defaults** (branch-scoped) gain "Resolve any problem", both monitors (DP, LTO) and the TAT report. The role migration now lists, for each former Branch Supervisor whose legacy grants it removes, what is truly lost and what the role now gives back. **Reason:** the supervisors' oversight work belongs to the role, not to per-person grants.
 - **React key warning on Funds** is logged as a dev-only known issue (`docs/KNOWN_ISSUES.md`); not fixed.
+
+## D-035 Finance is branch-scoped (replaces "Finance All branches, to confirm")
+
+- **Date:** 17 November 2026
+- **Decision:**
+  - The Finance role's default is **not** All branches. Each Finance person gets branch tickboxes like an LA. "All branches" means every branch, new ones included.
+  - Combined with Handles CA / Handles FT: a person handles only the fund types **and** branches ticked for them (lists, counts, receipts, liquidation reports, actions and notices).
+  - Edit rights (Q-N4, D-023): Admin and Superadmin assign specific branches and CA / FT; only the Superadmin ticks All branches.
+  - "N active branches have no CA handler" / "no FT handler" on Settings, Branches and on the Superadmin's Home, in the approver warning's style. A handler is a Finance person (or anyone) with the type's approve or release tick and the type ticked; All branches covers every branch.
+  - Existing Finance people keep the access they have (the role migration lists those with All branches); only the role's default changed.
+  - Seed: Test Finance (CA + FT, All branches), Test Finance Cash (CA only, Antipolo and Angono), Test Finance Transfer (FT only, Alaminos).
+- **Reason:** the user's decision; funds work follows branch scope like every other screen (D-019).
