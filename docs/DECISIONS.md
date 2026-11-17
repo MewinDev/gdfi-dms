@@ -554,3 +554,15 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
 - **Holds and problems:** allowed on the processor's **own** job even when the loan is outside their branches (the own-job rule).
 - **UX rule (extends D-033):** never show a button that leads to "not found". Either allow the action or hide it, or disable it with the reason.
 - **Reason:** the user's decisions on the piece 3 audit; D-019.
+
+## D-040 myloans contract, round 3 (amends D-036)
+
+- **Date:** 17 November 2026
+- **Decision:** the DMS follows myloans' round 3 answers (`docs/MYLOANS_ANSWERS_R3.md`; query `docs/myloans-api-contract.sql`, reference only):
+  1. **ContentHash: 17 fields, confirmed** (BirthDate removed, no HMAC; field 17 = `ReplacedByExternalLoanId`). Round 3 changed freshness, not the hash: nothing to re-baseline.
+  2. **SourceUpdatedAt** is the latest of the `updated_at` columns, the redo suffix time (`x<yyyymmddhhmmss>`, Manila time) and the replacement transaction's `created_at`. A redo does not touch `Transactions.updated_at`, so without this a redo of a loan that was not also cancelled would never reach API 2.
+  3. Consequence for the sync: the **oldest copy of a redo chain is re-sent** (as Superseded, with the newest replacement). When the replacement is in the same run, the CIN link raises one "record replaced" and nothing else; when it is not, the decision is "superseded" and the sync fetches the replacement with API 1 (amends D-036 item 7).
+  4. **API 1 with more than one row is always 409 with every row**, whatever their states. The DMS reading is unchanged (log all rows; use the single selectable row if there is exactly one, else "Multiple records in myloans, contact Admin.").
+  5. Still to verify by myloans: that cancel and deactivate always update `updated_at` (`docs/myloans/myloans_round3_checks.sql`), and that no other code path changes status or `is_active` without it.
+- **Built now:** `lib/myloans/r2/` (`redoSuffixAt`, `sourceUpdatedAtOf`, the planner's "superseded" decision) with the scenarios "redo without cancellation, seen only through the suffix time" and "redo chain of 3 whose oldest copy is re-sent". Plan §7.3.
+- **Reason:** myloans' finding that 22 of 29 superseded copies have an `updated_at` earlier than their suffix time.

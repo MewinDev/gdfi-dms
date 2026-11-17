@@ -450,6 +450,19 @@ The agreed query is `docs/myloans-api-contract.sql` (reference only, never run b
 | 9 | **Mock:** SHA-256 over UTF-16LE of HashInput, lowercase hex, NULL = empty text, 17 fields. Scenarios: page cut by loan with a duplicate row, 409 on API 1, redo chain of 3, NotReleased in API 2, product rename that flips the classification. The test of myloans' 3 vectors is **skipped until they send the outputs** | `mock.ts`, `r2.test.ts` |
 | 10 | **"Loan closed/released" stays BLOCKED** until myloans finds the paid/closed source (their check R2-4) | stage map, piece 9 |
 
+### 7.3 Round 3 contract (17 Nov 2026, D-040)
+
+myloans' answers are `docs/MYLOANS_ANSWERS_R3.md`; the query in `docs/myloans-api-contract.sql` is now round 3; their read-only check is `docs/myloans/myloans_round3_checks.sql`. Changes to §7.2:
+
+| # | Contract | Where |
+|---|---|---|
+| 1 | **ContentHash: 17 fields confirmed** by myloans (no BirthDate, no HMAC; 17 = `ReplacedByExternalLoanId`). Round 3 did not change the formula: nothing to re-baseline. The 3 test vectors now use myloans' real column types; the outputs are still to come (test stays skipped) | `hash.ts`, `r2.test.ts` |
+| 2 | **Freshness:** `SourceUpdatedAt` = the latest of the `updated_at` columns, the **redo suffix time** (`x<yyyymmddhhmmss>`, Manila; a redo does not touch `Transactions.updated_at`) and the **replacement's `created_at`**. So a redo without a cancellation reaches API 2, and the oldest copy of a redo chain is re-sent when its newest replacement is created | mock `sourceUpdatedAtOf`, `contract.ts` `redoSuffixAt` |
+| 3 | **A held copy comes back Superseded:** if its replacement is in the same run, the CIN link gives one "record replaced" (no second decision); if not (a redo seen only through the suffix time), the decision is "superseded" with the replacement's id and PN #, and the sync fetches it with API 1, then applies rule (b) | `planRun` |
+| 4 | **API 1:** more than one row is **always 409 with every row**, whatever their states (the DMS reading of §7.2 row 4 is unchanged). A redo makes a new PN #, so old and new copies never share one | `api1`, `readApi1` |
+| 5 | **Still open with myloans:** whether cancel and deactivate always touch `updated_at` (they will report the check); no other path changing status or `is_active` silently; R2-3, R2-4, R2-6, A4, A5, C2, C5 | HANDOVER |
+| 6 | **Mock scenarios added:** a redo WITHOUT a cancellation that reaches API 2 only through the suffix time; the redo chain of 3 now re-sends its oldest copy | `mock.ts`, `r2.test.ts` |
+
 ## 8. Piece 7: myloans sync (D-005, D-016 as amended by D-022)
 
 ### 8.1 Identity: linked on CIN
