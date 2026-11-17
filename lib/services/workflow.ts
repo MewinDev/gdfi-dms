@@ -5,7 +5,9 @@ import { notify, branchLaUserIds, supervisorUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS, type Permission } from "@/lib/auth/permissions";
 import { andWhere, holdsWhere } from "@/lib/auth/holders";
-import { getHolidaySet, getTatMap } from "@/lib/settings";
+import { getTatMap } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { assignDeadline } from "@/lib/workflow/tat";
 import { businessDate, fmtDate } from "@/lib/time";
 import { leaveText, onLeaveToday } from "@/lib/monitoring/rules";
@@ -535,8 +537,9 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
     if (!status.complete) await refuseMissingPapers(user, t0, status.missing, "MANUAL", status.needsRemarks);
   }
 
-  const [tats, holidays] = await Promise.all([getTatMap(), getHolidaySet()]);
-  const deadline = assignDeadline(t0.loan.releasedAt, tats, holidays);
+  const [tats, cal] = await Promise.all([getTatMap(), getCalendar()]);
+  // Sending is LA work: the loan's branch calendar (D-041).
+  const deadline = assignDeadline(t0.loan.releasedAt, tats, daysFor(cal, t0.loan.branchId));
   const pastTat = businessDate(new Date()) > deadline;
   const beyond = input.beyondTatReason?.trim() || null;
   if (pastTat && !beyond) throw new UserError(`This is past the Day 2 TAT (${deadline}). Enter a Beyond-TAT reason.`, "beyondTatReason");

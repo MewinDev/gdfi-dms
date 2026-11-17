@@ -2,7 +2,10 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { getHolidaySet, getTatMap } from "@/lib/settings";
+import { getTatMap } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
+import { daysFor, type Days } from "@/lib/calendar/core";
+import { stepClock, targetOf, txnStepKey } from "@/lib/workflow/tat";
 import type { FundsStatus } from "@/lib/funds/rules";
 import { doneTat, openHold, openProblem, txnFunds, txnTat, txnFundsType } from "@/lib/jobs/view";
 import { holdDays, problemDays, type TatChipData } from "@/lib/workflow/tat";
@@ -34,6 +37,8 @@ export interface JobRow {
   tab: JobTab;
   endorsedAt: Date;
   tat: TatChipData | null;
+  /** The due date that sorts the list (D-041): the saved one of an accepted job, else the live step deadline. */
+  dueDate: string | null;
   funds: FundsStatus;
   /** The live funds record's type (Cash advance, Fund transfer), when the job has one. */
   fundsType: { code: string; name: string } | null;
@@ -56,7 +61,7 @@ export interface JobRow {
 }
 
 const include = {
-  loan: { select: { pn: true, borrowerName: true, replacesPn: true, branch: { select: { name: true, code: true, area: { select: { name: true } } } } } },
+  loan: { select: { pn: true, borrowerName: true, replacesPn: true, branchId: true, branch: { select: { name: true, code: true, area: { select: { name: true } } } } } },
   dpUser: { select: { name: true } },
   secondaryDpUser: { select: { name: true } },
   pasuyoEvents: { orderBy: { createdAt: "desc" }, take: 1, select: { fromLabel: true, toLabel: true } },
@@ -68,7 +73,7 @@ const include = {
       advanceLines: { include: { advance: { select: { status: true, fundsTypeCode: true, fundsTypeName: true } } } },
       problems: { include: { reason: { select: { name: true } } }, orderBy: { raisedAt: "desc" } },
       exceptions: { where: { type: "INCOMPLETE_PACKAGE", status: "OPEN" }, select: { reason: true, details: true }, take: 1 },
-      holds: { include: { reason: { select: { name: true } } }, orderBy: { raisedAt: "desc" } },
+      holds: { include: { reason: { select: { name: true, pausesTat: true } } }, orderBy: { raisedAt: "desc" } },
       _count: { select: { attempts: true } },
     },
   },
@@ -84,22 +89,25 @@ function tabOf(a: { status: string; transaction: { status: string } }): JobTab {
 
 /** Jobs as rows (TAT chip, funds, problem). `where` decides the scope (own jobs, or the Admin report). */
 export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = new Date()): Promise<JobRow[]> {
-  const [rows, tats, holidays] = await Promise.all([
+  const [rows, tats, cal] = await Promise.all([
     prisma.dpAssignment.findMany({ where: { AND: [where, { status: { not: "PULLED_BACK" } }] }, include, orderBy: { endorsedAt: "desc" }, take: 500 }),
     getTatMap(),
-    getHolidaySet(),
+    getCalendar(),
   ]);
-  return rows.map((a) => {
+  return sortByDue(rows.map((a) => {
     const t = a.transaction;
+    // A DP job counts on the processor's branch calendar (D-041).
+    const holidays = daysFor(cal, a.dpBranchId);
     const tab = tabOf(a);
     const p = openProblem(t.problems);
     const h = openHold(t.holds);
     const tat = tab === "done" && a.decidedAt
-      ? doneTat(t.type.code, a.decidedAt, a.forwardedAt ?? a.closedAt ?? now, tats, holidays)
-      : tab === "returned" ? null : txnTat(t, tats, holidays, now);
+      ? doneTat(t.type.code, a.decidedAt, a.forwardedAt ?? a.closedAt ?? now, tats, cal, a.dpBranchId)
+      : tab === "returned" ? null : txnTat(t, tats, cal, { loan: a.loan.branchId, job: a.dpBranchId, saved: { dueDate: a.dueDate, targetDays: a.targetDays, acceptedAt: a.decidedAt } }, now);
+    const live = tab === "done" || tab === "returned" ? null : a.dueDate ?? stepDeadline(t, tats, holidays, now);
     return {
       id: a.id, pn: a.loan.pn, borrower: a.loan.borrowerName, branch: a.loan.branch.name, branchCode: a.loan.branch.code, area: a.loan.branch.area?.name ?? "", typeCode: t.type.code, typeName: t.type.name,
-      dpName: a.dpUser.name, tab, endorsedAt: a.endorsedAt, tat, funds: txnFunds(t), fundsType: txnFundsType(t),
+      dpName: a.dpUser.name, tab, endorsedAt: a.endorsedAt, tat, dueDate: live, funds: txnFunds(t), fundsType: txnFundsType(t),
       problem: p ? { id: p.id, reason: p.reason.name, days: Math.max(1, problemDays([p], holidays, now)), outsideControl: p.outsideControl } : null,
       problemDaysTotal: problemDays(t.problems, holidays, now),
       hold: h ? { id: h.id, reason: holdReasonName(h), days: Math.max(1, holdDays([h], holidays, now)) } : null,
@@ -110,7 +118,22 @@ export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = 
       returnedHow: a.status === "DECLINED" ? "Declined" : a.status === "WITHDRAWN" ? "Returned" : null,
       pasuyo: a.secondaryDpUser ? (a.pasuyoEvents[0]?.fromLabel ? `from ${a.pasuyoEvents[0].fromLabel} to ${a.secondaryDpUser.name}` : `to ${a.secondaryDpUser.name}`) : null,
     };
-  });
+  }));
+}
+
+/** The live deadline of the job's current step (no saved due date yet: waiting for acceptance). */
+function stepDeadline(t: Parameters<typeof txnTat>[0], tats: Awaited<ReturnType<typeof getTatMap>>, days: Days, now: Date): string | null {
+  const target = targetOf(tats, txnStepKey(t.status, t.type.code));
+  return target === null ? null : stepClock({ targetDays: target, start: t.statusSince }, days, now).deadline;
+}
+
+/**
+ * Jobs lists, due first (D-041): open jobs by due date, overdue and soonest first (a job with no due date after
+ * them); finished and returned jobs after, newest first.
+ */
+export function sortByDue<R extends { dueDate: string | null; endorsedAt: Date }>(rows: R[]): R[] {
+  const rank = (r: R) => (r.dueDate ? 0 : 1);
+  return [...rows].sort((x, y) => rank(x) - rank(y) || (x.dueDate && y.dueDate ? x.dueDate.localeCompare(y.dueDate) : 0) || y.endorsedAt.getTime() - x.endorsedAt.getTime());
 }
 
 /**

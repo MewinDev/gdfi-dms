@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requirePagePermission } from "@/lib/auth/current-user";
+import { can, requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { fmtDateTime, startOfBusinessDay } from "@/lib/time";
 import { PageHeader } from "@/components/ui/basics";
 import { Chip } from "@/components/chips";
 import { plainRules, plainRulesIn } from "@/lib/rules";
+import { AuditTabs } from "@/components/audit-tabs";
 
 export const metadata: Metadata = { title: "Audit Log" };
 
@@ -28,7 +29,7 @@ function startOfDay(ymd: string, addDays = 0) {
 }
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requirePagePermission(PERMISSIONS.AUDIT_VIEW);
+  const user = await requirePagePermission(PERMISSIONS.AUDIT_VIEW);
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
   const where: Prisma.AuditLogWhereInput = {};
@@ -52,6 +53,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="w-full space-y-6">
+      <AuditTabs current="audit" audit files={can(user, PERMISSIONS.FILES_LOG_VIEW)} />
       <PageHeader title="Audit Log" help="Append-only. Every automatic decision and user action, with before and after values." />
       <form method="get" className="card grid grid-cols-2 gap-3 p-3 md:grid-cols-6" aria-label="Audit filters">
         <div><label htmlFor="a-pn" className="label">PN</label><input id="a-pn" name="pn" defaultValue={sp.pn} className="input" /></div>

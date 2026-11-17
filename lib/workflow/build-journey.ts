@@ -12,7 +12,8 @@
  *   - per paper: the custody trail and the time each holder held it.
  * The TAT clock never pauses: holds and problems only colour the segments.
  */
-import { businessDate, isBusinessDay } from "@/lib/time";
+import { businessDate } from "@/lib/time";
+import { daysFor, type Days, type WorkCalendar } from "@/lib/calendar/core";
 import { computeJourney, PHASES, type JourneyContext } from "./journey";
 import { nextStepFor, stageLabel } from "./stage-map";
 import { holdDays, problemDays, stepClock, targetOf, type TatChipData, type TatMap } from "./tat";
@@ -61,6 +62,8 @@ export interface AdvanceRec {
 export interface TxnRec {
   id: string; code: string; name: string; requiresDp: boolean; ownerRole: string; status: string; statusSince: Date; createdAt: Date;
   completedAt: Date | null; cancelledAt: Date | null;
+  /** The latest job's processor branch (its DP steps count on that calendar, D-041). */
+  jobBranchId?: string | null;
   /** When the required papers were all ticked (last "complete" save before the first send). */
   readyAt: Date | null;
   fundsNeeded: "UNANSWERED" | "YES" | "NO";
@@ -89,6 +92,8 @@ export interface JourneyInput {
   loan: {
     pn: string; stage: string; stageSince: Date; classification: "FINANCING" | "REFINANCING"; mortgageResult: "MORTGAGE" | "NOT_MORTGAGE" | "NOT_EVALUATED";
     overridden: boolean; openedAt: Date; openedBy: PersonRef; branchName: string; openSourceChange: boolean;
+    /** LA work counts on the loan's branch calendar (D-041). */
+    branchId: string;
     transmittalDispatched: boolean; transmittalReceived: boolean;
   };
   transactions: TxnRec[];
@@ -497,7 +502,8 @@ function emptyStep(partial: Partial<JStep> & Pick<JStep, "key" | "stepId" | "tit
   };
 }
 
-export function buildJourney(input: JourneyInput, tats: TatMap, holidays: ReadonlySet<string>, now: Date = new Date()): Journey {
+export function buildJourney(input: JourneyInput, tats: TatMap, cal: WorkCalendar, now: Date = new Date()): Journey {
+  const holidays: Days = daysFor(cal, input.loan.branchId);
   const live = input.transactions.filter((t) => t.status !== "CANCELLED");
 
   // Loan-level steps: the template's own evaluation (done / current / pending / not applicable).
@@ -597,7 +603,7 @@ export function buildJourney(input: JourneyInput, tats: TatMap, holidays: Readon
       status: t.status, statusSince: t.statusSince, fundsNeeded: t.fundsNeeded, type: { code: t.code }, advanceLines: [],
       problems: t.problems.map((p) => ({ raisedAt: p.raisedAt, resolvedAt: p.resolvedAt, reason: { name: p.reason } })),
       holds: t.holds.map((h) => ({ raisedAt: h.raisedAt, resumedAt: h.resumedAt, reason: { name: h.reason } })),
-    }, tats, holidays, now);
+    }, tats, cal, { loan: input.loan.branchId, job: t.jobBranchId ?? null }, now);
     txns.push({
       id: t.id, code: t.code, name: t.name, status: t.status,
       state: t.status === "CANCELLED" ? "na" : finished ? "done" : open?.state ?? "now",
@@ -679,7 +685,7 @@ export type CellState = SegState | "done" | "none";
 export interface DayCell { date: string; state: CellState; offDay: boolean; deadline: boolean; today: boolean }
 
 /** Day cells for a transaction from its first day to its last (or today). The highest state of the day wins. */
-export function dayCells(t: Pick<JTxn, "segments" | "start" | "end" | "deadline" | "done">, holidays: ReadonlySet<string>, now: Date): DayCell[] {
+export function dayCells(t: Pick<JTxn, "segments" | "start" | "end" | "deadline" | "done">, holidays: Days, now: Date): DayCell[] {
   const first = businessDate(t.start);
   const lastInstant = t.end ?? now;
   let last = businessDate(lastInstant);
@@ -697,7 +703,7 @@ export function dayCells(t: Pick<JTxn, "segments" | "start" | "end" | "deadline"
     let state: CellState = best ?? "none";
     if (doneDay && d === doneDay) state = "done";
     if (d > (doneDay ?? today)) state = "none";
-    out.push({ date: d, state, offDay: !isBusinessDay(d, holidays), deadline: d === t.deadline, today: d === today });
+    out.push({ date: d, state, offDay: !holidays.isWorkingDay(d), deadline: d === t.deadline, today: d === today });
   }
   return out;
 }

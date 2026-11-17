@@ -18,6 +18,21 @@ import { refuseAllBranchesChange, refuseSelf } from "./user-rights";
  * branch) and audit who changed what (before and after). writeUserAccess is the low-level writer used by
  * the seed and the Manual Test Kit.
  */
+/**
+ * Active people with no branch at all (not All branches, no branch in their access): they see no loan file,
+ * job, funds request or count (D-019). Shown on Users and on the Superadmin's Home, like the approver and
+ * CA / FT warnings.
+ */
+export async function usersWithoutBranches(db: Tx | typeof prisma = prisma) {
+  return db.user.findMany({
+    where: { active: true, allBranches: false, branches: { none: {} } },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: { id: true, name: true, role: { select: { name: true } } },
+  });
+}
+export const noBranchesText = (n: number) => `${n} user${n === 1 ? " has" : "s have"} no branches assigned (they see nothing).`;
+export const NO_BRANCHES_FIX = "Give each one their branches on Users, Edit (Branch access), or make them inactive if they have left.";
+
 export interface AccessInput {
   /** All branches (no rows). */
   all: boolean;

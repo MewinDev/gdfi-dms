@@ -4,6 +4,7 @@
  * The stages are stored directly (nothing moves a loan here). LOCAL test database.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { testCal } from "@/lib/calendar/testing";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { listLoans } from "@/lib/services/queries";
@@ -60,7 +61,7 @@ describe("stage map on the lists", () => {
   it("every live stage: the Stage column, the Next step and its tooltip (Loans table and My loans)", async () => {
     const rows = [...(await listLoans(admin, { tab: "all" })), ...(await listLoans(admin, { tab: "archived" }))].filter((r) => r.pn.startsWith("GD1012026907"));
     expect(rows.map((r) => r.stage).sort()).toEqual([...STAGES].sort());
-    const holidays = new Set<string>();
+    const holidays = testCal();
     for (const r of rows) {
       const [label, next, tip, step] = WANT[r.stage];
       // Loans table: Stage column, Next step column and its title.

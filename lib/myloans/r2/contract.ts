@@ -1,7 +1,27 @@
 /**
- * myloans API contract, round 2 (17 Nov 2026; docs/myloans-api-contract.sql, docs/MYLOANS_ANSWERS_R2.md; D-036).
- * Types only, plus the pure readings of API 1 answers. API 3 is dropped: the Refresh button calls API 1.
+ * myloans API contract, round 3 (17 Nov 2026; docs/myloans-api-contract.sql, docs/MYLOANS_ANSWERS_R2.md and _R3.md;
+ * D-036, D-040). Types only, plus the pure readings of API 1 answers. API 3 is dropped: the Refresh button calls API 1.
+ *
+ * Round 3 (D-040): the hash is 17 fields (confirmed; unchanged by round 3). SourceUpdatedAt is the latest of the
+ * row's updated_at columns, the redo suffix time ("x<yyyymmddhhmmss>", Manila time; a redo does NOT touch
+ * Transactions.updated_at) and the replacement transaction's created_at. API 1 with more than one row is always
+ * 409 with every row, whatever their states.
  */
+
+/**
+ * The time a redo suffix was added, read from a transaction code exactly as myloans' query does: a 35-character
+ * code whose 21st character is "x", then yyyymmddhhmmss in Manila time. Null for any other code.
+ */
+export function redoSuffixAt(code: string | null | undefined): string | null {
+  if (!code || code.length !== 35 || code[20] !== "x") return null;
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(code.slice(21));
+  if (!m) return null;
+  const iso = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}+08:00`;
+  const d = new Date(iso);
+  // TRY_CONVERT gives NULL for an impossible date (month 13, 31 November): so does this.
+  if (Number.isNaN(d.getTime()) || new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(d) !== `${m[1]}-${m[2]}-${m[3]}`) return null;
+  return iso;
+}
 
 /** Decided in this order, first match wins: Cancelled, Superseded, NotReleased, Inactive, Released. */
 export type FeedState = "Cancelled" | "Superseded" | "NotReleased" | "Inactive" | "Released";

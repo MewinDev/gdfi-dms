@@ -10,13 +10,14 @@ import { ChevronRightIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/basics";
 import { MyEmailPreference } from "@/components/admin/email";
 import { getSetting } from "@/lib/settings";
+import { notificationWhere } from "@/lib/services/queries";
 
 export const metadata: Metadata = { title: "Updates" };
 
 export default async function UpdatesPage() {
   const user = await requireUser();
   const rows = await prisma.notification.findMany({
-    where: { userId: user.id },
+    where: notificationWhere(user), // within the person's branches (D-019)
     orderBy: { createdAt: "desc" },
     take: 100,
     include: { loan: { select: { borrowerName: true } } },

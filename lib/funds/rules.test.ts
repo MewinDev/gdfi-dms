@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MON_FRI, testDays } from "@/lib/calendar/testing";
 import {
   advanceBalance, ageBucket, bandFor, carryOverDecision, fundsDone, fundsStatus, isOverdue, lineBalance, liquidationDue, liquidationStatus, peso, toCents,
 } from "./rules";
@@ -53,7 +54,7 @@ describe("Liquidation maths", () => {
   });
   it("due date counts business days and skips holidays", () => {
     // Fri 2026-11-06 + 10 business days, with Mon 2026-11-09 a holiday → Mon 2026-11-23.
-    const due = liquidationDue(new Date("2026-11-06T09:00:00+08:00"), 10, new Set(["2026-11-09"]));
+    const due = liquidationDue(new Date("2026-11-06T09:00:00+08:00"), 10, testDays(["2026-11-09"], MON_FRI));
     expect(due.toISOString().slice(0, 10)).toBe("2026-11-23");
   });
   it("overdue only for an open advance past its due date", () => {
@@ -65,7 +66,7 @@ describe("Liquidation maths", () => {
 });
 
 describe("Carry-over and approval bands", () => {
-  const holidays = new Set<string>();
+  const holidays = testDays([], MON_FRI);
   it("first carry-over and within the limit are automatic; beyond it needs approval", () => {
     const first = new Date("2026-11-02T09:00:00+08:00"); // Mon
     expect(carryOverDecision({ balanceCents: 5000, firstCarryOver: null, now: first, limitDays: 3, holidays }).status).toBe("AUTO");

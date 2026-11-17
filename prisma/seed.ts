@@ -127,6 +127,9 @@ const HOLD_REASONS = [
   ["MYLOANS-UPDATE", "Waiting for a MyLoans update"], ["OTHER", "Other"],
 ] as const;
 
+/** Hold reasons that pause the TAT clock by default: waiting on the client, another department or MyLoans. */
+const PAUSES_TAT_BY_DEFAULT: string[] = ["CLIENT-PAPERS", "CLIENT-DECISION", "CLIENT-CORRECTIONS", "BRANCH-HEAD", "FUNDS", "MYLOANS-UPDATE"];
+
 /** Why a processor returns an accepted job to the LA (papers needed). */
 const RETURN_REASONS = [
   ["MISSING", "Missing paper"], ["WRONG", "Wrong or unclear paper"], ["OTHER-TXN", "Needs another transaction first"], ["OTHER", "Other"],
@@ -137,11 +140,13 @@ const MISSING_REASONS = [
   ["LATER", "Borrower to submit later"], ["NOT_ISSUED", "Not yet issued by the agency"], ["LOST", "Lost or unavailable"], ["NOT_APPLICABLE", "Not applicable to this loan"], ["OTHER", "Other"],
 ] as const;
 
-const HOLIDAYS_2026 = [
-  ["2026-01-01", "New Year's Day"], ["2026-04-02", "Maundy Thursday"], ["2026-04-03", "Good Friday"],
-  ["2026-04-09", "Araw ng Kagitingan"], ["2026-05-01", "Labor Day"], ["2026-06-12", "Independence Day"],
-  ["2026-08-31", "National Heroes Day"], ["2026-11-30", "Bonifacio Day"], ["2026-12-08", "Feast of the Immaculate Conception"],
-  ["2026-12-24", "Christmas Eve"], ["2026-12-25", "Christmas Day"], ["2026-12-30", "Rizal Day"], ["2026-12-31", "Last Day of the Year"],
+/**
+ * Holidays (D-041): SAMPLE dates only, never a guess at the real list. They show how a holiday looks and
+ * counts; the official list is entered from the government proclamation (Settings, Holidays and working days).
+ */
+export const SAMPLE_HOLIDAY_NOTE = "Sample. Enter the official list from the government proclamation.";
+const SAMPLE_HOLIDAYS = [
+  ["2026-12-14", "Sample regular holiday", "REGULAR"], ["2026-12-21", "Sample special non-working day", "SPECIAL_NON_WORKING"],
 ] as const;
 
 async function main() {
@@ -198,7 +203,8 @@ async function main() {
   // Problem reasons
   for (const [i, [code, name]] of PROBLEM_REASONS.entries()) await prisma.problemReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1 }, update: {} });
   // Hold reasons
-  for (const [i, [code, name]] of HOLD_REASONS.entries()) await prisma.holdReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1, proposed: true }, update: {} });
+  // "Pauses TAT" on for reasons outside the person's control (D-032 Q-N7); the same codes as migration 20261119090018.
+  for (const [i, [code, name]] of HOLD_REASONS.entries()) await prisma.holdReason.upsert({ where: { code }, create: { code, name, sortOrder: i + 1, proposed: true, pausesTat: PAUSES_TAT_BY_DEFAULT.includes(code) }, update: {} });
   // Funds types: Cash advance (CA) and Fund transfer (FT), "Proposed, to be confirmed with Finance" until Admin saves them.
   for (const t of SEEDED_FUNDS_TYPES) await prisma.fundsType.upsert({ where: { code: t.code }, create: { ...t, proposed: true }, update: {} });
   // Return reasons
@@ -211,7 +217,9 @@ async function main() {
     await prisma.approvalBand.create({ data: { fundsTypeId: t.id, fromCents: 0, roleId: fin.id } });
   }
   // Holidays
-  for (const [date, name] of HOLIDAYS_2026) await prisma.holidayCalendar.upsert({ where: { date }, create: { date, name }, update: { name } });
+  for (const [date, name, type] of SAMPLE_HOLIDAYS) {
+    if (!(await prisma.holidayCalendar.findFirst({ where: { date, name } }))) await prisma.holidayCalendar.create({ data: { date, name, type, isSample: true, reason: SAMPLE_HOLIDAY_NOTE } });
+  }
   // Vault locations (Main Vault, rack A, 2 shelves x 2 boxes x 5 slots)
   for (const shelf of ["1", "2"]) for (const box of ["01", "02"]) for (let s = 1; s <= 5; s++) {
     const slot = String(s).padStart(2, "0");

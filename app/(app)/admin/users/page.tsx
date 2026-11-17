@@ -17,7 +17,7 @@ import { userPermissions, keySource } from "@/lib/auth/effective";
 import { approverState } from "@/lib/services/user-rights";
 import { UserPermissionsPanel, type PermissionGroupRows } from "@/components/admin/user-permissions";
 import { effectivePermissions } from "@/lib/auth/access";
-import { accessTreeData } from "@/lib/services/access";
+import { NO_BRANCHES_FIX, accessTreeData, noBranchesText, usersWithoutBranches } from "@/lib/services/access";
 import { accessSummary } from "@/lib/branches/access";
 import { PAGE_SIZE, pageInfo, pageParam, skipTake } from "@/lib/ui/paging";
 import { Pager } from "@/components/ui/pager";
@@ -46,11 +46,12 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   // Paging in the database: the filters and the order first, then 100 a page ("N of M users" stays the total).
   const matching = await prisma.user.count({ where });
   const info = pageInfo(matching, pageParam(sp.page), PAGE_SIZE.settings);
-  const [users, roles, branches, total] = await Promise.all([
+  const [users, roles, branches, total, noBranches] = await Promise.all([
     prisma.user.findMany({ where, include: { role: true, accessGrants: true, homeBranch: true, branches: { include: { branch: true }, orderBy: { branch: { name: "asc" } } } }, orderBy: [{ role: { sortOrder: "asc" } }, { name: "asc" }, { id: "asc" }], ...skipTake(info) }),
     prisma.role.findMany({ orderBy: { sortOrder: "asc" } }),
     prisma.branch.findMany({ where: { hidden: false }, orderBy: { name: "asc" } }),
     prisma.user.count(),
+    usersWithoutBranches(),
   ]);
 
   // Addresses keep the filters, so closing a pop-up returns to the same list (and the same page).
@@ -75,6 +76,23 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
           {canEdit && can(me, PERMISSIONS.SETTINGS_IMPORT) && <Link id="users-import" href={withOpen("import")} scroll={false} aria-haspopup="dialog" className="btn-ghost">Import / Export</Link>}
         </div>
       </PageHeader>
+
+      {noBranches.length > 0 && (
+        <div role="status" className="rounded-xl border border-act-line bg-act-bg px-4 py-2.5 text-sm text-ink" data-no-branches={noBranches.length}>
+          <p className="font-semibold">{noBranchesText(noBranches.length)}</p>
+          <p className="mt-0.5 text-ink-2">{NO_BRANCHES_FIX}</p>
+          <details className="mt-1">
+            <summary className="link cursor-pointer text-sm">Show users</summary>
+            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-ink-2" data-no-branches-users>
+              {noBranches.map((u) => (
+                <li key={u.id}>
+                  {canEdit ? <Link href={withOpen("user", u.id)} scroll={false} className="link">{u.name}</Link> : u.name} ({shortRoleName(u.role.name)})
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
 
       <UsersToolbar
         q={q} role={sp.role ?? ""} branch={sp.branch ?? ""} status={status}

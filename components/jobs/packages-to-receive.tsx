@@ -2,7 +2,8 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getHolidaySet, getTatMap } from "@/lib/settings";
+import { getTatMap } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
 import { txnTat } from "@/lib/jobs/view";
 import { txnName } from "@/lib/ui/plain";
 import { TatChip } from "./chips";
@@ -23,12 +24,12 @@ export async function packagesFor(user: CurrentUser) {
       },
     }),
     getTatMap(),
-    getHolidaySet(),
+    getCalendar(),
   ]);
   return rows.map((a) => ({
     id: a.id, pn: a.loan.pn, borrower: a.loan.borrowerName, type: txnName(a.transaction.type.code, a.transaction.type.name), from: a.dpUser.name,
     branch: a.receivingBranch?.name ?? a.loan.branch.name, papers: a.transaction.documents.length,
-    tat: txnTat(a.transaction, tats, holidays),
+    tat: txnTat(a.transaction, tats, holidays, { loan: a.loan.branchId, job: a.dpBranchId }),
     href: inScope(user, a.loan.branchId) ? `/loans/${a.loan.pn}?tab=todo&work=${a.transactionId}` : `/receive/${a.id}`,
   }));
 }

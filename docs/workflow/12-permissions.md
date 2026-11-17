@@ -143,6 +143,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 |---|---|---|---|---|---|
 | See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | SUPERADMIN, Admin, Branch Supervisor |
 | See the audit log | Every automatic decision and user action (the technical log). | Audit log | - | `audit:view` | SUPERADMIN, Admin |
+| View file access log | Who opened or downloaded which receipt, stage evidence or LTO proof, and when; filter and export it (each export is logged too). Give it to a Data Protection Officer if needed. | Audit, File access log | - | `audit:files` | SUPERADMIN, Admin |
 
 ### MyLoans and sync
 
@@ -179,7 +180,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Change document types | The kinds of paper checklist items use. | Settings, Document types | - | `settings:document_types` | SUPERADMIN, Admin |
 | Change checklist items | The papers for each transaction, required or optional. | Settings, Checklist items | - | `settings:checklist` | SUPERADMIN, Admin |
 | Change turnaround times | Target business days for each step. | Settings, Turnaround times | - | `settings:tat` | SUPERADMIN, Admin |
-| Change holidays | Days skipped when counting turnaround times. | Settings, Holidays | - | `settings:holidays` | SUPERADMIN, Admin |
+| Change holidays | The working days, holidays and office closures: the one calendar for every count. A change that takes a working day away moves the saved due dates it reaches (Check shows how many first). | Settings, Holidays and working days | - | `settings:holidays` | SUPERADMIN, Admin |
 | Change cash-advance rules | Suggested and maximum amounts, carry-over and liquidation days, approval bands. | Settings, Cash advance | - | `settings:cash_advance` | SUPERADMIN, Admin |
 | Change LTO offices | Offices a processor can be sent to. | Settings, LTO offices | - | `settings:lto` | SUPERADMIN, Admin |
 | Change problem reasons | The reasons a job can be stuck. | Settings, Problem reasons | - | `settings:problem_reasons` | SUPERADMIN, Admin |
@@ -259,6 +260,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Set processor capacity and leave | Settings, Processor capacity | dpcapacity:manage | `dpcapacity:manage` |  |
 | See the TAT and problems report | Reports, TAT | reports:tat | `reports:tat` |  |
 | See the audit log | Audit log | audit:view | `audit:view` |  |
+| View file access log | Audit, File access log | new on 17 November 2026 | `audit:files` | Split or renamed |
 | See when MyLoans was last checked | Loan File, top strip | loans:view | `myloans:view` | Split or renamed |
 | Reclassify a loan | Loan File, Classification changed since accepted | new on 17 November 2026 | `loans:reclassify` | Split or renamed |
 | Refresh a loan from MyLoans | Loan File, Refresh from MyLoans | none (shown to everyone who sees the loan file) | `loans:refresh` | **Gap, closed** |
@@ -280,7 +282,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Change document types | Settings, Document types | settings:document_types | `settings:document_types` |  |
 | Change checklist items | Settings, Checklist items | settings:checklist | `settings:checklist` |  |
 | Change turnaround times | Settings, Turnaround times | settings:tat | `settings:tat` |  |
-| Change holidays | Settings, Holidays | settings:holidays | `settings:holidays` |  |
+| Change holidays | Settings, Holidays and working days | settings:holidays | `settings:holidays` |  |
 | Change cash-advance rules | Settings, Cash advance | settings:cash_advance | `settings:cash_advance` |  |
 | Change LTO offices | Settings, LTO offices | settings:lto | `settings:lto` |  |
 | Change problem reasons | Settings, Problem reasons | settings:problem_reasons | `settings:problem_reasons` |  |
@@ -310,6 +312,7 @@ Every server action and API route checks a permission (a test scans `app/actions
 | `app/login/actions.ts` testSignIn | Test sign-in: before anyone is signed in (the test provider refuses unless test sign-in is allowed: AUTH_MODE=test and APP_ENV=local, lib/auth/mode.ts). | `testProvider.resolveUser` |
 | `app/login/actions.ts` signOut | Sign out: anyone may end their own session. | `cookies()).delete(SESSION_COOKIE)` |
 | `app/actions/loan.ts` markNotificationsReadAction | Marks the signed-in person's own notifications as read. | `getCurrentUser` |
+| `app/api/files/[kind]/[id]/route.ts` GET | The one file route (D-019, D-039): the check is per record, not one tick. resolveFile asks mayOpenReceipt (the funds type's See tick and the request's branches, or the requester) or mayOpenStageFile (See loan files and the job or the loan's branch); anything else is 404. | `resolveFile` |
 | `app/actions/email.ts` myEmailPreferenceAction | The signed-in person's own email choice (non-urgent emails on or off). | `getCurrentUser` |
 
 <!-- generated:permissions:end -->

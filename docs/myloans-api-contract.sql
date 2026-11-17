@@ -1,20 +1,19 @@
 /* =====================================================================
-   REFERENCE ONLY. Agreed target API query (round 2). Agreed target, reference only, never run by DMS.
-   Received from the myloans team, round 2 (17 Nov 2026). The DMS NEVER runs
+   REFERENCE ONLY. Agreed target API query (round 3). Agreed target, reference only, never run by DMS.
+   Received from the myloans team, round 3 (17 Nov 2026). The DMS NEVER runs
    this: it lives here so the DMS mock and sync follow the same contract.
    Real-looking PN # values are replaced with <SAMPLE-PN>; the GD999... PNs
    in the hash test vectors are myloans' own fake data and stay as sent.
    ===================================================================== */
 
-/* DMS NOTE (D-037, 17 Nov 2026): the DMS asked myloans to REMOVE BirthDate from the output and from the
-   ContentHash. The agreed target is 17 hash fields (field 10 BirthDate removed; ReplacedByExternalLoanId
-   becomes field 17) and no HMAC / BirthDateHash. The query text below is round 2 as received (18 fields);
-   lib/myloans/r2/hash.ts follows the 17-field target. See docs/MYLOANS_REPLY_3.md. */
-
+/* DMS NOTE (D-040, 17 Nov 2026): round 3 as received. 17 hash fields (confirmed; BirthDate removed, D-037).
+   SourceUpdatedAt now also takes the redo suffix time and the replacement's created_at (a redo does not touch
+   Transactions.updated_at). API 1 with more than one row is 409 with every row. The DMS mock follows this:
+   lib/myloans/r2/mock.ts (sourceUpdatedAtOf) and lib/myloans/r2/contract.ts (redoSuffixAt). */
 
 /* =====================================================================
    MyLoans API query (runs behind the MyLoans API, never from DMS)
-   Version: round 2 (17 Nov 2026)
+   Version: round 3 (17 Nov 2026)
 
    Three calls, one query. Set ONE of @PNNo / @Since / @ReleasedSince.
 
@@ -25,7 +24,7 @@
 
    API 2  Change feed (every 30 min)                    -> @Since
           Every loan that was EVER RELEASED (has a ReleaseDate) and changed
-          after @Since, in ANY FeedState. Never-released transactions are
+          after @Since, in ANY of the 5 FeedStates (NotReleased included). Never-released transactions are
           never returned. Keep @Since fixed for the whole run.
           Checkpoint = RunStartedAt of the first page minus 5 minutes.
 
@@ -48,12 +47,16 @@
      - Next page: @AfterId = the largest ExternalLoanId on this page.
      - Last page: fewer than @PageSize distinct loans (0 = empty page).
 
-   BirthDate: returned ONLY so the API code can compute
-     BirthDateHash = HMAC-SHA256(key from API config, 'yyyy-mm-dd')
-   The API must drop BirthDate before writing the JSON.
+   Birth date: not returned and not hashed (DMS decision, RA 10173).
+
+   Freshness (SourceUpdatedAt) = latest of:
+     Transactions.updated_at, PDC.updated_at, LoanComputations.updated_at,
+     LOANS.UpdatedOn, BORROWERS.UpdatedOn,
+     the "x<yyyymmddhhmmss>" suffix time (a redo does NOT touch
+     Transactions.updated_at), and the replacement transaction's created_at.
 
    ContentHash = lowercase hex of SHA-256 over the UTF-16LE bytes of
-   HashInput (an nvarchar string; field list in the HI block below).
+   HashInput (an nvarchar string; 17 fields, listed in the HI block below).
    Frozen at go-live; any change needs the DMS team and an Admin
    re-baseline.
    ===================================================================== */
@@ -107,7 +110,6 @@ Feed AS (
         NULLIF(B.MiddleName, N'')     AS MiddleName,
         NULLIF(B.LastName,   N'')     AS LastName,
         NULLIF(B.Suffix,     N'')     AS Suffix,
-        B.BirthDate,                  -- API: HMAC it, then DROP before JSON
 
         /* Loan */
         L.LoanID,
@@ -165,7 +167,8 @@ Feed AS (
     OUTER APPLY (
         SELECT TOP 1
             T2.id    AS ReplacedByExternalLoanId,
-            T2.pn_no AS ReplacedByPNNo
+            T2.pn_no AS ReplacedByPNNo,
+            T2.created_at AS ReplacedByCreatedAt
         FROM MYLMSDB.dbo.Transactions T2
         WHERE LEN(T.application_code) > 20
           AND T2.application_code = LEFT(T.application_code, 20)
@@ -192,6 +195,20 @@ Feed AS (
     LEFT JOIN MYLOSDB.dbo.PR_DIVISIONS DIV ON DIV.DivisionId = A.DivisionId
     LEFT JOIN MYLOSDB.dbo.PR_COMPANIES C   ON C.CompanyID = BR.CompanyID
 
+    /* When the "x<yyyymmddhhmmss>" suffix was added (Manila time).
+       NULL for codes without that suffix. */
+    CROSS APPLY (
+        SELECT CASE
+            WHEN LEN(T.application_code) = 35
+             AND SUBSTRING(T.application_code, 21, 1) = 'x'
+            THEN TODATETIMEOFFSET(TRY_CONVERT(datetime2(0),
+                    STUFF(STUFF(STUFF(STUFF(STUFF(
+                        SUBSTRING(T.application_code, 22, 14),
+                        13, 0, ':'), 11, 0, ':'), 9, 0, ' '), 7, 0, '-'), 5, 0, '-'),
+                    120), '+08:00')
+        END AS SuffixAt
+    ) SFX
+
     CROSS APPLY (
         SELECT MAX(V.SourceTimestamp) AS SourceUpdatedAt
         FROM (VALUES
@@ -199,11 +216,13 @@ Feed AS (
             (SWITCHOFFSET(PDC.PdcUpdatedAt, '+08:00')),
             (SWITCHOFFSET(LCA.LoanComputationUpdatedAt, '+08:00')),
             (TODATETIMEOFFSET(L.UpdatedOn, '+08:00')),
-            (TODATETIMEOFFSET(B.UpdatedOn, '+08:00'))
+            (TODATETIMEOFFSET(B.UpdatedOn, '+08:00')),
+            (SFX.SuffixAt),                                   -- redo
+            (SWITCHOFFSET(RPL.ReplacedByCreatedAt, '+08:00')) -- replacement created
         ) V(SourceTimestamp)
     ) Freshness
 
-    /* HashInput. FROZEN at go-live. 18 fields, '|' between them,
+    /* HashInput. FROZEN at go-live. 17 fields, '|' between them,
        NULL = empty text. Keep myloans_hash_test_vectors.sql in step. */
     CROSS APPLY (
         SELECT CONCAT(
@@ -216,15 +235,14 @@ Feed AS (
             CONVERT(nvarchar(200), B.MiddleName)  COLLATE DATABASE_DEFAULT, '|',  --  7
             CONVERT(nvarchar(200), B.LastName)    COLLATE DATABASE_DEFAULT, '|',  --  8
             CONVERT(nvarchar(200), B.Suffix)      COLLATE DATABASE_DEFAULT, '|',  --  9
-            CONVERT(varchar(30), B.BirthDate, 126),                         '|',  -- 10
-            L.LoanID,                                                       '|',  -- 11
-            L.LoanClass,                                                    '|',  -- 12
-            CONVERT(nvarchar(200), L.CompanyName) COLLATE DATABASE_DEFAULT, '|',  -- 13
-            LCA.TotalLoanAmount,                                            '|',  -- 14
-            CONVERT(varchar(40), SWITCHOFFSET(PDC.ReleaseDate, '+08:00'), 126), '|', -- 15
-            CONVERT(nvarchar(200), P.ProductCode) COLLATE DATABASE_DEFAULT, '|',  -- 16
-            BR.BranchID,                                                    '|',  -- 17
-            RPL.ReplacedByExternalLoanId                                          -- 18
+            L.LoanID,                                                       '|',  -- 10
+            L.LoanClass,                                                    '|',  -- 11
+            CONVERT(nvarchar(200), L.CompanyName) COLLATE DATABASE_DEFAULT, '|',  -- 12
+            LCA.TotalLoanAmount,                                            '|',  -- 13
+            CONVERT(varchar(40), SWITCHOFFSET(PDC.ReleaseDate, '+08:00'), 126), '|', -- 14
+            CONVERT(nvarchar(200), P.ProductCode) COLLATE DATABASE_DEFAULT, '|',  -- 15
+            BR.BranchID,                                                    '|',  -- 16
+            RPL.ReplacedByExternalLoanId                                          -- 17
         ) AS HashInput
     ) HI
 

@@ -1,5 +1,6 @@
-import { addBusinessDays, businessDaysBetween, isBusinessDay } from "@/lib/time";
+
 import { ident, lit } from "./docker";
+import { workingDaysBetween, addWorkingDays, type Days } from "@/lib/calendar/core";
 
 /**
  * Keeps the sample dates right after a reset or restore. The baseline remembers the Manila date it was
@@ -13,13 +14,13 @@ const DAY = 86_400_000;
 const ymdAdd = (ymd: string, days: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
 
 /** n business days after (n > 0) or before (n < 0) a date. */
-export function shiftBusinessDays(ymd: string, n: number, holidays: ReadonlySet<string>): string {
-  if (n >= 0) return addBusinessDays(ymd, n, holidays);
+export function shiftBusinessDays(ymd: string, n: number, holidays: Days): string {
+  if (n >= 0) return addWorkingDays(ymd, n, holidays);
   let d = ymd;
   let left = -n;
   while (left > 0) {
     d = ymdAdd(d, -1);
-    if (isBusinessDay(d, holidays)) left--;
+    if (holidays.isWorkingDay(d)) left--;
   }
   return d;
 }
@@ -29,15 +30,15 @@ export function shiftBusinessDays(ymd: string, n: number, holidays: ReadonlySet<
  * business day moves by `shift` business days; a weekend or holiday keeps its distance from the
  * business day before it.
  */
-export function dateMap(savedOn: string, today: string, holidays: ReadonlySet<string>, span = 400): Map<string, string> {
-  const shift = businessDaysBetween(savedOn, today, holidays);
+export function dateMap(savedOn: string, today: string, holidays: Days, span = 400): Map<string, string> {
+  const shift = workingDaysBetween(savedOn, today, holidays);
   const map = new Map<string, string>();
   if (shift === 0) return map;
   for (let i = -span; i <= span; i++) {
     const d = ymdAdd(savedOn, i);
     let p = d;
     let gap = 0;
-    while (!isBusinessDay(p, holidays)) { p = ymdAdd(p, -1); gap++; }
+    while (!holidays.isWorkingDay(p)) { p = ymdAdd(p, -1); gap++; }
     map.set(d, ymdAdd(shiftBusinessDays(p, shift, holidays), gap));
   }
   return map;

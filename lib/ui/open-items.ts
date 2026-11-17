@@ -5,6 +5,7 @@
  * Most urgent first: problem, hold, missing paper; then oldest first.
  */
 import { holdDays, problemDays } from "@/lib/workflow/tat";
+import { type Days } from "@/lib/calendar/core";
 import { holdReasonName } from "@/lib/ui/holds";
 
 export type OpenKind = "problem" | "hold" | "missing";
@@ -48,7 +49,7 @@ export interface OpenItem {
 
 const RANK: Record<OpenKind, number> = { problem: 0, hold: 1, missing: 2 };
 
-export function openItemsOf(txns: OpenTxnInput[], holidays: ReadonlySet<string>, now: Date = new Date()): OpenItem[] {
+export function openItemsOf(txns: OpenTxnInput[], holidays: Days, now: Date = new Date()): OpenItem[] {
   const out: OpenItem[] = [];
   for (const t of txns) {
     const base = { txnId: t.id, txnCode: t.code, txnName: t.name, outsideControl: false, papers: [] as string[], lineIds: [] as string[], askedFrom: null };

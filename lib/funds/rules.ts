@@ -1,7 +1,8 @@
 /**
  * Funds rules (pure). Money is integer centavos everywhere; shown as ₱12,500.00.
  */
-import { addBusinessDays, businessDate, businessDaysBetween, endOfBusinessDay } from "@/lib/time";
+import { businessDate, endOfBusinessDay } from "@/lib/time";
+import { workingDaysBetween, addWorkingDays, type Days } from "@/lib/calendar/core";
 
 export const EXPENSE_KINDS = ["NOTARY_FEE", "PPSR_FEE", "LTO_FEE", "TRANSPORT", "OTHER"] as const;
 export type ExpenseKindKey = (typeof EXPENSE_KINDS)[number];
@@ -82,8 +83,8 @@ export const lineBalance = (l: { releasedCents: number; spentCents: number; retu
 // ---------------------------------------------------------------------------
 
 /** Liquidation due date: business days from the release (or the latest carry-over decision). */
-export function liquidationDue(from: Date, dueDays: number, holidays: ReadonlySet<string>): Date {
-  const ymd = addBusinessDays(businessDate(from), dueDays, holidays);
+export function liquidationDue(from: Date, dueDays: number, holidays: Days): Date {
+  const ymd = addWorkingDays(businessDate(from), dueDays, holidays);
   return endOfBusinessDay(ymd);
 }
 
@@ -96,8 +97,8 @@ export function isOverdue(a: { status: string; liquidationDueAt: Date | null }, 
  * Carry-over: without approval while the balance covers the next attempt (above zero) and the number of
  * business days since the line's first carry-over is within the limit; otherwise it needs approval.
  */
-export function carryOverDecision(input: { balanceCents: number; firstCarryOver: Date | null; now: Date; limitDays: number; holidays: ReadonlySet<string> }): { status: "AUTO" | "PENDING"; businessDays: number } {
-  const days = input.firstCarryOver ? businessDaysBetween(businessDate(input.firstCarryOver), businessDate(input.now), input.holidays) : 0;
+export function carryOverDecision(input: { balanceCents: number; firstCarryOver: Date | null; now: Date; limitDays: number; holidays: Days }): { status: "AUTO" | "PENDING"; businessDays: number } {
+  const days = input.firstCarryOver ? workingDaysBetween(businessDate(input.firstCarryOver), businessDate(input.now), input.holidays) : 0;
   return { status: input.balanceCents > 0 && days <= input.limitDays ? "AUTO" : "PENDING", businessDays: days };
 }
 

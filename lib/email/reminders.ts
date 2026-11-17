@@ -1,8 +1,9 @@
 import "server-only";
+import { daysFor, workingDaysBetween, type WorkCalendar } from "@/lib/calendar/core";
+import { loadCalendar } from "@/lib/calendar/load";
 import { prisma } from "@/lib/db";
 import { notify, branchLaUserIds } from "@/lib/notify";
-import { getHolidaySet } from "@/lib/settings";
-import { businessDate, businessDaysBetween, isBusinessDay } from "@/lib/time";
+import { businessDate } from "@/lib/time";
 import { overseerIds, bandApprovers } from "@/lib/services/jobs";
 import { financeIds, notifyOverdue } from "@/lib/services/funds";
 import { jobRows } from "@/lib/services/job-queries";
@@ -17,13 +18,14 @@ import { drainOutbox } from "./outbox";
 const seen = async (prefix: string) => !!(await prisma.emailOutbox.findFirst({ where: { dedupeKey: { startsWith: prefix } }, select: { id: true } }));
 
 /** Liquidation due today or on the next business day. */
-export async function liquidationDueSoon(now: Date, holidays: ReadonlySet<string>) {
+export async function liquidationDueSoon(now: Date, cal: WorkCalendar) {
   const today = businessDate(now);
   const open = await prisma.cashAdvance.findMany({ where: { status: { in: ["RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"] }, liquidationDueAt: { gte: now } } });
   let n = 0;
   for (const a of open) {
     const due = businessDate(a.liquidationDueAt!);
-    if (businessDaysBetween(today, due, holidays) > 1) continue;
+    // The requesting processor's branch calendar (D-041).
+    if (workingDaysBetween(today, due, daysFor(cal, a.branchId)) > 1) continue;
     const key = `liq-soon:${a.id}:${due}`;
     if (await seen(key)) continue;
     await prisma.$transaction(async (tx) => {
@@ -39,12 +41,12 @@ export async function liquidationDueSoon(now: Date, holidays: ReadonlySet<string
 }
 
 /** A request (or top-up) waiting for approval for more than a business day. */
-export async function approvalWaiting(now: Date, holidays: ReadonlySet<string>) {
+export async function approvalWaiting(now: Date, cal: WorkCalendar) {
   const today = businessDate(now);
   const waiting = await prisma.cashAdvance.findMany({ where: { status: "REQUESTED" }, include: { requestedBy: true, lines: true } });
   let n = 0;
   for (const a of waiting) {
-    if (businessDaysBetween(businessDate(a.createdAt), today, holidays) < 1) continue;
+    if (workingDaysBetween(businessDate(a.createdAt), today, daysFor(cal, a.branchId)) < 1) continue;
     const key = `approval-wait:${a.id}:${today}`;
     if (await seen(key)) continue;
     const total = a.lines.reduce((s, l) => s + l.requestedCents, 0);
@@ -87,11 +89,12 @@ export async function tatDigest(now: Date) {
 
 /** Everything the cron runs, then the sender worker. Weekends and holidays: no reminders (overdue marks still run). */
 export async function runEmailReminders(now: Date = new Date()) {
-  const holidays = await getHolidaySet();
-  const businessDay = isBusinessDay(businessDate(now), holidays);
+  const cal = await loadCalendar();
+  // Reminders go out on working days of the whole company (weekends and all-branch holidays skipped).
+  const businessDay = daysFor(cal, null).isWorkingDay(businessDate(now));
   await notifyOverdue(now);
   const r = businessDay
-    ? { dueSoon: await liquidationDueSoon(now, holidays), approvalWaiting: await approvalWaiting(now, holidays), digest: await tatDigest(now) }
+    ? { dueSoon: await liquidationDueSoon(now, cal), approvalWaiting: await approvalWaiting(now, cal), digest: await tatDigest(now) }
     : { dueSoon: 0, approvalWaiting: 0, digest: 0 };
   const sent = await drainOutbox({ now });
   return { businessDay, ...r, ...sent };

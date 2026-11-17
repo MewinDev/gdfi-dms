@@ -2,7 +2,8 @@
  * Plain-language words for the Loan Associate screens (redesign word table, section 3).
  * Pure functions only, so they can be used by server and client components and unit tests.
  */
-import { APP_TIMEZONE, businessDate, businessDaysBetween, fmtDate, noonOfBusinessDay, type TatBadge } from "@/lib/time";
+import { APP_TIMEZONE, businessDate, fmtDate, noonOfBusinessDay, type TatBadge } from "@/lib/time";
+import { workingDaysBetween, type Days } from "@/lib/calendar/core";
 import { plainRules, RULE_NAMES } from "@/lib/rules";
 import { stageLabel } from "@/lib/workflow/stage-map";
 
@@ -33,17 +34,17 @@ export interface DeadlineChip {
 
 export function deadlineChip(
   tat: { badge: TatBadge; deadline: string } | null | undefined,
-  holidays: ReadonlySet<string> = new Set(),
+  holidays: Days,
   now: Date = new Date(),
 ): DeadlineChip | null {
   if (!tat) return null;
   const today = businessDate(now);
   if (tat.badge === "DUE_TODAY") return { text: "Due today", tone: "act", urgency: 2 };
   if (tat.badge === "OVERDUE") {
-    const n = Math.max(1, businessDaysBetween(tat.deadline, today, holidays));
+    const n = Math.max(1, workingDaysBetween(tat.deadline, today, holidays));
     return { text: `Late by ${n} day${n === 1 ? "" : "s"}`, tone: "bad", urgency: 3 };
   }
-  const n = Math.max(1, businessDaysBetween(today, tat.deadline, holidays));
+  const n = Math.max(1, workingDaysBetween(today, tat.deadline, holidays));
   return { text: `${n} day${n === 1 ? "" : "s"} left`, tone: "ok", urgency: 1 };
 }
 

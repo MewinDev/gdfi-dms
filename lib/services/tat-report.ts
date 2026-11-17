@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { loanScope, type CurrentUser } from "@/lib/auth/current-user";
-import { getHolidaySet } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { endOfBusinessDay, startOfBusinessDay } from "@/lib/time";
 import { holdDays, problemDays } from "@/lib/workflow/tat";
 import { jobRows, type JobRow } from "./job-queries";
@@ -59,15 +60,17 @@ export async function reasonReport(user: CurrentUser, f: Pick<TatFilters, "branc
   const loan = { ...loanScope(user), ...(f.branch ? { branch: { name: f.branch } } : {}) };
   const transaction = f.type ? { type: { code: f.type } } : undefined;
   const returnedAt = raised;
-  const [problems, holds, returns, holidays] = await Promise.all([
-    prisma.problem.findMany({ where: { loan, ...(transaction ? { transaction } : {}), ...(raised ? { raisedAt: raised } : {}) }, include: { reason: { select: { name: true } } } }),
-    prisma.hold.findMany({ where: { loan, ...(transaction ? { transaction } : {}), ...(raised ? { raisedAt: raised } : {}) }, include: { reason: { select: { name: true } } } }),
+  const [problems, holds, returns, cal] = await Promise.all([
+    prisma.problem.findMany({ where: { loan, ...(transaction ? { transaction } : {}), ...(raised ? { raisedAt: raised } : {}) }, include: { reason: { select: { name: true } }, loan: { select: { branchId: true } } } }),
+    prisma.hold.findMany({ where: { loan, ...(transaction ? { transaction } : {}), ...(raised ? { raisedAt: raised } : {}) }, include: { reason: { select: { name: true } }, loan: { select: { branchId: true } } } }),
     prisma.dpAssignment.findMany({
       where: { loan, returnReasonId: { not: null }, ...(transaction ? { transaction } : {}), ...(returnedAt ? { returnedAt } : {}) },
-      include: { returnReason: { select: { name: true } }, transaction: { select: { dpAssignments: { select: { endorsedAt: true } } } } },
+      include: { returnReason: { select: { name: true } }, loan: { select: { branchId: true } }, transaction: { select: { dpAssignments: { select: { endorsedAt: true } } } } },
     }),
-    getHolidaySet(),
+    getCalendar(),
   ]);
+  // Problems and holds count on the loan's branch calendar; a return is the LA's again (the loan's branch).
+  const on = (branchId: string) => daysFor(cal, branchId);
   const rows = new Map<string, ReasonRow & { days: number }>();
   const add = (type: ReasonRow["type"], reason: string, days: number, open: boolean, outside: boolean | null) => {
     const k = `${type}|${reason}`;
@@ -76,12 +79,12 @@ export async function reasonReport(user: CurrentUser, f: Pick<TatFilters, "branc
     if (outside && r.outside !== null) r.outside++;
     rows.set(k, r);
   };
-  for (const p of problems) add("Problem", p.reason.name, problemDays([p], holidays, now), !p.resolvedAt, p.outsideControl);
-  for (const h of holds) add("Hold", holdReasonName(h), holdDays([h], holidays, now), !h.resumedAt, null);
+  for (const p of problems) add("Problem", p.reason.name, problemDays([p], on(p.loan.branchId), now), !p.resolvedAt, p.outsideControl);
+  for (const h of holds) add("Hold", holdReasonName(h), holdDays([h], on(h.loan.branchId), now), !h.resumedAt, null);
   // Returned to the LA for papers: until it was sent again (or now).
   for (const a of returns) {
     const resent = a.transaction.dpAssignments.map((x) => x.endorsedAt).filter((x) => a.returnedAt && x > a.returnedAt).sort((x, y) => x.getTime() - y.getTime())[0] ?? null;
-    add("Returned", a.returnReason?.name ?? "Returned", holdDays([{ raisedAt: a.returnedAt ?? a.createdAt, resumedAt: resent }], holidays, now), !resent, null);
+    add("Returned", a.returnReason?.name ?? "Returned", holdDays([{ raisedAt: a.returnedAt ?? a.createdAt, resumedAt: resent }], on(a.loan.branchId), now), !resent, null);
   }
   return [...rows.values()]
     .map(({ days, ...r }) => ({ ...r, avgDays: Math.round((days / r.count) * 10) / 10 }))

@@ -5,8 +5,8 @@ import { prisma } from "@/lib/db";
 import { can, requirePageAny, requireUser } from "@/lib/auth/current-user";
 import { redirect } from "next/navigation";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { listLoans } from "@/lib/services/queries";
-import { getHolidaySet } from "@/lib/settings";
+import { listLoans, notificationWhere } from "@/lib/services/queries";
+import { getCalendar } from "@/lib/calendar/load";
 import { plainUpdate, timeAgo } from "@/lib/ui/plain";
 import { cardFor, sortByUrgency } from "@/lib/ui/loan-cards";
 import { loadSampleCards } from "@/lib/ui/samples";
@@ -42,10 +42,10 @@ export default async function HomePage() {
 
   // The attention blocks, each only for the ticks that show it today (permission ticks, never a role name).
   const none = { count: 0, items: [] };
-  const [rows, holidays, updates, samples, packages, sentBack, source, corrections, branches, tat, setup] = await Promise.all([
+  const [rows, cal, updates, samples, packages, sentBack, source, corrections, branches, tat, setup] = await Promise.all([
     listLoans(user, { tab: "all" }),
-    getHolidaySet(),
-    prisma.notification.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 3, include: { loan: { select: { borrowerName: true } } } }),
+    getCalendar(),
+    prisma.notification.findMany({ where: notificationWhere(user), orderBy: { createdAt: "desc" }, take: 3, include: { loan: { select: { borrowerName: true } } } }),
     loadSampleCards(user),
     packagesFor(user),
     sentBackFor(user),
@@ -57,7 +57,7 @@ export default async function HomePage() {
     // The Superadmin (Manage permissions): setup gaps only they can fix (D-028, D-029).
     can(user, PERMISSIONS.ROLES_MANAGE) ? setupWarnings() : [],
   ]);
-  const cards = rows.map((r) => cardFor(r, holidays));
+  const cards = rows.map((r) => cardFor(r, cal));
   const need = sortByUrgency(cards.filter((c) => c.group === "need"));
   const waiting = cards.filter((c) => c.group === "wait");
   const problems = cards.filter((c) => c.problem);

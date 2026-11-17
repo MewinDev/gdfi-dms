@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { MON_FRI, testDays } from "@/lib/calendar/testing";
 import { focusTargetOf, OPEN_GROUPS, OPEN_WORD, openItemsOf, titleChipOf, type OpenTxnInput } from "./open-items";
 import { holdSchema, resumeSchema } from "@/lib/services/holds";
 import { requestedCheckIds } from "@/lib/services/workflow";
 
 const at = (s: string) => new Date(`${s.replace(" ", "T")}:00+08:00`);
-const none = new Set<string>();
+const none = testDays([], MON_FRI);
 const txn = (p: Partial<OpenTxnInput> = {}): OpenTxnInput => ({ id: "t1", code: "NOTARY", name: "Notary", problems: [], holds: [], request: null, stillMissing: [], ...p });
 const problem = { id: "p1", raisedAt: at("2026-11-03 09:00"), resolvedAt: null, raisedByLabel: "Joy", note: "", outsideControl: false, reason: { name: "LTO system down" } };
 const hold = { id: "h1", raisedAt: at("2026-11-02 09:00"), resumedAt: null, raisedByLabel: "Ana", note: "Signed page", reason: { name: "Waiting on borrower" } };

@@ -2,7 +2,7 @@
 
 How the Monitoring page counts processors (DPs) and LTO offices, and how LTO advisories work.
 
-Last updated: 13 November 2026 (PHT)
+Last updated: 17 November 2026 (PHT)
 
 The page is **Monitoring** in the sidebar, for people with `monitor:dp` (tab **DPs**) or `monitor:lto` (tab **LTO offices**). A monitor sees counts, times and PN lists only: a PN opens the loan file only for someone who may see loan files in that branch, and amounts show only with `journey:view_amounts`. The person's branch access applies; the Operations Monitor role sees all branches.
 
@@ -30,8 +30,8 @@ Screenshots (1440, 820 and 390 px) are in `docs/screenshots/monitoring-design/`:
 
 ## Rules that apply to every number
 
-- **The TAT clock never pauses.** Every time on the page includes time on hold; the page says "Includes time on hold".
-- **Business days**: weekends and the holidays in Settings are skipped, as for the turnaround times. The same day counts as 0 days; Friday to Monday is 1 day.
+- **Every time includes time on hold** (these are measures of what happened); the page says "Includes time on hold". The job's own TAT chip is the one that shows Paused (D-041).
+- **Working days**: the one calendar (Settings, Holidays and working days), on each job's processor branch: Sundays (by default), holidays and office closures are skipped. The same day counts as 0 days; Friday to Monday is 2 days (Saturday is a working day by default).
 - **Philippine time** for every date and time.
 - **Dates filter**: Today, Yesterday, Last 7 days, Last 30 days (the default), This month, Last month, or Custom (From and To, both days included, no future dates, To not before From). The chosen dates are in the heading ("9 Nov to 9 Nov 2026"). Finished jobs, averages, declines, returns, transactions at an office and advisories resolved use these dates.
 - **As of now**: assigned, in process, on hold, overdue, availability and "at the LTO now" are always today's state, whatever the dates.

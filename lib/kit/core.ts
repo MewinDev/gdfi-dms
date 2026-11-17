@@ -1,3 +1,4 @@
+import { DEFAULT_WORKING_WEEKDAYS, daysFor } from "@/lib/calendar/core";
 import "server-only";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -169,7 +170,10 @@ function timestampColumns(db: string): DateColumn[] {
 export function afterRestore(savedOn: string, log: Log = () => {}) {
   const db = kitDatabase();
   const today = businessDate(new Date());
-  const holidays = new Set(psql(db, `SELECT date FROM "HolidayCalendar";`).split("\n").map((s) => s.trim()).filter(Boolean));
+  // The company-wide calendar of that database (D-041): its working weekdays and all-branch holidays.
+  const week = psql(db, `SELECT value::text FROM "Setting" WHERE key = 'calendar.workingDays';`).trim();
+  const dates = psql(db, `SELECT date FROM "HolidayCalendar" WHERE active AND "allBranches";`).split("\n").map((s) => s.trim()).filter(Boolean);
+  const holidays = daysFor({ workingWeekdays: week ? (JSON.parse(week) as boolean[]) : DEFAULT_WORKING_WEEKDAYS, entries: dates.map((date) => ({ date, allBranches: true, branchIds: [] })) }, null);
   const map = dateMap(savedOn, today, holidays);
   if (map.size) {
     psql(db, rebaseSql(map, [...timestampColumns(db), ...YMD_COLUMNS]));

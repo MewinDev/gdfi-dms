@@ -8,9 +8,13 @@ import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { andWhere, holdsWhere } from "@/lib/auth/holders";
-import { getHolidaySet, getSetting } from "@/lib/settings";
+import { getSetting, getTatMap } from "@/lib/settings";
+import { targetOf, txnStepKey } from "@/lib/workflow/tat";
+import { loadCalendar } from "@/lib/calendar/load";
+import { addWorkingDays, daysFor } from "@/lib/calendar/core";
+import { liquidationDueFields } from "./funds";
 import { businessDate } from "@/lib/time";
-import { carryOverDecision, fundsStatus, lineBalance, liquidationDue } from "@/lib/funds/rules";
+import { carryOverDecision, fundsStatus, lineBalance } from "@/lib/funds/rules";
 import type { TypeRef } from "@/lib/funds/access";
 import { typeBandApprovers } from "./funds-handlers";
 import { recomputeStage } from "./stage";
@@ -38,7 +42,7 @@ export const whoOf = (u: CurrentUser): Who => ({ actor: { id: u.id, label: u.nam
 
 const assignmentInclude = {
   transaction: { include: { type: true, documents: true, advanceLines: { include: { advance: true } }, attempts: true, problems: true, holds: true } },
-  dpUser: true, secondaryDpUser: true, ltoOffice: true, loan: { include: { branch: true } }, assignedBy: { select: { name: true, active: true } }, receivingBranch: true, receivingLa: { select: { name: true } },
+  dpUser: true, secondaryDpUser: true, ltoOffice: true, dpBranch: { select: { name: true } }, loan: { include: { branch: true } }, assignedBy: { select: { name: true, active: true } }, receivingBranch: true, receivingLa: { select: { name: true } },
 } satisfies Prisma.DpAssignmentInclude;
 export type AssignmentFull = Prisma.DpAssignmentGetPayload<{ include: typeof assignmentInclude }>;
 
@@ -63,11 +67,31 @@ function requireOwnJob(user: CurrentUser, a: { dpUserId: string; secondaryDpUser
   if (a.dpUserId !== user.id && a.secondaryDpUserId !== user.id) throw new UserError("This job is assigned to someone else.");
 }
 
-/** Jobs a person may see: their own, or in their branches when they can work jobs; Admin-like roles by loan scope. */
-export function canSeeJob(user: CurrentUser, a: { dpUserId: string; secondaryDpUserId?: string | null; dpBranchId: string; loan: { branchId: string } }) {
+/**
+ * Jobs a person may see (D-039): their own job in any branch; anyone else's only when the LOAN's branch is in
+ * their access (not the processor's branch). Stage files follow this rule (mayOpenStageFile).
+ */
+export function canSeeJob(user: CurrentUser, a: { dpUserId: string; secondaryDpUserId?: string | null; loan: { branchId: string } }) {
   if (a.dpUserId === user.id || a.secondaryDpUserId === user.id) return true;
-  if (can(user, PERMISSIONS.JOBS_WORK)) return inScope(user, a.dpBranchId);
   return inScope(user, a.loan.branchId);
+}
+
+/** Is there an active job on this transaction that is this processor's own (first or second processor)? */
+export async function hasOwnActiveJob(u: CurrentUser, transactionId: string): Promise<boolean> {
+  if (!can(u, PERMISSIONS.JOBS_WORK)) return false;
+  const job = await prisma.dpAssignment.findFirst({
+    where: { transactionId, status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] }, OR: [{ dpUserId: u.id }, { secondaryDpUserId: u.id }] },
+    select: { id: true },
+  });
+  return !!job;
+}
+
+/**
+ * The scope gate for holds and problems (D-039): the loan's branch in the person's access, or the
+ * processor's OWN active job on that transaction (the own-job rule), wherever the loan is.
+ */
+export async function inScopeOrOwnJob(u: CurrentUser, branchId: string, transactionId: string): Promise<boolean> {
+  return inScope(u, branchId) || (await hasOwnActiveJob(u, transactionId));
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +101,11 @@ export function canSeeJob(user: CurrentUser, a: { dpUserId: string; secondaryDpU
 export async function acceptCore(tx: Tx, a: AssignmentFull, who: Who) {
   if (a.status !== "PENDING_ACCEPTANCE") throw new UserError("This job is not waiting for acceptance.");
   const now = new Date();
-  await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "ACCEPTED", decidedAt: now } });
+  // The TAT is saved at accept (D-041): the target of the type's processing step, counted on the processor's
+  // branch calendar from the accept day. Moved later only by a logged change (holiday, closure, pause, correction).
+  const target = targetOf(await getTatMap(tx), txnStepKey("IN_PROCESS", a.transaction.type.code));
+  const due = target === null ? null : addWorkingDays(businessDate(now), target, daysFor(await loadCalendar(tx), a.dpBranchId));
+  await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "ACCEPTED", decidedAt: now, dueDate: due, targetDays: target, dueBranchId: due ? a.dpBranchId : null } });
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "IN_PROCESS", statusSince: now } });
   // Custody moves only for papers in transit to the processor, and never for a paper marked Missing
   // (it keeps any Document ID from an earlier tick, which is not proof that it was handed over).
@@ -221,9 +249,8 @@ export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: At
 
   // The rest of the money: carry over (auto within the limit, else Finance approves) or return.
   if (input.rest !== "NONE") {
-    const holidays = await getHolidaySet(tx);
+    const cal = await loadCalendar(tx);
     const limit = await getSetting("funds.carryOverLimitDays", tx);
-    const dueDays = await getSetting("funds.liquidationDueDays", tx);
     for (const l of lines) {
       const { balance } = await lineTotals(tx, l.id);
       if (balance <= 0) continue;
@@ -232,11 +259,12 @@ export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: At
         continue;
       }
       const first = await tx.carryOver.findFirst({ where: { lineId: l.id }, orderBy: { createdAt: "asc" } });
-      const d = carryOverDecision({ balanceCents: balance, firstCarryOver: first?.createdAt ?? null, now, limitDays: limit, holidays });
+      // Counted on the requesting processor's branch calendar (D-041).
+      const d = carryOverDecision({ balanceCents: balance, firstCarryOver: first?.createdAt ?? null, now, limitDays: limit, holidays: daysFor(cal, l.advance.branchId) });
       await tx.carryOver.create({ data: { lineId: l.id, attemptId: attempt.id, cents: balance, status: d.status, businessDays: d.businessDays, ...(d.status === "AUTO" ? { decidedAt: now } : {}) } });
       if (d.status === "AUTO") {
         // Each carry-over decision restarts the liquidation due date.
-        await tx.cashAdvance.update({ where: { id: l.advanceId }, data: { overdueNotifiedAt: null, liquidationDueAt: liquidationDue(now, dueDays, holidays) } });
+        await tx.cashAdvance.update({ where: { id: l.advanceId }, data: { overdueNotifiedAt: null, ...(await liquidationDueFields(tx, l.advance.branchId, now)) } });
       } else {
         const approvers = await bandApprovers(tx, balance, l.advance);
         await notify(tx, { email: { event: "advance_requested", to: approvers, amountCents: balance, vars: { number: l.advance.number, kind: l.advance.fundsTypeName, who: a.dpUser.name, reason: `Carry-over: keep the balance for ${a.transaction.type.name} beyond the carry-over limit.` } }, userIds: approvers, loanId: a.loanId, title: `${l.advance.number}: carry-over needs approval`, body: `${a.dpUser.name} wants to keep ${(balance / 100).toFixed(2)} for ${a.transaction.type.name} beyond the carry-over limit.`, link: "/funds?tab=approve" });
@@ -423,7 +451,11 @@ export async function receiveCore(tx: Tx, a: AssignmentFull, who: Who, input: Re
 // ---------------------------------------------------------------------------
 
 export async function withJob<T>(user: CurrentUser, assignmentId: string, fn: (tx: Tx, a: AssignmentFull) => Promise<T>) {
+  // The role first, then scope (D-019): a job the person may not see is "not found", the same answer as a
+  // job that does not exist; only a job they can see may say "assigned to someone else".
+  if (!can(user, PERMISSIONS.JOBS_WORK)) throw new UserError("Your role does not allow working on jobs.");
   const a0 = await loadAssignment(prisma, assignmentId);
+  if (!canSeeJob(user, a0)) throw new UserError("Job not found.");
   requireOwnJob(user, a0);
   return withLoanLock(a0.loanId, async (tx) => {
     const a = await loadAssignment(tx, assignmentId);
@@ -512,7 +544,7 @@ export async function ownsTransaction(u: CurrentUser, t: { id: string; status: s
 export async function raiseProblem(u: CurrentUser, input: { transactionId: string; reasonId: string; note: string }) {
   if (!can(u, PERMISSIONS.PROBLEMS_RAISE)) throw new UserError("Your role does not allow raising problems.");
   const t = await prisma.loanTransaction.findUnique({ where: { id: input.transactionId }, include: { type: true, loan: true, problems: true } });
-  if (!t || !inScope(u, t.loan.branchId)) throw new NotInScopeError();
+  if (!t || !(await inScopeOrOwnJob(u, t.loan.branchId, t.id))) throw new NotInScopeError();
   if (!(await ownsTransaction(u, t))) throw new UserError("You can raise a problem only on transactions you work on.");
   const reason = await prisma.problemReason.findUnique({ where: { id: input.reasonId } });
   if (!reason || !reason.active) throw new UserError("Pick a reason.", "reasonId");
@@ -528,7 +560,7 @@ export async function raiseProblem(u: CurrentUser, input: { transactionId: strin
 
 export async function resolveProblem(u: CurrentUser, problemId: string, note: string) {
   const p = await prisma.problem.findUnique({ where: { id: problemId }, include: { transaction: { include: { type: true, loan: true } }, reason: true } });
-  if (!p || !inScope(u, p.transaction.loan.branchId)) throw new NotInScopeError();
+  if (!p || !(await inScopeOrOwnJob(u, p.transaction.loan.branchId, p.transactionId))) throw new NotInScopeError();
   if (p.resolvedAt) throw new UserError("This problem is already resolved.");
   const any = can(u, PERMISSIONS.PROBLEMS_RESOLVE_ANY);
   if (!any && !(can(u, PERMISSIONS.PROBLEMS_RESOLVE) && (await ownsTransaction(u, p.transaction)))) throw new UserError("You can resolve problems only on transactions you work on.");
@@ -545,7 +577,7 @@ export async function resolveProblem(u: CurrentUser, problemId: string, note: st
 export async function markOutsideControl(u: CurrentUser, problemId: string, on: boolean) {
   if (!can(u, PERMISSIONS.PROBLEMS_OUTSIDE)) throw new UserError("Only an Admin can mark a problem outside our control.");
   const p = await prisma.problem.findUnique({ where: { id: problemId }, include: { transaction: { include: { type: true, loan: true } }, reason: true } });
-  if (!p || !inScope(u, p.transaction.loan.branchId)) throw new NotInScopeError();
+  if (!p || !(await inScopeOrOwnJob(u, p.transaction.loan.branchId, p.transactionId))) throw new NotInScopeError();
   await prisma.$transaction(async (tx) => {
     await tx.problem.update({ where: { id: p.id }, data: { outsideControl: on, outsideMarkedById: u.id, outsideMarkedAt: new Date() } });
     await writeAudit(tx, { actor: { id: u.id, label: u.name }, mode: "MANUAL", action: "problem_outside_control", entityType: "Problem", entityId: p.id, loanId: p.loanId, pn: p.transaction.loan.pn, summary: `Problem on ${p.transaction.type.name} (${p.reason.name}) ${on ? "marked" : "no longer marked"} outside our control`, before: { outsideControl: p.outsideControl }, after: { outsideControl: on } });

@@ -2,7 +2,7 @@
 
 How cash advances and fund transfers are flagged, requested, approved, released, carried over and liquidated.
 
-Last updated: 11 November 2026 (PHT)
+Last updated: 17 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -58,9 +58,11 @@ flowchart TD
 - On To approve, Finance and approvers can change a line's kind, description and amount, or add a line, before the request is decided; the total follows the lines. "+ Add new kind" next to the Expense kind dropdown adds a kind (Active, selected at once, audited). Processors see the link only with `funds:kinds_manage`; otherwise they use Other with a description.
 - Receipts (liquidation) always take the amount really spent, even for a kind with a fixed amount. Top-ups and receipts belong to an existing line, so its kind (and Other description) shows there; they do not ask for a kind again.
 - In a Cash-advance rule, Other means "any kind that has no rule of its own" for that transaction: no description is asked there.
-- Carry-over is free for 3 business days by default, then Finance approves it. Liquidation is due 10 business days after release, restarting at each carry-over decision.
+- Carry-over is free for 3 working days by default, then Finance approves it. Liquidation is due 10 working days after release, restarting at each carry-over decision, on the requesting processor's branch calendar; the due date is saved and moves only when a holiday or closure is added inside its count (D-041). Piece 5 changes the start to the last LTO completion.
 - Cash amounts are visible only to people with the permission `journey:view_amounts`.
 - On a transaction that is on hold, Finance cannot request, approve, release, top up or approve a carry-over ("Locked: on hold by {name} since {date and time}."). Denying, receipts, returns, liquidation, close and exceptions stay allowed so money already out can be settled.
+- **One-time exception (D-039).** Finance grants "Allow one more request" only to an overdue processor who works in one of the Finance person's branches ("All branches" = any processor); the Overdue processors list on Outstanding offers the button only for them, and the server refuses anyone else.
+- **Branch scope first (D-019).** Approve on a request, top-up or carry-over that was already approved answers "already approved" only to someone who sees the request; anyone else gets "Request not found."
 - When a job goes back to the LA after cash was released, the advance stays the DP's to settle ("Cash to settle"). A re-send asks for new cash like any new job.
 
 ## How to read this page

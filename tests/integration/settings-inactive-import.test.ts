@@ -12,7 +12,8 @@ import { saveSettingsRow, saveUser } from "@/lib/services/admin";
 import { inactiveRefusal, setRowActive } from "@/lib/services/settings-status";
 import { checkImport, currentDataCsv, runImport } from "@/lib/import/importer";
 import { parseCsv, toCsv } from "@/lib/import/csv";
-import { getHolidaySet } from "@/lib/settings";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { UserError } from "@/lib/services/errors";
 import { asUser, cleanLoans } from "./helpers";
 
@@ -184,10 +185,10 @@ describe("Inactive instead of delete", () => {
 
   it("an inactive holiday is no longer skipped", async () => {
     await saveSettingsRow(admin, "holiday", null, { date: "2099-01-02", name: "Test day" });
-    const h = await prisma.holidayCalendar.findUniqueOrThrow({ where: { date: "2099-01-02" } });
-    expect((await getHolidaySet()).has("2099-01-02")).toBe(true);
+    const h = await prisma.holidayCalendar.findFirstOrThrow({ where: { date: "2099-01-02" } });
+    expect(daysFor(await loadCalendar(), null).isWorkingDay("2099-01-02")).toBe(false);
     await setRowActive(admin, "holiday", h.id, false);
-    expect((await getHolidaySet()).has("2099-01-02")).toBe(false);
+    expect(daysFor(await loadCalendar(), null).isWorkingDay("2099-01-02")).toBe(true);
   });
 
   it("hard limits on the server: yourself, the last active person who can manage roles, the last active branch", async () => {

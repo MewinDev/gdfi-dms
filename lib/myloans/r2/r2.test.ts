@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { contentHash, hashInput, HASH_FIELDS } from "./hash";
-import { readApi1 } from "./contract";
-import { api1, api2, api5, renameProduct, scenarioDb } from "./mock";
+import { readApi1, redoSuffixAt } from "./contract";
+import { api1, api2, api5, codeOf, redoneCode, renameProduct, scenarioDb, sourceUpdatedAtOf } from "./mock";
 import { classificationFlips, fetchRun, planRun, productRenames } from "./sync-plan";
 import { DEFAULT_CLASSIFICATION_RULES } from "@/lib/rules/classify";
 
-/** myloans round 2 contract (D-036): hash, paging by loan, API 1 codes, FeedStates, redo chains, products. */
+/** myloans round 2 and 3 contract (D-036, D-040): hash, paging by loan, API 1 codes, FeedStates, redo chains, products. */
 describe("ContentHash (mock only; the DMS compares hash strings, never recomputes them)", () => {
   it("17 fields (no birth date, D-037), '|' between them, NULL as empty text; SHA-256 over UTF-16LE, lowercase hex", () => {
     expect(HASH_FIELDS).toHaveLength(17);
@@ -66,13 +66,45 @@ describe("decisions per loan", () => {
     expect(d.some((x) => x.kind === "changed" && x.loanId === "L104")).toBe(false);
   });
 
-  it("a redo chain of 3: the CIN links to its current live transaction; record replaced (rule b) even if older copies never come again", async () => {
+  it("a redo chain of 3 (round 3): the OLDEST copy is re-sent when the newest replacement is created; one record-replaced to the live copy", async () => {
     const run = await fetchRun(async (after) => api2(scenarioDb(), "2026-11-17T08:30:00+08:00", after, 50));
     if (!run.ok) throw new Error(run.error);
-    expect(run.rows.some((r) => r.externalLoanId === 201)).toBe(false); // the oldest copy is not re-sent
-    const d = planRun(run.rows, [{ loanId: "LCHAIN", cin: "CIN-FAKE-CHAIN", externalLoanId: 201, contentHash: "old" }]);
-    expect(d.find((x) => x.kind === "record-replaced")).toMatchObject({ loanId: "LCHAIN", fromExternalLoanId: 201, row: { externalLoanId: 203, feedState: "Released" } });
+    // 201 was updated and suffixed at 08:00 (before the checkpoint); 203's created_at (09:00) brings it back.
+    expect(run.rows.find((r) => r.externalLoanId === 201)).toMatchObject({ feedState: "Superseded", replacedByExternalLoanId: 203, sourceUpdatedAt: "2026-11-17T09:00:00+08:00" });
     expect(run.rows.find((r) => r.externalLoanId === 202)).toMatchObject({ feedState: "Superseded", replacedByExternalLoanId: 203 });
+    const d = planRun(run.rows, [{ loanId: "LCHAIN", cin: "CIN-FAKE-CHAIN", externalLoanId: 201, contentHash: "old" }]);
+    const mine = d.filter((x) => "loanId" in x && x.loanId === "LCHAIN");
+    expect(mine).toEqual([expect.objectContaining({ kind: "record-replaced", fromExternalLoanId: 201, row: expect.objectContaining({ externalLoanId: 203, feedState: "Released" }) })]);
+    // Round 2's freshness (updated_at only) would never have re-sent 201.
+    const db = scenarioDb();
+    expect(new Date(db.txns.find((t) => t.id === 201)!.updatedAt) < new Date("2026-11-17T08:30:00+08:00")).toBe(true);
+  });
+
+  it("a redo WITHOUT cancellation reaches API 2 only through the suffix time (round 3); the DMS fetches the replacement", async () => {
+    const db = scenarioDb();
+    const since = "2026-11-17T08:30:00+08:00";
+    const t401 = db.txns.find((t) => t.id === 401)!;
+    // Status 12, updated_at and the replacement's created_at both before the checkpoint: only the suffix moves it.
+    expect(t401.statusId).toBe(12);
+    expect(new Date(t401.updatedAt) < new Date(since) && new Date(t401.createdAt!) < new Date(since)).toBe(true);
+    expect(sourceUpdatedAtOf(t401, db)).toBe("2026-11-17T09:00:00+08:00");
+    const run = await fetchRun(async (after) => api2(db, since, after, 50));
+    if (!run.ok) throw new Error(run.error);
+    expect(run.rows.find((r) => r.externalLoanId === 401)).toMatchObject({ feedState: "Superseded", replacedByExternalLoanId: 402, replacedByPnNo: "GD9990000000402" });
+    expect(run.rows.some((r) => r.externalLoanId === 402)).toBe(false); // the replacement itself did not change since
+    const d = planRun(run.rows, [{ loanId: "LREDO", cin: "CIN-FAKE-REDO", externalLoanId: 401, contentHash: "old" }]);
+    expect(d.filter((x) => "loanId" in x && x.loanId === "LREDO")).toEqual([
+      { kind: "superseded", loanId: "LREDO", fromExternalLoanId: 401, replacedByExternalLoanId: 402, replacedByPnNo: "GD9990000000402" },
+    ]);
+  });
+
+  it("the redo suffix time is read like myloans' query: 35 characters, 'x' at 21, Manila time; anything else is null", () => {
+    expect(redoSuffixAt(redoneCode(51164, "20261116134215"))).toBe("2026-11-16T13:42:15+08:00");
+    expect(redoSuffixAt(codeOf(51164))).toBeNull(); // 20 characters: not redone
+    expect(redoSuffixAt(`${codeOf(1)}y20261116134215`)).toBeNull(); // no "x"
+    expect(redoSuffixAt(redoneCode(1, "20261131134215"))).toBeNull(); // 31 November: TRY_CONVERT gives NULL
+    expect(redoSuffixAt(redoneCode(1, "2026111613421A"))).toBeNull();
+    expect(redoSuffixAt(null)).toBeNull();
   });
 
   it("unchanged hash: nothing to do", () => {
@@ -93,6 +125,15 @@ describe("API 1 codes", () => {
     expect(r409).toMatchObject({ kind: "found", row: { externalLoanId: 105 }, logRows: expect.any(Array) });
     const both = { ...db, txns: db.txns.map((t) => (t.id === 106 ? { ...t, statusId: 12 } : t)) };
     expect(readApi1(api1(both, "GD9990000099905"))).toMatchObject({ kind: "multiple", message: "Multiple records in myloans, contact Admin.", alertAdmin: true });
+  });
+
+  it("more than one row is always 409 with every row, whatever their states (round 3)", () => {
+    const db = scenarioDb();
+    const none = { ...db, txns: db.txns.map((t) => (t.id === 105 ? { ...t, statusId: 14 } : t)) }; // both cancelled
+    const a = api1(none, "GD9990000099905");
+    expect(a.status).toBe(409);
+    expect(a.status === 409 && a.body.rows.map((r) => r.externalLoanId).sort()).toEqual([105, 106]);
+    expect(readApi1(a)).toMatchObject({ kind: "multiple", logRows: expect.arrayContaining([expect.objectContaining({ externalLoanId: 106 })]) });
   });
 });
 

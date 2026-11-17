@@ -4,6 +4,7 @@
  * functions the screens use. LOCAL database only; removes all loan files first.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { loadCalendar } from "@/lib/calendar/load";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { openLoanFile } from "@/lib/services/loan-file";
@@ -24,7 +25,7 @@ import { checkImport, currentDataRows, runImport } from "@/lib/import/importer";
 import { simulate } from "@/lib/services/simulator";
 import { loadJourney } from "@/lib/services/journey";
 import { getLoanForUser } from "@/lib/services/queries";
-import { getHolidaySet, getTatMap, setSetting } from "@/lib/settings";
+import { getTatMap, setSetting } from "@/lib/settings";
 import { txnTat } from "@/lib/jobs/view";
 import { businessDate } from "@/lib/time";
 import { asUser, cleanLoans, workStages, allPapers } from "./helpers";
@@ -210,12 +211,12 @@ describe("Stage rules on a job", () => {
   it("the transaction clock is the same with and without stages and holds (it never pauses)", async () => {
     const { job, txn } = await send("NOTARY");
     await acceptJob(dp, job.id);
-    const [tats, holidays] = await Promise.all([getTatMap(), getHolidaySet()]);
+    const [tats, holidays] = await Promise.all([getTatMap(), loadCalendar()]);
     const load = () => prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id }, include: { type: true, problems: { include: { reason: true } }, holds: { include: { reason: true } }, advanceLines: { include: { advance: true } } } });
     const at = new Date(Date.now() + 3 * 86_400_000);
-    const before = txnTat(await load(), tats, holidays, at);
+    const before = txnTat(await load(), tats, holidays, { loan: "x" }, at);
     await startStage(dp, job.id, "NOTARIZATION");
-    const after = txnTat(await load(), tats, holidays, at);
+    const after = txnTat(await load(), tats, holidays, { loan: "x" }, at);
     expect(after?.text).toBe(before?.text);
     const t = await load();
     expect(t.statusSince.getTime()).toBe((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).decidedAt!.getTime());

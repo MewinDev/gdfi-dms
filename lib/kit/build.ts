@@ -1,9 +1,12 @@
 import "server-only";
+import { type Days } from "@/lib/calendar/core";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { CURRENT_USER_INCLUDE, toCurrentUser } from "@/lib/auth/build-user";
 import { PERMISSIONS, ROLE_DEFAULTS } from "@/lib/auth/permissions";
-import { getHolidaySet, setSetting } from "@/lib/settings";
+import { setSetting } from "@/lib/settings";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { businessDate } from "@/lib/time";
 import type { MyLoansRecord } from "@/lib/myloans/types";
 import { openLoanFile } from "@/lib/services/loan-file";
@@ -102,7 +105,7 @@ async function createAccounts(log: Log): Promise<Users> {
 }
 
 /** The sample loans in the sample MyLoans (Setting myloans.mockExtra), released N business days before today. */
-async function sourceRecords(today: string, holidays: ReadonlySet<string>) {
+async function sourceRecords(today: string, holidays: Days) {
   const records: MyLoansRecord[] = KIT_LOANS.map((l) => {
     const n = l.pn.slice(-4);
     return {
@@ -141,7 +144,8 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
   const why = kitRefusal();
   if (why) throw new Error(why);
   const today = businessDate(new Date());
-  const holidays = await getHolidaySet();
+  // Sample dates: the company-wide calendar (no branch).
+  const holidays = daysFor(await loadCalendar(), null);
   await importKitBranches(log);
   // Alicia-Inactive was still open when its loan was opened; MyLoans closes it below (Branch review).
   await prisma.branch.update({ where: { code: "718" }, data: { active: true, deactivatedAt: null, deactivatedById: null } });
@@ -460,7 +464,7 @@ async function buildBranchReview(u: Users, log: Log) {
 }
 
 /** n business days before today at a time of day (PHT); today: a few minutes ago. */
-function daysAgo(today: string, holidays: ReadonlySet<string>, n: number, hhmm: string): Date {
+function daysAgo(today: string, holidays: Days, n: number, hhmm: string): Date {
   if (n === 0) return new Date(Date.now() - 10 * 60_000);
   return new Date(`${shiftBusinessDays(today, -n, holidays)}T${hhmm}:00+08:00`);
 }
@@ -474,7 +478,7 @@ function daysAgo(today: string, holidays: ReadonlySet<string>, n: number, hhmm: 
 async function buildMonitoring(
   u: Users,
   h: {
-    today: string; holidays: ReadonlySet<string>; log: Log;
+    today: string; holidays: Days; log: Log;
     send: (pn: string, code: string, dp: CurrentUser, o?: { by?: CurrentUser; funds?: string[]; tick?: boolean }) => Promise<{ t: { id: string }; job: { id: string } }>;
     accepted: (pn: string, code: string, dp: CurrentUser, funds?: string[]) => Promise<{ t: { id: string }; job: { id: string } }>;
     work: (dp: CurrentUser, jobId: string, stop: number | "VERIFY" | "ALL") => Promise<void>;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { MON_FRI, testDays } from "@/lib/calendar/testing";
 import { AVAILABILITY, PRESETS, availability, avg, buckets, businessDayCounter, countTone, daysText, leaveText, onLeaveToday, parseRange, presetOf, presetRange, rangeLabel, rangeNote, rangeParams, rangeSummary, showSubtotal, usageBar, weekStart } from "./rules";
-import { businessDaysBetween } from "@/lib/time";
+import { workingDaysBetween } from "@/lib/calendar/core";
 import { ADVISORY_STALE_HOURS, advisoryWarning, isStale, mayResolveAdvisory, parseStartedAt, STALE_PROMPT } from "./advisories";
 
 const TODAY = "2026-11-09"; // a Monday
@@ -67,19 +68,19 @@ describe("dates filter", () => {
 });
 
 describe("business-day counter", () => {
-  const holidays = new Set(["2026-11-30"]);
+  const holidays = testDays(["2026-11-30"], MON_FRI);
   const d = (s: string) => new Date(`${s}T10:00:00+08:00`);
   it("matches the TAT calendar (weekends and holidays skipped; same day is 0)", () => {
     const bd = businessDayCounter(holidays, "2026-11-01", "2026-12-31");
     for (const [a, b] of [["2026-11-06", "2026-11-09"], ["2026-11-27", "2026-12-01"], ["2026-11-09", "2026-11-09"], ["2026-11-02", "2026-11-20"]]) {
-      expect(bd(d(a), d(b)), `${a} to ${b}`).toBe(businessDaysBetween(a, b, holidays));
+      expect(bd(d(a), d(b)), `${a} to ${b}`).toBe(workingDaysBetween(a, b, holidays));
     }
     expect(bd(d("2026-11-06"), d("2026-11-09"))).toBe(1); // Friday to Monday
     expect(bd(d("2026-11-27"), d("2026-12-01"))).toBe(1); // Monday 30 Nov is a holiday
   });
   it("works outside the precomputed range too", () => {
     const bd = businessDayCounter(holidays, "2026-11-10", "2026-11-12");
-    expect(bd(d("2026-11-02"), d("2026-11-20"))).toBe(businessDaysBetween("2026-11-02", "2026-11-20", holidays));
+    expect(bd(d("2026-11-02"), d("2026-11-20"))).toBe(workingDaysBetween("2026-11-02", "2026-11-20", holidays));
   });
   it("averages to one decimal with the words", () => {
     expect(avg([1, 2, 2])).toBe(1.7);
@@ -151,9 +152,9 @@ describe("the date range picker (design pass)", () => {
   });
 
   it("says the days and the business days", () => {
-    expect(rangeSummary("2026-10-11", TODAY, new Set())).toBe("30 days, 21 business days");
-    expect(rangeSummary("2026-10-11", TODAY, new Set(["2026-11-02"]))).toBe("30 days, 20 business days");
-    expect(rangeSummary(TODAY, TODAY, new Set())).toBe("1 day, 1 business day");
+    expect(rangeSummary("2026-10-11", TODAY, testDays([], MON_FRI))).toBe("30 days, 21 business days");
+    expect(rangeSummary("2026-10-11", TODAY, testDays(["2026-11-02"], MON_FRI))).toBe("30 days, 20 business days");
+    expect(rangeSummary(TODAY, TODAY, testDays([], MON_FRI))).toBe("1 day, 1 business day");
   });
 });
 

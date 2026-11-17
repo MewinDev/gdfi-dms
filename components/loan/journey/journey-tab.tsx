@@ -40,7 +40,7 @@ export interface JourneyParams {
 type View = "story" | "docs" | "log";
 
 export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; user: CurrentUser; params: JourneyParams }) {
-  const [{ journey: j, story, holidays }, tats] = await Promise.all([loadJourney(user, loan), getTatMap()]);
+  const [{ journey: j, story, holidays, cal }, tats] = await Promise.all([loadJourney(user, loan), getTatMap()]);
   const view: View = params.journey === "docs" || params.journey === "log" ? params.journey : params.scope === "DOCS" ? "log" : "story";
   const base = `/loans/${loan.pn}?tab=journey`;
   const href = (p: Record<string, string | undefined>) => `${base}${Object.entries(p).filter(([, v]) => v).map(([k, v]) => `&${k}=${encodeURIComponent(v!)}`).join("")}`;
@@ -58,7 +58,7 @@ export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; use
       tickedAny: t.checks.some((x) => x.checked), edstReference: t.edstReference,
       returnedForPapers: t.status === "RETURNED" && !!t.dpAssignments[0]?.returnReasonId ? (t.dpAssignments[0].returnReason?.name ?? "Papers needed") : null,
       sentBack: sentBack(t.status, t.dpAssignments)?.kind ?? null,
-      tat: txnTat(t, tats, holidays),
+      tat: txnTat(t, tats, cal, { loan: loan.branchId, job: t.dpAssignments[0]?.dpBranchId }),
       problem: p ? { reason: p.reason.name, days: Math.max(1, problemDays([p], holidays)) } : null,
       hold: h ? { reason: holdReasonName(h), days: Math.max(1, holdDays([h], holidays)) } : null,
       missingPapers: missing,

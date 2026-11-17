@@ -1,4 +1,5 @@
 import { fileHref } from "@/lib/services/files";
+import { daysFor, workingDaysBetween } from "@/lib/calendar/core";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
@@ -6,14 +7,14 @@ import { advanceScope, can, requirePageAny } from "@/lib/auth/current-user";
 import { TYPE_ID, TYPE_NOUN, TYPE_TITLE, anyStepKeys, canFunds, canFundsAny, stepKeys, stepVerb, typeKeyOf, typeWhere, typesFor, type FundsStep, type TypeRef } from "@/lib/funds/access";
 import { bandTypeId, fundsGaps } from "@/lib/services/funds-handlers";
 import { PERMISSIONS, PERMISSION_GROUPS } from "@/lib/auth/permissions";
-import { cashToSettleIds, notifyOverdue } from "@/lib/services/funds";
+import { cashToSettleIds, exceptionTargets, notifyOverdue } from "@/lib/services/funds";
 import { OPEN_ADVANCE, ageBucket, bandRolesFor, decimalToCents, isOverdue, peso } from "@/lib/funds/rules";
 import { allKinds, kindOption, lineKindText } from "@/lib/services/expense-kinds";
 import { presetWas } from "@/lib/funds/kinds";
 import { LineEditButton } from "@/components/funds/line-edit";
-import { businessDate, businessDaysBetween } from "@/lib/time";
+import { businessDate } from "@/lib/time";
 import { ltoLine } from "@/lib/ui/lto";
-import { getHolidaySet } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
 import { dayText } from "@/lib/ui/plain";
 import { PageHeader, ToneChip } from "@/components/ui/basics";
 import { AdvanceStatusChip } from "@/components/funds/advance-status";
@@ -104,8 +105,8 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   const fundsTypes = await prisma.fundsType.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
   const ftype = fundsTypes.find((t) => t.code === sp.ftype)?.code;
   const scope = { ...branchScope, ...typeWhere(user), ...(ftype ? { fundsTypeCode: ftype } : {}) };
-  const sideLine = { include: { transaction: lineTxn, advance: { select: { number: true, fundsTypeId: true, fundsTypeCode: true, fundsTypeName: true, requestedBy: { select: { name: true } }, branch: { select: { name: true } } } } } } as const;
-  const [requested, approved, open, history, topUps, carries, bands, me, holidays] = await Promise.all([
+  const sideLine = { include: { transaction: lineTxn, advance: { select: { number: true, fundsTypeId: true, fundsTypeCode: true, fundsTypeName: true, requestedBy: { select: { name: true } }, branchId: true, branch: { select: { name: true } } } } } } as const;
+  const [requested, approved, open, history, topUps, carries, bands, me, cal] = await Promise.all([
     prisma.cashAdvance.findMany({ where: { ...scope, status: "REQUESTED" }, include, orderBy: { createdAt: "asc" } }),
     prisma.cashAdvance.findMany({ where: { ...scope, status: "APPROVED" }, include, orderBy: { approvedAt: "asc" } }),
     prisma.cashAdvance.findMany({ where: { ...scope, status: { in: [...OPEN_ADVANCE, "LIQUIDATED"] as never } }, include, orderBy: { releasedAt: "asc" } }),
@@ -114,7 +115,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
     prisma.carryOver.findMany({ where: { status: "PENDING", line: { advance: scope } }, include: { line: sideLine } }),
     prisma.approvalBand.findMany(),
     prisma.user.findUnique({ where: { id: user.id }, select: { roleId: true } }),
-    getHolidaySet(),
+    getCalendar(),
   ]);
   type Adv = (typeof requested)[number];
   type Line = Adv["lines"][number];
@@ -141,9 +142,13 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
     return `${lineKindText(names, l)}${l.transaction ? ` · ${l.transaction.loan.pn} ${l.transaction.type.name} (${l.transaction.loan.borrowerName})` : l.note ? ` · ${l.note}` : ""}${office ? ` · ${ltoLine(office)}` : ""}${changed ? ` · ${changed}` : ""}`;
   };
   const balanceOf = (a: Adv) => a.releasedCents - a.lines.flatMap((l) => l.receipts).reduce((s, r) => s + r.cents, 0) - a.returns.reduce((s, r) => s + r.cents, 0);
-  const ageOf = (a: Adv) => (a.releasedAt ? businessDaysBetween(businessDate(a.releasedAt), businessDate(now), holidays) : 0);
-  const daysSince = (d: Date | null) => (d ? businessDaysBetween(businessDate(d), businessDate(now), holidays) : 0);
-  const overdueDps = new Map(open.filter((a) => isOverdue(a, now)).map((a) => [a.requestedBy.id, a.requestedBy.name]));
+  // Working days on the requesting processor's branch calendar (D-041: Finance and liquidation count on it).
+  const ageOf = (a: Adv) => (a.releasedAt ? workingDaysBetween(businessDate(a.releasedAt), businessDate(now), daysFor(cal, a.branchId)) : 0);
+  const daysSince = (d: Date | null, branchId: string) => (d ? workingDaysBetween(businessDate(d), businessDate(now), daysFor(cal, branchId)) : 0);
+  const overdueAll = new Map(open.filter((a) => isOverdue(a, now)).map((a) => [a.requestedBy.id, a.requestedBy.name]));
+  // D-039: an exception only for processors who work in this person's branches (the server refuses others).
+  const grantable = await exceptionTargets(user, [...overdueAll.keys()]);
+  const overdueDps = new Map([...overdueAll].filter(([id]) => grantable.has(id)));
   const counts = { approve: requested.length + topUps.filter((t) => t.status === "REQUESTED").length + carries.length, release: approved.length + topUps.filter((t) => t.status === "APPROVED").length, outstanding: open.length, history: history.length };
   // Counts by type for the filter (same branch scope, every open or recent record of the tab).
   const tabStatus: Record<string, string[]> = { approve: ["REQUESTED"], release: ["APPROVED"], outstanding: [...OPEN_ADVANCE, "LIQUIDATED"], history: ["CLOSED", "DENIED", "CANCELLED"] };
@@ -272,7 +277,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             forKind: forCell(a, { amounts: "requested" }),
             asked: askedCell(a.requestedBy.name, a.branch.name, `Asked ${dayText(a.createdAt)}`, a.exceptionId ? <Grey>With a one-time exception</Grey> : null),
             amount: amountCell(a.requestedCents, suggested !== null ? <Grey>Suggested {peso(suggested)}</Grey> : null),
-            status: <><AdvanceStatusChip status={a.status} /><Aging tone="mute">{daysText(daysSince(a.createdAt), "waiting")}</Aging></>,
+            status: <><AdvanceStatusChip status={a.status} /><Aging tone="mute">{daysText(daysSince(a.createdAt, a.branchId), "waiting")}</Aging></>,
             action: !may("approve", a) && !may("editLines", a) && !may("changeType", a) ? null : actions(a.number, [canDecide && <QuickApproveForm key="ok" advanceId={a.id} lines={a.lines.map((l) => ({ id: l.id, requestedCents: l.requestedCents }))} about={about} />, canDecide && <DecideSheetButton key="deny" number={a.number} label="Deny" advanceId={a.id} lines={formLines} about={about} />], more, lock),
           }} />
         ),
@@ -292,7 +297,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             forKind: <div><span className="font-semibold">{lineKindText(names, t.line)}: more cash</span><Grey>{t.reason || DASH}</Grey></div>,
             asked: askedCell(t.line.advance.requestedBy.name, t.line.advance.branch.name, `Asked ${dayText(t.createdAt)}`),
             amount: amountCell(t.extraCents, <Grey>Extra asked</Grey>),
-            status: <><AdvanceStatusChip status="REQUESTED" /><Aging tone="mute">{daysText(daysSince(t.createdAt), "waiting")}</Aging></>,
+            status: <><AdvanceStatusChip status="REQUESTED" /><Aging tone="mute">{daysText(daysSince(t.createdAt, t.line.advance.branchId), "waiting")}</Aging></>,
             action: !may("approve", t.line.advance) ? null : actions(`${t.line.advance.number} top-up`, [ok && <SmallAction key="ok" kind="topup-approve" id={t.id} label="Approve the extra" cls="btn-gold btn-sm fl-btn" confirm={{ number: `${t.line.advance.number} top-up`, requester: t.line.advance.requestedBy.name, kinds: [lineKindText(names, t.line)], borrowers: txns.map((x) => x.borrower), cents: t.extraCents }} />], [[ok && <SmallAction key="no" kind="topup-deny" id={t.id} label="Deny" extra />]], lock),
           }} />
         ),
@@ -310,7 +315,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             forKind: <div><span className="font-semibold">Keep the balance</span><Grey>{c.line.advance.requestedBy.name} wants to keep the balance beyond the carry-over limit ({c.businessDays} business days).</Grey></div>,
             asked: askedCell(c.line.advance.requestedBy.name, c.line.advance.branch.name, `Asked ${dayText(c.createdAt)}`),
             amount: amountCell(c.cents, <Grey>Balance kept</Grey>),
-            status: <><AdvanceStatusChip status="REQUESTED" /><Aging tone="mute">{daysText(daysSince(c.createdAt), "waiting")}</Aging></>,
+            status: <><AdvanceStatusChip status="REQUESTED" /><Aging tone="mute">{daysText(daysSince(c.createdAt, c.line.advance.branchId), "waiting")}</Aging></>,
             action: may("approve", c.line.advance) ? actions(`${c.line.advance.number} carry-over`, [<SmallAction key="ok" kind="carry-approve" id={c.id} label="Approve carry-over" cls="btn-gold btn-sm fl-btn" confirm={{ number: `${c.line.advance.number} carry-over`, requester: c.line.advance.requestedBy.name, kinds: [lineKindText(names, c.line)], borrowers: txns.map((x) => x.borrower), cents: c.cents }} />, <SmallAction key="no" kind="carry-deny" id={c.id} label="Deny (return the cash)" cls="btn-secondary btn-sm fl-btn" />]) : null,
           }} />
         ),
@@ -335,7 +340,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             forKind: <>{forCell(a, { amounts: "approved" })}{a.approvalNote && <Grey>Approval note: {a.approvalNote}</Grey>}</>,
             asked: askedCell(a.requestedBy.name, a.branch.name, `Asked ${dayText(a.createdAt)}`),
             amount: amountCell(a.approvedCents ?? 0, <><Grey>Approved by {by ?? DASH}</Grey><Grey>{dayText(a.approvedAt)}</Grey>{(a.approvedCents ?? 0) !== a.requestedCents && <Grey>Asked {peso(a.requestedCents)}</Grey>}</>),
-            status: <><AdvanceStatusChip status={a.status} /><Aging tone="mute">{daysText(daysSince(a.approvedAt), "waiting")}</Aging></>,
+            status: <><AdvanceStatusChip status={a.status} /><Aging tone="mute">{daysText(daysSince(a.approvedAt, a.branchId), "waiting")}</Aging></>,
             action: may("release", a) || may("changeType", a) ? actions(a.number, [ok && <ReleaseSheetButton key="rel" number={a.number} advanceId={a.id} type={a.fundsType} today={today} />], [[may("changeType", a) && <ChangeTypeForm key="type" advanceId={a.id} current={a.fundsTypeId} types={editTypes} />]], lock) : null,
             details: historyOf(a.id).length ? <RecordHistory rows={historyOf(a.id)} /> : undefined,
           }} />

@@ -44,12 +44,15 @@ export type Decision =
   | { kind: "unchanged"; externalLoanId: number }
   | { kind: "not-held"; externalLoanId: number }                                          // released but no loan file: the pool's business
   | { kind: "changed"; loanId: string; row: FeedRow; feedState: FeedState }               // compare fields -> Open Items (piece 8)
-  | { kind: "record-replaced"; loanId: string; fromExternalLoanId: number; row: FeedRow }; // rule (b): a new ExternalLoanId for a known CIN
+  | { kind: "record-replaced"; loanId: string; fromExternalLoanId: number; row: FeedRow } // rule (b): a new ExternalLoanId for a known CIN
+  // The held copy came back Superseded and its replacement is not in this run (a redo without a cancellation,
+  // seen only through the suffix time, round 3): fetch the replacement (API 1 on replacedByPnNo), then rule (b).
+  | { kind: "superseded"; loanId: string; fromExternalLoanId: number; replacedByExternalLoanId: number | null; replacedByPnNo: string | null };
 
 /**
  * Per loan: duplicates first (RowsForThisLoan > 1, or two rows for one ExternalLoanId); then by CIN, so a
- * redo chain always links the CIN to its current live transaction, even when the older copies are never
- * re-sent. A changed hash means "look at the fields"; the DMS never recomputes the hash.
+ * redo chain always links the CIN to its current live transaction, whether or not the older copies are re-sent
+ * (round 3 re-sends them: the suffix time and the replacement's created_at move their SourceUpdatedAt). A changed hash means "look at the fields"; the DMS never recomputes the hash.
  */
 export function planRun(rows: FeedRow[], held: HeldLoan[]): Decision[] {
   const out: Decision[] = [];
@@ -61,6 +64,14 @@ export function planRun(rows: FeedRow[], held: HeldLoan[]): Decision[] {
     if (rs.length > 1 || rs.some((r) => r.rowsForThisLoan > 1)) { out.push({ kind: "duplicate", externalLoanId: id, rows: rs }); continue; }
     const row = rs[0];
     const same = heldById.get(id);
+    if (same && row.feedState === "Superseded") {
+      // Round 3: the oldest copy of a redo chain is re-sent when its replacement is created. When that replacement
+      // is in this run, the CIN pass below links it (one decision per loan file, not two).
+      const rep = row.replacedByExternalLoanId;
+      if (rep !== null && byId.has(rep)) continue;
+      out.push({ kind: "superseded", loanId: same.loanId, fromExternalLoanId: id, replacedByExternalLoanId: rep, replacedByPnNo: row.replacedByPnNo });
+      continue;
+    }
     if (same) {
       out.push(row.contentHash === same.contentHash ? { kind: "unchanged", externalLoanId: id } : { kind: "changed", loanId: same.loanId, row, feedState: row.feedState });
       continue;

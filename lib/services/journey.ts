@@ -4,7 +4,9 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getHolidaySet, getTatMap } from "@/lib/settings";
+import { getTatMap } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
+import { daysFor, type Days, type WorkCalendar } from "@/lib/calendar/core";
 import { FUNDS_LABEL, peso } from "@/lib/funds/rules";
 import { kindText } from "@/lib/funds/kinds";
 import { amountWords } from "./funds";
@@ -23,11 +25,11 @@ import type { LoanDetail } from "./queries";
  * (journey:view_amounts): without it, amounts are removed here (advances carry no cents, and peso
  * amounts are cut from the event sentences), so the page never receives them.
  */
-export async function loadJourney(user: CurrentUser, loan: LoanDetail, now: Date = new Date()): Promise<{ journey: Journey; story: JourneyStory; amounts: boolean; holidays: Set<string> }> {
+export async function loadJourney(user: CurrentUser, loan: LoanDetail, now: Date = new Date()): Promise<{ journey: Journey; story: JourneyStory; amounts: boolean; holidays: Days; cal: WorkCalendar }> {
   const amounts = can(user, PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
-  const [tats, holidays, audit, movements, advances] = await Promise.all([
+  const [tats, cal, audit, movements, advances] = await Promise.all([
     getTatMap(),
-    getHolidaySet(),
+    getCalendar(),
     // Labels were removed (11 November 2026): older label rows stay in the audit log and custody trail but are not shown.
     prisma.auditLog.findMany({ where: { loanId: loan.id, action: { not: "labels_printed" } }, orderBy: { at: "asc" }, take: 2000 }),
     // Rows written in one database transaction can share a timestamp: the id (cuid) keeps their order.
@@ -39,9 +41,10 @@ export async function loadJourney(user: CurrentUser, loan: LoanDetail, now: Date
     }),
   ]);
   const input = journeyInput(loan, { audit, movements, advances }, amounts);
-  const journey = buildJourney(input, tats, holidays, now);
+  const journey = buildJourney(input, tats, cal, now);
+  const holidays = daysFor(cal, loan.branchId);
   // Story, By document and "Where it is now" read the same records (read only).
-  return { journey, story: buildJourneyStory(input, journey), amounts, holidays };
+  return { journey, story: buildJourneyStory(input, journey), amounts, holidays, cal };
 }
 
 /** Peso amounts in a sentence ("₱1,500.00", "PHP 1,500.00", "1500.00 for ..."), removed for viewers without the permission. */
@@ -155,7 +158,7 @@ export function journeyInput(loan: LoanDetail, rows: { audit: Audit[]; movements
   return {
     loan: {
       pn: loan.pn, stage: loan.stage, stageSince: loan.stageSince, classification: loan.classification, mortgageResult: loan.mortgageResult,
-      overridden: loan.overridden, openedAt: loan.openedAt, openedBy: { id: loan.openedById, name: loan.openedBy.name }, branchName: loan.branch.name,
+      overridden: loan.overridden, openedAt: loan.openedAt, openedBy: { id: loan.openedById, name: loan.openedBy.name }, branchName: loan.branch.name, branchId: loan.branchId,
       openSourceChange: loan.exceptions.some((e) => e.type === "SOURCE_CHANGE" && e.status === "OPEN"),
       transmittalDispatched: loan.transmittalItems.some((i) => i.transmittal.dispatchedAt),
       transmittalReceived: loan.transmittalItems.some((i) => i.transmittal.receivedAt),
@@ -167,6 +170,7 @@ export function journeyInput(loan: LoanDetail, rows: { audit: Audit[]; movements
       return {
         id: t.id, code: t.type.code, name: t.type.name, requiresDp: t.type.requiresDp, ownerRole: t.type.ownerRole, status: t.status, statusSince: t.statusSince,
         createdAt: t.createdAt, completedAt: t.completedAt, cancelledAt: t.cancelledAt, readyAt, fundsNeeded: t.fundsNeeded,
+        jobBranchId: [...t.dpAssignments].sort((a, b) => b.endorsedAt.getTime() - a.endorsedAt.getTime())[0]?.dpBranchId ?? null,
         ltoOffice: t.dpAssignments.find((a) => a.ltoOffice)?.ltoOffice?.name ?? null,
         fundsStatus: FUNDS_LABEL[txnFunds(t)],
         assignments: t.dpAssignments.map((a) => ({

@@ -2,11 +2,11 @@
 
 The key words for the workflow. Use exactly these in screens, emails and reports.
 
-Last updated: 12 November 2026 (PHT)
+Last updated: 17 November 2026 (PHT)
 
 | Word | Meaning | Who | Effect on the clock |
 |---|---|---|---|
-| **Journey** | The loan's record, read three ways: **Story** (what happened, newest first, one sentence per real event, grouped under a date row), **By document** (each transaction from Opened to Done, with what held it up) and **Full log** (every step, including automatic ones, for checking). "Where it is now" sits above all three. Reading it changes nothing. See [How to read the Journey](03-loan-associate.md#how-to-read-the-journey). | Everyone who can open the loan file | None (the clock never pauses) |
+| **Journey** | The loan's record, read three ways: **Story** (what happened, newest first, one sentence per real event, grouped under a date row), **By document** (each transaction from Opened to Done, with what held it up) and **Full log** (every step, including automatic ones, for checking). "Where it is now" sits above all three. Reading it changes nothing. See [How to read the Journey](03-loan-associate.md#how-to-read-the-journey). | Everyone who can open the loan file | None (reading it changes no clock) |
 | **Missing paper** | A paper the LA marks Missing on its row (Check papers), with a reason (Settings, Missing paper reasons) and remarks (5 to 500 characters) for that paper. It does not block the file: Send waits only until every missing paper has its remarks. Ends when it is marked Received, with the date it arrived. A paper the processor asks for in a Return to LA is a missing-paper request instead (closes when the paper is ticked). | LA (papers:mark_missing); Received: papers:receive_late | None |
 | **Include in this file** | The tick on an optional paper. Off: the paper is ignored (nothing expects it, it needs no remarks, the DP cannot return the file for it). On: it behaves exactly like a required paper. | LA | None |
 | **Complete with exceptions** | A file through the vault gate while a paper is still Missing (with remarks). It stays flagged until every missing paper is Received. | System | None |

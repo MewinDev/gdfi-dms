@@ -5,10 +5,12 @@ import { ltoEstimate } from "@/lib/ui/lto";
 import { prisma, type Tx } from "@/lib/db";
 import { writeAudit, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
-import { allInScope, can, type CurrentUser } from "@/lib/auth/current-user";
+import { allInScope, can, worksInScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PRINTABLE_STATUSES } from "@/lib/funds/list-view";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getHolidaySet, getSetting } from "@/lib/settings";
+import { getSetting } from "@/lib/settings";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { businessDate } from "@/lib/time";
 import {
   advanceBalance, bandRolesFor, decimalToCents, isOverdue, liquidationDue, liquidationStatus, peso,
@@ -318,6 +320,8 @@ export async function decideAdvance(u: CurrentUser, advanceId: string, raw: unkn
     await tx.$queryRaw`SELECT "id" FROM "CashAdvance" WHERE "id" = ${advanceId} FOR UPDATE`;
     const a = await tx.cashAdvance.findUnique({ where: { id: advanceId }, include: { lines: { include: { transaction: { include: { loan: true, type: true } } } }, requestedBy: true } });
     if (!a) throw new UserError("Cash advance not found.");
+    // Scope first (D-019): "already approved" must not tell someone outside the request that it exists.
+    await needSee(tx, u, a);
     if (d.approve && a.approvedAt && !["REQUESTED", "DENIED", "CANCELLED"].includes(a.status)) {
       return { status: a.status, approvedCents: a.approvedCents, already: true };
     }
@@ -409,8 +413,6 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
     const ref = r.ref;
     const sent = isTransfer(a.fundsType);
     await assertFundsNotHeld(tx, a.lines.map((l) => l.transactionId));
-    const holidays = await getHolidaySet(tx);
-    const dueDays = await getSetting("funds.liquidationDueDays", tx);
     let total = 0;
     for (const l of a.lines) {
       if (l.denied || !l.approvedCents) continue;
@@ -419,10 +421,11 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
     }
     // A type that need not be liquidated with receipts is settled when it is released (no due date).
     const settle = !a.fundsType.mustLiquidate;
+    const due = settle ? { liquidationDueAt: null } : await liquidationDueFields(tx, a.branchId, now);
     await tx.cashAdvance.update({
       where: { id: a.id },
       data: {
-        status: settle ? "LIQUIDATED" : "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, liquidationDueAt: settle ? null : liquidationDue(now, dueDays, holidays),
+        status: settle ? "LIQUIDATED" : "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, ...due,
         transferDate: r.transferDate, accountProvider: r.accountProvider, accountName: r.accountName, accountLast4: r.accountLast4,
       },
     });
@@ -512,8 +515,11 @@ export async function decideTopUp(u: CurrentUser, topUpId: string, approve: bool
     // Locked first: a second Approve (double tap) waits, then finds it approved and does nothing.
     await tx.$queryRaw`SELECT "id" FROM "CashAdvanceTopUp" WHERE "id" = ${topUpId} FOR UPDATE`;
     const t = await tx.cashAdvanceTopUp.findUnique({ where: { id: topUpId }, include: { line: { include: { advance: true } } } });
-    if (t && approve && t.status === "APPROVED") return;
-    if (!t || t.status !== "REQUESTED") throw new UserError("This top-up was already decided.");
+    if (!t) throw new UserError("Request not found.");
+    // Scope first (D-019): the idempotent "already approved" answer is only for someone who sees the request.
+    await needSee(tx, u, t.line.advance);
+    if (approve && t.status === "APPROVED") return;
+    if (t.status !== "REQUESTED") throw new UserError("This top-up was already decided.");
     await requireApprover(tx, u, t.extraCents, t.requestedById, t.line.advance);
     if (approve) await assertFundsNotHeld(tx, [t.line.transactionId]);
     const amount = approve ? cents ?? t.extraCents : 0;
@@ -571,15 +577,17 @@ export async function decideCarryOver(u: CurrentUser, carryId: string, approve: 
     // Locked first: a second Approve (double tap) waits, then finds it approved and does nothing.
     await tx.$queryRaw`SELECT "id" FROM "CarryOver" WHERE "id" = ${carryId} FOR UPDATE`;
     const c = await tx.carryOver.findUnique({ where: { id: carryId }, include: { line: { include: { advance: true } } } });
-    if (c && approve && c.status === "APPROVED") return;
-    if (c) { await needSee(tx, u, c.line.advance); needType(u, "approve", c.line.advance, "approving carry-overs of"); }
-    if (!c || c.status !== "PENDING") throw new UserError("This carry-over was already decided.");
+    if (!c) throw new UserError("Request not found.");
+    // Scope and the type's tick first (D-019), then the idempotent "already approved" answer.
+    await needSee(tx, u, c.line.advance);
+    needType(u, "approve", c.line.advance, "approving carry-overs of");
+    if (approve && c.status === "APPROVED") return;
+    if (c.status !== "PENDING") throw new UserError("This carry-over was already decided.");
     if (c.line.advance.requestedById === u.id) throw new UserError("You cannot approve your own carry-over.");
     if (approve) await assertFundsNotHeld(tx, [c.line.transactionId]); // approving puts cash back to work
     await tx.carryOver.update({ where: { id: c.id }, data: { status: approve ? "APPROVED" : "DENIED", decidedById: u.id, decidedAt: now } });
     if (approve) {
-      const holidays = await getHolidaySet(tx);
-      await tx.cashAdvance.update({ where: { id: c.line.advanceId }, data: { overdueNotifiedAt: null, liquidationDueAt: liquidationDue(now, await getSetting("funds.liquidationDueDays", tx), holidays) } });
+      await tx.cashAdvance.update({ where: { id: c.line.advanceId }, data: { overdueNotifiedAt: null, ...(await liquidationDueFields(tx, c.line.advance.branchId, now)) } });
     }
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: approve ? "carryover_approved" : "carryover_denied", entityType: "CashAdvance", entityId: c.line.advanceId, summary: `${c.line.advance.number}: carry-over of ${peso(c.cents)} ${approve ? "approved" : "denied (return the cash)"} by ${u.name}` });
     await notify(tx, { email: { event: "advance_decided", vars: { number: c.line.advance.number, kind: c.line.advance.fundsTypeName, status: approve ? "carry-over approved" : "carry-over denied", who: u.name, reason: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance." } }, userIds: [c.line.advance.requestedById], title: `${c.line.advance.number}: carry-over ${approve ? "approved" : "denied"}`, body: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance.", link: "/my-funds?tab=advances" });
@@ -675,13 +683,33 @@ export async function closeAdvance(u: CurrentUser, advanceId: string) {
   });
 }
 
-/** Finance lets an overdue DP submit one more request (one-time). */
+/**
+ * Of these processors, the ones this Finance person may grant an exception to (D-039): they work in one of
+ * the person's branches. The Funds page offers the button only for them (no button that leads to "not found").
+ */
+export async function exceptionTargets(u: CurrentUser, dpUserIds: string[]): Promise<Set<string>> {
+  if (!can(u, PERMISSIONS.FUNDS_EXCEPTION) || !dpUserIds.length) return new Set();
+  const rows = await prisma.user.findMany({ where: { id: { in: dpUserIds } }, select: { id: true, allBranches: true, branches: { select: { branchId: true } } } });
+  return new Set(rows.filter((r) => r.id !== u.id && worksInScope(u, r)).map((r) => r.id));
+}
+
+/**
+ * The liquidation due date and the start of its count (D-041): on the requesting processor's branch calendar,
+ * from the release or the latest carry-over decision. Piece 5 changes the start to the last LTO completion.
+ */
+export async function liquidationDueFields(tx: Tx, branchId: string, from: Date) {
+  const days = daysFor(await loadCalendar(tx), branchId);
+  return { liquidationDueAt: liquidationDue(from, await getSetting("funds.liquidationDueDays", tx), days), liquidationDueFrom: businessDate(from) };
+}
+
+/** Finance lets an overdue DP submit one more request (one-time), only a processor in their branches (D-039). */
 export async function grantException(u: CurrentUser, dpUserId: string, note: string) {
   need(u, PERMISSIONS.FUNDS_EXCEPTION, "Your role does not allow granting exceptions.");
   if (dpUserId === u.id) throw new UserError("You cannot grant yourself an exception.");
   return prisma.$transaction(async (tx) => {
-    const dp = await tx.user.findUnique({ where: { id: dpUserId } });
-    if (!dp) throw new UserError("Pick a processor.");
+    const dp = await tx.user.findUnique({ where: { id: dpUserId }, select: { name: true, allBranches: true, branches: { select: { branchId: true } } } });
+    // D-039: only processors who work in one of the Finance person's branches ("All branches" = anyone).
+    if (!dp || !worksInScope(u, dp)) throw new UserError("Pick a processor.");
     const ex = await tx.fundsException.create({ data: { dpUserId, grantedById: u.id, note: note.trim() } });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "funds_exception_granted", entityType: "User", entityId: dpUserId, summary: `${u.name} let ${dp.name} submit one more cash advance while overdue${note ? `: ${note.trim()}` : ""}` });
     await notify(tx, { userIds: [dpUserId], title: "You may submit one more cash advance", body: `${u.name} granted a one-time exception.`, link: "/my-funds" });

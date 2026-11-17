@@ -1,12 +1,15 @@
 import "server-only";
 import { z } from "zod";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
+import { loadCalendar } from "@/lib/calendar/load";
+import { PAUSE_RULE_TEXT, addWorkingDays, daysFor, workingDaysBetween } from "@/lib/calendar/core";
+import { businessDate } from "@/lib/time";
 import { writeAudit } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { andWhere, holdsWhere } from "@/lib/auth/holders";
-import { overseerIds, ownsTransaction } from "./jobs";
+import { inScopeOrOwnJob, overseerIds, ownsTransaction } from "./jobs";
 import { currentStageIdFor } from "./job-stages";
 import { NotInScopeError, UserError } from "./errors";
 import { NO_OWNER, holdRemarksSchema, journeyHoldTransferred, mayAddDetails, mayResumeHold, onlyHolderMessage, remarksSchema, resumeRemarksSchema } from "@/lib/ui/holds";
@@ -52,7 +55,7 @@ export async function raiseHold(u: CurrentUser, raw: HoldInput, now: Date = new 
   if (!p.success) throw firstIssue(p.error);
   const d = p.data;
   const t = await prisma.loanTransaction.findUnique({ where: { id: d.transactionId }, include: { type: true, loan: true } });
-  if (!t || !inScope(u, t.loan.branchId)) throw new NotInScopeError();
+  if (!t || !(await inScopeOrOwnJob(u, t.loan.branchId, t.id))) throw new NotInScopeError();
   if (["COMPLETED", "CANCELLED"].includes(t.status)) throw new UserError("This transaction is already finished.");
   if (!(await ownsTransaction(u, t))) throw new UserError("You can put on hold only work you do.");
   const reason = await prisma.holdReason.findUnique({ where: { id: d.reasonId } });
@@ -81,7 +84,7 @@ export async function raiseHold(u: CurrentUser, raw: HoldInput, now: Date = new 
  */
 export async function resumeHold(u: CurrentUser, holdId: string, note: string, now: Date = new Date()) {
   const h = await prisma.hold.findUnique({ where: { id: holdId }, include: { reason: true, transaction: { include: { type: true, loan: true } } } });
-  if (!h || !inScope(u, h.transaction.loan.branchId)) throw new NotInScopeError();
+  if (!h || !(await inScopeOrOwnJob(u, h.transaction.loan.branchId, h.transactionId))) throw new NotInScopeError();
   if (h.resumedAt) throw new UserError("This hold has already ended.");
   if (!mayResumeHold(h, u)) throw new UserError(h.ownerLabel ? onlyHolderMessage(h.ownerLabel) : NO_OWNER);
   const r0 = resumeSchema.safeParse({ note });
@@ -92,11 +95,33 @@ export async function resumeHold(u: CurrentUser, holdId: string, note: string, n
     // Closes the same record (no new row): the open segment becomes a finished one.
     const r = await tx.hold.updateMany({ where: { id: h.id, resumedAt: null }, data: { resumedAt: now, resumedById: u.id, resumedByLabel: u.name, resumeNote: text } });
     if (r.count === 0) throw new UserError("This hold has already ended.");
+    // A reason that "Pauses TAT" (D-041): the job's saved due date moves by the paused working days.
+    if (h.reason.pausesTat) await extendForPause(tx, t.id, h.raisedAt, now, { id: u.id, label: u.name }, h.reasonName || h.reason.name);
     await writeAudit(tx, {
       actor: { id: u.id, label: u.name }, mode: "MANUAL", action: "hold_ended", entityType: "Hold", entityId: h.id, loanId: t.loanId, pn: t.loan.pn,
       summary: `${t.type.name} resumed after hold (${h.reasonName || h.reason.name}): ${text}`,
     });
     await notifyHold(tx, { loanId: t.loanId, loan: t.loan, type: t.type }, "ended", `${u.name} resumed it: ${text}`);
+  });
+}
+
+/**
+ * A finished pause moves the active job's saved due date (D-041): by the working days after the hold day up to
+ * and including the resume day, on the processor's branch calendar. One DueDateChange and audit row.
+ */
+async function extendForPause(tx: Tx, transactionId: string, from: Date, to: Date, actor: { id: string; label: string }, reason: string) {
+  const job = await tx.dpAssignment.findFirst({ where: { transactionId, status: "ACCEPTED", dueDate: { not: null } }, include: { loan: { select: { pn: true } }, transaction: { select: { type: { select: { name: true } } } } } });
+  if (!job?.dueDate) return;
+  const days = daysFor(await loadCalendar(tx), job.dueBranchId ?? job.dpBranchId);
+  const paused = Math.max(0, workingDaysBetween(businessDate(from), businessDate(to), days));
+  if (!paused) return;
+  const next = addWorkingDays(job.dueDate, paused, days);
+  await tx.dpAssignment.update({ where: { id: job.id }, data: { dueDate: next } });
+  await tx.dueDateChange.create({ data: { subjectType: "DpAssignment", subjectId: job.id, loanId: job.loanId, pn: job.loan.pn, fromDate: job.dueDate, toDate: next, cause: "HOLD_PAUSE", wasOverdue: businessDate(to) > job.dueDate, note: `On hold (${reason}): ${paused} working day${paused === 1 ? "" : "s"} paused. ${PAUSE_RULE_TEXT}`, byId: actor.id, byLabel: actor.label } });
+  await writeAudit(tx, {
+    actor, mode: "MANUAL", action: "due_date_extended", entityType: "DpAssignment", entityId: job.id, loanId: job.loanId, pn: job.loan.pn,
+    summary: `${job.loan.pn}: ${job.transaction.type.name} due date moved from ${job.dueDate} to ${next}: ${paused} working day${paused === 1 ? "" : "s"} paused on hold (${reason})`,
+    before: { due: job.dueDate }, after: { due: next }, details: { cause: "HOLD_PAUSE" },
   });
 }
 
@@ -107,7 +132,7 @@ export async function resumeHold(u: CurrentUser, holdId: string, note: string, n
  */
 export async function addHoldDetails(u: CurrentUser, holdId: string, note: string) {
   const h = await prisma.hold.findUnique({ where: { id: holdId }, include: { reason: true, transaction: { include: { type: true, loan: true } } } });
-  if (!h || !inScope(u, h.transaction.loan.branchId)) throw new NotInScopeError();
+  if (!h || !(await inScopeOrOwnJob(u, h.transaction.loan.branchId, h.transactionId))) throw new NotInScopeError();
   if (h.resumedAt) throw new UserError("This hold has already ended.");
   if (h.note.trim()) throw new UserError("This hold already has remarks.");
   if (!mayAddDetails(h, u)) throw new UserError(h.ownerLabel ? `Only ${h.ownerLabel} can add the details.` : NO_OWNER);

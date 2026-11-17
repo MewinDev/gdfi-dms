@@ -1,5 +1,6 @@
 "use client";
 
+import type { WorkCalendar } from "@/lib/calendar/core";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FilterIcon, XIcon } from "@/components/ui/icons";
@@ -20,7 +21,7 @@ export function FilterBar(p: {
   from: string;
   to: string;
   today: string;
-  holidays: string[];
+  cal: WorkCalendar;
   area: string;
   branch: string;
   type: string;
@@ -54,7 +55,7 @@ export function FilterBar(p: {
       <div className="flex w-full items-end gap-2 lg:w-auto">
         <div className="min-w-0 flex-1 sm:flex-none">
           <span className="label hidden sm:block">Dates</span>
-          <DateRangeButton preset={p.preset} from={p.from} to={p.to} today={p.today} holidays={p.holidays} keep={p.keep} />
+          <DateRangeButton preset={p.preset} from={p.from} to={p.to} today={p.today} cal={p.cal} keep={p.keep} />
         </div>
         <button type="button" onClick={() => setSheet(true)} className="relative inline-flex min-h-11 items-center gap-2 rounded-xl border border-line-input bg-white px-3.5 text-[14px] font-semibold text-navy sm:hidden" aria-haspopup="dialog" aria-expanded={sheet} data-filters-button>
           <FilterIcon size={18} /> Filters
