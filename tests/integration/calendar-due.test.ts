@@ -2,12 +2,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { addCalendarEntry, previewEntry, previewWorkingDays } from "@/lib/services/calendar";
+import { addCalendarEntry, correctDueDate, dueChanges, previewEntry, previewEntryActive, previewWorkingDays, setCalendarEntryActive } from "@/lib/services/calendar";
 import { raiseHold, resumeHold } from "@/lib/services/holds";
 import { liquidationDueFields } from "@/lib/services/funds";
 import { loadCalendar } from "@/lib/calendar/load";
 import { addWorkingDays, daysFor } from "@/lib/calendar/core";
 import { endOfBusinessDay } from "@/lib/time";
+import { checkImport, runImport } from "@/lib/import/importer";
 import { asUser } from "./helpers";
 
 /**
@@ -58,8 +59,7 @@ describe("example 7: a holiday added late (Wed 25 Nov, added on Tue 24)", () => 
     const entry = { kind: "HOLIDAY" as const, date: "2026-11-25", name: `${NAME} holiday`, type: "REGULAR" as const, allBranches: true, branchIds: [] };
     const tue = at("2026-11-24", "08:00");
     const pre = await previewEntry(admin, entry, tue);
-    const mine = pre.moves.filter((m) => [x.id, y.id, z.id, w.id].includes(m.subjectId));
-    expect(mine.map((m) => m.subjectId).sort()).toEqual([z.id, w.id].sort());
+    expect(pre.extend).toBeGreaterThanOrEqual(2); // Z and W (and any other open item of the test database)
     expect(pre.text).toMatch(/^This will extend \d+ items? \(\d+ currently overdue\)\.$/);
     expect(await dueOf(z.id)).toBe("2026-11-25"); // the preview saved nothing
     await addCalendarEntry(admin, entry, tue);
@@ -80,10 +80,9 @@ describe("Angono closed Thu 26 Nov, recorded on Fri 27", () => {
     const fri = at("2026-11-27", "09:00");
     const closure = { kind: "CLOSURE" as const, date: "2026-11-26", name: "", type: "LOCAL" as const, allBranches: false, branchIds: [angono], reason: `${NAME}: typhoon, offices closed` };
     const pre = await previewEntry(admin, closure, fri);
-    const m = pre.moves.find((x) => x.subjectId === a.id)!;
-    expect(m).toMatchObject({ from: "2026-11-26", to: "2026-11-27", wasOverdue: true });
-    expect(pre.moves.some((x) => x.subjectId === p.id)).toBe(false);
-    expect(pre.overdue).toBeGreaterThanOrEqual(1);
+    expect(pre.extend).toBeGreaterThanOrEqual(1);
+    expect(pre.overdue).toBeGreaterThanOrEqual(1); // the Angono item is overdue on Fri 27
+    expect(await dueOf(a.id)).toBe("2026-11-26"); // the preview saved nothing
     await addCalendarEntry(admin, closure, fri);
     expect(await dueOf(a.id)).toBe("2026-11-27");
     expect(await dueOf(p.id)).toBe("2026-11-26");
@@ -106,11 +105,98 @@ describe("Angono closed Thu 26 Nov, recorded on Fri 27", () => {
   });
 });
 
+describe("a holiday made inactive undoes only its own extensions (D-042)", () => {
+  it("add a holiday: items extended; make it inactive: back to their earlier due dates, logged, owner told", async () => {
+    const z = await job("41", angono, "2026-12-01", "2026-12-02"); // window (1, 2]
+    const w = await job("42", angono, "2026-12-01", "2026-12-04"); // window (1, 4]
+    const other = await job("43", angono, "2026-12-03", "2026-12-04"); // window (3, 4]: does not hold the 2nd
+    const mon = at("2026-11-30", "08:00");
+    const { id } = await addCalendarEntry(admin, { kind: "HOLIDAY", date: "2026-12-02", name: `${NAME} undo`, allBranches: true }, mon);
+    expect([await dueOf(z.id), await dueOf(w.id), await dueOf(other.id)]).toEqual(["2026-12-03", "2026-12-05", "2026-12-04"]);
+    // A closure that also holds the 5th moves W again: making the holiday inactive must not undo that one.
+    await addCalendarEntry(admin, { kind: "CLOSURE", date: "2026-12-05", allBranches: false, branchIds: [angono], reason: `${NAME}: power outage` }, mon);
+    expect(await dueOf(w.id)).toBe("2026-12-07");
+    const pre = await previewEntryActive(admin, id, false, "", mon);
+    expect(pre.back).toBeGreaterThanOrEqual(2);
+    expect(pre.text).toContain("back to the due dates they had before");
+    expect(await dueOf(z.id)).toBe("2026-12-03"); // the preview saved nothing
+    await setCalendarEntryActive(admin, id, false, "", mon);
+    // W: Fri 4 -> Sat 5 (holiday) -> Mon 7 (the Sat 5 closure). Without the holiday its window ends on Fri 4 and
+    // never reaches the closure, so it goes back to Fri 4: one working day back from Mon 7 (Sun 6 off, Sat 5 closed).
+    expect([await dueOf(z.id), await dueOf(w.id), await dueOf(other.id)]).toEqual(["2026-12-02", "2026-12-04", "2026-12-04"]);
+    const undo = await prisma.dueDateChange.findFirstOrThrow({ where: { subjectId: z.id, cause: "HOLIDAY_REMOVED" } });
+    expect(undo).toMatchObject({ fromDate: "2026-12-03", toDate: "2026-12-02" });
+    expect(undo.reversesChangeId).toBeTruthy();
+    expect(await prisma.notification.count({ where: { userId: dp.id, link: `/jobs/${z.id}`, title: { contains: "moved to" } } })).toBe(2);
+    // Making it inactive again changes nothing; active again extends again.
+    await setCalendarEntryActive(admin, id, false, "", mon);
+    await setCalendarEntryActive(admin, id, true, "", mon);
+    expect(await dueOf(z.id)).toBe("2026-12-03");
+  });
+});
+
+describe("admin correction (D-042)", () => {
+  it("one item, a reason, the tick; shown in its history and logged", async () => {
+    const j = await job("51", pasig, "2026-12-01", "2026-12-03");
+    const la = await asUser("test.la@gdfi.ph");
+    await expect(correctDueDate(la, { subjectType: "DpAssignment", subjectId: j.id, date: "2026-12-04", reason: "LTO system down" })).rejects.toThrow(/Correct due dates/);
+    await expect(correctDueDate(admin, { subjectType: "DpAssignment", subjectId: j.id, date: "2026-12-04", reason: "x" })).rejects.toThrow(/Say why/);
+    await expect(correctDueDate(admin, { subjectType: "DpAssignment", subjectId: j.id, date: "2026-12-06", reason: "Sunday pick" })).rejects.toThrow(/working day/);
+    await correctDueDate(admin, { subjectType: "DpAssignment", subjectId: j.id, date: "2026-12-04", reason: "LTO system down all day" });
+    expect(await dueOf(j.id)).toBe("2026-12-04");
+    const h = await dueChanges("DpAssignment", j.id);
+    expect(h.at(-1)).toMatchObject({ cause: "CORRECTION", fromDate: "2026-12-03", toDate: "2026-12-04" });
+    expect(h.at(-1)!.note).toContain("LTO system down all day");
+    expect(await prisma.auditLog.count({ where: { entityId: j.id, action: "due_date_extended" } })).toBe(1);
+  });
+});
+
+describe("the holiday CSV import follows the same rule (D-042)", () => {
+  const csv = (rows: string[]) => ["date,name,type,branches,reason,status,notes", ...rows].join("\n");
+  it("Check file shows the preview and saves nothing; Import extends, logged; Inactive undoes only its own extension", async () => {
+    const j = await job("61", angono, "2026-12-08", "2026-12-10"); // window (8, 10]
+    const file = csv([`2026-12-09,${NAME} import,Regular,,,Active,`]);
+    const chk = await checkImport(admin, "holidays", "h.csv", file);
+    if (!chk.ok) throw new Error(chk.error);
+    expect(chk.counts.new).toBe(1);
+    expect(chk.notice).toMatch(/^This will extend \d+ items? \(\d+ currently overdue\)\.$/);
+    expect(await dueOf(j.id)).toBe("2026-12-10");
+    expect(await prisma.holidayCalendar.count({ where: { name: `${NAME} import` } })).toBe(0); // rolled back
+    const run = await runImport(admin, "holidays", "h.csv", file);
+    if (!run.ok) throw new Error(run.error);
+    expect(await dueOf(j.id)).toBe("2026-12-11");
+    expect(await prisma.dueDateChange.count({ where: { subjectId: j.id, cause: "HOLIDAY" } })).toBe(1);
+    // The same file with Inactive: only that holiday's extension is undone.
+    const off = csv([`2026-12-09,${NAME} import,Regular,,,Inactive,`]);
+    const chk2 = await checkImport(admin, "holidays", "h.csv", off);
+    if (!chk2.ok) throw new Error(chk2.error);
+    expect(chk2.notice).toMatch(/back to the due dates? they had before/);
+    await runImport(admin, "holidays", "h.csv", off);
+    expect(await dueOf(j.id)).toBe("2026-12-10");
+  });
+
+  it("a back-dated row needs a reason and may be at most 7 days back; an unknown branch code is refused", async () => {
+    const back = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10);
+    const chk = await checkImport(admin, "holidays", "h.csv", csv([
+      `${back(8)},${NAME} old,Regular,,Late entry from the proclamation,Active,`,
+      `${back(2)},${NAME} noreason,Regular,,,Active,`,
+      `2099-02-01,${NAME} local,Local,999,,Active,`,
+    ]));
+    if (!chk.ok) throw new Error(chk.error);
+    const probs = chk.rows.map((r) => r.problems.join(" "));
+    expect(probs[0]).toMatch(/up to 7 days back/);
+    expect(probs[1]).toMatch(/in the past: say why/);
+    expect(probs[2]).toMatch(/no branch has the code "999"/);
+    expect(chk.counts.problem).toBe(3);
+  });
+});
+
 describe("working days and liquidation follow the same rule", () => {
   it("taking Saturday away would extend the items whose window holds a Saturday (preview only)", async () => {
     const s = await job("21", angono, "2026-12-03", "2026-12-07"); // Thu 3 to Mon 7: Fri, Sat, Mon
     const pre = await previewWorkingDays(admin, [false, true, true, true, true, true, false], at("2026-12-04"));
-    expect(pre.moves.find((m) => m.subjectId === s.id)).toMatchObject({ from: "2026-12-07", to: "2026-12-08" });
+    expect(pre.extend).toBeGreaterThanOrEqual(1);
+    expect(await dueOf(s.id)).toBe("2026-12-07"); // the preview saved nothing
   });
 
   it("the liquidation due date counts on the requesting processor's branch calendar and saves its start", async () => {

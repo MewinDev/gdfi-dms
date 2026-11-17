@@ -1,4 +1,6 @@
 import { fieldsFromText, fieldsToText, type EvidenceField } from "@/lib/stages/rules";
+import { addEntryInTx, checkEntry, newTally, previewInTransaction, previewText, setEntryActiveInTx, type Tally } from "@/lib/services/calendar";
+import { businessDate } from "@/lib/time";
 import { rebuildAccess } from "@/lib/branches/access";
 import "server-only";
 import { Prisma } from "@prisma/client";
@@ -33,7 +35,7 @@ export interface PlanRow {
 }
 export interface PlanCounts { new: number; changed: number; unchanged: number; problem: number }
 export type ImportPlan =
-  | { ok: true; list: ImportListKey; fileName: string; rows: PlanRow[]; counts: PlanCounts }
+  | { ok: true; list: ImportListKey; fileName: string; rows: PlanRow[]; counts: PlanCounts; /** Holidays (D-042): which saved due dates move. */ notice?: string }
   | { ok: false; error: string };
 
 // ---------------------------------------------------------------------------
@@ -163,7 +165,7 @@ const statusData = (active: boolean, actor: { id: string }) =>
   active ? { active: true, deactivatedAt: null, deactivatedById: null } : { active: false, deactivatedAt: new Date(), deactivatedById: actor.id };
 
 /** Shared shape: key → existing row; validate; compare; create or update. */
-async function planList(list: ImportListKey, records: { line: number; cells: Record<string, string> }[], db: Db, user: CurrentUser): Promise<{ planned: Planned[]; problems: Row[] }> {
+async function planList(list: ImportListKey, records: { line: number; cells: Record<string, string> }[], db: Db, user: CurrentUser, ctx: { tally?: Tally } = {}): Promise<{ planned: Planned[]; problems: Row[] }> {
   const cols = IMPORT_LISTS[list].columns;
   const rows = records.map((r) => new Row(r.line, r.cells, cols));
   const planned: Planned[] = [];
@@ -404,20 +406,50 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
       break;
     }
     case "holidays": {
-      const existing = await db.holidayCalendar.findMany();
+      // D-042: through the calendar rule only (lib/services/calendar.ts): a new active holiday extends the saved due
+      // dates whose window holds it; Inactive undoes only its own extensions; the back-dating rule applies.
+      const existing = await db.holidayCalendar.findMany({ where: { kind: "HOLIDAY" }, include: { branches: true } });
+      const branches = await db.branch.findMany({ select: { id: true, code: true } });
+      const today = businessDate(new Date());
+      const TYPE: Record<string, "REGULAR" | "SPECIAL_NON_WORKING" | "LOCAL"> = { "": "REGULAR", regular: "REGULAR", "special non-working": "SPECIAL_NON_WORKING", special: "SPECIAL_NON_WORKING", local: "LOCAL" };
       for (const row of rows) {
-        const cur = existing.find((h) => h.date === (row.cells.date ?? "").trim()) ?? null;
+        const date = (row.cells.date ?? "").trim();
+        const same = existing.filter((h) => h.date === date);
+        if (same.length > 1) row.bad("date", "two holidays share this date. Change them in Settings, Holidays and working days.");
+        const cur = same.length === 1 ? same[0] : null;
         const data = validate(row, SETTINGS_SCHEMAS.holiday, { date: row.cells.date, name: row.cells.name }, { date: "date", name: "name" });
         const s = statusOf(row.cells.status);
         if (s === "bad") row.bad("status", "type Active or Inactive.");
         const active = s === "bad" || s === null ? cur?.active ?? true : s;
-        if (!data || row.problems.length) { finish(row, row.cells.date ?? "", null); continue; }
+        const type = TYPE[lower(row.cells.type)];
+        if (!type) row.bad("type", "type Regular, Special non-working or Local.");
+        const codes = (row.cells.branches ?? "").split(";").map((c) => c.trim()).filter(Boolean);
+        const branchIds = codes.map((c) => branches.find((b) => b.code === c)?.id).filter((x): x is string => !!x);
+        if (branchIds.length !== codes.length) row.bad("branches", `no branch has the code "${codes.find((c) => !branches.some((b) => b.code === c))}".`);
+        const reason = (row.cells.reason ?? "").trim();
+        if (!data || row.problems.length) { finish(row, date, null); continue; }
+        const entry = { kind: "HOLIDAY" as const, date: data.date, name: data.name, type: type!, allBranches: !branchIds.length, branchIds, reason };
+        if (!cur) {
+          try { if (active) await checkEntry(entry, today, db); } catch (e) { if (e instanceof UserError) { row.bad(e.field === "date" ? "date" : e.field === "reason" ? "reason" : "name", e.message); finish(row, date, null); continue; } throw e; }
+        } else {
+          const curIds = cur.branches.map((b) => b.branchId).sort();
+          if (codes.length && (cur.allBranches || curIds.join() !== [...branchIds].sort().join())) row.bad("branches", "the branches of an existing holiday are changed in Settings (make it inactive and add a new one).");
+          if (cur.active !== active && data.date < today) {
+            try { await checkEntry({ ...entry, allBranches: true, branchIds: [] }, today, db); } catch (e) { if (e instanceof UserError && e.field !== "name") row.bad(e.field === "date" ? "date" : "reason", e.message); else if (!(e instanceof UserError)) throw e; }
+          }
+          if (row.problems.length) { finish(row, date, null); continue; }
+        }
         const changes = cur ? diff({ name: "Holiday name", active: "Status" }, cur, { ...data, active }) : [];
         finish(row, data.date, {
           action: !cur ? "new" : changes.length ? "changed" : "unchanged", changes,
-          apply: async (tx, actor) => {
-            if (!cur) await tx.holidayCalendar.create({ data: { ...data, ...statusData(active, actor) } });
-            else await tx.holidayCalendar.update({ where: { id: cur.id }, data: { name: data.name, ...(cur.active !== active ? statusData(active, actor) : {}) } });
+          apply: async (tx) => {
+            if (!cur) {
+              const id = await addEntryInTx(tx, user, entry, today, ctx.tally);
+              if (!active) await setEntryActiveInTx(tx, user, id, false, today, reason, ctx.tally);
+              return;
+            }
+            if (cur.name !== data.name) await tx.holidayCalendar.update({ where: { id: cur.id }, data: { name: data.name } });
+            if (cur.active !== active) await setEntryActiveInTx(tx, user, cur.id, active, today, reason, ctx.tally);
           },
         });
       }
@@ -790,7 +822,16 @@ export async function checkImport(user: CurrentUser, list: ImportListKey, fileNa
   const read = readImportFile(list, text);
   if ("error" in read) return { ok: false, error: read.error };
   const { planned, problems } = await planList(list, read.records, prisma as unknown as Db, user);
-  return toPlan(list, fileName, planned, problems);
+  const plan = toPlan(list, fileName, planned, problems);
+  // Holidays (D-042): the same preview as Settings, by running the import and rolling it back.
+  if (plan.ok && list === "holidays") {
+    const tally = await previewInTransaction(async (tx, t) => {
+      const again = await planList(list, read.records, tx, user, { tally: t });
+      for (const p of again.planned) if (p.action !== "unchanged") await p.apply(tx, { id: user.id });
+    });
+    return { ...plan, notice: previewText(tally) };
+  }
+  return plan;
 }
 
 /**
@@ -805,10 +846,12 @@ export async function runImport(user: CurrentUser, list: ImportListKey, fileName
   const name = fileName.slice(0, 200) || "file.csv";
   try {
     return await prisma.$transaction(async (tx) => {
-      const { planned, problems } = await planList(list, read.records, tx, user);
+      const tally = newTally();
+      const { planned, problems } = await planList(list, read.records, tx, user, { tally });
       const actor = { id: user.id };
       for (const p of planned) if (p.action !== "unchanged") await p.apply(tx, actor);
-      const plan = toPlan(list, name, planned, problems);
+      const plan0 = toPlan(list, name, planned, problems);
+      const plan = plan0.ok && list === "holidays" ? { ...plan0, notice: previewText(tally).replace(/^This will extend/, "Extended").replace(/This will move/, "Moved") } : plan0;
       if (!plan.ok) return plan;
       const c = plan.counts;
       await writeAudit(tx, {
@@ -861,7 +904,11 @@ export async function currentDataRows(list: ImportListKey): Promise<Record<strin
     case "tat":
       return (await prisma.tatRule.findMany({ orderBy: [{ phase: "asc" }, { step: "asc" }] })).map((t) => ({ key: t.key, step: `${t.step} ${t.label}`, business_days: String(t.businessDays), display_note: t.note, notes: "" }));
     case "holidays":
-      return (await prisma.holidayCalendar.findMany({ orderBy: { date: "asc" } })).map((h) => ({ date: h.date, name: h.name, status: st(h.active), notes: "" }));
+      // Holidays only (office closures are made in Settings); type, branch codes, reason; samples marked.
+      return (await prisma.holidayCalendar.findMany({ where: { kind: "HOLIDAY" }, orderBy: { date: "asc" }, include: { branches: { include: { branch: { select: { code: true } } } } } })).map((h) => ({
+        date: h.date, name: h.name, type: { REGULAR: "Regular", SPECIAL_NON_WORKING: "Special non-working", LOCAL: "Local" }[h.type],
+        branches: h.allBranches ? "" : h.branches.map((b) => b.branch.code ?? "").filter(Boolean).join(";"), reason: h.reason, status: st(h.active), notes: h.isSample ? "Sample. Enter the official list from the government proclamation." : "",
+      }));
     case "cash-advance":
       return (await prisma.cashAdvanceRule.findMany({ include: { transactionType: true }, orderBy: { createdAt: "asc" } })).map((r) => ({
         transaction_code: r.transactionType.code, kind: r.kind, purpose: r.purpose, suggested_amount: r.suggestedAmount === null ? "" : String(Number(r.suggestedAmount)), max_amount: String(Number(r.maxAmount)),

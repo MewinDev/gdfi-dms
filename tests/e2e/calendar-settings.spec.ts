@@ -54,7 +54,18 @@ test("Admin checks, then saves an office closure for one branch", async ({ page 
   await save.click();
   await expect(form.locator("[data-calendar-preview]")).toContainText("Office closure saved.");
   await expect.poll(() => db.holidayCalendar.count({ where: { reason: { startsWith: MARK }, kind: "CLOSURE", allBranches: false, branches: { some: { branchId: angono.id } } } })).toBe(1);
-  await expect(page.locator('[data-calendar-row="2099-01-05"]')).toContainText("Office closure");
+  const row = page.locator('[data-calendar-row="2099-01-05"]');
+  await expect(row).toContainText("Office closure");
+
+  // Make inactive (D-042): Check first, then Make inactive; only the due dates it moved go back.
+  await row.getByRole("button", { name: /^Make inactive/ }).click();
+  const toggle = row.locator("[data-entry-toggle]");
+  await expect(toggle.getByRole("button", { name: "Make inactive" })).toBeDisabled();
+  await toggle.getByRole("button", { name: "Check" }).click();
+  await expect(toggle.locator("[data-calendar-preview]")).toContainText(/No saved due date changes\.|back to the due dates? they had before/);
+  await toggle.getByRole("button", { name: "Make inactive" }).click();
+  await expect(toggle.locator("[data-calendar-preview]")).toContainText("Made inactive.");
+  await expect.poll(async () => (await db.holidayCalendar.findFirstOrThrow({ where: { reason: { startsWith: MARK } } })).active).toBe(false);
 });
 
 test("a closure without a reason is refused with what to do", async ({ page }) => {

@@ -13,7 +13,8 @@ import { heldFor } from "@/lib/services/pasuyo";
 import { getTatMap } from "@/lib/settings";
 import { getCalendar } from "@/lib/calendar/load";
 import { PAUSE_RULE_TEXT, daysFor } from "@/lib/calendar/core";
-import { dueChanges } from "@/lib/services/calendar";
+import { dueChangeWords, dueChanges } from "@/lib/services/calendar";
+import { CorrectDueDate, DueHistory } from "@/components/jobs/due-date";
 import { businessDate, fmtDateTime, fmtShort } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
 import { flagKindChoices, kindNames, lineKindText } from "@/lib/services/expense-kinds";
@@ -245,7 +246,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       {a.dueDate && a.status === "ACCEPTED" && t.status === "IN_PROCESS" && (
         <section aria-label="Due date" className="-mb-1 flex flex-col gap-0.5 text-[14px]" data-job-due={a.dueDate}>
           <p><span className="font-semibold text-navy">Due {dayText(a.dueDate)}</span>{a.targetDays !== null ? <span className="text-ink-2"> · {a.targetDays} working day{a.targetDays === 1 ? "" : "s"} from the day you accepted, on {a.dpBranch?.name ?? "your branch"}&apos;s calendar</span> : null}</p>
-          {dueMoves.map((m) => <p key={m.id} className="text-[13px] text-ink-2" data-due-change={m.cause}>Moved from {dayText(m.fromDate)} to {dayText(m.toDate)}: {m.note}</p>)}
+          <DueHistory lines={dueMoves.map((m) => ({ id: m.id, fromText: dayText(m.fromDate), toText: dayText(m.toDate), what: dueChangeWords(m.cause), note: m.note, by: m.byLabel || "System", atText: dayText(m.at) }))} />
+          {can(user, PERMISSIONS.DUEDATES_CORRECT) && <CorrectDueDate subjectType="DpAssignment" subjectId={a.id} current={a.dueDate} />}
           {pausing && <p className="text-[13px] text-ink-2" data-pause-rule>Paused while on hold. {PAUSE_RULE_TEXT}</p>}
         </section>
       )}

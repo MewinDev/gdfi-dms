@@ -128,7 +128,7 @@ export async function setActiveAction(_prev: ActionState, fd: FormData): Promise
     if (!STATUS_KINDS.includes(kind)) throw new UserError("This list cannot be made inactive.");
     const user = await requirePermission(KIND_PERMISSION[kind]);
     const active = str(fd, "active") === "true";
-    await setRowActive(user, kind, str(fd, "id"), active);
+    await setRowActive(user, kind, str(fd, "id"), active, str(fd, "reason"));
     revalidatePath(kind === "user" ? "/admin/users" : "/admin/settings");
     return active ? "Made active." : "Made inactive.";
   });

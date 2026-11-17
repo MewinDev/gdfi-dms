@@ -585,3 +585,13 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - **Liquidation:** the new calendar now; piece 5 changes the start point to the last LTO completion (D-017, Q-N3).
   - **Mon-Sat default:** due dates move from Mon-Fri to Mon-Sat (test data only so far).
 - **Reason:** D-018; one calendar for everyone; a closure must never make work look late.
+
+## D-042 Calendar fixes after piece 4: every path, reversal, corrections, screenshots on purpose
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. The **holiday CSV import** uses the same Check then Save preview and extension rule as Settings ("This will extend N items (M currently overdue)"); back-dated rows follow the same reason and 7-day limit. **No path** adds a non-working day without the rule (the generic settings save refuses holidays; Make inactive / active goes through the rule).
+  2. **Making a holiday or closure inactive** reverses ONLY the extensions that entry caused: per item, by the working days it took from the item's window, logged (linked to the extension it undoes), owner told, with the same preview. Making it active again extends like a new one.
+  3. **Admin due-date correction:** one item at a time, reason required, tick "Correct due dates" (`duedates:correct`, default Superadmin and Admin), shown in the item's due-date history, logged, owner told.
+  4. **Screenshots:** committed once ("docs: refresh screenshots"); normal e2e runs no longer write them; `npm run docs:screenshots` refreshes them on purpose.
+- **Built:** `lib/services/calendar.ts` (tx-level add / set active, reversal, `correctDueDate`, exact previews by a rolled-back run), the import's holiday columns (type, branches, reason), migration `20261119090019_due_date_reversal` (`DueDateChange.reversesChangeId`, the new tick on Admin and Superadmin).

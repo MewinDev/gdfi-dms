@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, type ActionState } from "@/lib/action";
-import { addCalendarEntry, previewEntry, previewWorkingDays, saveWorkingDays, type EntryInput } from "@/lib/services/calendar";
+import { addCalendarEntry, correctDueDate, previewEntry, previewEntryActive, previewWorkingDays, saveWorkingDays, setCalendarEntryActive, type EntryInput } from "@/lib/services/calendar";
 
 /**
  * Settings, Holidays and working days (D-041). Each form has Check (the preview: "This will extend N items (M
@@ -61,4 +61,36 @@ export async function workingDaysAction(_p: ActionState, fd: FormData): Promise<
     return s.extend ? `Working days saved. ${s.extend} due date${s.extend === 1 ? "" : "s"} moved; each owner was told.` : "Working days saved. No saved due date changed.";
   });
   return r && r.ok ? { ...r, preview: { ...preview, saved: intent !== "check" } } : r;
+}
+
+/** Make a holiday or closure inactive (undoes only its own extensions) or active again: Check, then Save. */
+export async function entryActiveAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const intent = str(fd, "intent");
+  let preview = { extend: 0, overdue: 0 };
+  const r = await runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.SETTINGS_HOLIDAYS);
+    const id = str(fd, "id"), active = str(fd, "active") === "true", reason = str(fd, "reason");
+    if (intent === "check") {
+      const p = await previewEntryActive(user, id, active, reason);
+      preview = { extend: p.extend + p.back, overdue: p.overdue };
+      return p.text;
+    }
+    const s = await setCalendarEntryActive(user, id, active, reason);
+    preview = { extend: s.extend + s.back, overdue: s.overdue };
+    revalidatePath("/admin/settings");
+    revalidatePath("/jobs");
+    return `${active ? "Made active" : "Made inactive"}. ${s.extend + s.back ? `${s.extend + s.back} due date${s.extend + s.back === 1 ? "" : "s"} moved; each owner was told.` : "No saved due date changed."}`;
+  });
+  return r && r.ok ? { ...r, preview: { ...preview, saved: intent !== "check" } } : r;
+}
+
+/** Correct one saved due date (D-042), with a reason. */
+export async function correctDueDateAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.DUEDATES_CORRECT);
+    const subjectType = str(fd, "subjectType") === "CashAdvance" ? "CashAdvance" : "DpAssignment";
+    const r = await correctDueDate(user, { subjectType, subjectId: str(fd, "subjectId"), date: str(fd, "date"), reason: str(fd, "reason") });
+    revalidatePath(subjectType === "CashAdvance" ? "/funds" : `/jobs/${str(fd, "subjectId")}`);
+    return `Due date corrected from ${r.from} to ${r.to}. The owner was told.`;
+  });
 }

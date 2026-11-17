@@ -363,6 +363,8 @@ export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id:
   if (!KIND_PERMISSION[kind] || !can(user, KIND_PERMISSION[kind])) throw new UserError("Your role does not allow changing this part of Settings.");
   // Expense kinds have their own rules (Other is fixed, names unique ignoring case, amounts).
   if (kind === "expenseKind") { await saveExpenseKind(user, id, raw); return; }
+  // D-042: no path adds or changes a non-working day without the due-date rule (lib/services/calendar.ts).
+  if (kind === "holiday") throw new UserError("Use Settings, Holidays and working days: it shows which due dates move before saving.");
   const schema = schemas[kind];
   if (!schema) throw new UserError("Unknown setting.");
   const p = schema.safeParse(raw);
