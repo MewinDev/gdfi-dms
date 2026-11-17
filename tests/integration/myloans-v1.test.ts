@@ -15,6 +15,8 @@ import { addMockScenario } from "@/lib/myloans/v1/mock-scenarios";
 import { fetchRun } from "@/lib/myloans/r2/sync-plan";
 import { readApi1 } from "@/lib/myloans/r2/contract";
 import type { MockFailure } from "@/lib/myloans/v1/failures";
+import { addMockFailure, addScenario, clearMockFailures, resetMock } from "@/lib/services/myloans-mock";
+import { asUser } from "./helpers";
 
 const client = (o: Partial<ConstructorParameters<typeof MyLoansClientV1>[0]> = {}) =>
   new MyLoansClientV1({ baseUrl: `http://mock.local${MOCK_BASE_PATH}`, apiKey: mockKey(), fetchImpl: inProcessFetch, sleep: async () => {}, breaker: new MemoryBreakerStore(), ceiling: false, timeoutMs: 2000, ...o });
@@ -157,3 +159,27 @@ describe("failure simulation (D-048)", () => {
     }
   });
 });
+
+describe("Settings, System, myloans mock panel (D-048)", () => {
+  it("needs Change system switches; validated; audited; refused in production", async () => {
+    const admin = await asUser("test.admin@gdfi.ph");
+    const la = await asUser("test.la@gdfi.ph");
+    await expect(addMockFailure(la, { endpoint: "all", kind: "unavailable", once: true })).rejects.toThrow(/does not allow changing these switches/);
+    await expect(addMockFailure(admin, { endpoint: "products", kind: "pageFails", once: false, page: "2" })).rejects.toThrow(/Only API 2 and the pool mode have pages/);
+    await expect(addMockFailure(admin, { endpoint: "nope", kind: "unavailable", once: false })).rejects.toThrow(/Pick which call fails/);
+    await expect(addMockFailure(admin, { endpoint: "changes", kind: "pageFails", once: false, page: "2" })).resolves.toMatch(/API 2 \(changes\): Page N of a run fails \(503\) \(page 2\)/);
+    expect(await prisma.auditLog.count({ where: { action: "myloans_mock_failure_on" } })).toBeGreaterThan(0);
+    await expect(clearMockFailures(admin)).resolves.toMatch(/off/);
+    await expect(addScenario(admin, "notReleased")).resolves.toMatch(/now NotReleased/);
+    await expect(resetMock(admin)).resolves.toMatch(/sample loans again/);
+    expect(await prisma.mockMyLoansTxn.count({ where: { source: "scenario" } })).toBe(0);
+    const was = process.env.APP_ENV;
+    process.env.APP_ENV = "production";
+    try {
+      await expect(addMockFailure(admin, { endpoint: "all", kind: "unavailable", once: true })).rejects.toThrow(/not available in production/);
+    } finally {
+      process.env.APP_ENV = was;
+    }
+  });
+});
+
