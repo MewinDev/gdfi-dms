@@ -258,12 +258,12 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
   if (area.key === "roles") return <RolesArea edit={edit} common={common} />;
   if (area.key === "permissions") return <PermissionsArea common={common} user={user} />;
   if (area.key === "classification") return <ClassificationArea common={common} user={user} test={test} />;
-  if (area.key === "holidays") {
+  if (area.key === "holidays" && step !== "import") {
     // D-041: the working days, holidays and office closures (Check, then Save), not the plain list.
     const [cal, rows, branches, backdateMax] = await Promise.all([loadCalendar(), calendarRows(), prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }), getSetting("calendar.backdateMaxDays")]);
     return (
       <SettingsModal {...common} footer={{ kind: "done" }}>
-        <CalendarArea canEdit={can(user, PERMISSIONS.SETTINGS_HOLIDAYS)} weekdays={[...cal.workingWeekdays]} branches={branches} rows={rows} today={businessDate(new Date())} backdateMax={backdateMax} />
+        <CalendarArea canEdit={can(user, PERMISSIONS.SETTINGS_HOLIDAYS)} weekdays={[...cal.workingWeekdays]} branches={branches} rows={rows} today={businessDate(new Date())} backdateMax={backdateMax} importHref={can(user, PERMISSIONS.SETTINGS_IMPORT) ? importHref("holidays") : null} />
       </SettingsModal>
     );
   }

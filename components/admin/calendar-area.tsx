@@ -67,7 +67,7 @@ function BranchPicker({ branches, id, label }: { branches: { id: string; name: s
   );
 }
 
-export function CalendarArea({ canEdit, weekdays, branches, rows, today, backdateMax }: { canEdit: boolean; weekdays: boolean[]; branches: { id: string; name: string }[]; rows: CalendarRow[]; today: string; backdateMax: number }) {
+export function CalendarArea({ canEdit, weekdays, branches, rows, today, backdateMax, importHref }: { canEdit: boolean; weekdays: boolean[]; branches: { id: string; name: string }[]; rows: CalendarRow[]; today: string; backdateMax: number; importHref: string | null }) {
   const uid = useId();
   const [scope, setScope] = useState<"all" | "some">("all");
   const earliest = new Date(new Date(`${today}T00:00:00Z`).getTime() - backdateMax * 86_400_000).toISOString().slice(0, 10);
@@ -108,7 +108,10 @@ export function CalendarArea({ canEdit, weekdays, branches, rows, today, backdat
       </section>
 
       <section aria-labelledby={`${uid}-ho`} className="flex flex-col gap-2">
-        <h3 id={`${uid}-ho`} className="text-[15px] font-bold text-navy">Add a holiday</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id={`${uid}-ho`} className="text-[15px] font-bold text-navy">Add a holiday</h3>
+          {importHref && <a href={importHref} className="link inline-flex min-h-11 items-center text-sm" data-holiday-import>Import the year&apos;s list (CSV)</a>}
+        </div>
         <p className="text-sm text-ink-2">Enter the official list from the government proclamation. A date in the past (up to {backdateMax} days back) needs a reason.</p>
         <CheckThenSave action={calendarEntryAction} saveLabel="Save holiday" canEdit={canEdit} id="holiday">
           <input type="hidden" name="kind" value="HOLIDAY" />
