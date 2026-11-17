@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:contract": "tsx scripts/contract.ts",
     "test:e2e": "playwright test",
     "e2e:groups": "tsx scripts/e2e-groups.ts",
     "docs:screenshots": "tsx scripts/e2e-groups.ts --screenshots",

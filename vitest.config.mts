@@ -34,7 +34,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["lib/**/*.test.ts", "tests/integration/**/*.test.ts"],
+    include: ["lib/**/*.test.ts", "tests/integration/**/*.test.ts", "tests/contract/**/*.test.ts"],
     environment: "node",
     env: dotenv,
     // Integration tests share the local database: run files one at a time.

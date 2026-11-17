@@ -49,6 +49,9 @@ import { availability, leaveText } from "@/lib/monitoring/rules";
 import { DefaultCapacityForm, DpCapacityRow } from "@/components/monitoring/capacity-forms";
 import { PoolColoursForm } from "@/components/admin/pool-colours-form";
 import { poolColours } from "@/lib/services/pool-colours";
+import { MyLoansMockPanel } from "@/components/admin/myloans-mock-panel";
+import { mockAllowed } from "@/lib/myloans/v1/mock-store";
+import { MOCK_SCENARIOS } from "@/lib/myloans/v1/mock-scenarios";
 import { syncStatus } from "@/lib/services/source-sync";
 import { accountFeedQuality, feedQualityLine } from "@/lib/services/feed-quality";
 import { MyLoansSyncForm, type SyncCardData } from "@/components/admin/myloans-sync";
@@ -893,6 +896,9 @@ async function SystemArea({ user }: { user: CurrentUser }) {
           <ToggleForm settingKey="simulator.enabled" label="Test-mode simulator" on={sim}
             description="Shows the simulator on each Loan File's Journey tab so Admin can push transactions through Phases 4 to 6. Every event is labelled Simulated." />
           {mode !== "live" && <MockOverrideForm current={Object.entries(overrides)} />}
+          {mockAllowed() && (
+            <MyLoansMockPanel failures={await getSetting("myloans.mockFailures")} scenarios={Object.entries(MOCK_SCENARIOS)} loans={await prisma.mockMyLoansTxn.count()} />
+          )}
         </>
       )}
     </div>
