@@ -1,4 +1,5 @@
 import { fileHref } from "@/lib/services/files";
+import { liquidationLineFor } from "@/lib/funds/liquidation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
@@ -37,6 +38,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
       include: {
         lines: { include: { transaction: { include: { loan: { select: { pn: true, borrowerName: true } }, type: { select: { name: true } } } }, receipts: true, returns: true, topUps: true, carryOvers: true } },
         returns: true,
+        fundsType: { select: { liquidationDueDays: true, mustLiquidate: true } },
       },
     }),
     prisma.fundsException.findFirst({ where: { dpUserId: user.id, usedBy: null } }),
@@ -92,7 +94,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
                 {a.approvedCents !== null ? ` · approved ${peso(a.approvedCents)}` : ""}
                 {a.releasedAt ? ` · ${a.transferDate || a.accountLast4 ? "sent" : "released"} ${peso(a.releasedCents)} on ${dayText(a.releasedAt)}` : ""}
                 {a.releasedAt && (a.transferDate || a.accountLast4) ? ` (${releaseLine(a)})` : ""}
-                {a.liquidationDueAt && OPEN_ADVANCE.includes(a.status) ? ` · liquidate by ${dayText(a.liquidationDueAt)}` : ""}
+                {a.releasedAt && (OPEN_ADVANCE.includes(a.status) || a.daysLate !== null) ? ` · ${liquidationLineFor(a)}` : ""}
               </p>
               {a.deniedReason && <p className="mt-1 text-[15px] text-bad-fg">Denied: {a.deniedReason}</p>}
               {a.note && <p className="mt-1 text-[13px] font-semibold text-wait-fg">{a.note}</p>}
@@ -136,7 +138,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
                   <div><dt className="text-[13px] text-ink-2">Returned</dt><dd className="font-semibold">{peso(ret)}</dd></div>
                   <div><dt className="text-[13px] text-ink-2">Balance</dt><dd className="font-bold text-navy">{peso(balance)}</dd></div>
                 </dl>
-                <p className="text-[13px] text-ink-2">Liquidate by {dayText(a.liquidationDueAt)}.</p>
+                <p className="text-[13px] text-ink-2" data-liquidation-line>{liquidationLineFor(a)}.</p>
                 {a.note && <p className="text-[13px] font-semibold text-wait-fg">{a.note}</p>}
                 {balance > 0 && <ReceiptForm lines={a.lines.filter((l) => l.releasedCents > 0).map((l) => ({ id: l.id, label: lineLabel(l), balanceCents: lineLeft(l) }))} today={today} />}
                 {balance > 0 && <ReturnCashForm advanceId={a.id} balanceCents={balance} today={today} />}

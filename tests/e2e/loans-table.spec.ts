@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { watchConsole, signInWith } from "./helpers";
+import { watchConsole, signInWith, docShot } from "./helpers";
 
 /**
  * The Loans table (the read-only list: Admin, Supervisor, approvers, Finance, processors): one column per fact,
@@ -17,7 +17,7 @@ const BUTTONS = { admin: "Continue as Admin", dp: "Continue as Test Document Pro
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -149,7 +149,7 @@ test("twelve loans across the flow: the stage map's Stage and Next step texts, g
   await noSideways(page);
   await shot(page, "admin-twelve-stages");
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `docs/screenshots/stage-map/loans-table-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `docs/screenshots/stage-map/loans-table-${width(page)}.png`, fullPage: true });
 
   // Group by area and branch: the same toggle and headings.
   await main(page).getByRole("link", { name: "Group by area and branch" }).click();

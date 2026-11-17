@@ -205,7 +205,8 @@ describe("Liquidation, overdue and the rest work the same", () => {
     const r = await request(a.txn.id, (await type("FT")).id);
     await decideAdvance(fin, r.id, { approve: true });
     await releaseAdvance(fin, r.id, FT_RELEASE);
-    expect((await prisma.cashAdvance.findUniqueOrThrow({ where: { id: r.id } })).liquidationDueAt).not.toBeNull();
+    // D-044: no due date until the LTO pickup; here it is set as if the due date had passed.
+    expect((await prisma.cashAdvance.findUniqueOrThrow({ where: { id: r.id } })).liquidationDueAt).toBeNull();
     await prisma.cashAdvance.update({ where: { id: r.id }, data: { liquidationDueAt: new Date(Date.now() - 86_400_000) } });
     await notifyOverdue();
     expect(await prisma.notification.count({ where: { userId: dp.id, title: `${r.number} (Fund transfer): liquidation overdue` } })).toBe(1);

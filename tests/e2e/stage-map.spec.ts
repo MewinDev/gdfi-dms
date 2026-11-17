@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { signIn, watchConsole } from "./helpers";
+import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
  * The stage map (phase 1, display only; lib/workflow/stage-map.ts): the loan-file stepper's new step names
@@ -71,7 +71,7 @@ test("the loan-file stepper: the 10 new step names, the current step from the st
     }
     await noSideways(page);
     await page.evaluate(() => document.fonts.ready);
-    await progress.screenshot({ path: `${DIR}/stepper-step-${step}-${width(page)}.png` });
+    await docShot(progress, { path: `${DIR}/stepper-step-${step}-${width(page)}.png` });
   }
   clean();
 });
@@ -101,7 +101,7 @@ test("My loans: the Next step column shows the stage map's text with its tooltip
   }
   await noSideways(page);
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `${DIR}/my-loans-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/my-loans-${width(page)}.png`, fullPage: true });
   clean();
 });
 
@@ -132,7 +132,7 @@ test("fix: the stepper at steps 6, 9 and 10 (In Safekeeping, Closure), no sidewa
     }
     await noSideways(page);
     await page.evaluate(() => document.fonts.ready);
-    await progress.screenshot({ path: `${FIX_DIR}/stepper-step-${step}-${width(page)}.png` });
+    await docShot(progress, { path: `${FIX_DIR}/stepper-step-${step}-${width(page)}.png` });
   }
   clean();
 });
@@ -153,6 +153,6 @@ test("fix: the Loans table shows 'In safekeeping' for a loan in that stage", asy
   await expect(rows.filter({ hasText: "Gina Lopez" }).locator("[data-stage-name]")).toHaveText("Receiving");
   await noSideways(page);
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `${FIX_DIR}/loans-table-in-safekeeping-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${FIX_DIR}/loans-table-in-safekeeping-${width(page)}.png`, fullPage: true });
   clean();
 });

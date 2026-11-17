@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith } from "./helpers";
+import { signInWith, docShot } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -13,7 +13,7 @@ const PN = "GD1652026901003";
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
-  await page.screenshot({ path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
+  await docShot(page, { path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

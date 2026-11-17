@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { SUPERADMIN, signInWith } from "./helpers";
+import { SUPERADMIN, signInWith, docShot } from "./helpers";
 import { cleanTestRoles, db, resetLoans } from "./db";
 
 /**
@@ -22,7 +22,7 @@ const width = (page: Page) => page.viewportSize()!.width;
 async function shot(page: Page, name: string) {
   if (width(page) === 820) return;
   await page.waitForTimeout(250);
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: false });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: false });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

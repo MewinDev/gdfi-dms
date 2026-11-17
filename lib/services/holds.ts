@@ -1,4 +1,5 @@
 import "server-only";
+import { refreshLiquidationForTransaction } from "./liquidation";
 import { z } from "zod";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { loadCalendar } from "@/lib/calendar/load";
@@ -117,6 +118,7 @@ async function extendForPause(tx: Tx, transactionId: string, from: Date, to: Dat
   if (!paused) return;
   const next = addWorkingDays(job.dueDate, paused, days);
   await tx.dpAssignment.update({ where: { id: job.id }, data: { dueDate: next } });
+  await refreshLiquidationForTransaction(tx, job.transactionId, to); // the fallback follows the TAT due date (D-044)
   await tx.dueDateChange.create({ data: { subjectType: "DpAssignment", subjectId: job.id, loanId: job.loanId, pn: job.loan.pn, fromDate: job.dueDate, toDate: next, cause: "HOLD_PAUSE", wasOverdue: businessDate(to) > job.dueDate, note: `On hold (${reason}): ${paused} working day${paused === 1 ? "" : "s"} paused. ${PAUSE_RULE_TEXT}`, byId: actor.id, byLabel: actor.label } });
   await writeAudit(tx, {
     actor, mode: "MANUAL", action: "due_date_extended", entityType: "DpAssignment", entityId: job.id, loanId: job.loanId, pn: job.loan.pn,

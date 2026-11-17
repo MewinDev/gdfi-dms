@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { signIn, visibleSearchBox, watchConsole } from "./helpers";
+import { signIn, visibleSearchBox, watchConsole, docShot } from "./helpers";
 
 /**
  * My loans, compact and minimalist: title only, one 40px toolbar (Find loan inside the box, Filters beside it),
@@ -18,7 +18,7 @@ async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

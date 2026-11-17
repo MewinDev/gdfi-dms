@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MON_FRI, testDays } from "@/lib/calendar/testing";
 import {
-  advanceBalance, ageBucket, bandFor, carryOverDecision, fundsDone, fundsStatus, isOverdue, lineBalance, liquidationDue, liquidationStatus, peso, toCents,
+  advanceBalance, ageBucket, bandFor, carryOverDecision, fundsDone, fundsStatus, isOverdue, lineBalance, liquidationStatus, peso, toCents,
 } from "./rules";
 
 describe("Money in centavos", () => {
@@ -51,11 +51,6 @@ describe("Liquidation maths", () => {
     expect(liquidationStatus({ releasedCents: 100000, receiptCents: 0, returnedCents: 0, status: "RELEASED" })).toBe("RELEASED");
     expect(liquidationStatus({ releasedCents: 100000, receiptCents: 40000, returnedCents: 0, status: "RELEASED" })).toBe("PARTIALLY_LIQUIDATED");
     expect(liquidationStatus({ releasedCents: 100000, receiptCents: 60000, returnedCents: 40000, status: "PARTIALLY_LIQUIDATED" })).toBe("LIQUIDATED");
-  });
-  it("due date counts business days and skips holidays", () => {
-    // Fri 2026-11-06 + 10 business days, with Mon 2026-11-09 a holiday → Mon 2026-11-23.
-    const due = liquidationDue(new Date("2026-11-06T09:00:00+08:00"), 10, testDays(["2026-11-09"], MON_FRI));
-    expect(due.toISOString().slice(0, 10)).toBe("2026-11-23");
   });
   it("overdue only for an open advance past its due date", () => {
     const now = new Date("2026-11-20T09:00:00+08:00");

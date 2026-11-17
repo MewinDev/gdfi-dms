@@ -1,8 +1,8 @@
 /**
  * Funds rules (pure). Money is integer centavos everywhere; shown as ₱12,500.00.
  */
-import { businessDate, endOfBusinessDay } from "@/lib/time";
-import { workingDaysBetween, addWorkingDays, type Days } from "@/lib/calendar/core";
+import { businessDate } from "@/lib/time";
+import { workingDaysBetween, type Days } from "@/lib/calendar/core";
 
 export const EXPENSE_KINDS = ["NOTARY_FEE", "PPSR_FEE", "LTO_FEE", "TRANSPORT", "OTHER"] as const;
 export type ExpenseKindKey = (typeof EXPENSE_KINDS)[number];
@@ -82,11 +82,7 @@ export const lineBalance = (l: { releasedCents: number; spentCents: number; retu
 // Due dates, overdue, carry-over, approval bands
 // ---------------------------------------------------------------------------
 
-/** Liquidation due date: business days from the release (or the latest carry-over decision). */
-export function liquidationDue(from: Date, dueDays: number, holidays: Days): Date {
-  const ymd = addWorkingDays(businessDate(from), dueDays, holidays);
-  return endOfBusinessDay(ymd);
-}
+/** The liquidation due date is lib/funds/liquidation.ts (D-044). */
 
 export const OPEN_ADVANCE = ["RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"];
 export function isOverdue(a: { status: string; liquidationDueAt: Date | null }, now: Date): boolean {

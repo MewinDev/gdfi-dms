@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { openFundsDetails, signInWith } from "./helpers";
+import { openFundsDetails, signInWith, docShot } from "./helpers";
 
 /**
  * Expense kinds: Settings > Expense kinds (list, Other explained, add a kind, the suggestions block),
@@ -26,8 +26,8 @@ const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string, target?: Locator) {
   if (width(page) === 820) return; // 1440 and 390 only
   const path = `${DIR}/${name}-${width(page)}.png`;
-  if (target) await target.screenshot({ path });
-  else await page.screenshot({ path, fullPage: true });
+  if (target) await docShot(target, { path });
+  else await docShot(page, { path, fullPage: true });
 }
 const dialog = (page: Page) => page.getByRole("dialog").filter({ visible: true }).last();
 

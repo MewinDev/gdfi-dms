@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { watchConsole, signInWith } from "./helpers";
+import { watchConsole, signInWith, docShot } from "./helpers";
 
 /**
  * MyLoans sync check through the real screens (scenarios 2, 4, 5 and 8): the review pop-up for an amount
@@ -16,7 +16,7 @@ const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin" }
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

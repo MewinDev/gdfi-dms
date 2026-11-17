@@ -87,7 +87,6 @@ const TATS: { key: string; phase: number; step: string; label: string; businessD
   { key: "P4_NOTARY", phase: 4, step: "4.2", label: "Notary", businessDays: 3 },
   { key: "P4_PPSR", phase: 4, step: "4.3", label: "PPSR registration", businessDays: 5 },
   { key: "P4_MORTGAGE", phase: 4, step: "4.4", label: "Mortgage (LTO)", businessDays: 10 },
-  { key: "P4_LIQUIDATE", phase: 4, step: "4.5", label: "Liquidate cash advance", businessDays: 5, note: "Per Finance policy" },
   { key: "P4_FORWARD", phase: 4, step: "4.6", label: "Forward package to branch", businessDays: 0, note: "Same day as pickup" },
   { key: "P5_ACCEPT", phase: 5, step: "5.1", label: "Receiving LA acceptance", businessDays: 2 },
   { key: "P6_VAULTED", phase: 6, step: "6.1", label: "Transmittal to vaulted", businessDays: 3 },

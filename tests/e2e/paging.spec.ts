@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signInWith, watchConsole } from "./helpers";
+import { signInWith, watchConsole, docShot } from "./helpers";
 
 /**
  * Paging on long lists: Loans (50 a page), My loans (50), Settings > Users (100). The page is in the
@@ -18,7 +18,7 @@ const userEmail = (i: number) => `zz.pager.${String(i).padStart(3, "0")}@gdfi.ph
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

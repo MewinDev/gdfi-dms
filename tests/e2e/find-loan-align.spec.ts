@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, visibleSearchBox, watchConsole } from "./helpers";
+import { signIn, visibleSearchBox, watchConsole, docShot } from "./helpers";
 
 /**
  * Find a loan, alignment: one page container and one grid. Measures bounding boxes so a stray margin or
@@ -16,7 +16,7 @@ const right = (b: { x: number; width: number }) => b.x + b.width;
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
 }
 
 /** No sideways scroll, and no visible element in the page sticks out past the right edge. */

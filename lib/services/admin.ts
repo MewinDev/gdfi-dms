@@ -224,6 +224,8 @@ export const SETTINGS_SCHEMAS = {
   fundsType: z.object({
     code: codeOf("Short code", 2, 10), name: text("Name"), sortOrder: int("Order", 0, 99),
     needsReference: bool.default(false), needsAccount: bool.default(false), mustLiquidate: bool.default(true),
+    /** D-017, D-044: liquidation due this many working days after the last LTO pickup (new advances only). */
+    liquidationDueDays: int("Liquidation due", 0, 30).default(2),
   }),
   /** Return reasons (the processor returns an accepted job to the LA for papers). */
   returnReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
@@ -363,6 +365,8 @@ export async function saveSettingsRow(user: CurrentUser, kind: SettingsKind, id:
   if (!KIND_PERMISSION[kind] || !can(user, KIND_PERMISSION[kind])) throw new UserError("Your role does not allow changing this part of Settings.");
   // Expense kinds have their own rules (Other is fixed, names unique ignoring case, amounts).
   if (kind === "expenseKind") { await saveExpenseKind(user, id, raw); return; }
+  // D-042: no path adds or changes a non-working day without the due-date rule (lib/services/calendar.ts).
+  if (kind === "holiday") throw new UserError("Use Settings, Holidays and working days: it shows which due dates move before saving.");
   const schema = schemas[kind];
   if (!schema) throw new UserError("Unknown setting.");
   const p = schema.safeParse(raw);
@@ -447,7 +451,6 @@ export async function setMockOverride(user: CurrentUser, pn: string, amount: num
 export const FUNDS_SETTINGS_SCHEMA = z.object({
   approvalBandsOn: z.boolean().default(false),
   carryOverLimitDays: int("Carry-over limit", 0, 60),
-  liquidationDueDays: int("Liquidation due", 1, 90),
   blockLtoUntilFunded: bool,
 });
 
@@ -460,13 +463,11 @@ export async function saveFundsSettings(user: CurrentUser, raw: Record<string, u
     const before = {
       carryOverLimitDays: await getSetting("funds.carryOverLimitDays", tx),
       approvalBandsOn: await getSetting("funds.approvalBandsOn", tx),
-      liquidationDueDays: await getSetting("funds.liquidationDueDays", tx),
       blockLtoUntilFunded: await getSetting("funds.blockLtoUntilFunded", tx),
     };
     await setSetting("funds.carryOverLimitDays", p.data.carryOverLimitDays, tx);
     await setSetting("funds.approvalBandsOn", p.data.approvalBandsOn, tx);
-    await setSetting("funds.liquidationDueDays", p.data.liquidationDueDays, tx);
     await setSetting("funds.blockLtoUntilFunded", p.data.blockLtoUntilFunded, tx);
-    await writeAudit(tx, { actor: actorOf(user), mode: "MANUAL", action: "setting_updated", entityType: "Setting", entityId: "funds", summary: `Cash-advance switches: carry-over limit ${p.data.carryOverLimitDays} business days, liquidation due ${p.data.liquidationDueDays} business days, block At the LTO until funded ${p.data.blockLtoUntilFunded ? "on" : "off"}, approval bands ${p.data.approvalBandsOn ? "on" : "off"}`, before, after: p.data });
+    await writeAudit(tx, { actor: actorOf(user), mode: "MANUAL", action: "setting_updated", entityType: "Setting", entityId: "funds", summary: `Cash-advance switches: carry-over limit ${p.data.carryOverLimitDays} working days, block At the LTO until funded ${p.data.blockLtoUntilFunded ? "on" : "off"}, approval bands ${p.data.approvalBandsOn ? "on" : "off"}`, before, after: p.data });
   });
 }

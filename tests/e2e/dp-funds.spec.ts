@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
-import { completeAndForwardUi, workStagesUi, signInWith } from "./helpers";
+import { completeAndForwardUi, workStagesUi, signInWith, docShot } from "./helpers";
 
 /**
  * Full path with GD1652026901003: LA sends Mortgage flagged for an LTO fee → DP accepts →
@@ -20,7 +20,7 @@ async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
   const w = page.viewportSize()?.width ?? 0;
-  await page.screenshot({ path: `${dir}/${name}-${w}.png`, fullPage: true });
+  await docShot(page, { path: `${dir}/${name}-${w}.png`, fullPage: true });
 }
 
 async function noSideways(page: Page) {

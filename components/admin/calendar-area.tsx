@@ -1,8 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useId, useMemo, useState } from "react";
-import { calendarEntryAction, workingDaysAction } from "@/app/actions/calendar";
-import { setActiveAction } from "@/app/actions/admin";
+import { calendarEntryAction, entryActiveAction, workingDaysAction } from "@/app/actions/calendar";
 import { FormMessage } from "@/components/form-status";
 import type { ActionState } from "@/lib/action";
 
@@ -68,7 +67,7 @@ function BranchPicker({ branches, id, label }: { branches: { id: string; name: s
   );
 }
 
-export function CalendarArea({ canEdit, weekdays, branches, rows, today, backdateMax }: { canEdit: boolean; weekdays: boolean[]; branches: { id: string; name: string }[]; rows: CalendarRow[]; today: string; backdateMax: number }) {
+export function CalendarArea({ canEdit, weekdays, branches, rows, today, backdateMax, importHref }: { canEdit: boolean; weekdays: boolean[]; branches: { id: string; name: string }[]; rows: CalendarRow[]; today: string; backdateMax: number; importHref: string | null }) {
   const uid = useId();
   const [scope, setScope] = useState<"all" | "some">("all");
   const earliest = new Date(new Date(`${today}T00:00:00Z`).getTime() - backdateMax * 86_400_000).toISOString().slice(0, 10);
@@ -109,7 +108,10 @@ export function CalendarArea({ canEdit, weekdays, branches, rows, today, backdat
       </section>
 
       <section aria-labelledby={`${uid}-ho`} className="flex flex-col gap-2">
-        <h3 id={`${uid}-ho`} className="text-[15px] font-bold text-navy">Add a holiday</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id={`${uid}-ho`} className="text-[15px] font-bold text-navy">Add a holiday</h3>
+          {importHref && <a href={importHref} className="link inline-flex min-h-11 items-center text-sm" data-holiday-import>Import the year&apos;s list (CSV)</a>}
+        </div>
         <p className="text-sm text-ink-2">Enter the official list from the government proclamation. A date in the past (up to {backdateMax} days back) needs a reason.</p>
         <CheckThenSave action={calendarEntryAction} saveLabel="Save holiday" canEdit={canEdit} id="holiday">
           <input type="hidden" name="kind" value="HOLIDAY" />
@@ -151,26 +153,38 @@ export function CalendarArea({ canEdit, weekdays, branches, rows, today, backdat
                 </span>
                 {r.isSample && <span className="chip c-act" data-sample title="Sample. Enter the official list from the government proclamation.">Sample</span>}
                 {!r.active && <span className="chip c-mute">Inactive</span>}
-                {canEdit && <ActiveToggle id={r.id} active={r.active} title={`${r.name} (${r.date})`} />}
+                {canEdit && <ActiveToggle id={r.id} active={r.active} title={`${r.name} (${r.date})`} past={r.date < today} />}
               </li>
             ))}
           </ul>
         )}
-        <p className="text-xs text-ink-2">Making one inactive does not move a saved due date back; an Admin can correct one if needed.</p>
+        <p className="text-xs text-ink-2">Making one inactive moves back only the due dates it moved. Someone with &quot;Correct due dates&quot; can correct one item on its page.</p>
       </section>
     </div>
   );
 }
 
-function ActiveToggle({ id, active, title }: { id: string; active: boolean; title: string }) {
-  const [state, action, pending] = useActionState(setActiveAction, null);
+/**
+ * Make inactive / Make active (D-042): Check first. Inactive gives back only the days this entry took from each
+ * item; active again extends like a new one. A date in the past needs a reason (up to the back-dating limit).
+ */
+function ActiveToggle({ id, active, title, past }: { id: string; active: boolean; title: string; past: boolean }) {
+  const [open, setOpen] = useState(false);
+  const verb = active ? "Make inactive" : "Make active";
+  if (!open) return <button type="button" className="btn-ghost btn-sm" onClick={() => setOpen(true)} aria-label={`${verb}: ${title}`}>{verb}</button>;
   return (
-    <form action={action} className="shrink-0">
-      <input type="hidden" name="kind" value="holiday" />
-      <input type="hidden" name="id" value={id} />
-      <input type="hidden" name="active" value={active ? "false" : "true"} />
-      <button type="submit" disabled={pending} className="btn-ghost btn-sm" aria-label={`${active ? "Make inactive" : "Make active"}: ${title}`}>{pending ? "Saving..." : active ? "Make inactive" : "Make active"}</button>
-      {state && !state.ok && <p role="alert" className="mt-1 text-xs text-bad-fg">{state.error}</p>}
-    </form>
+    <div className="basis-full" data-entry-toggle={id}>
+      <CheckThenSave action={entryActiveAction} saveLabel={verb} canEdit id={`toggle-${id}`}>
+        <input type="hidden" name="id" value={id} />
+        <input type="hidden" name="active" value={active ? "false" : "true"} />
+        {past && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor={`r-${id}`} className="label">Reason (this date is in the past)</label>
+            <input id={`r-${id}`} name="reason" maxLength={300} className="input" />
+          </div>
+        )}
+        <p className="text-xs text-ink-2">{active ? "Due dates this entry moved go back to what they were before it; other moves stay." : "Due dates whose count includes this day move by the day, like a new holiday."}</p>
+      </CheckThenSave>
+    </div>
   );
 }

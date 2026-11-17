@@ -1,4 +1,5 @@
 import { refuseInProduction } from "@/lib/env";
+import { refreshLiquidationForTransaction } from "./liquidation";
 import "server-only";
 import { buildPn, getPnFormat, parsePn } from "@/lib/pn";
 import { resolveLoanBranch } from "./branches";
@@ -383,7 +384,10 @@ export async function applyTransactionChanges(tx: Tx, loanId: string, p: Pick<Pr
   const txns = await tx.loanTransaction.findMany({ where: { loanId }, include: { type: true } });
   for (const code of p.removed) {
     const t = txns.find((x) => x.type.code === code && x.status !== "CANCELLED");
-    if (t && UNSENT.includes(t.status)) await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now } });
+    if (t && UNSENT.includes(t.status)) {
+      await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now, cancelledAt: now } });
+      await refreshLiquidationForTransaction(tx, t.id, now);
+    }
   }
   for (const code of p.added) {
     const back = txns.find((x) => x.type.code === code && x.status === "CANCELLED");
@@ -505,7 +509,10 @@ export async function closeAsCancelled(u: CurrentUser, id: string, raw: unknown)
     const jobs = await tx.dpAssignment.findMany({ where: { loanId: loan.id, status: { in: [...OPEN_JOB] } }, include: { transaction: { include: { type: true } } } });
     for (const j of jobs) await tx.dpAssignment.update({ where: { id: j.id }, data: { status: "PULLED_BACK", closedAt: now } });
     const open = await tx.loanTransaction.findMany({ where: { loanId: loan.id, status: { notIn: ["COMPLETED", "CANCELLED"] } }, include: { type: true } });
-    for (const t of open) await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now } });
+    for (const t of open) {
+      await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now, cancelledAt: now } });
+      await refreshLiquidationForTransaction(tx, t.id, now); // cancelled before its LTO (D-044 item 2)
+    }
     await tx.loan.update({ where: { id: loan.id }, data: { cancelledAt: now, cancelReason: reason } });
     await tx.sourceChange.update({ where: { id }, data: { state: "CLOSED_CANCELLED", decidedById: u.id, decidedByLabel: u.name, decidedAt: now, note } });
     await writeAudit(tx, {

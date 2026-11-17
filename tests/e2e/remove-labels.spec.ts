@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { SUPERADMIN, pickLtoOffice, signIn, signInWith } from "./helpers";
+import { SUPERADMIN, pickLtoOffice, signIn, signInWith, docShot } from "./helpers";
 
 /**
  * Print labels were removed (11 November 2026, confirmed by the users): labels are not used in the LA
@@ -24,7 +24,7 @@ test.beforeEach(async () => {
 
 async function shot(page: Page, name: string) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

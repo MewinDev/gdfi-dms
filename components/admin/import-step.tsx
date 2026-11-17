@@ -88,6 +88,8 @@ export function ImportStep({ list }: { list: ImportListKey }) {
             <p role="status" className="text-[15px] font-semibold text-navy">
               {result.imported ? "Result: " : ""}{result.plan.counts.new} new, {result.plan.counts.changed} changed, {result.plan.counts.unchanged} unchanged, {result.plan.counts.problem} with problems
             </p>
+            {/* Holidays (D-042): which saved due dates the import moves, the same words as Settings. */}
+            {result.plan.notice && <p className="rounded-xl border border-act-line bg-act-bg px-4 py-3 text-sm" data-import-notice>{result.plan.notice}</p>}
             {!result.imported && result.plan.counts.problem > 0 && (
               <p className="rounded-xl bg-cream px-4 py-3 text-sm">
                 Rows with problems are skipped. You can import the other rows now, or fix the file and check it again.

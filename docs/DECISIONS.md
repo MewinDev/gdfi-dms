@@ -585,3 +585,34 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - **Liquidation:** the new calendar now; piece 5 changes the start point to the last LTO completion (D-017, Q-N3).
   - **Mon-Sat default:** due dates move from Mon-Fri to Mon-Sat (test data only so far).
 - **Reason:** D-018; one calendar for everyone; a closure must never make work look late.
+
+## D-042 Calendar fixes after piece 4: every path, reversal, corrections, screenshots on purpose
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. The **holiday CSV import** uses the same Check then Save preview and extension rule as Settings ("This will extend N items (M currently overdue)"); back-dated rows follow the same reason and 7-day limit. **No path** adds a non-working day without the rule (the generic settings save refuses holidays; Make inactive / active goes through the rule).
+  2. **Making a holiday or closure inactive** reverses ONLY the extensions that entry caused: per item, by the working days it took from the item's window, logged (linked to the extension it undoes), owner told, with the same preview. Making it active again extends like a new one.
+  3. **Admin due-date correction:** one item at a time, reason required, tick "Correct due dates" (`duedates:correct`, default Superadmin and Admin), shown in the item's due-date history, logged, owner told.
+  4. **Screenshots:** committed once ("docs: refresh screenshots"); normal e2e runs no longer write them; `npm run docs:screenshots` refreshes them on purpose.
+- **Built:** `lib/services/calendar.ts` (tx-level add / set active, reversal, `correctDueDate`, exact previews by a rolled-back run), the import's holiday columns (type, branches, reason), migration `20261119090019_due_date_reversal` (`DueDateChange.reversesChangeId`, the new tick on Admin and Superadmin).
+
+## D-043 A removed holiday also undoes the moves it set off (confirms D-042 item 2)
+
+- **Date:** 18 November 2026
+- **Decision:** when a holiday or closure is made inactive, the item goes back to the due date it would have had without it, even when that entry had pushed the item into another non-working day. Example (confirmed by the user): due Fri 4 Dec; a holiday on Wed 2 moves it to Sat 5; a closure on Sat 5 moves it to Mon 7; making the holiday inactive brings it back to **Fri 4**, because without the holiday its count never reaches the Sat 5 closure. The closure's own history line stays.
+- **Reason:** "only the extensions that day caused" includes the ones that would not have happened without it.
+
+## D-044 Piece 5: liquidation due date (builds D-017; Q-N3 of D-032)
+
+- **Date:** 18 November 2026
+- **Decision (the user's, after the worked examples):**
+  - Due **N working days after the last LTO pickup** of the advance's lines, N per type (cash advance, fund transfer; default 2; 0 to 30; audited), on the requesting processor's branch calendar; saved on the advance; a setting change moves no existing advance. Until it can be computed the advance shows what it waits for, never a date and never overdue.
+  1. An LTO redone or cancelled **after** the due date was saved: the saved date **stays**. Cash for a redo is a top-up or a new advance; more time only through a carry-over or Correct due date (logged).
+  2. A line whose transaction is **cancelled before its LTO**: due N working days after the **later** of the last pickup and the cancellation. All lines cancelled: due N working days after the last cancellation (the cash must be returned).
+  3. **Carry-over** follows D-017: due N working days after that attempt's LTO pickup (not the decision day); the fallback below applies.
+  4. A **note-only line** (no transaction): due N working days after the release.
+  5. **The LTO never happens:** a fallback due date = the job's TAT due date + N working days (it moves when the TAT due date moves, for example after a pausing hold, and stays once set even if the LTO is then done). When it applies the advance shows "LTO not done. Liquidation due by fallback", and Finance (the CA / FT handlers of that branch) and the LA Supervisor/Head are alerted.
+  6. **The late record:** the due date, the liquidated date and the working days late are saved on the advance and shown in Funds and the TAT report. Days late count like every TAT: the working days after the due date up to and including the liquidation day (due Fri 27, liquidated Mon 30 = Sat 28 and Mon 30 = **2 working days late**; Saturday is a working day). v2 demerit points (a later phase) will read this record.
+  - **Removed:** the setting `funds.liquidationDueDays` (10), the TAT row `P4_LIQUIDATE` (5) and its fallback, the column `CashAdvanceRule.liquidationDays`.
+  - **UX (the user's instruction):** keep it simple. One line per advance in plain words: "Due Fri 27 Nov", "Due 2 working days after the LTO pickup (1 of 3 left)", "LTO not done. Liquidation due by fallback: Mon 30 Nov", "Liquidated 2 working days late". No new screens; the two values are on Settings, Funds types.
+- **Reason:** D-017 and the user's answers to the six open questions.

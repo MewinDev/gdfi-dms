@@ -1,3 +1,6 @@
+import { CorrectDueDate, DueHistory } from "@/components/jobs/due-date";
+import { liquidationLineFor } from "@/lib/funds/liquidation";
+import { dueChangeWords } from "@/lib/services/calendar";
 import { fileHref } from "@/lib/services/files";
 import { daysFor, workingDaysBetween } from "@/lib/calendar/core";
 import type { Metadata } from "next";
@@ -369,8 +372,13 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   }
 
   if (tab === "outstanding") {
+    // Liquidation due-date history (D-041, D-042): holidays, closures and corrections that moved it.
+    const dueRows = await prisma.dueDateChange.findMany({ where: { subjectType: "CashAdvance", subjectId: { in: open.map((a) => a.id) } }, orderBy: { at: "asc" } });
+    const mayCorrect = can(user, PERMISSIONS.DUEDATES_CORRECT);
     for (const a of open) {
       const bal = balanceOf(a);
+      const dues = dueRows.filter((d) => d.subjectId === a.id).map((m) => ({ id: m.id, fromText: dayText(m.fromDate), toText: dayText(m.toDate), what: dueChangeWords(m.cause), note: m.note, by: m.byLabel || "System", atText: dayText(m.at) }));
+      const correctable = mayCorrect && !!a.liquidationDueAt && OPEN_ADVANCE.includes(a.status);
       const unconfirmed = a.returns.filter((r) => !r.confirmedAt);
       const liquidated = a.lines.flatMap((l) => l.receipts).reduce((s, r) => s + r.cents, 0);
       const returned = a.returns.reduce((s, r) => s + r.cents, 0);
@@ -402,7 +410,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
                   <dt className="font-semibold">Balance</dt><dd className={`font-bold ${bal > 0 ? "text-act-fg" : "text-ink"}`} data-balance>{peso(bal)}</dd>
                 </dl>
                 <span className="mt-1 flex items-center gap-1.5 text-[12px] text-ink-2" data-aging={agingTone({ overdue, days })}><span className={`fl-dot fl-dot-${agingTone({ overdue, days })}`} aria-hidden="true" />{daysText(days, "outstanding")}</span>
-                <Grey>{a.liquidationDueAt ? `Liquidate by ${dayText(a.liquidationDueAt)}` : "No receipts needed for this type"}</Grey>
+                <Grey><span data-liquidation-line>{liquidationLineFor(a)}</span></Grey>
                 <Grey><span data-release-line>{releaseLine(a) || DASH}</span></Grey>
               </div>
             ),
@@ -415,8 +423,15 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
               </div>
             ),
             action: may("settle", a) || a.status === "LIQUIDATED" ? (main.length ? actions(a.number, main) : <span className="text-[12px] text-ink-2">{a.status === "LIQUIDATED" ? "Waiting for the returned cash" : "Waiting for the processor's receipts"}</span>) : null,
-            details: receipts.length || hist.length ? (
+            details: receipts.length || hist.length || dues.length || correctable ? (
               <div className="flex flex-col gap-2">
+                {(dues.length > 0 || correctable) && (
+                  <div data-liquidation-due>
+                    <p className="text-[12px] font-semibold text-ink-2">Liquidation due date{a.liquidationDueAt ? `: ${dayText(a.liquidationDueAt)}` : ""}</p>
+                    <DueHistory lines={dues} />
+                    {correctable && <CorrectDueDate subjectType="CashAdvance" subjectId={a.id} current={businessDate(a.liquidationDueAt!)} />}
+                  </div>
+                )}
                 {receipts.length > 0 && (
                   <div>
                     <p className="text-[12px] font-semibold text-ink-2">Receipts ({receipts.length})</p>
@@ -450,7 +465,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             forKind: <>{forCell(a, { amounts: "requested" })}{a.deniedReason && <Grey>Reason: {a.deniedReason}</Grey>}</>,
             asked: askedCell(a.requestedBy.name, a.branch.name, `Asked ${dayText(a.createdAt)}`),
             amount: amountCell(a.requestedCents, a.releasedCents ? <Grey>Released {peso(a.releasedCents)}</Grey> : <Grey>Asked</Grey>),
-            status: <div className="flex flex-col items-end gap-1"><AdvanceStatusChip status={a.status} /><Grey>{when}</Grey></div>,
+            status: <div className="flex flex-col items-end gap-1"><AdvanceStatusChip status={a.status} /><Grey>{when}</Grey>{a.daysLate !== null && <Grey><span data-days-late={a.daysLate}>{liquidationLineFor(a)}</span></Grey>}</div>,
             action: PRINTABLE_STATUSES.includes(a.status) ? printLink(a.number, a) : null,
           }} />
         ),

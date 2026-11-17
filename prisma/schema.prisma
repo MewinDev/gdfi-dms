@@ -617,7 +617,6 @@ model CashAdvanceRule {
   /// Maximum per transaction (more needs a typed reason).
   maxAmount         Decimal         @db.Decimal(14, 2)
   /// Business days after release within which the DP must liquidate.
-  liquidationDays   Int             @default(5)
   active            Boolean         @default(true)
   /// Inactive instead of delete: when and by whom it was made inactive (null while active).
   deactivatedAt     DateTime?
@@ -680,23 +679,25 @@ model HolidayBranch {
 /// A saved due date moved (D-041): a holiday or closure added inside its counting window, a hold that paused
 /// the clock, or an admin correction. Append-only history; the record keeps only its current due date.
 model DueDateChange {
-  id              String   @id @default(cuid())
+  id               String   @id @default(cuid())
   /// "DpAssignment" (a DP job's TAT) or "CashAdvance" (the liquidation due date).
-  subjectType     String
-  subjectId       String
-  loanId          String?
-  pn              String?
-  fromDate        String // YYYY-MM-DD
-  toDate          String
+  subjectType      String
+  subjectId        String
+  loanId           String?
+  pn               String?
+  fromDate         String // YYYY-MM-DD
+  toDate           String
   /// HOLIDAY, CLOSURE, HOLD_PAUSE or CORRECTION.
-  cause           String
-  calendarEntryId String?
+  cause            String
+  calendarEntryId  String?
+  /// The change this one undoes (a holiday or closure made inactive gives back only its own extension, D-042).
+  reversesChangeId String?
   /// Was the item overdue before this change (shown in the preview, "M currently overdue").
-  wasOverdue      Boolean  @default(false)
-  note            String   @default("")
-  byId            String?
-  byLabel         String   @default("")
-  at              DateTime @default(now())
+  wasOverdue       Boolean  @default(false)
+  note             String   @default("")
+  byId             String?
+  byLabel          String   @default("")
+  at               DateTime @default(now())
 
   @@index([subjectType, subjectId])
   @@index([at])
@@ -1456,56 +1457,68 @@ enum CarryOverStatus {
 
 /// One cash advance requested by a DP, covering several flagged transactions (and other expenses).
 model CashAdvance {
-  id                 String            @id @default(cuid())
+  id                   String            @id @default(cuid())
   /// Move to the new PN: the line whose balance this request moves (the cash is already with the DP).
-  movedFromLineId    String?
-  number             String            @unique // CA-2026-0001 (Cash advance), FT-2026-0001 (Fund transfer): the type's code, the year, its own running number
+  movedFromLineId      String?
+  number               String            @unique // CA-2026-0001 (Cash advance), FT-2026-0001 (Fund transfer): the type's code, the year, its own running number
   /// The numbers it had before (a fund transfer once numbered CA-, or a type change): "Formerly CA-2026-0008"; search finds them.
-  formerNumbers      String[]          @default([])
-  requestedById      String
-  requestedBy        User              @relation("CaRequestedBy", fields: [requestedById], references: [id])
-  branchId           String
-  branch             Branch            @relation(fields: [branchId], references: [id])
-  status             AdvanceStatus     @default(REQUESTED)
-  requestedCents     Int
+  formerNumbers        String[]          @default([])
+  requestedById        String
+  requestedBy          User              @relation("CaRequestedBy", fields: [requestedById], references: [id])
+  branchId             String
+  branch               Branch            @relation(fields: [branchId], references: [id])
+  status               AdvanceStatus     @default(REQUESTED)
+  requestedCents       Int
   /// Notes such as a Pasuyo handover ("₱500.00 handed to Grace Tan, CA-2026-0003").
-  note               String            @default("")
-  approvedCents      Int?
-  releasedCents      Int               @default(0)
-  approvedById       String?
-  approvedAt         DateTime?
-  approvalNote       String            @default("")
-  deniedReason       String            @default("")
-  releasedById       String?
-  releasedAt         DateTime?
-  releaseRef         String            @default("")
+  note                 String            @default("")
+  approvedCents        Int?
+  releasedCents        Int               @default(0)
+  approvedById         String?
+  approvedAt           DateTime?
+  approvalNote         String            @default("")
+  deniedReason         String            @default("")
+  releasedById         String?
+  releasedAt           DateTime?
+  releaseRef           String            @default("")
   /// Funds type (Settings > Funds types): the id, and a copy of its code and name at request time
   /// (or when Finance changed it), so a rename never changes old records.
-  fundsTypeId        String            @default("fundstype_ca")
-  fundsType          FundsType         @relation(fields: [fundsTypeId], references: [id])
-  fundsTypeCode      String            @default("CA")
-  fundsTypeName      String            @default("Cash advance")
+  fundsTypeId          String            @default("fundstype_ca")
+  fundsType            FundsType         @relation(fields: [fundsTypeId], references: [id])
+  fundsTypeCode        String            @default("CA")
+  fundsTypeName        String            @default("Cash advance")
   /// Release details for a type that needs them (a fund transfer): the transfer date and the receiving
   /// account. Only the last 4 digits of the account number are ever stored.
-  transferDate       String            @default("")
-  accountProvider    String            @default("")
-  accountName        String            @default("")
-  accountLast4       String            @default("")
+  transferDate         String            @default("")
+  accountProvider      String            @default("")
+  accountName          String            @default("")
+  accountLast4         String            @default("")
   /// Restarts at each carry-over decision.
-  liquidationDueAt   DateTime?
+  liquidationDueAt     DateTime?
   /// The start of the liquidation count (YYYY-MM-DD): the release or the latest carry-over decision (D-041 window).
-  liquidationDueFrom String?
+  liquidationDueFrom   String?
+  /// What the due date counts from (D-044): LTO (last pickup), CANCELLED, RELEASE (note-only lines) or FALLBACK
+  /// (the LTO is not done after its job's TAT due date). Null: not set yet, or an older advance.
+  liquidationBasis     String?
+  /// Pickups count from here (a carry-over restarts the wait for that attempt's LTO pickup).
+  liquidationCountFrom DateTime?
+  /// While there is no date: what it waits for, in words ("1 of 3 left").
+  liquidationNote      String            @default("")
+  /// Finance and the LA Supervisor/Head were told that the fallback applies (once).
+  fallbackNotifiedAt   DateTime?
+  /// The late record (D-044): when it was liquidated and how many working days after the due date.
+  liquidatedAt         DateTime?
+  daysLate             Int?
   /// Overdue notice sent (cleared when the due date restarts).
-  overdueNotifiedAt  DateTime?
-  closedById         String?
-  closedAt           DateTime?
+  overdueNotifiedAt    DateTime?
+  closedById           String?
+  closedAt             DateTime?
   /// One-time exception used to submit this request while another advance was overdue.
-  exceptionId        String?           @unique
-  exception          FundsException?   @relation(fields: [exceptionId], references: [id])
-  lines              CashAdvanceLine[]
-  returns            CashReturn[]
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  exceptionId          String?           @unique
+  exception            FundsException?   @relation(fields: [exceptionId], references: [id])
+  lines                CashAdvanceLine[]
+  returns              CashReturn[]
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   @@index([requestedById, status])
 }
@@ -1576,26 +1589,28 @@ model CashAdvanceTopUp {
 /// Funds types (Settings > Funds types): Cash advance (CA), Fund transfer (FT). Same funds flow for
 /// every type; the switches only change what Finance enters at release and whether receipts are needed.
 model FundsType {
-  id              String             @id @default(cuid())
-  code            String             @unique
-  name            String
-  sortOrder       Int                @default(0)
-  active          Boolean            @default(true)
+  id                 String             @id @default(cuid())
+  code               String             @unique
+  name               String
+  sortOrder          Int                @default(0)
+  active             Boolean            @default(true)
   /// Seeded default not yet confirmed ("Proposed, to be confirmed with Finance"). Cleared when Admin saves the row.
-  proposed        Boolean            @default(false)
+  proposed           Boolean            @default(false)
   /// Release needs a transfer reference number and the transfer date.
-  needsReference  Boolean            @default(false)
+  needsReference     Boolean            @default(false)
   /// Release needs the receiving account: bank or e-wallet, account name, last 4 digits.
-  needsAccount    Boolean            @default(false)
+  needsAccount       Boolean            @default(false)
   /// Must be liquidated with receipts (on for both by default).
-  mustLiquidate   Boolean            @default(true)
-  deactivatedAt   DateTime?
-  deactivatedById String?
-  advances        CashAdvance[]
-  topUps          CashAdvanceTopUp[]
-  approvalBands   ApprovalBand[]
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  mustLiquidate      Boolean            @default(true)
+  /// Liquidation due: this many working days after the last LTO pickup (D-017, D-044). 0 to 30.
+  liquidationDueDays Int                @default(2)
+  deactivatedAt      DateTime?
+  deactivatedById    String?
+  advances           CashAdvance[]
+  topUps             CashAdvanceTopUp[]
+  approvalBands      ApprovalBand[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 }
 
 /// A day of work on a transaction (append-only).

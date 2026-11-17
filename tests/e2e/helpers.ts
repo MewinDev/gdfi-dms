@@ -140,3 +140,13 @@ export function watchConsole(page: Page) {
   page.on("pageerror", (e) => bad.push(e.message));
   return () => expect(bad.filter((t) => !/favicon|Failed to load resource/.test(t))).toEqual([]);
 }
+
+/**
+ * The one way an e2e spec takes a documentation screenshot. Normal e2e runs write none (the files in
+ * docs/screenshots/ stay as committed); `npm run docs:screenshots` sets DOCS_SCREENSHOTS=1 and refreshes them.
+ * tests/e2e-screenshots.test.ts forbids any other .screenshot( call in tests/e2e.
+ */
+export async function docShot(target: { screenshot(o: { path: string; fullPage?: boolean }): Promise<unknown> }, o: { path: string; fullPage?: boolean }): Promise<void> {
+  if (process.env.DOCS_SCREENSHOTS !== "1") return;
+  await target.screenshot(o);
+}

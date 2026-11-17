@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, watchConsole } from "./helpers";
+import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
  * The MyLoans account details (docs/myloans/field-map.md): Find a loan shows the short list, names only;
@@ -51,7 +51,7 @@ test("Find a loan: the short list, names only; More loan details: the full set w
   await noSideways(page);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${DIR}/find-loan-found-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/find-loan-found-${width(page)}.png`, fullPage: true });
 
   // Open the loan file; More loan details is collapsed, then shows everything.
   await main(page).getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
@@ -89,7 +89,7 @@ test("Find a loan: the short list, names only; More loan details: the full set w
   expect(updated.height).toBeLessThan(80);
   await noSideways(page);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${DIR}/more-loan-details-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/more-loan-details-${width(page)}.png`, fullPage: true });
   expect(await db.loan.count()).toBe(1);
   clean();
 });

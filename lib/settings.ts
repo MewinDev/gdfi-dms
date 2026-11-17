@@ -43,8 +43,6 @@ export const SETTING_DEFAULTS = {
   "myloans.lastRun": null as null | { at: string; ok: boolean; checked: number; changes: number; failed: number; error: string | null; trigger: string; status?: string },
   /** Funds: a balance may carry over to the next attempt without approval for up to this many business days. */
   "funds.carryOverLimitDays": 3 as number,
-  /** Funds: an advance must be liquidated within this many business days of release (restarts at each carry-over decision). */
-  "funds.liquidationDueDays": 10 as number,
   /** Funds: block "At the LTO" while a funds-flagged transaction is not Funded. */
   "funds.blockLtoUntilFunded": true as boolean,
   /**

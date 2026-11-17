@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "e2e:groups": "tsx scripts/e2e-groups.ts",
+    "docs:screenshots": "tsx scripts/e2e-groups.ts --screenshots",
     "test:kit-screens": "playwright test -c playwright.kit.config.ts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",

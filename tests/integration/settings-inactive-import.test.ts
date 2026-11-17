@@ -4,6 +4,7 @@
  * are removed again at the end (test clean-up only: the app itself never deletes them).
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { addCalendarEntry } from "@/lib/services/calendar";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { openLoanFile } from "@/lib/services/loan-file";
@@ -184,7 +185,9 @@ describe("Inactive instead of delete", () => {
   });
 
   it("an inactive holiday is no longer skipped", async () => {
-    await saveSettingsRow(admin, "holiday", null, { date: "2099-01-02", name: "Test day" });
+    // The generic save refuses holidays (D-042): only the calendar rule adds a non-working day.
+    await expect(saveSettingsRow(admin, "holiday", null, { date: "2099-01-02", name: "Test day" })).rejects.toThrow(/Holidays and working days/);
+    await addCalendarEntry(admin, { kind: "HOLIDAY", date: "2099-01-02", name: "Test day", allBranches: true });
     const h = await prisma.holidayCalendar.findFirstOrThrow({ where: { date: "2099-01-02" } });
     expect(daysFor(await loadCalendar(), null).isWorkingDay("2099-01-02")).toBe(false);
     await setRowActive(admin, "holiday", h.id, false);

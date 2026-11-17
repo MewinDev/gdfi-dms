@@ -168,15 +168,18 @@ export const IMPORT_LISTS: Record<ImportListKey, ImportListDef> = {
   },
   holidays: {
     key: "holidays", title: "Holidays", slug: "holidays", keyColumns: ["date"],
-    keyHelp: "Rows are matched by date. A new date adds a holiday; an existing date updates its name. Inactive holidays are no longer skipped.",
+    keyHelp: "Rows are matched by date. A new date adds a holiday; an existing date updates its name or status. A holiday that takes a working day away moves the saved due dates it reaches, and one made inactive gives back only the days it took; Check file shows how many before you import. Enter the official list from the government proclamation.",
     columns: [
-      { name: "date", label: "Date", what: "The day off.", required: "yes", allowed: "YYYY-MM-DD", example: "2027-04-09" },
-      { name: "name", label: "Holiday name", what: "Name of the holiday.", required: "yes", allowed: "Text", example: "Araw ng Kagitingan", text: true },
+      { name: "date", label: "Date", what: "The day off. A date in the past: up to 7 days back, with the reason.", required: "yes", allowed: "YYYY-MM-DD", example: "2099-01-05" },
+      { name: "name", label: "Holiday name", what: "Name of the holiday.", required: "yes", allowed: "Text", example: "Sample holiday", text: true },
+      { name: "type", label: "Type", what: "Regular, Special non-working or Local. Blank: Regular.", required: "no", allowed: "Regular, Special non-working, Local", example: "Regular" },
+      { name: "branches", label: "Branches", what: "Branch codes (3 digits) separated by ; for a holiday of some branches only. Blank: all branches.", required: "no", allowed: "Codes like 101;165", example: "" },
+      { name: "reason", label: "Reason", what: "Needed for a date in the past (and for its status change).", required: "no", allowed: "Text", example: "", text: true },
       status, notes,
     ],
     examples: [
-      { date: "2027-04-09", name: "Araw ng Kagitingan", status: "Active", notes: EXAMPLE_NOTE },
-      { date: "2027-06-12", name: "Independence Day", status: "Active", notes: EXAMPLE_NOTE },
+      { date: "2099-01-05", name: "Sample holiday", type: "Regular", branches: "", reason: "", status: "Active", notes: EXAMPLE_NOTE },
+      { date: "2099-01-06", name: "Sample local holiday", type: "Local", branches: "165", reason: "", status: "Active", notes: EXAMPLE_NOTE },
     ],
   },
   "cash-advance": {

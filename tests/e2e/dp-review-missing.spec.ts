@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice, signInWith } from "./helpers";
+import { pickLtoOffice, signInWith, docShot } from "./helpers";
 
 /**
  * The DP's "Review the papers" with missing papers in the same list (no card on top), on the production
@@ -25,8 +25,8 @@ test.beforeEach(async () => {
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string, target?: Locator) {
   const path = `${DIR}/${name}-${width(page)}.png`;
-  if (target) await target.screenshot({ path });
-  else await page.screenshot({ path, fullPage: true });
+  if (target) await docShot(target, { path });
+  else await docShot(page, { path, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

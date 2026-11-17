@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, watchConsole } from "./helpers";
+import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
  * Find a loan, the result card: compact (no repeats), the two questions as real buttons (a radio group:
@@ -21,7 +21,7 @@ async function shot(page: Page, name: string, fullPage = true) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage });
 }
 async function noSideways(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -163,7 +163,7 @@ test("both chosen: the buttons fill navy with a check, one choice each, keyboard
   await shot(page, "both-chosen");
   await setup.scrollIntoViewIfNeeded();
   await page.evaluate(() => document.fonts.ready);
-  await setup.screenshot({ path: `${DIR}/what-will-be-set-up-${width(page)}.png` });
+  await docShot(setup, { path: `${DIR}/what-will-be-set-up-${width(page)}.png` });
 
   // Saved exactly as before: the same values; the rule stored by its key.
   await openBtn(page).click();

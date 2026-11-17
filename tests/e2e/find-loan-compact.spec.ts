@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, visibleSearchBox, watchConsole, signInWith } from "./helpers";
+import { signIn, visibleSearchBox, watchConsole, signInWith, docShot } from "./helpers";
 
 /**
  * Find a loan, the compact page: the search row, the slim sample list, one result card, the two
@@ -14,7 +14,7 @@ const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => window.scrollTo(0, 0)); // the sticky top bar stays at the top of the picture
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

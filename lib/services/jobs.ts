@@ -12,7 +12,7 @@ import { getSetting, getTatMap } from "@/lib/settings";
 import { targetOf, txnStepKey } from "@/lib/workflow/tat";
 import { loadCalendar } from "@/lib/calendar/load";
 import { addWorkingDays, daysFor } from "@/lib/calendar/core";
-import { liquidationDueFields } from "./funds";
+import { refreshLiquidationForTransaction, restartLiquidationWait } from "./liquidation";
 import { businessDate } from "@/lib/time";
 import { carryOverDecision, fundsStatus, lineBalance } from "@/lib/funds/rules";
 import type { TypeRef } from "@/lib/funds/access";
@@ -264,7 +264,8 @@ export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: At
       await tx.carryOver.create({ data: { lineId: l.id, attemptId: attempt.id, cents: balance, status: d.status, businessDays: d.businessDays, ...(d.status === "AUTO" ? { decidedAt: now } : {}) } });
       if (d.status === "AUTO") {
         // Each carry-over decision restarts the liquidation due date.
-        await tx.cashAdvance.update({ where: { id: l.advanceId }, data: { overdueNotifiedAt: null, ...(await liquidationDueFields(tx, l.advance.branchId, now)) } });
+        await tx.cashAdvance.update({ where: { id: l.advanceId }, data: { overdueNotifiedAt: null } });
+        await restartLiquidationWait(tx, l.advanceId, now); // D-044: due after this attempt's LTO pickup
       } else {
         const approvers = await bandApprovers(tx, balance, l.advance);
         await notify(tx, { email: { event: "advance_requested", to: approvers, amountCents: balance, vars: { number: l.advance.number, kind: l.advance.fundsTypeName, who: a.dpUser.name, reason: `Carry-over: keep the balance for ${a.transaction.type.name} beyond the carry-over limit.` } }, userIds: approvers, loanId: a.loanId, title: `${l.advance.number}: carry-over needs approval`, body: `${a.dpUser.name} wants to keep ${(balance / 100).toFixed(2)} for ${a.transaction.type.name} beyond the carry-over limit.`, link: "/funds?tab=approve" });
@@ -429,6 +430,7 @@ export async function receiveCore(tx: Tx, a: AssignmentFull, who: Who, input: Re
     return;
   }
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "COMPLETED", statusSince: now, completedAt: now } });
+  await refreshLiquidationForTransaction(tx, a.transactionId, now);
   await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "CLOSED", closedAt: now } });
   await endHoldsOnCompletion(tx, { id: a.transactionId, loanId: a.loanId, pn: a.loan.pn, name: a.transaction.type.name }, sim, now);
   await moveDocs(tx, a.transaction.documents.filter((d) => d.stage === "IN_TRANSIT"), { stage: "AT_BRANCH", custodian: `${receiving.name} (LA, ${branch.name})`, role: "LA", userId: receiving.id, location: `${branch.name} branch`, action: "ACCEPTED_AT_BRANCH" }, { simulated: sim, by: who.actor });

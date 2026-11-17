@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith } from "./helpers";
+import { signInWith, docShot } from "./helpers";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
 
@@ -21,8 +21,8 @@ const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string, target?: ReturnType<Page["locator"]>) {
   if (width(page) === 820) return; // 1440 and 390 only
   const path = `${DIR}/${name}-${width(page)}.png`;
-  if (target) await target.screenshot({ path });
-  else await page.screenshot({ path, fullPage: true });
+  if (target) await docShot(target, { path });
+  else await docShot(page, { path, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -116,6 +116,7 @@ export const PERMISSIONS = {
   // Reports and audit
   AUDIT_VIEW: "audit:view",
   FILES_LOG_VIEW: "audit:files", // Audit, File access log (D-039)
+  DUEDATES_CORRECT: "duedates:correct", // Correct one saved due date, with a reason (D-042)
   // Test tools
   SIMULATOR_USE: "simulator:use",
   TESTDATA_RESET: "testdata:reset",
@@ -295,6 +296,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.SETTINGS_CHECKLIST, label: "Change checklist items", help: "The papers for each transaction, required or optional.", can: "change checklist items", where: "Settings, Checklist items", was: "settings:checklist" },
       { key: P.SETTINGS_TAT, label: "Change turnaround times", help: "Target business days for each step.", can: "change turnaround times", where: "Settings, Turnaround times", was: "settings:tat" },
       { key: P.SETTINGS_HOLIDAYS, label: "Change holidays", help: "The working days, holidays and office closures: the one calendar for every count. A change that takes a working day away moves the saved due dates it reaches (Check shows how many first).", can: "change holidays, working days and office closures", where: "Settings, Holidays and working days", was: "settings:holidays" },
+      { key: P.DUEDATES_CORRECT, label: "Correct due dates", help: "Change one saved due date (a job's TAT or a liquidation), with a reason. Shown in the item's due-date history and logged; the owner is told.", can: "correct a due date", where: "Job page and Funds, Due date", was: "new on 18 November 2026" },
       { key: P.SETTINGS_CASH_ADVANCE, label: "Change cash-advance rules", help: "Suggested and maximum amounts, carry-over and liquidation days, approval bands.", can: "change cash-advance rules", where: "Settings, Cash advance", was: "settings:cash_advance" },
       { key: P.SETTINGS_LTO, label: "Change LTO offices", help: "Offices a processor can be sent to.", can: "change LTO offices", where: "Settings, LTO offices", was: "settings:lto" },
       { key: P.SETTINGS_PROBLEM_REASONS, label: "Change problem reasons", help: "The reasons a job can be stuck.", can: "change problem reasons", where: "Settings, Problem reasons", was: "settings:problem_reasons" },
@@ -436,7 +438,7 @@ export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
   ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY,
 ];
 /** Keys added on 17 November 2026 (D-031): the role migration ignores them when it compares a role with an earlier default. */
-export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW];
+export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW, P.DUEDATES_CORRECT];
 
 /**
  * Seeded built-in roles: the defaults that "Reset to default" restores. The ten decided roles (D-002) plus

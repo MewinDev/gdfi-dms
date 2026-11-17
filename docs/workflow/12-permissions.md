@@ -181,6 +181,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Change checklist items | The papers for each transaction, required or optional. | Settings, Checklist items | - | `settings:checklist` | SUPERADMIN, Admin |
 | Change turnaround times | Target business days for each step. | Settings, Turnaround times | - | `settings:tat` | SUPERADMIN, Admin |
 | Change holidays | The working days, holidays and office closures: the one calendar for every count. A change that takes a working day away moves the saved due dates it reaches (Check shows how many first). | Settings, Holidays and working days | - | `settings:holidays` | SUPERADMIN, Admin |
+| Correct due dates | Change one saved due date (a job's TAT or a liquidation), with a reason. Shown in the item's due-date history and logged; the owner is told. | Job page and Funds, Due date | - | `duedates:correct` | SUPERADMIN, Admin |
 | Change cash-advance rules | Suggested and maximum amounts, carry-over and liquidation days, approval bands. | Settings, Cash advance | - | `settings:cash_advance` | SUPERADMIN, Admin |
 | Change LTO offices | Offices a processor can be sent to. | Settings, LTO offices | - | `settings:lto` | SUPERADMIN, Admin |
 | Change problem reasons | The reasons a job can be stuck. | Settings, Problem reasons | - | `settings:problem_reasons` | SUPERADMIN, Admin |
@@ -283,6 +284,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Change checklist items | Settings, Checklist items | settings:checklist | `settings:checklist` |  |
 | Change turnaround times | Settings, Turnaround times | settings:tat | `settings:tat` |  |
 | Change holidays | Settings, Holidays and working days | settings:holidays | `settings:holidays` |  |
+| Correct due dates | Job page and Funds, Due date | new on 18 November 2026 | `duedates:correct` | Split or renamed |
 | Change cash-advance rules | Settings, Cash advance | settings:cash_advance | `settings:cash_advance` |  |
 | Change LTO offices | Settings, LTO offices | settings:lto | `settings:lto` |  |
 | Change problem reasons | Settings, Problem reasons | settings:problem_reasons | `settings:problem_reasons` |  |

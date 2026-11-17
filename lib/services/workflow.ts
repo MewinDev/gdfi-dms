@@ -1,4 +1,5 @@
 import "server-only";
+import { refreshLiquidationForTransaction } from "./liquidation";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds, supervisorUserIds } from "@/lib/notify";
@@ -714,6 +715,7 @@ export async function overrideAutomaticResult(user: CurrentUser, input: Override
     const now = new Date();
     for (const t of toCancel) {
       await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now, cancelledAt: now, cancelReason: `Supervisor override: ${reason}` } });
+      await refreshLiquidationForTransaction(tx, t.id, now);
     }
     if (toAdd.length) await createTransactions(tx, { loanId: loan.id, pn: loan.pn, codes: toAdd, origin: "OVERRIDE" });
     const before = { classification: loan.classification, financingType: loan.financingType, orcrStatus: loan.orcrStatus, mortgageResult: loan.mortgageResult, transactions: TRANSACTION_ORDER.filter((c) => liveCodes.includes(c)) };

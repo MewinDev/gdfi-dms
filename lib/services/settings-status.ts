@@ -1,4 +1,5 @@
 import "server-only";
+import { setCalendarEntryActive } from "./calendar";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
@@ -168,9 +169,12 @@ export async function inactiveEffect(kind: StatusKind, id: string): Promise<stri
 }
 
 /** Make a row inactive or active again. Hard limits on the server; one audit row each time. */
-export async function setRowActive(user: CurrentUser, kind: StatusKind, id: string, active: boolean) {
+export async function setRowActive(user: CurrentUser, kind: StatusKind, id: string, active: boolean, reason = "") {
   if (!KIND_PERMISSION[kind] || !can(user, KIND_PERMISSION[kind])) throw new UserError("Your role does not allow this.");
   if (!STATUS_KINDS.includes(kind)) throw new UserError("This list cannot be made inactive.");
+  // A holiday or closure: only through the calendar rule (D-042: inactive undoes its own extensions; active
+  // again extends like a new one), with the same back-dating rule.
+  if (kind === "holiday") { await setCalendarEntryActive(user, id, active, reason); return; }
   const row = await loadRow(kind, id);
   if (!row) throw new UserError("Not found. It may have been changed by someone else.");
   if (row.active === active) return;
@@ -199,7 +203,6 @@ export async function setRowActive(user: CurrentUser, kind: StatusKind, id: stri
       case "fundsType": await tx.fundsType.update({ where: { id }, data }); break;
       case "expenseKind": await tx.expenseKind.update({ where: { id }, data }); break;
       case "processingStage": await tx.processingStage.update({ where: { id }, data }); break;
-      case "holiday": await tx.holidayCalendar.update({ where: { id }, data }); break;
       case "user": await tx.user.update({ where: { id }, data }); break;
     }
     await writeAudit(tx, {

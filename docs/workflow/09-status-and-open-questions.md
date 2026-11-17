@@ -2,7 +2,7 @@
 
 What is built today, what is planned, and the questions still open for the business.
 
-Last updated: 17 November 2026 (PHT)
+Last updated: 18 November 2026 (PHT)
 
 ## Status
 
@@ -92,6 +92,7 @@ Checked against the code and the tests on 8 November 2026. Each row gives one li
 | Audit, File access log (`audit:files`): filters for user, branch, PN #, file type and date range within the reader's branches; Download CSV, itself logged; tabs with the Audit log | Built | 17 November 2026: Playwright file-access-log (filter, download, the export row shown, Download CSV off with the reason when nothing matches) at 1440, 820 and 390, screenshots in docs/screenshots/file-access-log/; integration file-access-log (append-only refused by the database, scope, the tick). |
 | One working-days calendar, piece 4 (D-018, D-041): Monday to Saturday by default (tickboxes), holidays with type and branches (sample dates only), office closures per branch with a reason; one service for TAT, liquidation, carry-over, reminders, reports, monitoring and the job lists; whose calendar by the approved rule; no other day counting | Built | 17 November 2026: unit tests of the nine worked examples, month and year ends and a local holiday (lib/calendar/core.test.ts); the guard test lib/calendar/no-other-counting.test.ts; full vitest 1,243 passed; full e2e 570 passed at 1440, 820 and 390. |
 | Saved due dates and the late-added rule (D-041): saved at accept (DP job) and release (liquidation); a holiday, closure or working-day change inside an item's window extends it, overdue ones too, with Check ("This will extend N items (M currently overdue)"), a log per item and the owner told; back-dated up to 7 days with a reason; "Pauses TAT" on hold reasons with Paused chips and the plain rule; amber "1 day left"; Jobs lists by due date | Built | 17 November 2026: integration calendar-due (example 7, Angono closed Thu 26 recorded Fri 27, Pasig unchanged, 8 days back refused, a pausing hold moves Sat 28 to Tue 1 Dec) and calendar-accept; Playwright calendar-settings (Check before Save, the closure saved) at 1440 and 390, screenshots in docs/screenshots/calendar-settings/. |
+| Liquidation due date, piece 5 (D-017, D-044): N working days per funds type after the last LTO pickup; cancellations, note-only lines, carry-over, the fallback with its alert, the saved date kept after a redo; one plain line per advance; the late record on Funds and the TAT report | Built | 18 November 2026: unit tests of the examples, the six decisions and days late across a Saturday, a Sunday, a holiday and a closure (lib/funds/liquidation.test.ts); integration liquidation-due; Playwright liquidation (Funds lines) at 1440, 820 and 390; full vitest green; full e2e green (one spec fixture fixed and rerun). |
 
 When a planned item is built, change its status to Built only after checking it in the app.
 

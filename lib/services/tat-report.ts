@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { loanScope, type CurrentUser } from "@/lib/auth/current-user";
+import { advanceScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
 import { getCalendar } from "@/lib/calendar/load";
 import { daysFor } from "@/lib/calendar/core";
 import { endOfBusinessDay, startOfBusinessDay } from "@/lib/time";
@@ -89,4 +89,28 @@ export async function reasonReport(user: CurrentUser, f: Pick<TatFilters, "branc
   return [...rows.values()]
     .map(({ days, ...r }) => ({ ...r, avgDays: Math.round((days / r.count) * 10) / 10 }))
     .sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type] || b.count - a.count || a.reason.localeCompare(b.reason));
+}
+
+/**
+ * Liquidations (D-044 item 6): advances liquidated in the period, within the reader's branches, on time or late,
+ * with the working days late. v2 demerit points (a later phase) will read the same record.
+ */
+export interface LiquidationSummary { total: number; onTime: number; late: number; avgDaysLate: number | null; worst: { number: string; daysLate: number }[] }
+export async function liquidationSummary(user: CurrentUser, f: Pick<TatFilters, "branch" | "from" | "to"> = {}): Promise<LiquidationSummary> {
+  const from = ymd(f.from), to = ymd(f.to);
+  const rows = await prisma.cashAdvance.findMany({
+    where: {
+      ...advanceScope(user), daysLate: { not: null },
+      ...(f.branch ? { branch: { name: f.branch } } : {}),
+      ...(from || to ? { liquidatedAt: { ...(from ? { gte: startOfBusinessDay(from) } : {}), ...(to ? { lte: endOfBusinessDay(to) } : {}) } } : {}),
+    },
+    select: { number: true, daysLate: true },
+    orderBy: { daysLate: "desc" },
+  });
+  const late = rows.filter((r) => (r.daysLate ?? 0) > 0);
+  return {
+    total: rows.length, onTime: rows.length - late.length, late: late.length,
+    avgDaysLate: late.length ? Math.round((late.reduce((s, r) => s + (r.daysLate ?? 0), 0) / late.length) * 10) / 10 : null,
+    worst: late.slice(0, 5).map((r) => ({ number: r.number, daysLate: r.daysLate! })),
+  };
 }

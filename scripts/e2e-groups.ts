@@ -9,7 +9,7 @@
  * 3. Writes a short pass / fail summary, with the peak memory of each group, to
  *    test-results/e2e-groups-summary.md (and prints it).
  *
- * Options: --size=4 (specs per group), --widths=1440,820,390, --only=funds (specs whose file name
+ * Options: --screenshots (also write the documentation screenshots; npm run docs:screenshots), --size=4 (specs per group), --widths=1440,820,390, --only=funds (specs whose file name
  * contains it; several with commas: --only=funds,journey), --no-build (reuse the last build). Example: npm run e2e:groups -- --widths=390 --only=funds
  */
 import { execSync, spawn } from "node:child_process";
@@ -36,7 +36,9 @@ if (!testDb || !/test/i.test(new URL(testDb).pathname)) {
   console.error("Refused: no test database (gdfi_dms_test). Run npm run db:create-test first.");
   process.exit(1);
 }
-const env = { ...process.env, DATABASE_URL: testDb, DIRECT_URL: testDb, NEXT_DIST_DIR: ".next-e2e-prod", APP_BASE_URL: `http://localhost:${PORT}` };
+// --screenshots (npm run docs:screenshots): refresh docs/screenshots/. A normal run writes none (docShot).
+const screenshots = process.argv.includes("--screenshots");
+const env = { ...process.env, DATABASE_URL: testDb, DIRECT_URL: testDb, NEXT_DIST_DIR: ".next-e2e-prod", APP_BASE_URL: `http://localhost:${PORT}`, DOCS_SCREENSHOTS: screenshots ? "1" : "0" };
 
 /** Stops whatever listens on the e2e port (a server left by a group that crashed or timed out). */
 function stopPort() {
