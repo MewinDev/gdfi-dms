@@ -1,29 +1,34 @@
-# Handover: piece 3 done; stop before piece 4
+# Handover: piece 4 done; stop before piece 5
 
 Last updated: 17 November 2026 (PHT)
-Branch: `feature/foundation-settings-rbac-myloans`
+Branch: `feature/foundation-settings-rbac-myloans` (pushed)
 
 ## Where things stand
 
-- **Green and committed:** pieces 1, 2, 3a, the piece 2 review (D-028 to D-036), D-037, D-038 and **piece 3 (branch scope everywhere, D-019, D-039)**. Last full run, 17 November 2026:
-  - vitest: 1,210 passed, 1 skipped;
-  - full e2e (`npm run e2e:groups`, production build, workers=1): 564 passed, 0 failed, 3 skipped (189 / 189 / 186 at 1440 / 820 / 390);
+- **Green and committed:** pieces 1 to 4 (piece 3 branch scope; piece 4 the working-days calendar, D-041), the myloans round 3 contract (D-040) and the "users with no branches" warning. Last full run, 17 November 2026:
+  - vitest: 1,243 passed, 1 skipped;
+  - full e2e (`npm run e2e:groups`, production build, workers=1): 570 passed, 0 failed (191 / 191 / 188 at 1440 / 820 / 390);
   - tsc and lint clean.
-- **Next: piece 4 (one working-days calendar, D-018), not started.** Wait for the project owner.
-- Decisions are in `docs/DECISIONS.md` (D-001 to D-039); the plan is `IMPLEMENTATION_PLAN.md` (piece 4 is §5).
+- **Next: piece 5 (liquidation due date, D-017), not started.** Wait for the project owner.
+- Decisions: `docs/DECISIONS.md` (D-001 to D-041); plan: `IMPLEMENTATION_PLAN.md` (piece 5 is section 6; myloans round 3 is 7.3).
 
-## Piece 3: what was built
+## Piece 4: what was built (D-041)
 
-- **One file route** `app/api/files/[kind]/[id]/route.ts` (receipt, stage, lto-proof), session required, branch scope on the parent record, 404 otherwise, a `FileAccessLog` row per view or download. Old routes removed. Migration `20261119090017_file_access_log` (append-only trigger; `audit:files` for Admin and Superadmin).
-- **Audit, File access log** (`app/(app)/admin/audit/files`, `lib/services/file-access-log.ts`): filters user, branch, PN #, file type, date range, within the reader's branches; Download CSV (`app/api/audit/files`) writes its own row (`FILE_ACCESS_LOG`, `EXPORT`); export rows have no branch, so only All-branches readers see them. Tabs with the Audit log; with only `audit:files`, Audit opens on it.
-- **D-039:** jobs by the loan's branch, own job anywhere (`canSeeJob`); holds and problems on the processor's own active job (`inScopeOrOwnJob`); funds exception only to processors who work in the Finance person's branches (`worksInScope`, `exceptionTargets`); job page hides buttons the server would refuse for scope (loan file link replaced by "The loan file is in {branch}, outside your branches").
-- **Scope first:** decideAdvance, decideTopUp, decideCarryOver call `needSee` before the "already approved" answer; job actions (`withJob`) check the role, then answer "Job not found." for a job the person cannot see.
-- **Also fixed:** notifications (list, Home preview, unread count) within scope; `copyReusablePapers` (the "belong to the borrower" message was unreachable); the receipt store refuses a folder under `public/`.
-- **Tests:** `tests/integration/cross-branch-roles.test.ts` (every built-in role, Finance first), `scope-d039.test.ts`, `file-access-log.test.ts`, `lib/storage/no-public-files.test.ts`, e2e `file-access-log.spec.ts`.
+- **`lib/calendar/`** is the one calendar: `core.ts` (pure: `daysFor`, `addWorkingDays`, `workingDaysBetween`, `pausedDays`, `lostWorkingDays`, `dueTone`, `PAUSE_RULE_TEXT`), `load.ts` (`loadCalendar`, `getCalendar` per request), `testing.ts` (test helpers only). The old `lib/time` counters and `getHolidaySet` are gone; `no-other-counting.test.ts` forbids any other counting.
+- **Whose calendar:** LA steps the loan's branch; DP steps and liquidation the processor's branch (`stepBranch` in `lib/jobs/view.ts`, `branchDayCounters` in monitoring); Finance the request's branch.
+- **Migration `20261119090018_working_calendar`:** holiday kind, type, branches (`HolidayBranch`), reason, `isSample`; `HoldReason.pausesTat` (on for CLIENT-PAPERS, CLIENT-DECISION, CLIENT-CORRECTIONS, BRANCH-HEAD, FUNDS, MYLOANS-UPDATE); `DpAssignment.dueDate / targetDays / dueBranchId`; `CashAdvance.liquidationDueFrom`; `DueDateChange` log. It deleted the 13 guessed 2026 holidays the old seed made; the seed now makes 2 labelled samples (14 and 21 December 2026).
+- **Saved due dates:** at accept (`acceptCore`) and at release or carry-over (`liquidationDueFields`). Moved only by `lib/services/calendar.ts` (`addCalendarEntry`, `saveWorkingDays`: the window rule, a DueDateChange and audit row per item, the owner told) or by a pausing hold's end (`extendForPause` in holds). LA steps without an accept are still counted live (piece 9).
+- **Screens:** Settings, Holidays and working days (`components/admin/calendar-area.tsx`, `app/actions/calendar.ts`): working days, office closure, add a holiday, each Check then Save. Chips: green / amber "N days left" / due today / red / grey "Paused" (with the plain rule on hover and for screen readers). Jobs lists sorted by due date (`sortByDue`). The job page shows the due date, how it moved and the pause rule. "Pauses TAT" on Settings, Hold reasons.
+- **Not done (by decision):** waiting time and the full inbox (piece 9); liquidation's start at the last LTO (piece 5). The holiday CSV import still adds rows without the extension rule (use Settings for dates that may move due dates). Making a holiday inactive does not move a saved date back (an admin correction is not built yet).
+
+## Earlier this session
+
+- **Piece 3** (branch scope everywhere, D-019, D-039): the file route and its append-only log with the Audit screen; job pages by the loan's branch; own-job holds and problems; scope before every answer; the cross-branch test of every role. See D-039 and docs/workflow/07.
+- **myloans round 3** (D-040): files saved; mock freshness (suffix time, replacement created_at); the planner's "superseded" decision; still waiting for the 3 vector outputs and their updated_at check.
 
 ## Things a fresh session must know
 
-- **Both databases are on migration 017.** `gdfi_dms_test` was reset (with the owner's consent) and re-seeded on 17 November 2026; the kit was rebuilt the same day (`gdfi_dms` now holds the CLEAN kit; backup `storage/kit/backups/pre-reset-20261117-065433.dump`). Never touch the test DB directly; use the sanctioned scripts.
+- **Both databases are on migration 018.** `gdfi_dms_test` was reset (with the owner's consent) and re-seeded on 17 November 2026; the kit was rebuilt after migrations 017 and 018 (`gdfi_dms` holds the CLEAN kit; automatic backups in `storage/kit/backups/`). Never touch the test DB directly; use the sanctioned scripts.
 - **File access log rows keep their user forever** (append-only, `ON DELETE RESTRICT`). In tests, only seeded users that are never deleted (such as Test Admin) may open files or export the log; a temporary `zz.` user who does can never be removed, and every test that cleans `zz.` users then fails (this happened once; it took a test DB reset to fix).
 - **Migrations:** never `prisma migrate dev`. Use `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`, put it in the next numbered folder (`20261119090018_...`), remove the trigram DROP INDEX lines, apply with `npm run db:deploy`, then print the folder list and `npx prisma migrate status`. Full rules: `CLAUDE.md`.
 - **The project owner's dev server is on port 3000.** Never touch it. The e2e tests use their own server on port 3100. A production build (`next build`) is allowed only when the project owner says the dev server is stopped.
