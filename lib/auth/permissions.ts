@@ -414,6 +414,10 @@ export const FUNDS_BOTH_TYPES: Permission[] = [
 
 /** The Loan Associate's ticks (also the base of the LA Supervisor/Head, D-002). */
 const LA_PERMISSIONS: Permission[] = [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING, P.PAPERS_RECEIVE_LATE, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP];
+/** Finance's default ticks (D-034): every funds tick of both types (the person's Handles CA / FT and branches decide). */
+const FIN_DEFAULT: Permission[] = [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW];
+/** The LA Supervisor/Head's oversight ticks (D-034): what the former Branch Supervisors kept as grants, now the role's own. */
+const SUP_OVERSIGHT: Permission[] = [P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT];
 /**
  * Approve or reject myloans changes ("Can approve LA Open Items", D-010). Purely permission-based (D-029):
  * anyone with these ticks approves for the branches in their access; with "All branches", every branch.
@@ -455,7 +459,9 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
     permissions: ADMIN_PERMISSIONS,
   },
   DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: true, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, P.LTO_REPORTS_CREATE, ...SOURCE_STRIP] },
-  FIN: { name: "Finance", canSignIn: true, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances and fund transfers (the types ticked on the person); confirms liquidation; prints liquidation reports.", permissions: [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.SOURCE_REVIEW_BORROWER] },
+  // Finance (D-034, D-035): branch-scoped like the LA (no All branches by default; only the Superadmin gives
+  // it); no borrower corrections (Q-N19). A person handles only the fund types AND branches ticked for them.
+  FIN: { name: "Finance", canSignIn: true, sortOrder: 4, branchAccess: "ASSIGNED", description: "Approves and releases cash advances and fund transfers for the fund types and branches ticked on the person; confirms liquidation; prints liquidation reports.", permissions: FIN_DEFAULT },
   VAULT: { name: "Custodian", canSignIn: true, sortOrder: 5, branchAccess: "ASSIGNED", description: "The vault team (Collateral): receives, verifies and keeps documents. Work steps come with the vault module.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   DIG: { name: "Digicur", canSignIn: true, sortOrder: 6, branchAccess: "ASSIGNED", description: "Scans documents and records the scan reference. Work steps come with the digitization module.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
   QA: { name: "QA", canSignIn: true, sortOrder: 7, branchAccess: "ASSIGNED", description: "Quality Assurance checks. Work steps come with the QA module.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
@@ -467,7 +473,7 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
    * moving holds, for the branches in the person's access. The key SUP is the former Branch Supervisor
    * (also the Area Supervisor: the same role with Area access on the person). No per-user legacy grants.
    */
-  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission, approving or rejecting myloans changes (Open Items) and moving holds, for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.LOANS_RECLASSIFY] },
+  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission, approving or rejecting myloans changes (Open Items) and moving holds, for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.LOANS_RECLASSIFY, ...SUP_OVERSIGHT] },
 };
 /** The plain ticks of the LA Supervisor/Head role (key SUP) and their keys (the report and the role's docs). */
 export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
@@ -475,7 +481,12 @@ export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
   { plain: "Approve or reject myloans changes (Open Items) for their branches", keys: OPEN_ITEM_APPROVER_KEYS },
   { plain: "Move a hold to another person (within their branches)", keys: [P.HOLDS_TRANSFER] },
   { plain: "Reclassify a loan when the keyword rules changed (within their branches)", keys: [P.LOANS_RECLASSIFY] },
+  { plain: "Resolve any problem, see the DP and LTO monitors and the TAT report (within their branches)", keys: SUP_OVERSIGHT },
 ];
+/** Finance's default ticks before D-034 (with "Review borrower detail corrections"). */
+export const FIN_DEFAULT_BEFORE_D034: Permission[] = [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.SOURCE_REVIEW_BORROWER];
+/** The SUP role's default from D-029 to D-034 (17 Nov 2026): LA, approver, holds, reclassify. */
+export const SUP_DEFAULT_D029: Permission[] = [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.LOANS_RECLASSIFY];
 /** The SUP role's default before D-029 (17 Nov 2026), so the migration can bring an unchanged role up to date. */
 export const SUP_DEFAULT_BEFORE_D029: Permission[] = [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS];
 /** The Superadmin's default before D-028 was final (17 Nov 2026). */

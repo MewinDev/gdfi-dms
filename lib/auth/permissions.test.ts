@@ -30,6 +30,7 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
       "Approve or reject myloans changes (Open Items) for their branches",
       "Move a hold to another person (within their branches)",
       "Reclassify a loan when the keyword rules changed (within their branches)",
+      "Resolve any problem, see the DP and LTO monitors and the TAT report (within their branches)",
     ]);
   });
 });
@@ -70,8 +71,8 @@ describe("can() for each seeded role matches the previous behaviour", () => {
       for (const k of newKeys) expect([key, oldKey, k, now.has(k as never)]).toEqual([key, oldKey, k, OLD[key].includes(oldKey)]);
     }
     // "see every branch" became Branch access.
-    // Finance now sees all branches (funds approvals); everyone else as before.
-    expect(def.branchAccess === "ALL").toBe(OLD[key].includes("loans:view_all") || key === "FIN");
+    // Finance is branch-scoped since D-035 (only the Superadmin gives All branches); everyone else as before.
+    expect(def.branchAccess === "ALL").toBe(OLD[key].includes("loans:view_all") && key !== "FIN");
   });
 
   it("Admin is an ordinary role: it grants exactly its stored ticks (default: everything except the loan-file steps)", () => {

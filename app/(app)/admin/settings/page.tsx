@@ -52,7 +52,7 @@ import { StatusPanel } from "@/components/admin/status-panel";
 import { ImportStep } from "@/components/admin/import-step";
 import { BranchesModal, type BranchFilter } from "@/components/admin/branches/area";
 import { ClassificationForm } from "@/components/admin/classification-form";
-import { getClassificationRules, previewClassification, rulesFromForm } from "@/lib/services/classification";
+import { getClassificationRules, kwText, previewClassification, rulesFromForm } from "@/lib/services/classification";
 import {
   AlertIcon, ArrowLeftIcon, BellIcon, PauseIcon, RefreshIcon, BuildingIcon, CalendarIcon, ChecklistIcon, ClockIcon, CoinsIcon, FileTextIcon, FlaskIcon, LayersIcon, ListIcon, MapPinIcon, SettingsIcon, TagIcon, UsersIcon,
 } from "@/components/ui/icons";
@@ -179,7 +179,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
   const n = ([a, i]: number[], one: string, many: string, more = "") => ({ main: `${a} ${a === 1 ? one : many}${more}`, extra: i > 0 ? `+${i} inactive` : "" });
   const cls = await getClassificationRules();
   return {
-    classification: { main: `Refinancing: ${cls.refinancing.join(", ")} · Financing: ${cls.financing.join(", ")}`, extra: `No keyword: ${cls.fallback === "FINANCING" ? "Financing" : "Refinancing"}` },
+    classification: { main: `Refinancing: ${kwText(cls.refinancing)} · Financing: ${kwText(cls.financing)}`, extra: `No keyword: ${cls.fallback === "FINANCING" ? "Financing" : "Refinancing"}` },
     branches: n(branches, "branch", "branches"),
     "transaction-types": n(types, "type", "types"),
     "document-types": n(docs, "type", "types"),
@@ -759,7 +759,7 @@ async function ClassificationArea({ common, user, test }: { common: { id: string
               <li key={r.productName} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" data-preview-row={r.productName}>
                 <span className="min-w-0 flex-1 font-semibold">{r.productName || "(blank)"}</span>
                 <span className="text-ink-2">{r.loans} loan{r.loans === 1 ? "" : "s"}</span>
-                <span data-preview-next>{r.next === "FINANCING" ? "Financing" : "Refinancing"}{r.keyword ? ` ("${r.keyword}")` : ""}</span>
+                <span data-preview-next>{r.next === "FINANCING" ? "Financing" : "Refinancing"}{r.keyword ? ` ("${r.keyword}"${rules.refinancing.concat(rules.financing).find((k) => k.text === r.keyword)?.wholeWord ? ", whole word" : ""})` : ""}</span>
                 {r.byDefault && <span className="chip c-mute h-6 text-xs">By default</span>}
                 {r.changes > 0 && <span className="chip c-act h-6 text-xs" data-preview-changes>{r.changes} change{r.changes === 1 ? "s" : ""} (was {r.saved === "FINANCING" ? "Financing" : "Refinancing"})</span>}
               </li>

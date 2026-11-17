@@ -17,7 +17,7 @@ describe("Financing questions needed (PRODUCT_CLASSIFICATION): classification fr
     ["Refinancing - Auto", "REFINANCING"],
     // D-031: keywords match anywhere ("financ"), so these are Financing now.
     ["Auto Finance", "FINANCING"],
-    ["Autofinancing", "FINANCING"],
+    ["Autofinancing", "REFINANCING"], // D-034: "financ" must start a word; no keyword, so the default
     ["Auto Re-Financing", "REFINANCING"], // hyphens ignored
     ["REFI Loan", "REFINANCING"],
     ["Car Loan", "REFINANCING"],
@@ -33,7 +33,7 @@ describe("Financing questions needed (PRODUCT_CLASSIFICATION): classification fr
     expect(classifyProductName("").rule).toBe("PRODUCT_CLASSIFICATION:DEFAULT:REFINANCING");
     expect(classifyProductName("Car Loan")).toMatchObject({ rule: "PRODUCT_CLASSIFICATION:DEFAULT:REFINANCING", byDefault: true });
     expect(classifyProductName("Auto Finance")).toMatchObject({ rule: "PRODUCT_CLASSIFICATION:FINANCING_KEYWORD:financ", byDefault: false });
-    expect(classifyProductName("Car Loan", { refinancing: ["refi"], financing: ["financ"], fallback: "FINANCING" }).classification).toBe("FINANCING");
+    expect(classifyProductName("Car Loan", { refinancing: [{ text: "refi", wholeWord: true }], financing: [{ text: "financ", wholeWord: false }], fallback: "FINANCING" }).classification).toBe("FINANCING");
   });
 });
 

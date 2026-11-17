@@ -19,7 +19,7 @@ import {
   type ChangeCategory, type FieldChange, type Proposed, type Tracked, type TxnNow,
 } from "@/lib/myloans/changes";
 import { isTestMode } from "@/lib/test-mode";
-import { getHolidaySet, getSetting, setSetting } from "@/lib/settings";
+import { getClassificationRules, getHolidaySet, getSetting, setSetting } from "@/lib/settings";
 import { businessDate, isBusinessDay, startOfBusinessDay } from "@/lib/time";
 import { advanceBalance, peso } from "@/lib/funds/rules";
 import { MORTGAGE_THRESHOLDS, classifyProductName, type FinancingType, type OrcrStatus } from "@/lib/rules";
@@ -249,7 +249,7 @@ async function proposedFor(db: Tx | typeof prisma, loanId: string, category: Cha
   const rec = snap ? recordFromPayload(snap.payload) : null;
   const next = (snap?.tracked as Tracked | null) ?? (rec ? trackedOf(rec) : null);
   if (!next) throw new UserError("There is no MyLoans copy to compare with.");
-  return proposeEffect({ category, loan: { ...loan, financingType: loan.financingType as FinancingType | null, orcrStatus: loan.orcrStatus as OrcrStatus | null }, txns: await txnsNow(db, loanId), next, picks, rules: await getSetting("classification.rules", db) });
+  return proposeEffect({ category, loan: { ...loan, financingType: loan.financingType as FinancingType | null, orcrStatus: loan.orcrStatus as OrcrStatus | null }, txns: await txnsNow(db, loanId), next, picks, rules: await getClassificationRules(db) });
 }
 
 /** A new loan file of the same borrower: if it may replace an ended loan under review, add it as a possible replacement. */
@@ -423,7 +423,7 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
       totalReleasedAmount: typeof next.amount === "number" ? new Prisma.Decimal(next.amount / 100) : loan.totalReleasedAmount,
       classification: p.classificationNext!, mortgageResult: p.mortgageNext as never, ruleFired: p.ruleNext,
       // Re-classified from the new product name (D-031): the label follows it, and any earlier flag is settled.
-      classifiedByDefault: classifyProductName(next.productName ?? "", await getSetting("classification.rules", tx)).byDefault, classificationNow: null,
+      classifiedByDefault: classifyProductName(next.productName ?? "", await getClassificationRules(tx)).byDefault, classificationNow: null,
       financingType: p.classificationNext === "FINANCING" ? (d.financingType ?? loan.financingType) : null,
       orcrStatus: p.classificationNext === "FINANCING" ? (d.orcrStatus ?? loan.orcrStatus) : null,
     };

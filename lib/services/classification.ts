@@ -5,8 +5,8 @@ import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, type Actor } from "@/lib/audit";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getSetting, setSetting } from "@/lib/settings";
-import { classifyByKeywords, classificationWord, parseKeywords, type ClassificationRules, type ClassificationValue } from "@/lib/rules/classify";
+import { getClassificationRules as rulesSetting, setSetting } from "@/lib/settings";
+import { classifyByKeywords, classificationWord, cleanKeywords, type ClassificationRules, type ClassificationValue, type Keyword } from "@/lib/rules/classify";
 import { proposeEffect, type Tracked } from "@/lib/myloans/changes";
 import { applyTransactionChanges, txnsNow } from "./source-sync";
 import { recomputeStage } from "./stage";
@@ -19,16 +19,29 @@ import { UserError, NotInScopeError } from "./errors";
 
 type Db = Tx | typeof prisma;
 const actorOf = (u: CurrentUser): Actor => ({ id: u.id, label: u.name });
+/** "refinanc, refi (whole word)" */
+export const kwText = (ks: Keyword[]) => ks.map((k) => (k.wholeWord ? `${k.text} (whole word)` : k.text)).join(", ");
 
 /** Open loan files: not cancelled, closed or archived. Their classification can still matter. */
 const OPEN_LOAN: Prisma.LoanWhereInput = { cancelledAt: null, closedAt: null, archivedAt: null };
 
-export const getClassificationRules = (db: Db = prisma) => getSetting("classification.rules", db);
+export const getClassificationRules = (db: Db = prisma) => rulesSetting(db);
 
-/** Reads the Settings form (two lists, one keyword per line or comma; the default). Plain-language problems. */
+/**
+ * One keyword list from the Settings form: JSON [{ text, wholeWord }] (the list editor), or plain text, one
+ * keyword per line or comma ("starts a word"). Anything else reads as an empty list.
+ */
+export function keywordsFrom(raw: unknown): Keyword[] {
+  if (Array.isArray(raw)) return raw.map((x) => (typeof x === "string" ? { text: x, wholeWord: false } : { text: String((x as Keyword)?.text ?? ""), wholeWord: !!(x as Keyword)?.wholeWord }));
+  const s = String(raw ?? "").trim();
+  if (s.startsWith("[")) { try { return keywordsFrom(JSON.parse(s)); } catch { return []; } }
+  return s.split(/[\n,]/).map((t) => ({ text: t, wholeWord: false }));
+}
+
+/** Reads the Settings form (two keyword lists with their tickboxes; the default). Plain-language problems. */
 export function rulesFromForm(raw: { refinancing?: unknown; financing?: unknown; fallback?: unknown }): { rules: ClassificationRules; problem: string | null; field?: string } {
-  const refi = parseKeywords(String(raw.refinancing ?? ""));
-  const fin = parseKeywords(String(raw.financing ?? ""));
+  const refi = cleanKeywords(keywordsFrom(raw.refinancing));
+  const fin = cleanKeywords(keywordsFrom(raw.financing));
   const fallback: ClassificationValue = raw.fallback === "FINANCING" ? "FINANCING" : "REFINANCING";
   const rules = { refinancing: refi.keywords, financing: fin.keywords, fallback };
   if (refi.problem) return { rules, problem: `Refinancing keywords: ${refi.problem}`, field: "refinancing" };
@@ -99,7 +112,7 @@ export async function saveClassificationRules(u: CurrentUser, raw: { refinancing
     const result = await recheckClassifications(tx, rules);
     await writeAudit(tx, {
       actor: actorOf(u), mode: "MANUAL", action: "classification_rules_saved", entityType: "Setting", entityId: "classification.rules",
-      summary: `Product classification keywords saved. Refinancing: ${rules.refinancing.join(", ")}. Financing: ${rules.financing.join(", ")}. No keyword: ${classificationWord(rules.fallback)}. ${result.flagged} open loan file${result.flagged === 1 ? "" : "s"} flagged "Classification changed since accepted".`,
+      summary: `Product classification keywords saved. Refinancing: ${kwText(rules.refinancing)}. Financing: ${kwText(rules.financing)}. No keyword: ${classificationWord(rules.fallback)}. ${result.flagged} open loan file${result.flagged === 1 ? "" : "s"} flagged "Classification changed since accepted".`,
       before: before as unknown as Prisma.InputJsonValue, after: rules as unknown as Prisma.InputJsonValue,
     });
     return result;

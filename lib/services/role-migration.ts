@@ -2,7 +2,7 @@ import "server-only";
 import { prisma, type Tx } from "@/lib/db";
 import { effectivePermissions } from "@/lib/auth/access";
 import { CA_KEYS, FT_KEYS, ticksFromRole } from "@/lib/auth/effective";
-import { ALL_PERMISSIONS, KEYS_ADDED_D031, PERMISSIONS as P, ROLE_DEFAULTS, SUPERADMIN_DEFAULT_BEFORE_D028, SUP_DEFAULT_BEFORE_D029, WORKFLOW_PERMISSIONS, permissionLabel, type Permission } from "@/lib/auth/permissions";
+import { ALL_PERMISSIONS, KEYS_ADDED_D031, PERMISSIONS as P, ROLE_DEFAULTS, SUPERADMIN_DEFAULT_BEFORE_D028, SUP_DEFAULT_BEFORE_D029, SUP_DEFAULT_D029, FIN_DEFAULT_BEFORE_D034, WORKFLOW_PERMISSIONS, permissionLabel, type Permission } from "@/lib/auth/permissions";
 import { writeAudit, type Actor } from "@/lib/audit";
 
 /**
@@ -34,11 +34,11 @@ export interface PlannedMove {
   ticks: { handlesCa: boolean; handlesFt: boolean } | null;
 }
 /** Per-person legacy grants removed (D-029): what each LA Supervisor/Head no longer has. */
-export interface PlannedRemoval { userId: string; name: string; email: string; active: boolean; keys: Permission[] }
+export interface PlannedRemoval { userId: string; name: string; email: string; active: boolean; keys: Permission[]; /** Of `keys`, what the LA Supervisor/Head role does not give back (D-034). */ lost: Permission[] }
 export interface RolePlan {
   createRoles: string[];
   removals: PlannedRemoval[];
-  roleUpdates: { key: string; name: string; permissions?: Permission[]; deactivate?: boolean }[];
+  roleUpdates: { key: string; name: string; permissions?: Permission[]; branchAccess?: "ASSIGNED" | "ALL"; deactivate?: boolean }[];
   moves: PlannedMove[];
   /** Steps skipped, in plain words (e.g. no Superadmin yet). */
   warnings: string[];
@@ -76,12 +76,26 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
     const has = effectivePermissions(sup) as Set<string>;
     const same = (keys: string[]) => sameTicks(has, keys);
     const oldName = sup.name !== ROLE_DEFAULTS.SUP.name;
-    const update = !same(ROLE_DEFAULTS.SUP.permissions) && (oldName || same(SUP_DEFAULT_BEFORE_D029));
+    const update = !same(ROLE_DEFAULTS.SUP.permissions) && (oldName || same(SUP_DEFAULT_BEFORE_D029) || same(SUP_DEFAULT_D029));
     if (update || oldName) plan.roleUpdates.push({ key: SUPERVISOR_KEY, name: ROLE_DEFAULTS.SUP.name, permissions: update ? [...ROLE_DEFAULTS.SUP.permissions] : undefined });
     // The per-person grants an earlier run gave (note MIGRATION_NOTE) are removed and listed.
     for (const u of users.filter((x) => x.roleId === sup.id)) {
       const keys = u.permissionOverrides.filter((o) => o.effect === "GRANT" && o.note === MIGRATION_NOTE).map((o) => o.key as Permission);
-      if (keys.length) plan.removals.push({ userId: u.id, name: u.name, email: u.email, active: u.active, keys });
+      // What the role now gives them anyway (D-034) is not lost: only the rest is listed as lost.
+      if (keys.length) plan.removals.push({ userId: u.id, name: u.name, email: u.email, active: u.active, keys, lost: keys.filter((k) => !ROLE_DEFAULTS.SUP.permissions.includes(k)) });
+    }
+  }
+
+  // Finance (D-034): branch-scoped by default, without borrower corrections. Brought up to date only when the
+  // role is still exactly its earlier default; existing Finance people keep their own access (listed).
+  const finRole = byKey.get(FINANCE_KEY);
+  if (finRole) {
+    const has = effectivePermissions(finRole) as Set<string>;
+    if (!sameTicks(has, ROLE_DEFAULTS.FIN.permissions) && sameTicks(has, FIN_DEFAULT_BEFORE_D034)) {
+      plan.roleUpdates.push({ key: FINANCE_KEY, name: finRole.name, permissions: [...ROLE_DEFAULTS.FIN.permissions], branchAccess: "ASSIGNED" });
+    }
+    for (const u of users.filter((x) => x.active && x.roleId === finRole.id && x.allBranches)) {
+      plan.warnings.push(`${u.name} (${u.email}) is Finance with "All branches": kept. Only a Superadmin gives or removes All branches (D-035).`);
     }
   }
 
@@ -186,7 +200,7 @@ export async function applyRoleMigration(actor: Actor = { id: null, label: "Role
     for (const r of plan.roleUpdates) {
       await tx.role.update({
         where: { key: r.key },
-        data: { name: r.name, ...(r.permissions ? { permissions: r.permissions } : {}), ...(r.deactivate ? { active: false, builtIn: false, deactivatedAt: new Date() } : {}) },
+        data: { name: r.name, ...(r.permissions ? { permissions: r.permissions } : {}), ...(r.branchAccess ? { branchAccess: r.branchAccess } : {}), ...(r.deactivate ? { active: false, builtIn: false, deactivatedAt: new Date() } : {}) },
       });
       await writeAudit(tx, { actor, mode: "AUTOMATIC", action: r.deactivate ? "role_deactivated" : "role_updated", entityType: "Role", entityId: r.key, summary: r.deactivate ? `Role ${r.name} made inactive: its people moved (D-010)` : `Role ${r.key} is now ${r.name}${r.permissions ? " with its v2 default ticks" : ""} (D-010)` });
     }

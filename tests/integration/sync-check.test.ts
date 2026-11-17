@@ -55,7 +55,10 @@ beforeAll(async () => {
   supAngono = await makeUser(SUP_A, "SUP", [angono]);
   supAntipolo = await makeUser(SUP_B, "SUP", [antipolo]);
   // A branch-level approver: the Finance role (it approves funds) with Angono only.
-  apprAngono = await makeUser(APPR_A, "FIN", [angono]);
+  // An approver of Angono: Finance no longer has the borrower tick by default (D-034, Q-N19), so it is given to them.
+  const appr = await makeUser(APPR_A, "FIN", [angono]);
+  await prisma.userPermissionOverride.upsert({ where: { userId_key: { userId: appr.id, key: PERMISSIONS.SOURCE_REVIEW_BORROWER } }, create: { userId: appr.id, key: PERMISSIONS.SOURCE_REVIEW_BORROWER, effect: "GRANT", note: "Test setup" }, update: {} });
+  apprAngono = await asUser(APPR_A);
 });
 beforeEach(async () => {
   process.env.TEST_MODE = "true";

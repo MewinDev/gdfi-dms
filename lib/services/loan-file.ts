@@ -24,7 +24,7 @@ import {
 } from "@/lib/rules";
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { recomputeStage } from "./stage";
-import { getSetting, setSetting } from "@/lib/settings";
+import { getClassificationRules, getSetting, setSetting } from "@/lib/settings";
 import { linkOnOpen, refreshLoan, sameBorrowerLoans, suggestOnOpen } from "./source-sync";
 import { hashTracked, trackedOf } from "@/lib/myloans/changes";
 import { UserError } from "./errors";
@@ -166,7 +166,7 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   const off = await inactiveRefusal(lookup.record);
   if (off) return { kind: "refused", pn, ...off, record: lookup.record };
   // The keyword lists and default saved in Settings, Product classification (D-031).
-  const classificationRules = await getSetting("classification.rules");
+  const classificationRules = await getClassificationRules();
   const cls = classifyProductName(check.normalized.productName, classificationRules);
   const outcome =
     cls.classification === "REFINANCING"
@@ -265,7 +265,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
   if (!inScope(user, branch.id)) throw new UserError("Outside your branch access.", "branch");
 
   let outcome: RuleOutcome;
-  const classificationRules = await getSetting("classification.rules");
+  const classificationRules = await getClassificationRules();
   try {
     outcome = evaluateLoanRules({
       productName: check.normalized.productName,

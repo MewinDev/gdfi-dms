@@ -78,7 +78,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Mark as done | Record the EDST reference, and mark custom transactions done. | Loan File, EDST and Mark as done | Tick papers | `transactions:complete` | LA, Branch Supervisor |
 | Raise a problem | Open a problem on a transaction the person works on. | Loan File, Job | See loan files | `problems:raise` | LA, DP, Branch Supervisor |
 | Resolve own problems | Resolve problems on transactions the person works on. | Loan File, Job | Raise a problem | `problems:resolve` | LA, DP, Branch Supervisor |
-| Resolve any problem | Resolve a problem on any transaction in the person's branches. People with this are also told about problems, holds and overdue work there. | Loan File, Job; notifications | See loan files | `problems:resolve_any` | Admin |
+| Resolve any problem | Resolve a problem on any transaction in the person's branches. People with this are also told about problems, holds and overdue work there. | Loan File, Job; notifications | See loan files | `problems:resolve_any` | Admin, Branch Supervisor |
 | Mark outside our control | Tag a problem for reports. It does not stop the clock. | Job, Problem | See loan files | `problems:mark_outside_control` | SUPERADMIN, Admin |
 | Put work on hold | Put a transaction on hold while it waits on something that is not a fault. Only on work the person does. The clock keeps counting. | Loan File, Job | See loan files | `holds:raise` | LA, DP, Branch Supervisor |
 | Resume own holds | Resume a hold the person owns, or add the remarks to an older hold of theirs. | Loan File, Job, Open items | Put work on hold | `holds:resolve` | LA, DP, Branch Supervisor |
@@ -131,8 +131,8 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See the DP monitor | Each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only. | Monitoring, DPs | - | `monitor:dp` | SUPERADMIN, Admin, Operations Monitor |
-| See the LTO monitor | Jobs at each LTO office, time at the LTO and advisories. | Monitoring, LTO offices | - | `monitor:lto` | SUPERADMIN, Admin, Operations Monitor |
+| See the DP monitor | Each processor's open jobs, times, declines, returns and availability. Counts, times and PN lists only. | Monitoring, DPs | - | `monitor:dp` | SUPERADMIN, Admin, Operations Monitor, Branch Supervisor |
+| See the LTO monitor | Jobs at each LTO office, time at the LTO and advisories. | Monitoring, LTO offices | - | `monitor:lto` | SUPERADMIN, Admin, Operations Monitor, Branch Supervisor |
 | Manage LTO advisories (Change; View is See the LTO monitor) | Resolve or edit any LTO advisory, and file one from the Monitoring page. People with this are told when an advisory is filed. | Monitoring, LTO offices | See the LTO monitor | `ltoreports:manage` | Admin, Operations Monitor |
 | Be told about LTO advisories | Get a notification (and an email when emails are on) when an LTO advisory is filed or resolved. Processors are never told. | Notifications | See the LTO monitor | `ltoreports:notify` | Operations Monitor |
 | Set processor capacity and leave | The default number of open jobs, a processor's own capacity, and On leave. | Settings, Processor capacity | - | `dpcapacity:manage` | SUPERADMIN, Admin |
@@ -141,7 +141,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | SUPERADMIN, Admin |
+| See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | SUPERADMIN, Admin, Branch Supervisor |
 | See the audit log | Every automatic decision and user action (the technical log). | Audit log | - | `audit:view` | SUPERADMIN, Admin |
 
 ### MyLoans and sync
@@ -152,7 +152,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Reclassify a loan | When the keyword rules changed after a loan file was opened ("Classification changed since accepted"): apply the new Financing or Refinancing result, with remarks. Sent work never changes. | Loan File, Classification changed since accepted | See loan files | `loans:reclassify` | Admin, Branch Supervisor |
 | Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | SUPERADMIN, LA, Admin, DP, Vault, Digital Records, QA, ARCHIVER, Branch Supervisor |
 | Review MyLoans changes | Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin, Branch Supervisor |
-| Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, Finance, Branch Supervisor |
+| Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, Branch Supervisor |
 | Change MyLoans sync settings | How often loans are checked against MyLoans and the business hours. | Settings, MyLoans sync | - | `myloans:manage` | SUPERADMIN, Admin |
 | Run the MyLoans sync now | The Run now button: check every open loan against MyLoans at once. | Settings, MyLoans sync, Run now | - | `myloans:sync` | SUPERADMIN, Admin |
 

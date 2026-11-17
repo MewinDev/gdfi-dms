@@ -493,3 +493,11 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - a **disabled button shows why** on hover (and to screen readers);
   - the **inbox is sorted by least TAT remaining first**, with colour (green / amber / red). (The inbox comes with piece 9.)
 - **Reason:** people should never be stuck without knowing why or who can help.
+
+## D-034 Decisions from the review of 17 November 2026 (round 2)
+
+- **Date:** 17 November 2026
+- **Q-N19: Finance does not review borrower corrections.** "Review borrower detail corrections" is unticked on the Finance role's default. The LA Supervisor/Head and Admin decide them (D-029). A Finance person who should can be given the tick by a Superadmin. **Reason:** keeps Finance on funds; no all-branch Finance notices about borrower details.
+- **Keyword tickbox "Whole word only"** (refines D-031). Each keyword matches at the **start of a word**, or, ticked, only as a **whole word**. Hyphens inside a word are ignored and a hyphen is also a word break, so "Re-Financing" = refinancing and "Pre-Financing" contains the word "Financing". Starting values: `refinanc` (starts a word), `refi` (whole word only), `financ` (starts a word). Order unchanged: Refinancing, then Financing, then the default (Refinancing, labelled "Classified by default"). "Test keyword rules" shows which keyword matched and whether it is whole-word. **Reason:** "refi" must not match "Refinery"; the user chose "start of a word" for "contains" so that "Pre-Financing" is Financing.
+- **LA Supervisor/Head defaults** (branch-scoped) gain "Resolve any problem", both monitors (DP, LTO) and the TAT report. The role migration now lists, for each former Branch Supervisor whose legacy grants it removes, what is truly lost and what the role now gives back. **Reason:** the supervisors' oversight work belongs to the role, not to per-person grants.
+- **React key warning on Funds** is logged as a dev-only known issue (`docs/KNOWN_ISSUES.md`); not fixed.

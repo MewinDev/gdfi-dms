@@ -7,7 +7,7 @@ import { setUserBranches } from "@/lib/services/access";
 import { previewClassification, reclassifyLoan, saveClassificationRules, classificationChangedText } from "@/lib/services/classification";
 import { listLoans } from "@/lib/services/queries";
 import { proposeEffect } from "@/lib/myloans/changes";
-import { DEFAULT_CLASSIFICATION_RULES } from "@/lib/rules/classify";
+import { DEFAULT_CLASSIFICATION_RULES, asRules } from "@/lib/rules/classify";
 import { asUser } from "./helpers";
 
 /**
@@ -61,7 +61,7 @@ describe("product classification (D-031)", () => {
     await expect(saveClassificationRules(admin, { refinancing: "re", financing: "financ" })).rejects.toThrow(/too short/);
 
     // Test keyword rules: "financing" only, so "Auto Finance" has no keyword any more.
-    const tried = { refinancing: ["refinanc", "refi"], financing: ["financing"], fallback: "REFINANCING" as const };
+    const tried = asRules({ refinancing: ["refinanc", "refi"], financing: ["financing"], fallback: "REFINANCING" });
     const preview = await previewClassification(tried);
     expect(preview.rows.find((r) => r.productName === "Auto Finance")).toMatchObject({ next: "REFINANCING", byDefault: true, changes: 1, saved: "FINANCING" });
     expect(await getSetting("classification.rules")).toEqual(DEFAULT_CLASSIFICATION_RULES); // the preview saves nothing
