@@ -1,4 +1,4 @@
-# Handover: piece 4 done; stop before piece 5
+# Handover: piece 4 and D-042 done; piece 5 planned, not built
 
 Last updated: 17 November 2026 (PHT)
 Branch: `feature/foundation-settings-rbac-myloans` (pushed)
@@ -9,7 +9,9 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
   - vitest: 1,243 passed, 1 skipped;
   - full e2e (`npm run e2e:groups`, production build, workers=1): 570 passed, 0 failed (191 / 191 / 188 at 1440 / 820 / 390);
   - tsc and lint clean.
-- **Next: piece 5 (liquidation due date, D-017), not started.** Wait for the project owner.
+- **18 November 2026, after piece 4 (D-042, committed):** the holiday CSV import, Make inactive / active and the generic paths all go through the calendar rule; deactivation undoes only its own extensions; "Correct due dates" (`duedates:correct`, migration 019); screenshots only with `npm run docs:screenshots`; `docs/STATUS.md` (the status table). Vitest 1,249 passed, 1 skipped; tsc and lint clean; kit rebuilt after migration 019.
+- **The full e2e run for D-042 is still owed:** it was stopped by Claude Code for low memory during `next build` (nothing ran). Run `npm run e2e:groups` when the machine is free (close other apps first); `tests/e2e/calendar-settings.spec.ts` now also covers Make inactive.
+- **Next: piece 5 (liquidation due date, D-017): worked examples sent, waiting for the owner's confirmation before building.
 - Decisions: `docs/DECISIONS.md` (D-001 to D-041); plan: `IMPLEMENTATION_PLAN.md` (piece 5 is section 6; myloans round 3 is 7.3).
 
 ## Piece 4: what was built (D-041)
