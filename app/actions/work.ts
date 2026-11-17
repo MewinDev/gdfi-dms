@@ -10,6 +10,7 @@ import { acceptWork } from "@/lib/services/inbox";
 import { moveItem, setAway } from "@/lib/services/work-items";
 import { takeBackFromPool } from "@/lib/services/dp-pool";
 import { prisma } from "@/lib/db";
+import { savePoolColours } from "@/lib/services/pool-colours";
 
 /** Piece 9 (D-046): Accept, Move (Give to... / Back to the pool), Away, and taking a job back from the DP pool. */
 
@@ -63,5 +64,16 @@ export async function takeBackFromPoolAction(_p: ActionState, fd: FormData): Pro
     if (t) revalidatePath(`/loans/${t.loan.pn}`);
     revalidatePath("/inbox");
     return "Taken back. You can send it again.";
+  });
+}
+
+/** Settings, Inbox waiting colours (D-048): amber and red after N working days in a pool. */
+export async function savePoolColoursAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.SETTINGS_TAT);
+    const msg = await savePoolColours(user, { amber: str(fd, "amber"), red: str(fd, "red") });
+    revalidatePath("/admin/settings");
+    revalidatePath("/inbox");
+    return msg;
   });
 }

@@ -11,6 +11,7 @@ import { assignToDp, POOL_CHOICE, saveChecklist } from "@/lib/services/workflow"
 import { acceptFromPool, takeBackFromPool } from "@/lib/services/dp-pool";
 import { acceptWork } from "@/lib/services/inbox";
 import { backfillWorkItems } from "@/lib/work/backfill";
+import { poolColours, savePoolColours } from "@/lib/services/pool-colours";
 import { acceptJob, returnJob } from "@/lib/services/jobs";
 import { pullBack } from "@/lib/services/sent-changes";
 import { acceptItemTx, arriveItem, closeItem, itemsWithAway, moveItem, myItems, openItem, poolItems, setAway, supervisorWorkCounts, tatByPerson } from "@/lib/services/work-items";
@@ -278,6 +279,19 @@ describe("backfill of existing open work (D-046 item 7)", () => {
     const again = await backfillWorkItems(prisma);
     expect(again.made).toBe(0);
     expect(again.skipped).toBe(first.made);
+  });
+});
+
+describe("Settings, Inbox waiting colours (D-048)", () => {
+  it("validated (whole days 1 to 30, red after amber), audited, refused without the tick", async () => {
+    await expect(savePoolColours(la, { amber: "1", red: "2" })).rejects.toThrow(/does not allow changing turnaround times/);
+    await expect(savePoolColours(admin, { amber: "0", red: "2" })).rejects.toThrow(/from 1 to 30/);
+    await expect(savePoolColours(admin, { amber: "2", red: "2" })).rejects.toThrow(/Red comes after amber/);
+    await expect(savePoolColours(admin, { amber: "1.5", red: "3" })).rejects.toThrow(/whole number/);
+    await expect(savePoolColours(admin, { amber: "2", red: "4" })).resolves.toMatch(/amber after 2 working days, red after 4/);
+    expect(await poolColours()).toEqual({ amber: 2, red: 4 });
+    expect(await prisma.auditLog.count({ where: { action: "pool_colours_changed" } })).toBeGreaterThan(0);
+    await expect(savePoolColours(admin, { amber: "2", red: "4" })).resolves.toBe("No change.");
   });
 });
 

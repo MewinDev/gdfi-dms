@@ -9,6 +9,7 @@ import { businessDate, fmtDate } from "@/lib/time";
 import { isAway } from "@/lib/work/rules";
 import { giveToCandidates, itemsWithAway, myItems, poolItems, type InboxRow } from "@/lib/services/work-items";
 import { PageHeader } from "@/components/ui/basics";
+import { poolColours } from "@/lib/services/pool-colours";
 import { AwayForm, InboxList, type RowExtras } from "@/components/inbox/inbox-rows";
 
 export const metadata: Metadata = { title: "Inbox" };
@@ -28,9 +29,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const now = new Date();
   const today = businessDate(now);
 
-  const [mine, pool, away, me] = await Promise.all([
+  const [mine, pool, away, me, colours] = await Promise.all([
     myItems(user, now), poolItems(user, now), canMove ? itemsWithAway(user, now) : Promise.resolve([] as InboxRow[]),
     prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { awayFrom: true, awayTo: true, awayNote: true } }),
+    poolColours(),
   ]);
   const rows = tab === "pool" ? pool : tab === "away" ? away : mine;
 
@@ -91,7 +93,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           empty={tab === "pool" ? "Nothing waiting in your branch pools." : tab === "away" ? "No items are with people who are away." : "Nothing for you right now. Check the Branch pool for new work."}
         />
       </section>
-      {tab === "pool" && <p className="text-[13px] text-ink-2">Waiting is in working days. Amber after 1 day, red after 2 (Settings). The target starts when you accept.</p>}
+      {tab === "pool" && <p className="text-[13px] text-ink-2">Waiting is in working days: amber after {colours.amber}, red after {colours.red} (Settings, Inbox waiting colours). The target starts when you accept.</p>}
     </div>
   );
 }

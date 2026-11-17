@@ -526,6 +526,7 @@ export const LIST_PERMISSION: Record<string, Permission> = {
   "document-types": P.SETTINGS_DOCUMENT_TYPES,
   checklist: P.SETTINGS_CHECKLIST,
   tat: P.SETTINGS_TAT,
+  "pool-colours": P.SETTINGS_TAT,
   holidays: P.SETTINGS_HOLIDAYS,
   "cash-advance": P.SETTINGS_CASH_ADVANCE,
   "approval-bands": P.SETTINGS_CASH_ADVANCE,

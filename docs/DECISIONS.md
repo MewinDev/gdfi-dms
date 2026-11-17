@@ -657,3 +657,20 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
 - Two items stay **separate and blocked**: **Real API verification** (the contract tests and a sync dry run against myloans staging; blocked on staging access, C5) and the **Production scheduler** (the sync and daily jobs on the real hosting; blocked on the hosting decision).
 - **Reason:** staging access is not in sight; building on the agreed contract with tests that can later run against staging keeps the foundation moving without building twice.
 
+## D-048 Before piece 6: pool colour settings, the mock's limits, the demo
+
+- **Date:** 18 November 2026
+- **Decision (the user's, approving the piece 6 plan, IMPLEMENTATION_PLAN.md section 7.4):**
+  - **Pool colour thresholds** get a small Settings card now, before piece 6: amber and red after N working days, validated (red after amber), audited.
+  - **(a)** The myloans **mock may run on staging**, never in production. While the mock is on, every page shows a clear **"MOCK myloans data"** banner.
+  - **(b)** The mock's data lives in **its own local-only table**, not in settings.
+  - **(c)** The **staging contract run is by hand**, read-only, and kept out of CI. The staging key is never stored in the repo.
+  - **Failure simulation** controls are refused and hidden in production.
+  - **Demo script:**
+    - show **both approval flows**, so the users can settle D-024 ("Which approval flow should we use?"):
+      - bands on: an approver approves, Finance releases;
+      - bands off: Finance approves and releases;
+    - use the **current role names** (LA Supervisor/Head; approvers by their ticks), renaming kit accounts where needed;
+    - seed a few **aged demo items**, so the Inbox and the pool show amber, red and Paused, not only green.
+- **Reason:** the user's answers to the piece 6 plan and the demo review.
+
