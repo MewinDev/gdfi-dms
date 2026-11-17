@@ -625,3 +625,20 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - Piece 9 scope also includes **Correct due date on LA work items** (the same rule as D-042: one item, a reason, the tick, in its history).
   - The funds-types CSV import gains "liquidation_due_days" (whole number 0 to 30; blank keeps it, new types 2).
 - **Reason:** testing against the real API first avoids building twice; staging access is not there yet.
+
+## D-046 Piece 9: inbox, branch pool, Accept / Forward, TAT per person (builds D-014, D-015)
+
+- **Date:** 18 November 2026
+- **Decision (the user's, after six worked examples):**
+  - **Inbox items:** every hand-off is an item with its history (arrive, accept, forward, return, move), times set by the server. New work lands in a **branch pool** or, when a person is named, in that person's **inbox**; **Accept** makes it theirs and starts their round. One list per person ("My items") sorted by least time left, with the green / amber / red / Paused colours; one **Branch pool** list with Accept.
+  - **TAT per person:** accept to forward, on the work's branch calendar (D-041); **waiting time** (arrival to accept) recorded separately and never counted against the person.
+  1. **Pool waiting is coloured:** amber after 1 working day, red after 2 (settings). The supervisors' Home says "N items waiting in the pool too long".
+  2. **Returns:** a reason is **required** (the existing return reasons; decline keeps its reasons). The next round gets a **fresh full target**. Returns per person appear in the TAT report.
+  3. **Away and moving work:** each user has an **Away** status with from / to dates, set by the person or by someone with the tick "Set who is away". While away the person cannot be named for new work, and supervisors see "N items are with people who are away". **"Move work items"** (default LA Supervisor/Head and Admin): **Back to the pool** or **Give to…** someone of the same work role with access to the branch. A move closes the old person's round as **"Moved (away)"**, never counted late; the new person's round starts at the move with a fresh target; the item's overall due date is unchanged; each move is logged and both people are told.
+  4. **Find loan** (until the feed exists): arrive and accept at the same moment (waiting 0; the LA's TAT starts).
+  5. **"Counts as Accept":** Finance's Approve / Release and the receiving LA's Receive take the item; there is no extra click. For these the reports measure **waiting time** (arrival to the action), labelled so.
+  6. **DP jobs:** a **named DP** (the default, as today) or the **Branch DP pool** (any processor with access to that branch can accept; the first accept wins). Built so that a pool job waits as an inbox item holding the send details; Accept creates the normal named job for that processor and accepts it in the same moment, so everything after it works as today.
+  7. **Existing open work** becomes inbox items from the recorded times; where a time is missing the item is marked **"Migrated"** and left out of TAT performance reports.
+  - **Correct due date** also on LA items (D-042 rule).
+  - **The feed hook:** one function receives "Released, not yet in the DMS" loans into the branch pool; the sync (piece 7, on hold) will call it. No sync is built.
+- **Reason:** D-014, D-015 and the user's answers.
