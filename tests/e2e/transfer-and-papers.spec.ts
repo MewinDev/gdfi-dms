@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith } from "./helpers";
+import { signInWith, docShot } from "./helpers";
 import { cleanSettingsTestRows, db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
 
@@ -24,7 +24,7 @@ test.afterAll(async () => {
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor", fin: "Continue as Test Finance" } as const;
 async function shot(page: Page, name: string, fullPage = true) {
   await page.waitForTimeout(300); // let colour transitions finish
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

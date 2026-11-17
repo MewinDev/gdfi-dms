@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith } from "./helpers";
+import { signInWith, docShot } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -28,7 +28,7 @@ test.beforeEach(async () => {
 async function shot(page: Page, name: string, fullPage = true) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(250);
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

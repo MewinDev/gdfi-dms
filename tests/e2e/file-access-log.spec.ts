@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db } from "./db";
-import { signIn } from "./helpers";
+import { signIn, docShot } from "./helpers";
 
 /**
  * Audit, File access log (D-039): the tabs, the filters, and Download CSV, which is itself logged.
@@ -12,7 +12,7 @@ const shoots = (page: Page) => [1440, 390].includes(page.viewportSize()?.width ?
 async function shot(page: Page, name: string) {
   if (!shoots(page)) return;
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
 }
 
 test("Admin filters the file access log and downloads it; the export is logged", async ({ page }) => {

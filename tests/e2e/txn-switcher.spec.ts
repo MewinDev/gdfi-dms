@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn } from "./helpers";
+import { signIn, docShot } from "./helpers";
 
 /**
  * Check documents: the selected transaction on the left; the others in a side list (1100 and up)
@@ -13,7 +13,7 @@ test.beforeEach(async () => {
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
-  await page.screenshot({ path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
+  await docShot(page, { path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

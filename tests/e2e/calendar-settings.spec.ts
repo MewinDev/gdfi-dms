@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db } from "./db";
-import { signIn } from "./helpers";
+import { signIn, docShot } from "./helpers";
 
 /**
  * Settings, Holidays and working days (D-041): Check before Save, the preview line, an office closure for
@@ -13,7 +13,7 @@ const shoots = (page: Page) => [1440, 390].includes(page.viewportSize()?.width ?
 async function shot(page: Page, name: string) {
   if (!shoots(page)) return;
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png` });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png` });
 }
 const clean = () => db.holidayCalendar.deleteMany({ where: { reason: { startsWith: MARK } } });
 

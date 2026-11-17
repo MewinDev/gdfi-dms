@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { watchConsole, signInWith } from "./helpers";
+import { watchConsole, signInWith, docShot } from "./helpers";
 
 /**
  * Home, compact and minimalist, for every role: header (no count in the greeting), one summary strip,
@@ -18,7 +18,7 @@ async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

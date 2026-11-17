@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db } from "./db";
-import { SUPERADMIN, signInWith } from "./helpers";
+import { SUPERADMIN, signInWith, docShot } from "./helpers";
 
 /**
  * Settings > Roles ("roles are just ticks"): the grouped editor, View / Change pairs, the search and the
@@ -12,7 +12,7 @@ const shoots = (page: Page) => [1440, 390].includes(page.viewportSize()?.width ?
 async function shot(page: Page, name: string, fullPage = false) {
   if (!shoots(page)) return;
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
 }
 
 const ROLE = "Zz E2E Refreshers";

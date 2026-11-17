@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, watchConsole } from "./helpers";
+import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
  * Find a loan on a PN MyLoans has not released: a status card (PN, borrower, branch, the MyLoans status
@@ -13,7 +13,7 @@ const main = (page: Page) => page.getByRole("main");
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

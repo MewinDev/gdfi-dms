@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice, signInWith } from "./helpers";
+import { pickLtoOffice, signInWith, docShot } from "./helpers";
 
 /**
  * Softer borders and keyboard-only focus rings; the LA changes a sent job before the processor accepts;
@@ -16,7 +16,7 @@ const wide = (page: Page) => page.viewportSize()!.width >= 1100;
 async function shot(page: Page, name: string, fullPage = true) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
-  await page.screenshot({ path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
+  await docShot(page, { path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

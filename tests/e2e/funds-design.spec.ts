@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { openFundsDetails, signInWith } from "./helpers";
+import { openFundsDetails, signInWith, docShot } from "./helpers";
 
 /**
  * Funds page design pass: tabs with count pills, the one-line summary, the type filter and the search,
@@ -21,8 +21,8 @@ const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string, target?: Locator) {
   await expect(page.locator('[aria-busy="true"]')).toHaveCount(0); // never a loading placeholder
   const path = `${DIR}/${name}-${width(page)}.png`;
-  if (target) await target.screenshot({ path });
-  else await page.screenshot({ path, fullPage: true });
+  if (target) await docShot(target, { path });
+  else await docShot(page, { path, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

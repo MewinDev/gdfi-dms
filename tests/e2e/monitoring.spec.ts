@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { SUPERADMIN, signInWith } from "./helpers";
+import { SUPERADMIN, signInWith, docShot } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -20,7 +20,7 @@ const layout = (page: Page, tab: "dp" | "lto") => page.locator(width(page) >= 10
 async function shot(page: Page, name: string, fullPage = true) {
   if (![1440, 390].includes(width(page))) return; // 1440 and 390 only
   await page.waitForTimeout(300);
-  await page.screenshot({ path: `${DIR}/${name}-${width(page)}.png`, fullPage });
+  await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -316,7 +316,7 @@ mkdirSync(DESIGN, { recursive: true });
 async function dshot(page: Page, name: string, fullPage = false) {
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(250);
-  await page.screenshot({ path: `${DESIGN}/${name}-${width(page)}.png`, fullPage });
+  await docShot(page, { path: `${DESIGN}/${name}-${width(page)}.png`, fullPage });
 }
 const phtToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
 const ymdBack = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) - n * DAY).toISOString().slice(0, 10);

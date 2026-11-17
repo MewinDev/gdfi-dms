@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice, signInWith } from "./helpers";
+import { pickLtoOffice, signInWith, docShot } from "./helpers";
 
 /**
  * Missing papers with reasons, on the production build (npm run e2e:groups), one width at a time:
@@ -22,7 +22,7 @@ test.beforeEach(async () => {
 });
 
 async function shot(page: Page, name: string) {
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

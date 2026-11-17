@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
-import { completeAndForwardUi, finishCurrentStage, signInWith, workStagesUi } from "./helpers";
+import { completeAndForwardUi, finishCurrentStage, signInWith, workStagesUi, docShot } from "./helpers";
 
 /**
  * DP job stages, Check and verify, manual Forward to branch, the receiving LA, and the vault gate.
@@ -15,7 +15,7 @@ const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", 
 async function shot(page: Page, name: string, fullPage = true) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
-  await page.screenshot({ path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
+  await docShot(page, { path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

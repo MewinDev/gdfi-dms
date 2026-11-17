@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
-import { openFundsDetails, signInWith } from "./helpers";
+import { openFundsDetails, signInWith, docShot } from "./helpers";
 
 /**
  * "Needs LTO processing" per transaction type and the LTO office everywhere it is needed:
@@ -14,7 +14,7 @@ const dialog = (page: Page) => page.locator("dialog#settings-modal");
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
-  await page.screenshot({ path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
+  await docShot(page, { path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

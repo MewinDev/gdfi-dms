@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { signIn, signInWith } from "./helpers";
+import { signIn, signInWith, docShot } from "./helpers";
 
 /**
  * Roles are just ticks: the loan file without and with "Refresh a loan from MyLoans".
@@ -12,7 +12,7 @@ const shoots = (page: Page) => [1440, 390].includes(page.viewportSize()?.width ?
 async function shot(page: Page, name: string) {
   if (!shoots(page)) return;
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png` });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png` });
 }
 
 const LA_TICKS = ["loans:view", "loans:search", "loans:open", "checklist:tick", "transactions:add", "transactions:complete", "processing:send", "processing:accept_returns", "funds:flag", "problems:raise", "problems:resolve", "holds:raise", "holds:resolve", "myloans:view"];

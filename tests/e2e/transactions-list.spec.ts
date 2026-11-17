@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanSettingsTestRows, db, resetLoans } from "./db";
-import { pickLtoOffice, signIn } from "./helpers";
+import { pickLtoOffice, signIn, docShot } from "./helpers";
 
 /**
  * Every transaction, in order, on the Loan File (All transactions) and Check documents (Transactions,
@@ -19,7 +19,7 @@ const wide = (page: Page) => page.viewportSize()!.width >= 1100;
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
-  await page.screenshot({ path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
+  await docShot(page, { path: `${dir}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage: true });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

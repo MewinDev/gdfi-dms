@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn } from "./helpers";
+import { signIn, docShot } from "./helpers";
 
 /**
  * On hold, made clear: the reason category AND the remarks wherever a hold appears (Loan File banner,
@@ -19,7 +19,7 @@ test.beforeEach(async () => {
 
 const wide = (page: Page) => page.viewportSize()!.width >= 1100;
 async function shot(page: Page, name: string, fullPage = true) {
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
 }
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, visibleSearchBox, watchConsole } from "./helpers";
+import { signIn, visibleSearchBox, watchConsole, docShot } from "./helpers";
 
 /**
  * The real PN format, branch codes and areas from MyLoans, the Branch review and branch access.
@@ -11,7 +11,7 @@ const shoots = (page: Page) => [1440, 390].includes(page.viewportSize()?.width ?
 async function shot(page: Page, name: string, fullPage = false) {
   if (!shoots(page)) return;
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
+  await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
 }
 
 test.beforeEach(async () => {
