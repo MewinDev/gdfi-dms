@@ -6,6 +6,12 @@
    in the hash test vectors are myloans' own fake data and stay as sent.
    ===================================================================== */
 
+/* DMS NOTE (D-037, 17 Nov 2026): the DMS asked myloans to REMOVE BirthDate from the output and from the
+   ContentHash. The agreed target is 17 hash fields (field 10 BirthDate removed; ReplacedByExternalLoanId
+   becomes field 17) and no HMAC / BirthDateHash. The query text below is round 2 as received (18 fields);
+   lib/myloans/r2/hash.ts follows the 17-field target. See docs/MYLOANS_REPLY_3.md. */
+
+
 /* =====================================================================
    MyLoans API query (runs behind the MyLoans API, never from DMS)
    Version: round 2 (17 Nov 2026)

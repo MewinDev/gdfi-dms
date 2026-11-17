@@ -254,6 +254,16 @@ describe("D-010 role migration keeps each moved person's abilities", () => {
     expect(custom.roleUpdates.find((r) => r.key === "SUP")).toBeUndefined();
   });
 
+  it("D-038: an approver moved to Finance does not keep borrower corrections; listed instead; an earlier grant is removed", () => {
+    const fin = role("r-fin", "FIN", ROLE_DEFAULTS.FIN.permissions, true);
+    const appr = role("r-ap", "APPR", [P.LOANS_VIEW, P.FUNDS_CA_VIEW, P.FUNDS_CA_APPROVE, P.SOURCE_REVIEW_BORROWER], true);
+    const plan = planRoleMigration([fin, appr], [user("u9", "r-ap")]);
+    expect(plan.moves[0].grants).not.toContain(P.SOURCE_REVIEW_BORROWER);
+    expect(plan.warnings.join(" ")).toMatch(/u9 \(u9@x\) had "Review borrower detail corrections" .* not carried over to Finance/);
+    const already = { ...user("u10", "r-fin"), permissionOverrides: [{ key: P.SOURCE_REVIEW_BORROWER, effect: "GRANT", note: MIGRATION_NOTE }] };
+    expect(planRoleMigration([fin], [already]).removals).toEqual([expect.objectContaining({ userId: "u10", lost: [P.SOURCE_REVIEW_BORROWER] })]);
+  });
+
   it("D-028: the Superadmin default has no day-to-day action; one active Superadmin is warned", () => {
     for (const k of [P.FUNDS_CA_APPROVE, P.FUNDS_FT_RELEASE, P.DP_RECEIVE, P.RETURNS_ACCEPT, P.HOLDS_TRANSFER, P.SOURCE_REVIEW, P.SOURCE_REVIEW_BORROWER]) expect(ROLE_DEFAULTS.SUPERADMIN.permissions, k).not.toContain(k);
     for (const k of [P.ROLES_MANAGE, P.ACCESS_ALL_BRANCHES, P.USERS_EDIT, P.SETTINGS_SYSTEM, P.BRANCHES_MANAGE]) expect(ROLE_DEFAULTS.SUPERADMIN.permissions, k).toContain(k);

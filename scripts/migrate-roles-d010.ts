@@ -24,7 +24,7 @@ async function main() {
     console.log(`Roles to create: ${plan.createRoles.join(", ") || "none"}`);
     for (const r of plan.roleUpdates) console.log(`Role ${r.key}: ${r.deactivate ? `made inactive (${r.name})` : `now "${r.name}"${r.permissions ? " with its new ticks" : ""}`}`);
     for (const w of plan.warnings) console.log(`Note: ${w}`);
-    console.log(`Legacy grants removed (D-029): ${plan.removals.length} people`);
+    console.log(`Legacy grants removed (D-029, D-038): ${plan.removals.length} people`);
     for (const r of plan.removals) {
       const kept = r.keys.filter((k) => !r.lost.includes(k));
       console.log(`- ${r.name} <${r.email}>${r.active ? "" : " (inactive)"}: ${r.lost.length ? `no longer has: ${r.lost.map(permissionLabel).join("; ")}` : "loses nothing"}${kept.length ? ` (now from the role: ${kept.map(permissionLabel).join("; ")})` : ""}`);

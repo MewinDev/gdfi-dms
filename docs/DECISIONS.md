@@ -531,3 +531,16 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
 - **Built now:** `lib/myloans/r2/` (contract types, hash, mock, sync planning; tested). The database side (Open Items, checkpoint row, alerts, the product table) comes with pieces 6 to 8 and 11.
 - **Reply:** `docs/MYLOANS_REPLY_3.md` (filtered unique indexes with `<> N''`, optional; the application_code index recommended; the NotReleased correction; 200 vs 409; re-generated test vectors; what is still needed).
 - **Reason:** the agreed contract; paging by loan already protects the DMS from duplicates.
+
+## D-037 The borrower's birth date is removed (replaces the BirthDateHash part of D-022)
+
+- **Date:** 17 November 2026
+- **Decision:** the DMS neither receives, stores nor monitors the borrower's birth date. No `BirthDateHash` / HMAC, no HMAC key setting, no "Birth date changed in myloans" Open Item. The myloans query drops `BirthDate` from its output and from the ContentHash, which becomes **17 fields** (`ReplacedByExternalLoanId` is field 17). Recorded as a deliberate v2 spec correction (`IMPLEMENTATION_PLAN.md` §14b): v2 asks for the birth date; the DMS does not keep it.
+- **Reason:** not needed by the business; less personal data under the Data Privacy Act (RA 10173).
+
+## D-038 No legacy borrower-corrections grant for Finance; keyword rule confirmed
+
+- **Date:** 17 November 2026
+- **Finance (Q-N19, D-034):** the role migration no longer carries "Review borrower detail corrections" over to people moved to Finance. It lists them in its report instead, so an admin can review and give it by hand if someone really needs it. The four migrated kit accounts (Finance Cash, Finance Transfer, Approver Cash, Approver Transfer) no longer have it.
+- **Keyword rule (D-034), agreed behaviour:** unticked, a keyword must **start a word**; ticked "Whole word only", it must be the whole word. Hyphens inside a word are ignored, and a hyphen is also a word break.
+- **Reason:** the user's review; Finance stays on funds.

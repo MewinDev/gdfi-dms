@@ -7,7 +7,7 @@
 export type FeedState = "Cancelled" | "Superseded" | "NotReleased" | "Inactive" | "Released";
 export const FEED_STATES: FeedState[] = ["Cancelled", "Superseded", "NotReleased", "Inactive", "Released"];
 
-/** One row of API 1 / API 2 (the fields the DMS reads; BirthDate never arrives, only its HMAC). */
+/** One row of API 1 / API 2 (the fields the DMS reads). The birth date is not in the contract at all (D-037). */
 export interface FeedRow {
   externalLoanId: number;
   cin: string | null;

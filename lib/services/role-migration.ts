@@ -94,6 +94,11 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
     if (!sameTicks(has, ROLE_DEFAULTS.FIN.permissions) && sameTicks(has, FIN_DEFAULT_BEFORE_D034)) {
       plan.roleUpdates.push({ key: FINANCE_KEY, name: finRole.name, permissions: [...ROLE_DEFAULTS.FIN.permissions], branchAccess: "ASSIGNED" });
     }
+    // A grant an earlier run of this migration gave a Finance person (D-038): removed and listed.
+    for (const u of users.filter((x) => x.roleId === finRole.id)) {
+      const keys = u.permissionOverrides.filter((o) => o.effect === "GRANT" && o.note === MIGRATION_NOTE && o.key === P.SOURCE_REVIEW_BORROWER).map((o) => o.key as Permission);
+      if (keys.length) plan.removals.push({ userId: u.id, name: u.name, email: u.email, active: u.active, keys, lost: keys });
+    }
     for (const u of users.filter((x) => x.active && x.roleId === finRole.id && x.allBranches)) {
       plan.warnings.push(`${u.name} (${u.email}) is Finance with "All branches": kept. Only a Superadmin gives or removes All branches (D-035).`);
     }
@@ -101,7 +106,9 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
 
   // Approvers and custom funds roles -> Finance, abilities kept exactly.
   const fin = byKey.get(FINANCE_KEY);
-  const finKeys = fin ? (effectivePermissions(fin) as Set<string>) : set(ROLE_DEFAULTS.FIN.permissions);
+  // Finance's ticks after this run (its default may be updated above).
+  const finUpdate = plan.roleUpdates.find((u) => u.key === FINANCE_KEY && u.permissions);
+  const finKeys = finUpdate ? set(finUpdate.permissions!) : fin ? (effectivePermissions(fin) as Set<string>) : set(ROLE_DEFAULTS.FIN.permissions);
   const sources = roles.filter((r) => r.key === APPROVERS_KEY || isCustomFundsRole(r));
   for (const r of sources) {
     const old = effectivePermissions(r) as Set<string>;
@@ -113,9 +120,11 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
       plan.moves.push({
         userId: u.id, name: u.name, email: u.email, active: u.active, fromRole: r.name, toRole: fin?.name ?? ROLE_DEFAULTS.FIN.name, toRoleKey: FINANCE_KEY,
         // Exactly as before: an approver stays an approver (no release or settle it never had, D-024).
-        grants: minus(old, finKeys), denies: minus(finKeys, old).filter((k) => !offByTicks(k)),
+        // Never carried over: "Review borrower detail corrections" (D-034, D-038). Listed for an admin to review.
+        grants: minus(old, finKeys).filter((k) => k !== P.SOURCE_REVIEW_BORROWER), denies: minus(finKeys, old).filter((k) => !offByTicks(k)),
         ticks,
       });
+      if (old.has(P.SOURCE_REVIEW_BORROWER)) plan.warnings.push(`${u.name} (${u.email}) had "Review borrower detail corrections" on ${r.name}: not carried over to Finance (Q-N19). Give it by hand on Users, Edit only if they really need it.`);
     }
     if (r.active) plan.roleUpdates.push({ key: r.key, name: r.name, deactivate: true });
   }

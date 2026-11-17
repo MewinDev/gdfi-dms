@@ -8,11 +8,12 @@ import { DEFAULT_CLASSIFICATION_RULES } from "@/lib/rules/classify";
 
 /** myloans round 2 contract (D-036): hash, paging by loan, API 1 codes, FeedStates, redo chains, products. */
 describe("ContentHash (mock only; the DMS compares hash strings, never recomputes them)", () => {
-  it("18 fields, '|' between them, NULL as empty text; SHA-256 over UTF-16LE, lowercase hex", () => {
-    expect(HASH_FIELDS).toHaveLength(18);
-    expect(HASH_FIELDS[17]).toBe("ReplacedByExternalLoanId");
+  it("17 fields (no birth date, D-037), '|' between them, NULL as empty text; SHA-256 over UTF-16LE, lowercase hex", () => {
+    expect(HASH_FIELDS).toHaveLength(17);
+    expect(HASH_FIELDS[16]).toBe("ReplacedByExternalLoanId");
+    expect(HASH_FIELDS as readonly string[]).not.toContain("BirthDate");
     const v = Object.fromEntries(HASH_FIELDS.map((f) => [f, null])) as Parameters<typeof hashInput>[0];
-    expect(hashInput(v)).toBe("|".repeat(17));
+    expect(hashInput(v)).toBe("|".repeat(16));
     // UTF-16LE, not UTF-8: "ñ" hashes differently from its UTF-8 bytes.
     expect(contentHash("Peña")).toMatch(/^[0-9a-f]{64}$/);
     expect(contentHash("Peña")).not.toBe(createHash("sha256").update("Peña", "utf8").digest("hex"));

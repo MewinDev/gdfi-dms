@@ -355,12 +355,12 @@ Finance runs first, then all roles. A user with no scope sees nothing.
 | API 4 `GET /branches` | Branches |
 | API 5 `GET /products` | Products |
 
-**Fields the mock returns** (exactly the query's columns, in its order; the API drops `BirthDate` and adds `BirthDateHash`):
+**Fields the mock returns** (exactly the query's columns, in its order; no birth date at all, D-037):
 - `RunStartedAt`
 - `ExternalLoanId`, `CIN` (base code, 20 characters), `PNNo`, `TransactionStatusId`, `TransactionIsActive`, `FeedState`, `IsSelectable`
 - `ReplacedByExternalLoanId`, `ReplacedByPNNo` (superseded rows)
 - `CIFNo`, `FirstName`, `MiddleName`, `LastName`, `Suffix` (empty parts are `null`)
-- `BirthDateHash` (HMAC-SHA256, computed in the API; never a birth date)
+- ~~`BirthDateHash`~~ **Removed (D-037):** no birth date and no HMAC in the contract
 - `LoanID`, `LoanTypeId` (= LoanClass), `LoanType` (name: New / Renewal)
 - `BorrowerCompanyName` (the borrower's employer: a **loan** field)
 - `TotalLoanAmount` (a **string**, e.g. `"219590.00"`), `ReleaseDate` (datetimeoffset in +08:00)
@@ -388,7 +388,7 @@ The query picks the **first** state that applies, in this order:
 So a loan that is cancelled **and then redone** stays `Cancelled`, never `Superseded`, but it still carries `ReplacedByExternalLoanId` / `ReplacedByPNNo`.
 
 **ContentHash** is computed in the mock exactly as the query does:
-- **Round 2 (D-036): 18 fields** (field 18 = `ReplacedByExternalLoanId`). SHA-256 over the UTF-16LE text of `CONCAT` of the fields joined by `|`, in this order: FeedState, PN, status id, is_active, CIF, first, middle, last, suffix, birth date (style 126), LoanID, LoanClass, borrower company name, amount, release date (+08:00, style 126), ProductCode, BranchID.
+- **Round 2 (D-036, D-037): 17 fields** (birth date removed; field 17 = `ReplacedByExternalLoanId`). SHA-256 over the UTF-16LE text of `CONCAT` of the fields joined by `|`, in this order: FeedState, PN, status id, is_active, CIF, first, middle, last, suffix, birth date (style 126), LoanID, LoanClass, borrower company name, amount, release date (+08:00, style 126), ProductCode, BranchID.
 - **NULL counts as empty text** (no `~` marker).
 - Output: 64 lowercase hex characters.
 - `ReplacedByExternalLoanId` is **not** in today's hash (requested in `docs/MYLOANS_REPLY_2.md`). The mock has a switch to add it once myloans does.
@@ -424,7 +424,7 @@ So a loan that is cancelled **and then redone** stays `Cancelled`, never `Supers
 | A duplicate `ExternalLoanId` within one run | Safeguard |
 | `LoanID` / `LoanClass` change | Loan-type Open Item |
 | Empty `LoanTypeId` | "Can't classify" |
-| `BirthDateHash` change | Birth date Open Item |
+| ~~`BirthDateHash` change~~ | **Removed (D-037):** no birth date item |
 | Branch / area / division / company / product renames | Reference data changes log |
 
 Settings → Test data has a "myloans mock" panel (local only) to fire each scenario.
@@ -439,7 +439,7 @@ The agreed query is `docs/myloans-api-contract.sql` (reference only, never run b
 
 | # | Contract | Where |
 |---|---|---|
-| 1 | **ContentHash = 18 fields** (18 = `ReplacedByExternalLoanId`). The DMS only **compares** hash strings; it never recomputes them in production | `hash.ts` (mock and test vectors only) |
+| 1 | **ContentHash = 17 fields** (birth date removed, D-037; 17 = `ReplacedByExternalLoanId`). The DMS only **compares** hash strings; it never recomputes them in production | `hash.ts` (mock and test vectors only) |
 | 2 | **Paging by loan:** `{ runStartedAt, items, nextAfterId }`; `nextAfterId` null = last page; empty page = `items: []` and null. Page 1's `runStartedAt` is kept for the run; checkpoint = it minus 5 minutes, saved **only after every page succeeded** | `sync-plan.ts` `fetchRun` |
 | 3 | `RowsForThisLoan` > 1 (or two rows for one loan): **duplicate alert** to Admin with the rows logged; **no Open Items** for that loan in that run | `planRun` |
 | 4 | **API 1 codes:** 404 not found; 422 not selectable (FeedState and "Replaced by <PN>"); 200; 409 several rows: log all, use the single `IsSelectable = 1` row if there is exactly one, else "Multiple records in myloans, contact Admin." and alert | `contract.ts` `readApi1` |
@@ -447,7 +447,7 @@ The agreed query is `docs/myloans-api-contract.sql` (reference only, never run b
 | 6 | **All 5 FeedStates in API 2 too:** `NotReleased` can appear for an ever-released loan whose status left 12 (myloans' note says otherwise; corrected in `docs/MYLOANS_REPLY_3.md`) | `planRun`, mock |
 | 7 | **Redo chains:** the CIN always links to its current live transaction. A new `ExternalLoanId` for a known CIN raises "record replaced" (rule b), even if the older copies are never re-sent | `planRun` |
 | 8 | **API 5 products:** the full list each sync (`UpdatedAt` may not exist); renames by `ProductID`; re-run the keyword classification; flag "Classification changed since accepted" on the loans that flip | `productRenames`, `classificationFlips` |
-| 9 | **Mock:** SHA-256 over UTF-16LE of HashInput, lowercase hex, NULL = empty text, 18 fields. Scenarios: page cut by loan with a duplicate row, 409 on API 1, redo chain of 3, NotReleased in API 2, product rename that flips the classification. The test of myloans' 3 vectors is **skipped until they send the outputs** | `mock.ts`, `r2.test.ts` |
+| 9 | **Mock:** SHA-256 over UTF-16LE of HashInput, lowercase hex, NULL = empty text, 17 fields. Scenarios: page cut by loan with a duplicate row, 409 on API 1, redo chain of 3, NotReleased in API 2, product rename that flips the classification. The test of myloans' 3 vectors is **skipped until they send the outputs** | `mock.ts`, `r2.test.ts` |
 | 10 | **"Loan closed/released" stays BLOCKED** until myloans finds the paid/closed source (their check R2-4) | stage map, piece 9 |
 
 ## 8. Piece 7: myloans sync (D-005, D-016 as amended by D-022)
@@ -503,7 +503,7 @@ The rules apply in this order:
 
 | Field change | Open Item |
 |---|---|
-| `BirthDateHash` | **"Birth date changed in myloans"**, with no values. The birth date never arrives |
+| ~~`BirthDateHash`~~ | **Removed (D-037):** the DMS neither stores nor monitors the birth date |
 | `LoanID` or `LoanClass` | Shows the **LoanType name** (old → new), for example "New → Renewal", plus the rule effect |
 | `LoanTypeId` empty | A **"Can't classify"** alert on the loan file and to the approvers. The rules are not re-run until it is fixed |
 | `ReleaseDate` | Received as datetimeoffset, converted to the **Manila date** for display, TAT and rules (D-022 #5). Compared as a Manila date, so a change of offset alone is not a change |
@@ -542,7 +542,7 @@ The old sync settings (tiers, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hour
 | `myloans.alertAfterFailedRuns` | Default 3 |
 | `myloans.branchPoolCutoffDate` | Superadmin only |
 | `myloans.paused` | Kept |
-| `myloans.monitoredFields` | Tickboxes over the hashed loan and borrower fields: PN #, status / active / FeedState, CIF, first / middle / last name, suffix, birth date (hash only), LoanID, loan type, borrower company name, amount, release date, product code, branch. All are on by default |
+| `myloans.monitoredFields` | Tickboxes over the hashed loan and borrower fields: PN #, status / active / FeedState, CIF, first / middle / last name, suffix, LoanID, loan type, borrower company name, amount, release date, product code, branch. All are on by default |
 
 ### 8.8 Screens
 
@@ -560,7 +560,7 @@ The old sync settings (tiers, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hour
 | FeedState | All five states; any change away from Released → Open Item + Forward blocked + DMS unchanged until approved |
 | **Cancel-then-redo** | The old row arrives `Cancelled` with an **unchanged hash**, and a new ExternalLoanId with the **same CIN** arrives `Released` → one "myloans record replaced" item with old and new PN #. On approval, PN # / ExternalLoanId are re-linked with a history row |
 | Replacement (a) | `ReplacedByExternalLoanId` on a held row → the same item |
-| Special fields | Birth date hash change → item with no values; LoanID / LoanClass change → shows LoanType names; empty LoanTypeId → "Can't classify" |
+| Special fields | LoanID / LoanClass change → shows LoanType names; empty LoanTypeId → "Can't classify" |
 | ReleaseDate | 2026-11-30T17:00:00Z becomes Manila 1 December (month end); 2026-12-31T16:30:00Z becomes 1 January (year end) |
 | Reference renames | Lookup updated, logged and noticed; no Open Item |
 | First load | Pool mode honours the cutoff; the first checkpoint is set |
@@ -780,6 +780,14 @@ Vitest and e2e run one after the other on `gdfi_dms_test` only (`CLAUDE.md`).
 
 ---
 
+## 14b. v2 spec corrections (deliberate)
+
+Places where the DMS deliberately does not follow the v2 spec. Each one is a recorded decision.
+
+| v2 asks for | The DMS does | Decision |
+|---|---|---|
+| The borrower's **birth date** (stored and monitored) | Neither receives, stores nor monitors it: not in the myloans contract, not in the ContentHash, no "birth date changed" item | D-037 (not needed by the business; less personal data under RA 10173) |
+
 ## 15. Questions still open
 
 Some are carried from Step 1; some are new from the contract.
@@ -798,7 +806,7 @@ Some are carried from Step 1; some are new from the contract.
 | Q-N10 | ~~Supersede or update in place~~ | **Resolved by D-032:** supersede |
 | Q-N11 | ~~Processing complete / fully paid~~ | **Resolved by D-032:** Processing complete = documents stored in the vault box. Fully paid comes from myloans (required field in `docs/MYLOANS_REPLY_2.md`); "Loan closed/released" is blocked on it |
 | Q-N12 | ~~Rule 4 exact decimals~~ | **Resolved by D-032:** exact decimals now; "1,000" or "1e6" refused with the expected format shown |
-| Q-N13 | ~~Birth date: options D1 / D2 / D3~~ | **Resolved by D-022:** the birth date never arrives; `BirthDateHash` flags a change with no values |
+| Q-N13 | ~~Birth date~~ | **Resolved by D-037:** removed entirely; the DMS neither receives, stores nor monitors it (RA 10173) |
 | Q-N14 | ~~Source of Financing / Refinancing~~ | **Resolved by D-027:** keywords in the product name. API 5 required before go-live |
 | Q-N15 | ~~One or two items for cancel-then-redo~~ | **Resolved by D-025:** one item |
 | Q-N16 | ~~Keyword matching rule~~ | **Resolved by D-031:** case-insensitive, hyphens and extra spaces ignored; Refinancing keyword first, then Financing, else the default (a setting); no conflict state |

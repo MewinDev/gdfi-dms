@@ -3,8 +3,8 @@ import { hashOf, type HashValues } from "./hash";
 import { isAcceptedStatus } from "@/lib/myloans/status";
 
 /**
- * In-memory mock of the myloans APIs, round 2 contract (D-036). Fake data only (GD999... PNs). The hash is the
- * real formula (SHA-256, UTF-16LE, 18 fields) so a change in any hashed field changes it, exactly as in myloans.
+ * In-memory mock of the myloans APIs, round 2 contract (D-036, D-037). Fake data only (GD999... PNs). The hash is the
+ * real formula (SHA-256, UTF-16LE, 17 fields) so a change in any hashed field changes it, exactly as in myloans.
  */
 
 export interface MockTxn {
@@ -34,7 +34,7 @@ function rowOf(t: MockTxn, db: MockDb): FeedRow {
   const rep = t.replacedBy ? db.txns.find((x) => x.id === t.replacedBy) ?? null : null;
   const v: HashValues = {
     FeedState: fs, PNNo: t.pnNo, TransactionStatusId: t.statusId, TransactionIsActive: t.isActive, CIFNo: null, FirstName: null, MiddleName: null, LastName: null, Suffix: null,
-    BirthDate: null, LoanID: t.id, LoanClass: 7, BorrowerCompanyName: null, TotalLoanAmount: t.amount, ReleaseDate: t.releaseDate, ProductCode: p?.productCode ?? null, BranchID: t.branchId, ReplacedByExternalLoanId: rep?.id ?? null,
+    LoanID: t.id, LoanClass: 7, BorrowerCompanyName: null, TotalLoanAmount: t.amount, ReleaseDate: t.releaseDate, ProductCode: p?.productCode ?? null, BranchID: t.branchId, ReplacedByExternalLoanId: rep?.id ?? null,
   };
   return {
     externalLoanId: t.id, cin: t.cin, pnNo: t.pnNo, transactionStatusId: t.statusId, feedState: fs, isSelectable: fs === "Released" ? 1 : 0,
