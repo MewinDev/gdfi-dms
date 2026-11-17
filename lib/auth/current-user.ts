@@ -60,7 +60,7 @@ export async function requirePermission(p: Permission): Promise<CurrentUser> {
 }
 
 // Branch scope lives in one module (lib/auth/scope.ts); re-exported here for the existing imports.
-export { allInScope, branchRowScope, hasAllBranches, inScope, loanRelationScope, loanScope, scopeIds } from "./scope";
+export { advanceScope, allInScope, branchRowScope, hasAllBranches, inScope, loanRelationScope, loanScope, scopeIds } from "./scope";
 
 /** For pages reachable with any one of several permissions (e.g. Settings): 404 when none. */
 export async function requirePageAny(ps: Permission[]): Promise<CurrentUser> {

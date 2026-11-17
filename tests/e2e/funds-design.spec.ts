@@ -105,7 +105,7 @@ test.afterAll(clean);
 test("Tabs, summary, type filter and search; each row shows the same values at every width", async ({ page }) => {
   test.setTimeout(180_000);
   const keyWarnings: string[] = [];
-  page.on("console", (m) => { if (/unique "key"/.test(m.text())) keyWarnings.push(m.text().slice(0, 1500)); });
+  page.on("console", async (m) => { if (/DEBUGKEY/.test(m.text())) console.log(m.text().slice(0, 400)); if (/unique "key"/.test(m.text())) keyWarnings.push(m.text().slice(0, 1500)); });
   await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   const tabs = page.locator("[data-funds-tabs]");
@@ -282,7 +282,7 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
 
 test("A view-only role sees one calm line, not a line per row; empty tabs say so", async ({ page }) => {
   const role = await db.role.create({ data: { key: "C_Z_FUNDS_VIEW", name: "Z Funds viewer", builtIn: false, permissions: ["loans:view", "funds:ca_view", "funds:ft_view"] } });
-  await db.user.create({ data: { email: "zz.fundsviewer@gdfi.ph", name: "Zz Funds Viewer", roleId: role.id, isTestUser: true, allBranches: true } });
+  await db.user.create({ data: { email: "zz.fundsviewer@gdfi.ph", name: "Zz Funds Viewer", roleId: role.id, isTestUser: true, allBranches: true, handlesCa: true, handlesFt: true } });
   await signInWith(page, { other: "Zz Funds Viewer (Z Funds viewer)" });
 
   for (const tab of ["approve", "release", "outstanding"]) {

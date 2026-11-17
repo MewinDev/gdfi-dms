@@ -28,7 +28,8 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | Admin | Admin | All branches |
 | Finance | Finance | All branches |
 | Superadmin | Superadmin (the permission matrix, per-user overrides, All branches; makes the kit's sample roles) | All branches |
-| Branch Supervisor | LA Supervisor/Head (the built-in role: every LA tick and approving myloans changes; plus, as per-person grants kept from the former Branch Supervisor role: move a hold to another person, resolve any problem, Monitoring, TAT report) | Antipolo (101), Angono (165) |
+| Superadmin Two | Superadmin (the second one, D-028) | All branches |
+| Branch Supervisor | LA Supervisor/Head (the built-in role: every LA tick, approving myloans changes and moving a hold to another person, D-029) | Antipolo (101), Angono (165) |
 | LA 1 | Loan Associate | Antipolo (101), Angono (165) |
 | LA 2 | Loan Associate | Antipolo (101), Angono (165) |
 | LA Alaminos (was "LA Davao") | Loan Associate | Alaminos (390) |

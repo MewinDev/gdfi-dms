@@ -305,7 +305,7 @@ describe("Hide from DMS, read-only MyLoans fields, permissions", () => {
   it("only the import, review and change ticks (Admin by default) import, run, decide and hide", async () => {
     const text = csv([zrow(1)]);
     for (const u of [la, dp, fin]) {
-      await expect(previewBranchFile(u, text, "x.csv")).rejects.toThrow('Ask an Admin to turn on "Import branches from MyLoans"');
+      await expect(previewBranchFile(u, text, "x.csv")).rejects.toThrow('Ask a Superadmin to turn on "Import branches from MyLoans"');
       await expect(confirmBranchFile(u, text, "x.csv", null)).rejects.toThrow(/Import branches from MyLoans/);
       await expect(runBranchSync({ trigger: "api", user: u })).rejects.toThrow(/Import branches from MyLoans/);
       await expect(acceptReview(u, "x")).rejects.toThrow(/Decide branch changes/);

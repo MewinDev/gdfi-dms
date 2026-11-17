@@ -31,6 +31,8 @@ const e = (slug: string) => `kit.${slug}${KIT_EMAIL_DOMAIN}`;
 
 export const CLEAN_ACCOUNTS: CleanAccount[] = [
   { key: "superadmin", email: e("superadmin"), name: "Superadmin", role: "SUPERADMIN", roleLabel: "Superadmin", branches: "ALL", accessLabel: "All branches" },
+  // A second Superadmin (D-028): one can always fix the other's access.
+  { key: "superadmin2", email: e("superadmin2"), name: "Superadmin Two", role: "SUPERADMIN", roleLabel: "Superadmin", branches: "ALL", accessLabel: "All branches" },
   { key: "admin", email: e("admin"), name: "Admin", role: "ADMIN", roleLabel: "Admin", branches: "ALL", accessLabel: "All branches" },
   { key: "finance", email: e("finance"), name: "Finance", role: "FIN", roleLabel: "Finance", branches: "ALL", accessLabel: "All branches" },
   { key: "approverSmall", email: e("approver.small"), name: "Approver Small", role: "APPROVER_SMALL", roleLabel: "Approver (lowest band)", branches: "ALL", accessLabel: "All branches" },

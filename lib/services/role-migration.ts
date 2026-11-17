@@ -2,7 +2,7 @@ import "server-only";
 import { prisma, type Tx } from "@/lib/db";
 import { effectivePermissions } from "@/lib/auth/access";
 import { CA_KEYS, FT_KEYS, ticksFromRole } from "@/lib/auth/effective";
-import { ALL_PERMISSIONS, PERMISSIONS as P, ROLE_DEFAULTS, WORKFLOW_PERMISSIONS, permissionLabel, type Permission } from "@/lib/auth/permissions";
+import { ALL_PERMISSIONS, PERMISSIONS as P, ROLE_DEFAULTS, SUPERADMIN_DEFAULT_BEFORE_D028, SUP_DEFAULT_BEFORE_D029, WORKFLOW_PERMISSIONS, permissionLabel, type Permission } from "@/lib/auth/permissions";
 import { writeAudit, type Actor } from "@/lib/audit";
 
 /**
@@ -10,9 +10,9 @@ import { writeAudit, type Actor } from "@/lib/audit";
  * they could do. Pure planning (planRoleMigration) and one apply step (applyRoleMigration), so the dry
  * run lists exactly what --apply writes. Run by scripts/migrate-roles-d010.ts; idempotent.
  *
- *   Branch Supervisor (key SUP) -> the same role, now "LA Supervisor/Head" with its v2 default ticks
- *     (every LA tick + approving Open Items). Each of its people is GRANTED the old ticks the new
- *     default lacks (holds transfer, resolve any problem, Monitoring, TAT report, ...).
+ *   Branch Supervisor (key SUP) -> the same role, now "LA Supervisor/Head" with its default ticks (every
+ *     LA tick, approving Open Items, moving holds; D-029). No per-person legacy grants: the grants an
+ *     earlier run of this migration gave its people are removed, and each removal is listed.
  *   Approvers (APPR) and custom funds roles (a role that is not built-in, has per-type funds keys and no
  *     LA or DP work) -> Finance. Each person's abilities stay exactly the same: GRANT what the old role
  *     had and Finance lacks, DENY what Finance has and the old role lacked; Handles CA / FT from the old
@@ -33,8 +33,11 @@ export interface PlannedMove {
   grants: Permission[]; denies: Permission[];
   ticks: { handlesCa: boolean; handlesFt: boolean } | null;
 }
+/** Per-person legacy grants removed (D-029): what each LA Supervisor/Head no longer has. */
+export interface PlannedRemoval { userId: string; name: string; email: string; active: boolean; keys: Permission[] }
 export interface RolePlan {
   createRoles: string[];
+  removals: PlannedRemoval[];
   roleUpdates: { key: string; name: string; permissions?: Permission[]; deactivate?: boolean }[];
   moves: PlannedMove[];
   /** Steps skipped, in plain words (e.g. no Superadmin yet). */
@@ -42,7 +45,7 @@ export interface RolePlan {
 }
 
 type RoleRow = { id: string; key: string; name: string; builtIn: boolean; active: boolean; permissions: string[] };
-type UserRow = { id: string; name: string; email: string; active: boolean; roleId: string; handlesCa: boolean; handlesFt: boolean; permissionOverrides: { key: string; effect: string }[] };
+type UserRow = { id: string; name: string; email: string; active: boolean; roleId: string; handlesCa: boolean; handlesFt: boolean; allBranches?: boolean; permissionOverrides: { key: string; effect: string; note?: string }[] };
 
 const set = (keys: Iterable<string>) => new Set<string>(keys);
 const minus = (a: Set<string>, b: Set<string>) => [...a].filter((k) => !b.has(k)) as Permission[];
@@ -56,23 +59,23 @@ export function isCustomFundsRole(r: Pick<RoleRow, "builtIn" | "permissions">): 
 
 export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan {
   const byKey = new Map(roles.map((r) => [r.key, r]));
-  const plan: RolePlan = { createRoles: [], roleUpdates: [], moves: [], warnings: [] };
+  const plan: RolePlan = { createRoles: [], removals: [], roleUpdates: [], moves: [], warnings: [] };
   for (const key of Object.keys(ROLE_DEFAULTS)) if (!byKey.has(key)) plan.createRoles.push(key);
 
-  // Branch Supervisor -> LA Supervisor/Head (same role): grants for what the new default lacks.
+  // Branch Supervisor -> LA Supervisor/Head (same role) with today's default (D-029). The role is brought
+  // up to date when it is still the old Branch Supervisor (its old name) or still exactly the default from
+  // before D-029; a role someone changed by hand keeps its ticks.
   const sup = byKey.get(SUPERVISOR_KEY);
-  const supDefault = set(ROLE_DEFAULTS.SUP.permissions);
   if (sup) {
-    const old = effectivePermissions(sup) as Set<string>;
-    const changed = old.size !== supDefault.size || [...old].some((k) => !supDefault.has(k));
-    if (changed || sup.name !== ROLE_DEFAULTS.SUP.name) plan.roleUpdates.push({ key: SUPERVISOR_KEY, name: ROLE_DEFAULTS.SUP.name, permissions: changed ? [...supDefault] as Permission[] : undefined });
-    if (changed) {
-      const extra = minus(old, supDefault);
-      for (const u of users.filter((x) => x.roleId === sup.id)) {
-        const has = set(u.permissionOverrides.filter((o) => o.effect === "GRANT").map((o) => o.key));
-        const grants = extra.filter((k) => !has.has(k));
-        if (grants.length) plan.moves.push({ userId: u.id, name: u.name, email: u.email, active: u.active, fromRole: sup.name, toRole: ROLE_DEFAULTS.SUP.name, toRoleKey: SUPERVISOR_KEY, grants, denies: [], ticks: null });
-      }
+    const has = effectivePermissions(sup) as Set<string>;
+    const same = (keys: string[]) => has.size === new Set(keys).size && keys.every((k) => has.has(k));
+    const oldName = sup.name !== ROLE_DEFAULTS.SUP.name;
+    const update = !same(ROLE_DEFAULTS.SUP.permissions) && (oldName || same(SUP_DEFAULT_BEFORE_D029));
+    if (update || oldName) plan.roleUpdates.push({ key: SUPERVISOR_KEY, name: ROLE_DEFAULTS.SUP.name, permissions: update ? [...ROLE_DEFAULTS.SUP.permissions] : undefined });
+    // The per-person grants an earlier run gave (note MIGRATION_NOTE) are removed and listed.
+    for (const u of users.filter((x) => x.roleId === sup.id)) {
+      const keys = u.permissionOverrides.filter((o) => o.effect === "GRANT" && o.note === MIGRATION_NOTE).map((o) => o.key as Permission);
+      if (keys.length) plan.removals.push({ userId: u.id, name: u.name, email: u.email, active: u.active, keys });
     }
   }
 
@@ -103,7 +106,7 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
   if (sa) {
     const has = effectivePermissions(sa) as Set<string>;
     const same = (keys: string[]) => has.size === keys.length && keys.every((k) => has.has(k));
-    const earlier = [ALL_PERMISSIONS, ALL_PERMISSIONS.filter((k) => !WORKFLOW_PERMISSIONS.includes(k) && k !== P.LTO_REPORTS_NOTIFY)];
+    const earlier = [ALL_PERMISSIONS, ALL_PERMISSIONS.filter((k) => !WORKFLOW_PERMISSIONS.includes(k) && k !== P.LTO_REPORTS_NOTIFY), SUPERADMIN_DEFAULT_BEFORE_D028];
     if (!same(ROLE_DEFAULTS.SUPERADMIN.permissions) && earlier.some(same)) plan.roleUpdates.push({ key: sa.key, name: sa.name, permissions: [...ROLE_DEFAULTS.SUPERADMIN.permissions] });
   }
 
@@ -117,6 +120,18 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
     else plan.warnings.push('Admin keeps "Manage permissions": there is no active Superadmin yet. Add one, then run this again (D-023).');
   }
 
+  // Admin approves Open Items for every branch by default (D-029): an Admin without "All branches" only
+  // approves for their own branches. Listed, never changed here (the Superadmin decides).
+  if (admin) {
+    for (const u of users.filter((x) => x.active && x.roleId === admin.id && x.allBranches === false)) {
+      plan.warnings.push(`${u.name} (${u.email}) is an Admin without "All branches": they approve Open Items only for their own branches. A Superadmin can give "All branches" on Users, Edit.`);
+    }
+  }
+  // Superadmins (D-028): keep two active, so one can always fix the other's access.
+  const saRole = byKey.get("SUPERADMIN");
+  const activeSupers = saRole && saRole.active ? users.filter((u) => u.active && u.roleId === saRole.id).length : 0;
+  if (activeSupers === 1) plan.warnings.push("Only one active Superadmin. Add a second one (D-028).");
+
   // Operations Monitor -> "Monitoring (read-only)".
   const mon = byKey.get("MONITOR");
   if (mon && mon.name !== ROLE_DEFAULTS.MONITOR.name) plan.roleUpdates.push({ key: mon.key, name: ROLE_DEFAULTS.MONITOR.name });
@@ -127,7 +142,7 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
 export async function loadRolePlan(db: Tx | typeof prisma = prisma): Promise<RolePlan> {
   const [roles, users] = await Promise.all([
     db.role.findMany({ select: { id: true, key: true, name: true, builtIn: true, active: true, permissions: true } }),
-    db.user.findMany({ select: { id: true, name: true, email: true, active: true, roleId: true, handlesCa: true, handlesFt: true, permissionOverrides: { select: { key: true, effect: true } } } }),
+    db.user.findMany({ select: { id: true, name: true, email: true, active: true, roleId: true, handlesCa: true, handlesFt: true, allBranches: true, permissionOverrides: { select: { key: true, effect: true, note: true } } } }),
   ]);
   return planRoleMigration(roles, users);
 }
@@ -142,6 +157,14 @@ export async function applyRoleMigration(actor: Actor = { id: null, label: "Role
       await writeAudit(tx, { actor, mode: "AUTOMATIC", action: "role_created", entityType: "Role", entityId: key, summary: `Role ${d.name} added (D-002)` });
     }
     const roleId = async (key: string) => (await tx.role.findUniqueOrThrow({ where: { key } })).id;
+    for (const r of plan.removals) {
+      await tx.userPermissionOverride.deleteMany({ where: { userId: r.userId, key: { in: r.keys }, effect: "GRANT", note: MIGRATION_NOTE } });
+      await writeAudit(tx, {
+        actor, mode: "AUTOMATIC", action: "legacy_grants_removed", entityType: "User", entityId: r.userId,
+        summary: `${r.name}: per-person grants from the role merge removed (D-029): ${r.keys.map(permissionLabel).join(", ")}`,
+        before: { grants: r.keys }, after: { grants: [] },
+      });
+    }
     // People first (their old role must still exist for the audit text), then the roles.
     for (const m of plan.moves) {
       const to = await roleId(m.toRoleKey);

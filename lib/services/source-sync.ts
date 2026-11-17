@@ -312,12 +312,12 @@ async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Ex
   const what = category === "REPLACEMENT" ? `MyLoans gave this loan a replacement PN (${a.candidates[0] ?? "new PN"})` : `MyLoans changed ${words(a.changes)}`;
   await writeAudit(tx, {
     actor: SYSTEM_ACTOR, mode: a.mode, action: "source_change_detected", entityType: "SourceChange", entityId: id, loanId: a.loanId, pn: a.pn,
-    summary: `${what}. Admin is reviewing.`, details: { category, fields: a.changes.map((c) => c.label) },
+    summary: `${what}. An approver is reviewing it.`, details: { category, fields: a.changes.map((c) => c.label) },
   });
   // Field names only: amounts are never in the notification or the email.
   await notify(tx, {
     userIds: [...(await reviewerIds(tx, loan.branchId)), ...(await branchLaUserIds(tx, loan.branchId)), ...(await liveDpIds(tx, a.loanId))], loanId: a.loanId,
-    title: `${a.pn}: MyLoans changed this loan`, body: `${what}. Admin is reviewing.`, link: `/loans/${a.pn}?tab=todo&review=1`,
+    title: `${a.pn}: MyLoans changed this loan`, body: `${what}. An approver is reviewing it.`, link: `/loans/${a.pn}?tab=todo&review=1`,
     email: { event: "source_changed", vars: { pn: a.pn, transaction: "the loan file", reason: `${what}.`, status: category === "STATUS" ? "cancelled or not released" : category === "REPLACEMENT" ? "replaced" : "changed" } },
   });
 }
@@ -331,7 +331,7 @@ async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Ex
 // ---------------------------------------------------------------------------
 
 function needReview(u: CurrentUser) {
-  if (!can(u, PERMISSIONS.SOURCE_REVIEW)) throw new UserError("Only Admin reviews MyLoans changes. Your view is read-only.");
+  if (!can(u, PERMISSIONS.SOURCE_REVIEW)) throw new UserError("Only approvers review MyLoans changes. Your view is read-only. Ask a Superadmin for the approver tick if you should decide these.");
 }
 /** Every review decision: a note of 5 to 500 characters (the same rule as the borrower details review). */
 export const REVIEW_NOTE_MIN = 5;
@@ -972,7 +972,7 @@ async function runLocked(o: SyncOptions, s: Awaited<ReturnType<typeof syncSettin
 
 /** Admin: "Pause MyLoans calls" on or off (myloans:manage). Audited. */
 export async function setMyLoansPaused(u: CurrentUser, on: boolean) {
-  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change MyLoans sync settings\" for your role.");
+  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask a Superadmin to turn on \"Change MyLoans sync settings\" for your role.");
   await prisma.$transaction(async (tx) => {
     const was = await getSetting("myloans.paused", tx);
     if (was === on) return;
@@ -986,7 +986,7 @@ export async function setMyLoansPaused(u: CurrentUser, on: boolean) {
 }
 
 export async function runSyncNow(u: CurrentUser) {
-  if (!can(u, PERMISSIONS.MYLOANS_SYNC)) throw new UserError("Ask an Admin to turn on \"Run the MyLoans sync now\" for your role.");
+  if (!can(u, PERMISSIONS.MYLOANS_SYNC)) throw new UserError("Ask a Superadmin to turn on \"Run the MyLoans sync now\" for your role.");
   return runMyLoansSync({ trigger: "run_now", force: true, actor: actorOf(u) });
 }
 
@@ -1006,7 +1006,7 @@ export const syncSettingsSchema = z.object({
 });
 
 export async function saveSyncSettings(u: CurrentUser, raw: unknown) {
-  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change MyLoans sync settings\" for your role.");
+  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask a Superadmin to turn on \"Change MyLoans sync settings\" for your role.");
   const p = syncSettingsSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   const d = p.data;

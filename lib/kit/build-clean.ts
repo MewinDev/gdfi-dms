@@ -15,7 +15,6 @@ import { TYPE_ID } from "@/lib/funds/access";
 import { importKitBranches, kitAccess } from "./build";
 import { kitRefusal } from "./guard";
 import { ticksFromRole } from "@/lib/auth/effective";
-import { grantFormerSupervisorTicks } from "./supervisor";
 import { shiftBusinessDays } from "./rebase";
 
 type Log = (line: string) => void;
@@ -64,8 +63,6 @@ export async function buildClean(log: Log = console.log): Promise<void> {
     const role = await prisma.role.findUniqueOrThrow({ where: { id: roleId } });
     // The fund types its role works with (D-009), as the role migration sets them.
     const made = await prisma.user.create({ data: { email: a.email, name: a.name, roleId, isTestUser: true, ...ticksFromRole(role.permissions) } });
-    // Supervisors keep the former Branch Supervisor ticks as per-user grants (D-010), as the migration gives them.
-    if (a.role === "SUPERVISOR") await grantFormerSupervisorTicks(made.id);
     await prisma.$transaction(async (tx) => writeUserAccess(tx, made.id, await kitAccess(a, branchId)));
     if (a.inactive) await prisma.user.update({ where: { id: made.id }, data: { active: false, deactivatedAt: new Date() } });
   };

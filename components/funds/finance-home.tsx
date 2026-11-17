@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { notifyOverdue } from "@/lib/services/funds";
 import { OPEN_ADVANCE, isOverdue, peso } from "@/lib/funds/rules";
-import { can, loanScope } from "@/lib/auth/current-user";
+import { advanceScope, can } from "@/lib/auth/current-user";
 import { typeWhere } from "@/lib/funds/access";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { borrowerToDo } from "@/lib/services/borrower-review";
@@ -19,7 +19,7 @@ export async function FinanceHome({ user }: { user: CurrentUser }) {
   await notifyOverdue();
   const now = new Date();
   // The same scope as the Funds page (D-019): the person's branches and the fund types they handle.
-  const scope = { ...loanScope(user), ...typeWhere(user) };
+  const scope = { ...advanceScope(user), ...typeWhere(user) };
   const [toApprove, toRelease, outstanding, topUps, carries, corrections] = await Promise.all([
     prisma.cashAdvance.count({ where: { ...scope, status: "REQUESTED", requestedById: { not: user.id } } }),
     prisma.cashAdvance.count({ where: { ...scope, status: "APPROVED" } }),

@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { PERMISSIONS, ROLE_DEFAULTS, FORMER_SUPERVISOR_KEYS } from "@/lib/auth/permissions";
+import { PERMISSIONS, ROLE_DEFAULTS } from "@/lib/auth/permissions";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob } from "@/lib/services/jobs";
@@ -199,10 +199,9 @@ describe("B. Built-in Branch Supervisor; Finance no longer moves holds", () => {
     expect(await prisma.role.count({ where: { name: "LA Supervisor/Head" } })).toBe(1);
   });
 
-  it("'Move a hold to another person': not Finance; Admin by default; the former Branch Supervisors keep it as a grant (D-010)", () => {
+  it("'Move a hold to another person': not Finance; Admin and the LA Supervisor/Head by default (D-029)", () => {
     expect(ROLE_DEFAULTS.FIN.permissions).not.toContain(PERMISSIONS.HOLDS_TRANSFER);
-    expect(ROLE_DEFAULTS.SUP.permissions).not.toContain(PERMISSIONS.HOLDS_TRANSFER);
-    expect(FORMER_SUPERVISOR_KEYS).toContain(PERMISSIONS.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.SUP.permissions).toContain(PERMISSIONS.HOLDS_TRANSFER);
     expect(ROLE_DEFAULTS.ADMIN.permissions).toContain(PERMISSIONS.HOLDS_TRANSFER);
   });
 });

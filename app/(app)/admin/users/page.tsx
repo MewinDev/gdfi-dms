@@ -196,7 +196,7 @@ async function UsersModal({
 }) {
   if (sp.open === "roles") {
     return (
-      <SettingsModal id="settings-modal" title="What each role can do" help={canManageRoles ? "Read-only here. Change roles in Settings > Roles and access." : "Read-only. Ask an Admin to change a role."} closeHref={listHref} returnFocusId="users-roles" footer={{ kind: "done" }}>
+      <SettingsModal id="settings-modal" title="What each role can do" help={canManageRoles ? "Read-only here. Change roles in Settings > Roles and access." : "Read-only. Ask a Superadmin to change a role."} closeHref={listHref} returnFocusId="users-roles" footer={{ kind: "done" }}>
         <ul className="flex flex-col gap-3">
           {roles.filter((r) => r.active).map((r) => (
             <li key={r.id} className="rounded-xl border border-line p-4">

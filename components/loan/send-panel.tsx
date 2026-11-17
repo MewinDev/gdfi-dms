@@ -45,7 +45,7 @@ export interface SendOptions {
   kindChoices?: [string, string][];
   /** After sending, open the next transaction that needs the LA (null: stay here). */
   next: { href: string; name: string } | null;
-  /** A MyLoans change under Admin review holds this transaction ("MyLoans changed this loan. Admin is reviewing."). */
+  /** A MyLoans change under review holds this transaction ("MyLoans changed this loan. An approver is reviewing it."). */
   sourceBlock?: string | null;
   /** Returned with papers handed over: "Confirm you received the papers ... first" until the LA confirms them. */
   papersBlock?: string | null;

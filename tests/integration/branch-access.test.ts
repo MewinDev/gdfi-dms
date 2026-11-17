@@ -210,7 +210,7 @@ describe("Permissions and refusals", () => {
   it("only access:manage changes access (Change branch access); All branches is kept for the person, not by role name", async () => {
     const u = await zzUser("Guarded", { all: false, grants: [br("b1")], homeBranchId: null });
     await expect(saveUserAccess(la, u.id, { all: true, grants: [], homeBranchId: null })).rejects.toBeInstanceOf(UserError);
-    await expect(copyAccess(la, u.id, la.id)).rejects.toThrow('Ask an Admin to turn on "Change branch access" for your role.');
+    await expect(copyAccess(la, u.id, la.id)).rejects.toThrow('Ask a Superadmin to turn on "Change branch access" for your role.');
     // Nobody changes their own access (D-023); the access manager gives All branches to someone else.
     await expect(saveUserAccess(admin, admin.id, { all: false, grants: [br("b1")], homeBranchId: null })).rejects.toThrow(/your own branch access/);
     await saveUserAccess(admin, u.id, { all: true, grants: [], homeBranchId: null });

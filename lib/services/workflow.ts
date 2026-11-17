@@ -760,7 +760,7 @@ export async function reportProblem(user: CurrentUser, input: { loanId: string; 
       summary: `Reported a problem (${label.toLowerCase()})`, details: { kind: input.kind, text },
     });
     await notify(tx, {
-      userIds: await supervisorUserIds(tx), loanId: loan.id,
+      userIds: await supervisorUserIds(tx, loan.branchId), loanId: loan.id,
       title: `${loan.pn}: problem reported`, body: `${user.name} reported: ${label}. ${text}`, link: `/loans/${loan.pn}`,
       email: { event: "problem_changed", vars: { pn: loan.pn, transaction: "the loan file", who: user.name, status: "reported", reason: `${label}: ${text}` } },
     });

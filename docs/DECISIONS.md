@@ -400,7 +400,7 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
 
   Proposals and a preview are in `IMPLEMENTATION_PLAN.md` §3a. **Nothing is seeded until confirmed.**
 
-## D-028 Piece 2 build choices (proposed; for review)
+## D-028 Piece 2 build choices (point 1 final, 17 November 2026; the rest proposed)
 
 - **Date:** 17 November 2026
 - **Decision:** while building the permission core, these points were not covered by D-002 to D-027. They were decided as below and can be changed in the matrix or by a new decision.
@@ -425,3 +425,71 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
      - Roles keep their keys (SUP, FIN, VAULT, DIG, MONITOR); only their names and ticks change. Keys are internal ids that no code checks.
   8. **Approval amount bands** (D-024): built as the setting "Use approval bands by amount" (Settings, Cash-advance rules), off by default.
 - **Reason:** to finish piece 2 without guessing on things that change what people can do. Each point keeps today's access unless a decision changed it.
+
+- **Update, 17 November 2026 (review of piece 2): point 1 is final, with two Superadmins.**
+  - The Superadmin's default is every setup and configuration right and **no day-to-day action**: no approving (funds or Open Items), no releasing funds, no Accept / Forward, no job work, no moving holds, no resolving problems or LTO advisories (`DAY_TO_DAY_PERMISSIONS` in `lib/auth/permissions.ts`). Any of them can still be ticked.
+  - **Two Superadmin accounts are seeded** (test seed and both kits). Settings and Home warn the Superadmin when only one active Superadmin is left; the role migration says so too.
+  - Point 4 changes with D-029 (Admin approves by default; no Admin fallback).
+  - **Reason:** the Superadmin sets the system up and fixes access; day-to-day work belongs to the people who do it, and two Superadmins means one can always fix the other.
+
+## D-029 Approvers: permission only, no automatic fallback to Admin
+
+- **Date:** 17 November 2026
+- **Decision:**
+  1. **No fallback.** The "nobody in the branch, so Admin reviews it" logic is removed.
+  2. **Approval is purely permission-based.** Anyone with the approver tick (`myloans:review`, `myloans:review_borrower`) whose access includes the loan's branch can approve. With "All branches" they see and approve every branch, including branches with no approver of their own. These are also the people told about it.
+  3. **Admin's default:** All branches plus the approver tick. A Superadmin can untick it.
+  4. **Branches with no approver of their own** (nobody with the tick has the branch in their own access; "All branches" does not count here): a warning "N active branches have no approver assigned." on Settings, Branches and on the Superadmin's Home, so it gets fixed. The items stay visible to All-branches approvers; there is no hidden queue. This replaces the "Unassigned queue" of D-011.
+  5. **Moving holds is a default tick of the LA Supervisor/Head** (customizable). The per-person grants the D-010 migration gave former Branch Supervisors are removed by the migration, which lists every person and what they no longer have (`npm run roles:migrate`).
+- **Reason:** one rule everyone can read off the matrix; nothing is routed somewhere people do not expect; a gap is shown so it is fixed rather than silently covered.
+- **To note:** Finance has "Review borrower detail corrections" (`myloans:review_borrower`) by default with All branches, so under this rule Finance can decide borrower corrections for every branch and is told about them (Q-N19).
+
+## D-030 Branch scope fixes found in the piece 2 review
+
+- **Date:** 17 November 2026
+- **Decision:** the audit of Home cards, counts, badges, to-do lists, search and exports found these leaks. All are fixed with the scope helpers in `lib/auth/scope.ts` and covered by `tests/integration/branch-scope-home.test.ts`:
+  1. Home "MyLoans changes" card and the review on a loan file: limited to the person's branches.
+  2. Loans list: a `?branch=` filter narrowed nothing and could replace the scope; it is now added on top of it.
+  3. "Possible replacement" suggestions on a review: only loans in the person's branches.
+  4. Funds lists, Finance Home counts, the liquidation report and receipts: a request is in scope only when the requesting processor's branch **and** every line's loan are in the person's access (`advanceScope`). The Finance actions (approve, release, change type, top-up, carry-over, confirm returned cash, close, edit lines) check the same rule.
+  5. Funds notices (new request, release, liquidation, returned cash, Pasuyo, LTO) and "problem reported" notices go only to handlers whose access covers the request's or loan's branches. Named people (the requester, the assigned processor, the receiving LA) are told as before.
+  6. Settings, Expense kinds: the "Used in N request lines" and open-request counts are of the person's branches.
+- **Not changed (checked):** the audit log and the email outbox CSV are global but need Admin-only ticks; a full PN outside the person's access answers "Outside your branch access" with the branch name (by design: it says where to ask); processor capacity counts are global by design.
+- **Reason:** D-019.
+
+## D-031 Product classification: final rule (answers Q-N16, Q-N17; replaces the open part of D-027)
+
+- **Date:** 17 November 2026
+- **Decision:** the product name decides Financing or Refinancing. Matching is case-insensitive and ignores hyphens and extra spaces ("Re-Financing" = "refinancing"). Checks, in order:
+  1. it contains a **Refinancing** keyword → Refinancing;
+  2. else it contains a **Financing** keyword → Financing;
+  3. else (no match) → the **default**, a setting (starting value: Refinancing).
+- Because Refinancing is checked first, "Refinancing" never becomes Financing, so there is **no conflict state** and no "Can't classify" state.
+- **Keywords** are two lists in Settings (Product classification), editable and audited. Starting values: Refinancing `refinanc`, `refi`; Financing `financ`.
+- **Classified by default:** a loan classified by step 3 shows a small "Classified by default" label and is in a filter on the Loans page (for Admin), but is **not blocked**.
+- **Kept from D-027:** the classification is saved when the LA opens (accepts) the loan file. A later keyword change flags "Classification changed since accepted" (was X, now Y) and the change is made only by a logged **Reclassify** action (remarks required). A myloans product rename goes through the existing MyLoans change review (Apply re-runs the rules and is logged). "Test keyword rules" in Settings previews the result for every product name on open loan files before saving.
+- **Reason:** the user's final rule (review of piece 2): simplest to explain, never blocks work, and the default is visible and fixable.
+
+## D-032 Open questions answered (review of piece 2)
+
+- **Date:** 17 November 2026
+- **Q-N3:** liquidation is due N working days after the **last** LTO completion of that fund request. (Piece 5.)
+- **Q-N5:** **no test sign-in on staging**; staging uses Entra like production. (Built in piece 1: `AUTH_MODE=test` is refused outside local.)
+- **Q-N7:** each hold reason has a **"Pauses TAT" tickbox**, ticked by default for reasons outside the user's control (waiting on the borrower or another department). Hold time is always recorded and shown separately. While on hold the inbox shows "Paused" instead of a countdown. (With the TAT work in pieces 4 and 9.)
+- **Q-N8:** the sync runs **24/7**, for each loan **until "Loan closed/released"**. (Piece 7.)
+- **Q-N9:** Accept / Forward on the **existing hand-offs now**; each new stage's piece adds its own. (Piece 9.)
+- **Q-N10:** **supersede** (not update in place). (Piece 8.)
+- **Q-N11:** "Processing complete" = the documents are **stored in the vault box**. "Fully paid" must come from myloans: added to `docs/MYLOANS_REPLY_2.md` as a **required** field (paid/closed status and date). "Loan closed/released" is **blocked** until myloans provides it.
+- **Q-N12:** Rule 4 uses **exact decimals now**; amounts like "1,000" or "1e6" are rejected with a clear message that shows the expected format. (With the myloans parsing, pieces 6 and 7.)
+- **Q-N18:** branch pool cutoff = **go-live minus 30 days**, as a setting. (Piece 7.)
+- **D-024** (approval bands): still **to confirm with Finance**.
+- **Reason:** the user's answers, chosen as best for users and safety.
+
+## D-033 UX rules for every screen touched
+
+- **Date:** 17 November 2026
+- **Decision:** on every screen a piece touches:
+  - messages are in plain language and say **what to do next** (for example who to ask: "Ask a Superadmin to turn on …");
+  - a **disabled button shows why** on hover (and to screen readers);
+  - the **inbox is sorted by least TAT remaining first**, with colour (green / amber / red). (The inbox comes with piece 9.)
+- **Reason:** people should never be stuck without knowing why or who can help.

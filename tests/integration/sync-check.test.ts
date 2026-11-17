@@ -174,15 +174,18 @@ describe("3. Borrower details", () => {
     const sup = (await borrowerReviewFor(supAngono, loan.id))!;
     expect(sup.sentences[0]).toMatch(/^Already sent or done: .*PPSR \(sent to a processor\)\. Their papers may carry the old details\.$/);
     expect(sup.sentences[1]).toBe("Accepting changes the details shown in the DMS. It does not change papers already prepared.");
-    expect(sup).toMatchObject({ canDecide: true, toAdmin: false });
+    expect(sup).toMatchObject({ canDecide: true, noBranchApprover: false });
     // LA and DP see it read-only.
-    for (const u of [la, dp]) expect((await borrowerReviewFor(u, loan.id))!).toMatchObject({ canDecide: false, waiting: "Waiting for review by your supervisor." });
+    for (const u of [la, dp]) expect((await borrowerReviewFor(u, loan.id))!).toMatchObject({ canDecide: false, waiting: "Waiting for review by an approver for this branch." });
     // A supervisor of another branch: cannot see or decide it.
     expect(await borrowerReviewFor(supAntipolo, loan.id)).toBeNull();
     await expect(acceptBorrowerCorrection(supAntipolo, sup.id, "Checked the ID card")).rejects.toThrow();
-    // Told: the branch supervisor and approver (in-app); email field names only.
+    // Told: everyone who may decide it (D-029): the branch supervisor and approver, and approvers with All
+    // branches (Admin); never a supervisor of another branch. Email field names only.
     const notes = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "borrower's details" } } });
-    expect(new Set(notes.map((n) => n.userId))).toEqual(new Set([supAngono.id, apprAngono.id]));
+    const told = new Set(notes.map((n) => n.userId));
+    for (const id of [supAngono.id, apprAngono.id, admin.id]) expect(told.has(id), id).toBe(true);
+    expect(told.has(supAntipolo.id)).toBe(false);
     const mails = await prisma.emailOutbox.findMany({ where: { loanId: loan.id, event: "borrower_changed" } });
     expect(mails.length).toBeGreaterThan(0);
     for (const m of [...notes.map((n) => n.body), ...mails.map((x) => `${x.subject} ${x.text} ${x.html} ${x.headline}`)]) expect(m).not.toMatch(/Reyes|Rizal|0917/);
@@ -233,18 +236,30 @@ describe("3. Borrower details", () => {
     expect((await borrowerReviewFor(apprAngono, loan.id))!.rows[0]).toMatchObject({ dms: "CIF-551003", myloans: "CIF-NEW-3" });
   });
 
-  it("no supervisor or approver in the branch: it goes to Admin (and the Admin Home count)", async () => {
+  it("no approver of the branch's own: no fallback; All-branches approvers (Admin) still decide; the branch is flagged (D-029)", async () => {
     const { loan } = await setup();
-    await prisma.user.updateMany({ where: { email: { in: [SUP_A, APPR_A] } }, data: { active: false } });
-    await change(PN, { address: "1 New St" });
-    await refreshLoan(loan.id, sys);
-    const r = (await borrowerReviewFor(admin, loan.id))!;
-    expect(r).toMatchObject({ toAdmin: true, canDecide: true });
-    expect((await borrowerReviewFor(la, loan.id))!.waiting).toBe("No supervisor or approver in this branch. Admin reviews it.");
-    const told = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "borrower's details" } } });
-    expect(told.map((n) => n.userId)).toContain(admin.id);
-    const { borrowerItemsForAdmin } = await import("@/lib/services/borrower-review");
-    expect(await borrowerItemsForAdmin()).toBe(1);
+    await prisma.user.updateMany({ where: { email: { in: [SUP_A, APPR_A, "test.lahead@gdfi.ph"] } }, data: { active: false } });
+    try {
+      await change(PN, { address: "1 New St" });
+      await refreshLoan(loan.id, sys);
+      const r = (await borrowerReviewFor(admin, loan.id))!;
+      expect(r).toMatchObject({ noBranchApprover: true, canDecide: true });
+      expect((await borrowerReviewFor(la, loan.id))!.waiting).toBe("Waiting for review by an approver for this branch.");
+      const told = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "borrower's details" } } });
+      expect(told.map((n) => n.userId)).toContain(admin.id);
+      // Admin's Home: the correction in "Corrections to review" (permission-based, no separate Admin queue).
+      expect((await borrowerToDo(admin)).items.map((i) => i.pn)).toContain(PN);
+      const { branchesWithoutApprover, noApproverText } = await import("@/lib/services/borrower-review");
+      const angono = (await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).branchId;
+      expect((await branchesWithoutApprover()).map((b) => b.id)).toContain(angono);
+      expect(noApproverText(1)).toBe("1 active branch has no approver assigned.");
+      expect(noApproverText(0)).toBe("");
+      // Nobody at all with the tick: the waiting line says who can fix it.
+      const { waitingText } = await import("@/lib/services/borrower-review");
+      expect(waitingText(0)).toBe("Nobody can approve this yet. Ask a Superadmin to give someone the approver tick for this branch.");
+    } finally {
+      await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
+    }
   });
 
   it("a borrower change together with an amount change: two items (Admin's and the supervisor's)", async () => {
@@ -420,8 +435,8 @@ describe("11. Refresh paths, the pause switch, limits", () => {
     const t0 = new Date();
     const { loan } = await setup();
     await prisma.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: new Date(Date.now() - 6 * 3_600_000), nextCheckAt: new Date(Date.now() - 60_000) } });
-    await expect(setMyLoansPaused(la, true)).rejects.toThrow(/Ask an Admin/);
-    await expect(setMyLoansPaused(supAngono, true)).rejects.toThrow(/Ask an Admin/);
+    await expect(setMyLoansPaused(la, true)).rejects.toThrow(/Ask a Superadmin/);
+    await expect(setMyLoansPaused(supAngono, true)).rejects.toThrow(/Ask a Superadmin/);
     await setMyLoansPaused(admin, true);
     expect(await prisma.auditLog.count({ where: { action: "myloans_paused", actorId: admin.id, at: { gte: t0 } } })).toBe(1);
     resetClient();

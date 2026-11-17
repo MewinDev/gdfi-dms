@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith } from "./helpers";
+import { SUPERADMIN, signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -286,8 +286,8 @@ test("Check documents: the Send panel shows availability chips, the processor on
   await page.waitForLoadState("networkidle");
 });
 
-test("Roles: the Monitoring group; Operations Monitor has the two monitors and Manage LTO advisories", async ({ page }) => {
-  await signInWith(page, BUTTONS.admin);
+test("Roles: the Monitoring group; Monitoring (read-only) has the two monitors and Manage LTO advisories", async ({ page }) => {
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
   const role = await db.role.findUniqueOrThrow({ where: { key: "MONITOR" } });
   await page.goto(`/admin/settings?open=roles&edit=${role.id}`);
   const g = page.getByRole("region", { name: "Monitoring" });

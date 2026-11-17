@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_PERMISSIONS, ALL_PERMISSIONS, PERMISSIONS as P, PERMISSION_DEFS, PERMISSION_GROUPS, RENAMED_PERMISSIONS, ROLE_DEFAULTS, WORKFLOW_PERMISSIONS,
-  SUPERVISOR_TICKS, OPEN_ITEM_APPROVER_KEYS, FORMER_SUPERVISOR_KEYS, changesOf, dependentsOf, normalizePermissions, permissionLabel, plainWords, viewOf, withRequirements,
+  SUPERVISOR_TICKS, OPEN_ITEM_APPROVER_KEYS, DAY_TO_DAY_PERMISSIONS, changesOf, dependentsOf, normalizePermissions, permissionLabel, plainWords, viewOf, withRequirements,
 } from "./permissions";
 
 describe("Decisions batch (10 November 2026): Print liquidation report, Branch Supervisor", () => {
@@ -28,6 +28,7 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
     expect(SUPERVISOR_TICKS.map((t) => t.plain)).toEqual([
       "Everything a Loan Associate can do (within their branches)",
       "Approve or reject myloans changes (Open Items) for their branches",
+      "Move a hold to another person (within their branches)",
     ]);
   });
 });
@@ -177,11 +178,12 @@ describe("Holds and Journey amounts permissions", () => {
     expect(WORKFLOW_PERMISSIONS).toEqual(expect.arrayContaining([P.HOLDS_RAISE, P.HOLDS_RESOLVE]));
     expect(ADMIN_PERMISSIONS).not.toContain(P.HOLDS_RAISE);
     expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_TRANSFER);
-    // Decision 10 November 2026: Finance no longer moves holds; Admin does. The former Branch Supervisors keep
-    // it as a per-person grant (D-010); the LA Supervisor/Head default is LA + Open Items (D-002).
+    // Decision 10 November 2026: Finance no longer moves holds. D-029 (17 Nov 2026): moving holds is a default
+    // tick of the LA Supervisor/Head (no per-person legacy grants); the Superadmin has no day-to-day action (D-028).
     expect(ROLE_DEFAULTS.FIN.permissions).not.toContain(P.HOLDS_TRANSFER);
-    expect(ROLE_DEFAULTS.SUP.permissions).not.toContain(P.HOLDS_TRANSFER);
-    expect(FORMER_SUPERVISOR_KEYS).toContain(P.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.SUP.permissions).toContain(P.HOLDS_TRANSFER);
+    expect(ROLE_DEFAULTS.SUPERADMIN.permissions).not.toContain(P.HOLDS_TRANSFER);
+    expect(DAY_TO_DAY_PERMISSIONS).toContain(P.HOLDS_TRANSFER);
     expect(permissionLabel(P.HOLDS_TRANSFER)).toBe("Move a hold to another person");
     expect(ALL_PERMISSIONS as readonly string[]).not.toContain("holds:resolve_any");
     expect(ADMIN_PERMISSIONS).toContain(P.HOLDS_MANAGE);

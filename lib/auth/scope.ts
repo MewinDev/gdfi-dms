@@ -25,6 +25,16 @@ export function loanRelationScope(user: ScopeUser): { loan?: { branchId: { in: s
   return s.branchId ? { loan: { branchId: s.branchId } } : {};
 }
 
+/**
+ * Prisma where-clause on CashAdvance (D-019): the requesting processor's branch AND the loan of every line
+ * in the person's access (a request that spans an out-of-scope loan is not listed).
+ */
+export function advanceScope(user: ScopeUser): { branchId?: { in: string[] }; lines?: { every: { OR: ({ transactionId: null } | { transaction: { loan: { branchId: { in: string[] } } } })[] } } } {
+  const s = loanScope(user);
+  if (!s.branchId) return {};
+  return { branchId: s.branchId, lines: { every: { OR: [{ transactionId: null }, { transaction: { loan: { branchId: s.branchId } } }] } } };
+}
+
 /** Is this branch in the person's access? */
 export function inScope(user: ScopeUser, branchId: string | null | undefined): boolean {
   if (user.scopeBranchIds === null) return true;

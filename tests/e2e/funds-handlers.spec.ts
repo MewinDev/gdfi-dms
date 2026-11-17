@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith } from "./helpers";
+import { SUPERADMIN, signInWith } from "./helpers";
 import { cleanTestRoles, db, resetLoans } from "./db";
 
 /**
@@ -53,8 +53,8 @@ async function fixtures() {
   await db.cashAdvance.create({ data: { ...base, number: FT_DONE, status: "LIQUIDATED", approvedCents: 120_000, releasedCents: 120_000, releasedAt: new Date(), fundsTypeId: "fundstype_ft", fundsTypeCode: "FT", fundsTypeName: "Fund transfer", lines: line } });
   const caRole = await db.role.create({ data: { key: "C_Z_FIN_CASH", name: "Z Finance cash", permissions: ["loans:view", ...CA_KEYS] } });
   const ftRole = await db.role.create({ data: { key: "C_Z_FIN_TRANSFER", name: "Z Finance transfer", permissions: ["loans:view", ...FT_KEYS] } });
-  await db.user.create({ data: { email: "zz.fin.cash@gdfi.ph", name: "Zz Cash Finance", roleId: caRole.id, isTestUser: true, allBranches: true } });
-  await db.user.create({ data: { email: "zz.fin.transfer@gdfi.ph", name: "Zz Transfer Finance", roleId: ftRole.id, isTestUser: true, allBranches: true } });
+  await db.user.create({ data: { email: "zz.fin.cash@gdfi.ph", name: "Zz Cash Finance", roleId: caRole.id, isTestUser: true, allBranches: true, handlesCa: true } });
+  await db.user.create({ data: { email: "zz.fin.transfer@gdfi.ph", name: "Zz Transfer Finance", roleId: ftRole.id, isTestUser: true, allBranches: true, handlesFt: true } });
   // Each one-type Finance approves its own type (bands per type).
   await db.approvalBand.deleteMany({});
   await db.approvalBand.create({ data: { fundsTypeId: "fundstype_ca", fromCents: 0, roleId: caRole.id } });
@@ -102,7 +102,7 @@ test("Both types: the Type filter; the buttons follow the type's ticks (no Relea
   await expect(page.locator(`[data-advance="${FT}"]`).first()).toBeAttached();
   // An approver of fund transfers without Release: To release shows the plain line for its type.
   const role = await db.role.create({ data: { key: "C_Z_FT_APPROVER", name: "Z Approver transfer", permissions: ["loans:view", "funds:ft_view", "funds:ft_approve"] } });
-  await db.user.create({ data: { email: "zz.ft.approver@gdfi.ph", name: "Zz Transfer Approver", roleId: role.id, isTestUser: true, allBranches: true } });
+  await db.user.create({ data: { email: "zz.ft.approver@gdfi.ph", name: "Zz Transfer Approver", roleId: role.id, isTestUser: true, allBranches: true, handlesFt: true } });
   const fin = await db.user.findUniqueOrThrow({ where: { email: "test.finance@gdfi.ph" } });
   await db.cashAdvance.update({ where: { number: FT }, data: { status: "APPROVED", approvedCents: 120_000, approvedById: fin.id, approvedAt: new Date() } });
   await signInWith(page, { other: "Zz Transfer Approver (Z Approver transfer)" });
@@ -116,7 +116,7 @@ test("Both types: the Type filter; the buttons follow the type's ticks (no Relea
 test("Role editor: two blocks under Funds; unticking Release fund transfers says who loses it", async ({ page }) => {
   const fin = await db.role.findUniqueOrThrow({ where: { key: "FIN" } });
   const users = await db.user.count({ where: { roleId: fin.id, active: true } });
-  await signInWith(page, "Continue as Admin");
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
   await page.goto(`/admin/settings?open=roles&edit=${fin.id}`);
   const ca = page.locator('[data-subgroup="Cash advance"]');
   const ft = page.locator('[data-subgroup="Fund transfer"]');
@@ -139,7 +139,7 @@ test("Role editor: two blocks under Funds; unticking Release fund transfers says
 });
 
 test("Settings: who handles each type, the 'Nobody can release fund transfers.' line, the bands' Type switch", async ({ page }) => {
-  await signInWith(page, "Continue as Admin");
+  await signInWith(page, SUPERADMIN); // the Roles area (its health line) is the Superadmin's (D-023)
   await page.goto("/admin/settings?open=funds-types");
   const ftBlock = page.locator('[data-who-handles-type="FT"]');
   await expect(page.locator('[data-who-handles-type="CA"] [data-handler-step="release"]')).toContainText("Test Finance");

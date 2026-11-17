@@ -422,7 +422,7 @@ export async function createTransactionOfType(
 
 // ---------------------------------------------------------------------------
 // Refresh from MyLoans (the button, loans:refresh): a refresh now, with the result in plain words.
-export const NO_REFRESH = "Ask an Admin to turn on \"Refresh a loan from MyLoans\" for your role.";
+export const NO_REFRESH = "Ask a Superadmin to turn on \"Refresh a loan from MyLoans\" for your role.";
 // ---------------------------------------------------------------------------
 
 export async function refreshFromMyLoans(user: CurrentUser, loanId: string): Promise<{ ok: true; changed: boolean; minor: boolean } | { ok: false; message: string }> {

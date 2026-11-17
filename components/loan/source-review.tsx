@@ -159,7 +159,7 @@ export function SourceReviewSheet({ review, open, onClose }: { review: ReviewDat
           </>
         ) : (
           <>
-            <p className="rounded-xl bg-fill px-3 py-2 text-[14px] font-semibold text-navy" data-source-waiting>Waiting for Admin to review.</p>
+            <p className="rounded-xl bg-fill px-3 py-2 text-[14px] font-semibold text-navy" data-source-waiting>Waiting for an approver to review.</p>
             <div className="flex justify-end"><SheetCancel>Close</SheetCancel></div>
           </>
         )}
@@ -178,7 +178,7 @@ export function SourceReviewEntry({ review }: { review: ReviewData }) {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1">
           <h2 id="source-h" className="flex items-center gap-2 text-lg font-bold text-bad-fg"><AlertIcon size={20} /> MyLoans changes · Needs review</h2>
-          <p className="text-[15px]">{review.category === "MATERIAL" ? `Changed: ${review.fields}.` : review.category === "REPLACEMENT" ? `MyLoans gave this loan a replacement PN.` : "MyLoans says this loan is cancelled or not released."} {review.canReview ? "" : "Waiting for Admin to review."}</p>
+          <p className="text-[15px]">{review.category === "MATERIAL" ? `Changed: ${review.fields}.` : review.category === "REPLACEMENT" ? `MyLoans gave this loan a replacement PN.` : "MyLoans says this loan is cancelled or not released."} {review.canReview ? "" : "Waiting for an approver to review."}</p>
         </div>
         <button type="button" className="btn-navy shrink-0" onClick={() => setOpen(true)}>Review</button>
       </div>

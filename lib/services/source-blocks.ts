@@ -7,8 +7,8 @@ import type { TransactionCode } from "@/lib/rules";
  * While a MyLoans review item is open: what is blocked. Never because MyLoans did not answer.
  * (Kept apart from source-sync so Send and cash requests can ask without an import cycle.)
  */
-export const CANCELLED_REASON = "MyLoans says this loan is cancelled. Admin is reviewing.";
-export const CHANGED_REASON = "MyLoans changed this loan. Admin is reviewing.";
+export const CANCELLED_REASON = "MyLoans says this loan is cancelled. An approver is reviewing it.";
+export const CHANGED_REASON = "MyLoans changed this loan. An approver is reviewing it.";
 
 /** Why Send is blocked for this transaction now, or null. */
 export async function sendBlockReason(db: Tx | typeof prisma, loanId: string, txnCode: string): Promise<string | null> {

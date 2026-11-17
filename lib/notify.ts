@@ -37,10 +37,10 @@ export async function branchLaUserIds(tx: Tx, branchId: string): Promise<string[
   return rows.map((r) => r.id);
 }
 
-/** Supervisors (users who may override automatic results). */
-export async function supervisorUserIds(tx: Tx): Promise<string[]> {
+/** Supervisors (users who may override automatic results) whose access has the loan's branch (D-019). */
+export async function supervisorUserIds(tx: Tx, branchId: string): Promise<string[]> {
   const rows = await tx.user.findMany({
-    where: holdsWhere(PERMISSIONS.RULES_OVERRIDE),
+    where: andWhere(holdsWhere(PERMISSIONS.RULES_OVERRIDE), worksAtWhere(branchId)),
     select: { id: true },
   });
   return rows.map((r) => r.id);

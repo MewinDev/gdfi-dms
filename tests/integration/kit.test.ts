@@ -178,7 +178,7 @@ describe("Manual Test Kit on the test database", () => {
     expect(await prisma.userBranch.count({ where: { user: { email: "kit.la.roving@example.test" } } })).toBe(0);
     expect(users.every((u) => u.email.endsWith("@example.test"))).toBe(true);
     // The supervisors use the built-in LA Supervisor/Head role (key SUP, the former Branch Supervisor), not a kit-made one,
-    // and keep "Move a hold" as a per-person grant (D-010).
+    // whose default moves holds (D-029); no per-person legacy grants.
     expect((await prisma.role.findFirstOrThrow({ where: { name: SUPERVISOR_ROLE_NAME } })).key).toBe("SUP");
     expect(await prisma.role.count({ where: { name: SUPERVISOR_ROLE_NAME } })).toBe(1);
     expect((await asUser("kit.supervisor@example.test")).permissions.has("holds:transfer")).toBe(true);

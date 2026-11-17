@@ -94,7 +94,7 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   const role = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Angono" } });
   await db.user.create({ data: { email: "zz.la2@gdfi.ph", name: "Second Loan Associate", roleId: role.id, isTestUser: true, branches: { create: [{ branchId: loanBranch.id }] } } });
-  // The built-in Branch Supervisor of the loan's branch (Finance no longer moves holds).
+  // An LA Supervisor/Head of the loan's branch who kept the former Branch Supervisor ticks (D-010; Finance no longer moves holds).
   const supRole = await db.role.findUniqueOrThrow({ where: { key: "SUP" } });
   await db.user.create({ data: { email: "zz.angono.sup@gdfi.ph", name: "Zz Angono Supervisor", roleId: supRole.id, isTestUser: true, branches: { create: [{ branchId: loanBranch.id }] } } });
 
@@ -122,8 +122,8 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(summary.locator("[data-transfer-hold]")).toHaveCount(0);
 
-  // The Branch Supervisor of the loan's branch ("Move a hold to another person"): Transfer hold, never Resume.
-  await signInWith(page, { other: "Zz Angono Supervisor (Branch Supervisor)" });
+  // The LA Supervisor/Head of the loan's branch ("Move a hold to another person"): Transfer hold, never Resume.
+  await signInWith(page, { other: "Zz Angono Supervisor (LA Supervisor/Head)" });
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(summary.locator("[data-only-holder]")).toHaveText("Only Test Loan Associate can resume this.");
   await expect(summary.locator("[data-resume]")).toHaveCount(0);

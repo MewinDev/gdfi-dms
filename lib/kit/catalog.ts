@@ -7,7 +7,7 @@ import { buildPn } from "@/lib/pn/format";
 
 export const KIT_EMAIL_DOMAIN = "@example.test";
 
-export type KitAccountKey = "superadmin" | "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
+export type KitAccountKey = "superadmin" | "superadmin2" | "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
   | "areaSupervisor" | "laAreaExcept" | "laRoving" | "laAlicia" | "laNoRefresh" | "financeCash" | "financeTransfer" | "approverCash" | "approverTransfer";
 
 export interface KitAccount {
@@ -29,6 +29,8 @@ export const KIT_L1 = { division: "Branch Division", area: "LUZON 1 (NGMA + RIZA
 export const KIT_ACCOUNTS: KitAccount[] = [
   // The Superadmin (D-002, D-023): the permission matrix, per-user overrides, All branches. Makes the kit's sample roles.
   { key: "superadmin", email: `kit.superadmin${KIT_EMAIL_DOMAIN}`, name: "Superadmin", role: "SUPERADMIN", branches: "ALL" },
+  // A second Superadmin (D-028): one can always fix the other's access.
+  { key: "superadmin2", email: `kit.superadmin2${KIT_EMAIL_DOMAIN}`, name: "Superadmin Two", role: "SUPERADMIN", branches: "ALL" },
   { key: "admin", email: `kit.admin${KIT_EMAIL_DOMAIN}`, name: "Admin", role: "ADMIN", branches: "ALL" },
   { key: "finance", email: `kit.finance${KIT_EMAIL_DOMAIN}`, name: "Finance", role: "FIN", branches: "ALL" },
   // Funds handled by different people: Finance and an approver for each type (only that type's ticks).

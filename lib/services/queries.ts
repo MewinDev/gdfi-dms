@@ -157,7 +157,8 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
   if (f.tab === "exceptions") where.exceptions = { some: { status: "OPEN" } };
   if (f.stage) where.stage = f.stage;
   if (f.classification) where.classification = f.classification as "FINANCING" | "REFINANCING";
-  if (f.branch) where.branchId = f.branch;
+  // ANDed onto the scope, never replacing it: a branch outside the person's access shows nothing (D-019).
+  if (f.branch) where.AND = [{ branchId: f.branch }];
   if (f.area) where.branch = { areaId: f.area };
   if (f.loanType) where.loanType = f.loanType;
   if (f.holdReason) where.holds = { some: { resumedAt: null, ...(f.holdReason === "ANY" ? {} : { reasonId: f.holdReason }) } };

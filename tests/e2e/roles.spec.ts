@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { signIn, signInWith } from "./helpers";
+import { SUPERADMIN, signInWith } from "./helpers";
 import { ROLE_DEFAULTS } from "../../lib/auth/permissions";
 
 /** The seed creates one built-in role per ROLE_DEFAULTS entry (prisma/seed.ts); no custom roles. */
@@ -20,7 +20,7 @@ test.afterAll(async () => {
 });
 
 test("Custom role from a copy: ticks, plain words, save, assign, sign in, then make inactive", async ({ page }) => {
-  await signIn(page, "admin");
+  await signInWith(page, SUPERADMIN); // roles are the Superadmin's (D-023)
   await page.goto("/admin/settings");
   const card = page.getByRole("region", { name: "People and access" });
   await expect(card.getByRole("link", { name: /^Roles and access/ })).toContainText(`${SEEDED_ROLES} roles · 0 custom`);
@@ -110,7 +110,7 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   expect(settings?.status()).toBe(404); // refused: Settings
 
   // Move the user to another role, then the role can be made inactive.
-  await signIn(page, "admin");
+  await signInWith(page, SUPERADMIN);
   const zed = await db.user.findUniqueOrThrow({ where: { email: "zz.checker@gdfi.ph" } });
   await page.goto(`/admin/settings?open=roles&edit=${role.id}`);
   await dialog(page).getByRole("button", { name: "Make inactive" }).click();
@@ -135,14 +135,19 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   await expect(dialog(page).getByRole("listitem").filter({ hasText: "Z Branch Checker" })).toHaveCount(0); // default filter: Active
 });
 
-test("Admin is an ordinary role: its ticks can change; Manage roles is protected by the lock-out rules", async ({ page }) => {
-  await signIn(page, "admin");
+test("Admin is an ordinary role: its ticks can change; Manage permissions is protected by the lock-out rules", async ({ page }) => {
+  await signInWith(page, SUPERADMIN);
   await page.goto("/admin/settings?open=roles");
   await dialog(page).getByRole("link", { name: "Edit Admin" }).click();
   await expect(dialog(page).getByText(/Admin is locked/)).toHaveCount(0);
-  await expect(tickOf(page, "roles:manage")).toBeChecked();
+  // D-023: Admin does not manage permissions by default; the tick is there and can change.
+  await expect(tickOf(page, "roles:manage")).not.toBeChecked();
   await expect(tickOf(page, "roles:manage")).toBeEnabled();
+  // The Superadmin cannot take it away from their own role.
+  await dialog(page).getByRole("button", { name: "Back" }).click();
+  await dialog(page).getByRole("link", { name: "Edit Superadmin" }).click();
+  await expect(tickOf(page, "roles:manage")).toBeChecked();
   await tickOf(page, "roles:manage").uncheck();
-  await expect(dialog(page).locator("[data-lockout]")).toContainText('You cannot take "Manage roles" away from your own role.');
+  await expect(dialog(page).locator("[data-lockout]")).toContainText('You cannot take "Manage permissions" away from your own role.');
   await expect(page.getByRole("link", { name: "Manage users" }).or(dialog(page).getByRole("link", { name: "See them in Users" })).first()).toBeVisible();
 });

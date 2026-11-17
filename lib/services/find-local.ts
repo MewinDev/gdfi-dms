@@ -161,7 +161,7 @@ export async function savedLoanCard(user: CurrentUser, pn: string, now: Date = n
     : l.closedAt || l.archivedAt ? "Nothing to do: the loan file is closed."
     : problems ? "Fix the open problem first."
     : holds.length ? "Resume the hold when it is cleared."
-    : l._count.sourceChanges ? "Admin reviews the MyLoans change."
+    : l._count.sourceChanges ? "An approver reviews the MyLoans change."
     : nextStepFor(l.stage, { hasOpenException: l._count.exceptions > 0 }).label;
   return {
     pn: l.pn, borrowerName: l.borrowerName, productName: l.productName, branchName: l.branch.name, stage: l.stage, stageText: stageLabel(l.stage),

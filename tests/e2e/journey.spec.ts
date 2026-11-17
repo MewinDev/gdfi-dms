@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith } from "./helpers";
+import { SUPERADMIN, signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -332,8 +332,8 @@ test("Cash amounts: Finance sees them, the LA and the DP see the status only, un
       expect(html).not.toContain("1,500.00");
     }
   }
-  // Admin turns the switch on for the Loan Associate role: the LA sees amounts on the next request.
-  await signInWith(page, BUTTONS.admin);
+  // The Superadmin turns the switch on for the Loan Associate role (D-023): the LA sees amounts on the next request.
+  await signInWith(page, SUPERADMIN);
   const la = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   try {
     await page.goto(`/admin/settings?open=roles&edit=${la.id}`);

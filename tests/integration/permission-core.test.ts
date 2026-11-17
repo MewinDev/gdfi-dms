@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { can } from "@/lib/auth/current-user";
-import { PERMISSIONS as P, ROLE_DEFAULTS, OPEN_ITEM_APPROVER_KEYS } from "@/lib/auth/permissions";
+import { PERMISSIONS as P, ROLE_DEFAULTS, OPEN_ITEM_APPROVER_KEYS, SUP_DEFAULT_BEFORE_D029 } from "@/lib/auth/permissions";
 import { holdsWhere } from "@/lib/auth/holders";
 import { canFunds, typeWhere } from "@/lib/funds/access";
 import { loanScope } from "@/lib/auth/scope";
@@ -22,7 +22,7 @@ import { saveFundTypeTicks, saveUserOverrides, setOpenItemApprover } from "@/lib
 import { saveRoleMatrix } from "@/lib/services/roles";
 import { getLoanForUser, listLoans } from "@/lib/services/queries";
 import { mayOpenReceipt, mayOpenStageFile } from "@/lib/services/file-access";
-import { planRoleMigration } from "@/lib/services/role-migration";
+import { MIGRATION_NOTE, planRoleMigration } from "@/lib/services/role-migration";
 import { userPermissions } from "@/lib/auth/effective";
 import { applyChange, lockoutRefusal, type AccessSnapshot } from "@/lib/services/lockout";
 import { asUser, cleanLoans } from "./helpers";
@@ -221,7 +221,7 @@ describe("every built-in role x another branch: list, count, detail and files ar
 
 describe("D-010 role migration keeps each moved person's abilities", () => {
   const role = (id: string, key: string, permissions: string[], builtIn = false) => ({ id, key, name: key, builtIn, active: true, permissions });
-  const user = (id: string, roleId: string) => ({ id, name: id, email: `${id}@x`, active: true, roleId, handlesCa: false, handlesFt: false, permissionOverrides: [] });
+  const user = (id: string, roleId: string) => ({ id, name: id, email: `${id}@x`, active: true, roleId, handlesCa: false, handlesFt: false, permissionOverrides: [] as { key: string; effect: string; note?: string }[] });
 
   it("approver and per-type Finance roles -> Finance, exactly the same abilities", () => {
     const fin = role("r-fin", "FIN", ROLE_DEFAULTS.FIN.permissions, true);
@@ -238,14 +238,30 @@ describe("D-010 role migration keeps each moved person's abilities", () => {
     expect(plan.roleUpdates.filter((r) => r.deactivate).map((r) => r.key).sort()).toEqual(["C_APPROVER_CA", "C_FIN_FT"]);
   });
 
-  it("Branch Supervisor people keep their old ticks as grants and gain the LA Supervisor/Head defaults", () => {
-    const sup = role("r-s", "SUP", [P.LOANS_VIEW, P.LOANS_SEARCH, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.REPORTS_TAT], true);
+  it("D-029: the old Branch Supervisor role gets today's LA Supervisor/Head default (moves holds); no per-person grants; earlier grants are removed and listed", () => {
+    const sup = { ...role("r-s", "SUP", [P.LOANS_VIEW, P.LOANS_SEARCH, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.REPORTS_TAT], true), name: "Branch Supervisor" };
     const plan = planRoleMigration([sup], [user("u3", "r-s")]);
-    const m = plan.moves.find((x) => x.userId === "u3")!;
-    expect(m.grants).toEqual(expect.arrayContaining([P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.REPORTS_TAT]));
-    const after = userPermissions(ROLE_DEFAULTS.SUP.permissions, m.grants.map((key) => ({ key, effect: "GRANT" as const })), { handlesCa: false, handlesFt: false });
-    for (const k of sup.permissions) expect(after.has(k as never), k).toBe(true);
-    expect(after.has(P.SOURCE_REVIEW)).toBe(true);
+    expect(plan.moves.find((x) => x.userId === "u3")).toBeUndefined();
+    expect(plan.roleUpdates.find((r) => r.key === "SUP")).toMatchObject({ name: "LA Supervisor/Head", permissions: ROLE_DEFAULTS.SUP.permissions });
+    expect(ROLE_DEFAULTS.SUP.permissions).toContain(P.HOLDS_TRANSFER);
+    // Someone the earlier run gave grants to: removed and listed.
+    const withGrants = { ...user("u4", "r-s"), permissionOverrides: [{ key: P.REPORTS_TAT, effect: "GRANT", note: MIGRATION_NOTE }, { key: P.MONITOR_DP, effect: "GRANT", note: "Given by hand" }] };
+    const again = planRoleMigration([{ ...sup, name: "LA Supervisor/Head", permissions: SUP_DEFAULT_BEFORE_D029 }], [withGrants]);
+    expect(again.removals).toEqual([expect.objectContaining({ userId: "u4", keys: [P.REPORTS_TAT] })]); // a hand-given grant stays
+    expect(again.roleUpdates.find((r) => r.key === "SUP")!.permissions).toContain(P.HOLDS_TRANSFER);
+    // A role someone changed by hand keeps its ticks.
+    const custom = planRoleMigration([{ ...sup, name: "LA Supervisor/Head", permissions: [P.LOANS_VIEW] }], []);
+    expect(custom.roleUpdates.find((r) => r.key === "SUP")).toBeUndefined();
+  });
+
+  it("D-028: the Superadmin default has no day-to-day action; one active Superadmin is warned", () => {
+    for (const k of [P.FUNDS_CA_APPROVE, P.FUNDS_FT_RELEASE, P.DP_RECEIVE, P.RETURNS_ACCEPT, P.HOLDS_TRANSFER, P.SOURCE_REVIEW, P.SOURCE_REVIEW_BORROWER]) expect(ROLE_DEFAULTS.SUPERADMIN.permissions, k).not.toContain(k);
+    for (const k of [P.ROLES_MANAGE, P.ACCESS_ALL_BRANCHES, P.USERS_EDIT, P.SETTINGS_SYSTEM, P.BRANCHES_MANAGE]) expect(ROLE_DEFAULTS.SUPERADMIN.permissions, k).toContain(k);
+    const saRole = role("r-sa", "SUPERADMIN", ROLE_DEFAULTS.SUPERADMIN.permissions, true);
+    expect(planRoleMigration([saRole], [user("sa1", "r-sa")]).warnings.join(" ")).toMatch(/Only one active Superadmin/);
+    expect(planRoleMigration([saRole], [user("sa1", "r-sa"), user("sa2", "r-sa")]).warnings.join(" ")).not.toMatch(/Only one active Superadmin/);
+    // Admin approves Open Items by default (D-029).
+    for (const k of [P.SOURCE_REVIEW, P.SOURCE_REVIEW_BORROWER]) expect(ROLE_DEFAULTS.ADMIN.permissions, k).toContain(k);
   });
 
   it("Admin loses Manage permissions only when an active Superadmin exists", () => {

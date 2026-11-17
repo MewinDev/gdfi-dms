@@ -739,7 +739,7 @@ async function planList(list: ImportListKey, records: { line: number; cells: Rec
           finish(row, email, null); continue;
         }
         if (!mayAccess && (cur ? afterBranches !== beforeBranches || (access.homeBranchId ?? null) !== (cur.homeBranchId ?? null) && !!homeCode : !keepBranches || !!homeCode)) {
-          row.bad("branches", "your role cannot change branch access. Ask an Admin to turn on \"Change branch access\" for your role.");
+          row.bad("branches", "your role cannot change branch access. Ask a Superadmin to turn on \"Change branch access\" for your role.");
           finish(row, email, null); continue;
         }
         const changes = cur

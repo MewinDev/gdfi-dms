@@ -66,7 +66,7 @@ describe("Find loan and the PN check", () => {
   });
 
   it("the PN format setting changes the rules; the check can be switched off (Admin, settings:pn_format)", async () => {
-    await expect(savePnFormat(la, { enabled: true, prefix: "GD", branchDigits: "3", yearDigits: "4", system: "9", runningDigits: "5" })).rejects.toThrow('Ask an Admin to turn on "Change the PN format" for your role.');
+    await expect(savePnFormat(la, { enabled: true, prefix: "GD", branchDigits: "3", yearDigits: "4", system: "9", runningDigits: "5" })).rejects.toThrow('Ask a Superadmin to turn on "Change the PN format" for your role.');
     await expect(savePnFormat(admin, { enabled: true, prefix: "G1", branchDigits: "3", yearDigits: "4", system: "9", runningDigits: "5" })).rejects.toThrow(/Prefix/);
     await savePnFormat(admin, { enabled: true, prefix: "GD", branchDigits: "3", yearDigits: "4", system: "8", runningDigits: "5" });
     expect(await lookupPn(la, ANTIPOLO)).toMatchObject({ kind: "invalid", part: "system" });

@@ -90,9 +90,9 @@ export const EMAIL_EVENTS = {
     body: "{who}: the {transaction} papers for {pn} were {status} on {when}.\n{reason}",
   },
   source_changed: {
-    label: "MyLoans changed a loan (Admin reviews)", to: "Admin, the branch Loan Associates and the processors on it", urgent: false,
+    label: "MyLoans changed a loan (an approver reviews)", to: "The approvers for the branch, the branch Loan Associates and the processors on it", urgent: false,
     subject: "{pn}: MyLoans changed this loan",
-    body: "{reason}\nAdmin is reviewing it. Until then the work it reaches waits.\nWhen: {when}.",
+    body: "{reason}\nAn approver is reviewing it. Until then the work it reaches waits.\nWhen: {when}.",
   },
   borrower_changed: {
     label: "MyLoans corrected a borrower's details (supervisor reviews)", to: "The branch supervisors and approvers who review corrections (Admin when the branch has none)", urgent: false,

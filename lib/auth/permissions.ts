@@ -264,7 +264,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.MYLOANS_VIEW, label: "See when MyLoans was last checked", help: "Show \"MyLoans · Last checked\" on a loan file.", requires: [P.LOANS_VIEW], can: "see when MyLoans was last checked", where: "Loan File, top strip", was: "loans:view" },
       { key: P.LOANS_REFRESH, label: "Refresh a loan from MyLoans", help: "The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now.", requires: [P.MYLOANS_VIEW], view: P.MYLOANS_VIEW, can: "refresh a loan from MyLoans", where: "Loan File, Refresh from MyLoans", was: "none (shown to everyone who sees the loan file)" },
       { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
-      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches; when nobody in the branch has this tick, Admin reviews it.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
+      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
       { key: P.SOURCE_MANAGE, label: "Change MyLoans sync settings", help: "How often loans are checked against MyLoans and the business hours.", can: "change MyLoans sync settings", where: "Settings, MyLoans sync", was: "source:manage" },
       { key: P.MYLOANS_SYNC, label: "Run the MyLoans sync now", help: "The Run now button: check every open loan against MyLoans at once.", can: "run the MyLoans sync now", where: "Settings, MyLoans sync, Run now", was: "source:manage" },
     ],
@@ -410,8 +410,21 @@ export const FUNDS_BOTH_TYPES: Permission[] = [
 
 /** The Loan Associate's ticks (also the base of the LA Supervisor/Head, D-002). */
 const LA_PERMISSIONS: Permission[] = [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING, P.PAPERS_RECEIVE_LATE, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP];
-/** Approve or reject myloans changes ("Can approve LA Open Items", D-010): the LA Supervisor/Head's default. */
+/**
+ * Approve or reject myloans changes ("Can approve LA Open Items", D-010). Purely permission-based (D-029):
+ * anyone with these ticks approves for the branches in their access; with "All branches", every branch.
+ * Default on the LA Supervisor/Head and on Admin (All branches); never an automatic fallback.
+ */
 export const OPEN_ITEM_APPROVER_KEYS: Permission[] = [P.SOURCE_REVIEW, P.SOURCE_REVIEW_BORROWER];
+
+/**
+ * Day-to-day actions (D-028, 17 Nov 2026): approving, releasing funds, accepting and forwarding, working
+ * jobs, moving holds, resolving problems and LTO advisories. Not in the Superadmin's default (setup and
+ * configuration only); the Superadmin can still tick them on a role or a person.
+ */
+export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
+  ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY,
+];
 
 /**
  * Seeded built-in roles: the defaults that "Reset to default" restores. The ten decided roles (D-002) plus
@@ -420,10 +433,10 @@ export const OPEN_ITEM_APPROVER_KEYS: Permission[] = [P.SOURCE_REVIEW, P.SOURCE_
 export const ROLE_DEFAULTS: Record<string, { name: string; description: string; canSignIn: boolean; sortOrder: number; branchAccess: "ASSIGNED" | "ALL"; permissions: Permission[] }> = {
   SUPERADMIN: {
     name: "Superadmin", canSignIn: true, sortOrder: 0, branchAccess: "ALL",
-    description: "Full access: users, the permission matrix and overrides, All branches, settings, the myloans integration. Work steps only if ticked.",
-    // Everything except the loan-file work steps (like Admin): not a processor, LA or Finance by default (v2
-    // section 7); and not an Open Item approver (the LA Supervisor/Head's work, D-010). All tickable.
-    permissions: ALL_PERMISSIONS.filter((k) => !WORKFLOW_PERMISSIONS.includes(k) && k !== P.LTO_REPORTS_NOTIFY && !OPEN_ITEM_APPROVER_KEYS.includes(k)),
+    description: "Setup and configuration: users, the permission matrix and overrides, All branches, settings, the myloans integration. No day-to-day actions unless ticked.",
+    // Every setup and configuration right; no day-to-day action (D-028): not an approver, not Finance, not a
+    // processor or LA, no hold moves. All tickable.
+    permissions: ALL_PERMISSIONS.filter((k) => !DAY_TO_DAY_PERMISSIONS.includes(k)),
   },
   LA: {
     name: "Loan Associate", canSignIn: true, sortOrder: 1, branchAccess: "ASSIGNED",
@@ -444,19 +457,22 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
   /** Read-only, all branches: the Monitoring page and LTO advisories. No loan files, no amounts (D-010). */
   MONITOR: { name: "Monitoring (read-only)", canSignIn: true, sortOrder: 9, branchAccess: "ALL", description: "Watches processors and LTO offices (Monitoring page) and resolves LTO advisories. Read-only.", permissions: [P.MONITOR_DP, P.MONITOR_LTO, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY] },
   /**
-   * LA Supervisor/Head (D-002, D-010): every LA tick plus approving or rejecting myloans changes. The key
-   * SUP is the former Branch Supervisor (also the Area Supervisor: the same role with Area access on the
-   * person); its people keep their old supervisor ticks as per-user grants (scripts/migrate-roles-d010.ts).
+   * LA Supervisor/Head (D-002, D-010, D-029): every LA tick, approving or rejecting myloans changes, and
+   * moving holds, for the branches in the person's access. The key SUP is the former Branch Supervisor
+   * (also the Area Supervisor: the same role with Area access on the person). No per-user legacy grants.
    */
-  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission plus approving or rejecting myloans changes (Open Items) for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS] },
+  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission, approving or rejecting myloans changes (Open Items) and moving holds, for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER] },
 };
-/** The Branch Supervisor's ticks before D-010: its people keep them as per-user grants when moved to LA Supervisor/Head. */
-export const FORMER_SUPERVISOR_KEYS: Permission[] = [P.LOANS_VIEW, P.LOANS_SEARCH, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, P.SOURCE_REVIEW_BORROWER, ...SOURCE_STRIP];
 /** The plain ticks of the LA Supervisor/Head role (key SUP) and their keys (the report and the role's docs). */
 export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
   { plain: "Everything a Loan Associate can do (within their branches)", keys: LA_PERMISSIONS },
   { plain: "Approve or reject myloans changes (Open Items) for their branches", keys: OPEN_ITEM_APPROVER_KEYS },
+  { plain: "Move a hold to another person (within their branches)", keys: [P.HOLDS_TRANSFER] },
 ];
+/** The SUP role's default before D-029 (17 Nov 2026), so the migration can bring an unchanged role up to date. */
+export const SUP_DEFAULT_BEFORE_D029: Permission[] = [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS];
+/** The Superadmin's default before D-028 was final (17 Nov 2026). */
+export const SUPERADMIN_DEFAULT_BEFORE_D028: Permission[] = ALL_PERMISSIONS.filter((k) => !WORKFLOW_PERMISSIONS.includes(k) && k !== P.LTO_REPORTS_NOTIFY && !OPEN_ITEM_APPROVER_KEYS.includes(k));
 
 /** Role chips used everywhere (role key -> label and CSS token). */
 export const ROLE_CHIPS: Record<string, { label: string; token: string }> = {

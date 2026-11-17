@@ -36,7 +36,7 @@ export function PnFormatForm({ value, readOnly = false }: { value: PnFormat; rea
         <div className="flex flex-col gap-3" data-pn-readonly>
           <p className="text-sm">PN check: <span className={`chip ${f.enabled ? "c-ok" : "bg-warn-bg text-warn-fg"}`}>{f.enabled ? "On" : "Off: any PN is looked up"}</span></p>
           {patternBox}
-          <p className="text-[13px] text-ink-2">Read only. Ask an Admin to turn on &ldquo;Change the PN format&rdquo; for your role to change it.</p>
+          <p className="text-[13px] text-ink-2">Read only. Ask a Superadmin to turn on &ldquo;Change the PN format&rdquo; for your role to change it.</p>
         </div>
       ) : (
       <form action={action} className="flex flex-col gap-3">

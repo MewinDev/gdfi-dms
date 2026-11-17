@@ -109,7 +109,7 @@ describe("1. Return the cash", () => {
     };
     // Who may: only those who review MyLoans changes.
     // The LA Supervisor/Head (sup) approves myloans changes since D-010; the LA and the DP do not.
-    for (const u of [la, dp]) await expect(askCashBack(u, item.id, "Return it please")).rejects.toThrow(/Only Admin reviews/);
+    for (const u of [la, dp]) await expect(askCashBack(u, item.id, "Return it please")).rejects.toThrow(/Only approvers review/);
     void sup;
     // A note of 5 to 500 characters.
     await expect(askCashBack(admin, item.id)).rejects.toThrow(/at least 5 characters/);

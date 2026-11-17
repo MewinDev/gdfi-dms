@@ -119,7 +119,7 @@ test("Material change: LA sees it read-only (no amounts); Open items group; Admi
   await entry.getByRole("button", { name: "Review" }).click();
   const sheet = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
   await expect(sheet.locator("[data-amount-hidden]")).toHaveText("Amount changed");
-  await expect(sheet.locator("[data-source-waiting]")).toHaveText("Waiting for Admin to review.");
+  await expect(sheet.locator("[data-source-waiting]")).toHaveText("Waiting for an approver to review.");
   await sheet.getByRole("button", { name: "Close" }).last().click();
   // Check documents: the Open items card has the "MyLoans changes" group.
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
@@ -130,7 +130,7 @@ test("Material change: LA sees it read-only (no amounts); Open items group; Admi
   await noSideways(page);
   // Send is held only for the transactions the change reaches (Mortgage would be removed).
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
-  await expect(page.locator('[id^="send-why-"]')).toHaveText("MyLoans changed this loan. Admin is reviewing.");
+  await expect(page.locator('[id^="send-why-"]')).toHaveText("MyLoans changed this loan. An approver is reviewing it.");
 
   await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${PN}?tab=todo&review=1`);

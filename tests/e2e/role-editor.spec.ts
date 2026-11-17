@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db } from "./db";
-import { signIn } from "./helpers";
+import { SUPERADMIN, signInWith } from "./helpers";
 
 /**
  * Settings > Roles ("roles are just ticks"): the grouped editor, View / Change pairs, the search and the
@@ -27,7 +27,7 @@ test.beforeEach(cleanup);
 test.afterEach(cleanup);
 
 test("Roles: the ticks grouped in plain words, View / Change side by side, search and technical names", async ({ page }) => {
-  await signIn(page, "admin");
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
   const la = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   await page.goto(`/admin/settings?open=roles&edit=${la.id}`);
   const groups = page.locator("[data-group]");
@@ -52,7 +52,7 @@ test("Roles: the ticks grouped in plain words, View / Change side by side, searc
 test("Roles: the impact preview before Save, the confirm before removing, and the last change on the card", async ({ page }) => {
   const role = await db.role.create({ data: { key: "C_ZZ_E2E_REFRESHERS", name: ROLE, permissions: ["loans:view", "myloans:view"], branchAccess: "ALL" } });
   await db.user.create({ data: { email: EMAIL, name: "Zz E2E Refresher", roleId: role.id, isTestUser: true, allBranches: true } });
-  await signIn(page, "admin");
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
   await page.goto(`/admin/settings?open=roles&edit=${role.id}`);
   const refresh = page.locator('[data-perm="loans:refresh"]').getByRole("checkbox");
   await refresh.check();
@@ -79,14 +79,14 @@ test("Roles: the impact preview before Save, the confirm before removing, and th
   await expect(page.locator(`[data-role-card="${ROLE}"] [data-last-change]`)).toContainText("removed See when MyLoans was last checked, Refresh a loan from MyLoans");
 });
 
-test("Roles: the lock-out block (nobody can take Manage roles away from their own role)", async ({ page }) => {
-  await signIn(page, "admin");
-  const admin = await db.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
+test("Roles: the lock-out block (nobody can take Manage permissions away from their own role)", async ({ page }) => {
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
+  const admin = await db.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } }); // the editor's own role
   await page.goto(`/admin/settings?open=roles&edit=${admin.id}`);
   await page.locator('[data-perm="roles:manage"]').getByRole("checkbox").uncheck();
   const block = page.locator("[data-lockout]");
   await expect(block).toContainText("This cannot be saved");
-  await expect(block).toContainText('You cannot take "Manage roles" away from your own role.');
+  await expect(block).toContainText('You cannot take "Manage permissions" away from your own role.');
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await block.scrollIntoViewIfNeeded();
   await shot(page, "role-editor-lockout");

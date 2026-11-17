@@ -92,7 +92,7 @@ describe("loans:refresh: Refresh a loan from MyLoans", () => {
     expect(noRefresh.permissions.has(P.LOANS_VIEW)).toBe(true);
     expect(noRefresh.permissions.has(P.MYLOANS_VIEW)).toBe(true);
     await expect(refreshFromMyLoans(noRefresh, loan.id)).rejects.toThrow(NO_REFRESH);
-    expect(NO_REFRESH).toBe("Ask an Admin to turn on \"Refresh a loan from MyLoans\" for your role.");
+    expect(NO_REFRESH).toBe("Ask a Superadmin to turn on \"Refresh a loan from MyLoans\" for your role.");
   });
 
   it("ticking it on the role turns it on at the person's next request", async () => {
@@ -121,7 +121,9 @@ describe("notifications follow ticks, not role names", () => {
   it("problems, holds and overdue work: told to people with \"Resolve any problem\" at that branch", async () => {
     const branch = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
     const ids = await overseerIds(prisma, branch.id);
-    expect(ids).toContain(admin.id);
+    // Admin resolves any problem by default; the Superadmin does not (no day-to-day action, D-028).
+    expect(ids).toContain((await asUser("test.admin@gdfi.ph")).id);
+    expect(ids).not.toContain(admin.id);
     expect(ids).not.toContain(la.id);
     const overseer = await userWith("Z Overseer", [P.LOANS_VIEW, P.PROBLEMS_RESOLVE_ANY]);
     expect(await overseerIds(prisma, branch.id)).toContain(overseer.id);

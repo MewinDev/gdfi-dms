@@ -9,6 +9,9 @@ export async function signIn(page: Page, who: "la" | "admin"): Promise<URL> {
   return signInWith(page, who === "admin" ? "Continue as Admin" : "Continue as Loan Associate");
 }
 
+/** The Superadmin (D-023): the only role that changes the permission matrix, role ticks and per-user overrides. */
+export const SUPERADMIN = { other: "Test Superadmin (Superadmin)" } as const;
+
 /** A test user: the button on the sign-in page ("Continue as Admin"), or a name from the "Other test user" list ("Name (Role)"). */
 export type TestUser = string | { other: string };
 

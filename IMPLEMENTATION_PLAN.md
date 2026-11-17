@@ -768,19 +768,20 @@ Some are carried from Step 1; some are new from the contract.
 |---|---|---|
 | Q-N1 | ~~Superseded copies vs "ignore IsSuperseded = 1"~~ | **Resolved by D-022:** link on CIN; "myloans record replaced" when a held row has `ReplacedByExternalLoanId` or a new ExternalLoanId arrives with a held CIN (8.3 #3–#4) |
 | Q-N2 | ~~Product rename vs Rule 1~~ | **Resolved by D-027:** flag "Classification changed since accepted" and a logged reclassify; never silent |
-| Q-N3 | A cash advance covering several transactions: is liquidation due N days after the **last** LTO completion, or per transaction? | Last |
+| Q-N3 | ~~Liquidation due with several transactions~~ | **Resolved by D-032:** N working days after the **last** LTO completion of that fund request |
 | Q-N4 | ~~Who edits scope, CA/FT and the approver tick~~ | **Resolved by D-023** |
-| Q-N5 | Allow test sign-in in **staging** for UAT before Entra exists? | No (staging refuses), unless you want an explicit `ALLOW_TEST_SIGNIN` for UAT |
+| Q-N5 | ~~Test sign-in in staging~~ | **Resolved by D-032:** no; staging uses Entra like production |
 | Q-N6 | ~~Finance approval and bands~~ | **Resolved by D-024:** keep approve-then-release; bands are a setting, off by default (to confirm with Finance) |
-| Q-N7 | Does On Hold pause TAT? (Q13) | No pause; hold time reported separately |
-| Q-N8 | Does the 30-minute sync run 24/7 or office hours only? Do checks continue for loans in safekeeping (years) until "Loan closed/released"? (Q11, Q15) | 24/7 (one API 2 call is cheap); keep syncing until closed |
-| Q-N9 | Accept / Forward now for the existing stages only, with Custodian / QA / Digicur / Archiver in their modules? (Q2) | Yes |
-| Q-N10 | A newer change while an Open Item is pending: supersede (recommended) or update in place? | Supersede (9.2) |
-| Q-N11 | Where is "Processing complete" set, and what signals "fully paid"? (Q15) | Later module; not needed for the foundation |
-| Q-N12 | Rule 4 exact decimals now? (Q16) | Yes, in piece 10 (½ day) |
+| Q-N7 | ~~Does On Hold pause TAT?~~ | **Resolved by D-032:** a "Pauses TAT" tickbox per hold reason (default on for reasons outside the user's control); hold time always recorded and shown; the inbox shows "Paused" |
+| Q-N8 | ~~Sync hours and end~~ | **Resolved by D-032:** 24/7, until "Loan closed/released" |
+| Q-N9 | ~~Accept / Forward scope~~ | **Resolved by D-032:** existing hand-offs now; each new stage's piece adds its own |
+| Q-N10 | ~~Supersede or update in place~~ | **Resolved by D-032:** supersede |
+| Q-N11 | ~~Processing complete / fully paid~~ | **Resolved by D-032:** Processing complete = documents stored in the vault box. Fully paid comes from myloans (required field in `docs/MYLOANS_REPLY_2.md`); "Loan closed/released" is blocked on it |
+| Q-N12 | ~~Rule 4 exact decimals~~ | **Resolved by D-032:** exact decimals now; "1,000" or "1e6" refused with the expected format shown |
 | Q-N13 | ~~Birth date: options D1 / D2 / D3~~ | **Resolved by D-022:** the birth date never arrives; `BirthDateHash` flags a change with no values |
 | Q-N14 | ~~Source of Financing / Refinancing~~ | **Resolved by D-027:** keywords in the product name. API 5 required before go-live |
 | Q-N15 | ~~One or two items for cancel-then-redo~~ | **Resolved by D-025:** one item |
-| Q-N16 | **Keyword matching rule.** The literal "ignore spaces and hyphens" gives false conflicts ("Agriculture Financing", every Refinancing name). Use rule C (keyword at the start of a word; hyphens inside a word ignored)? | Rule C (§3a.2) |
-| Q-N17 | **Starting keywords.** Refinancing `refinanc`, `refi`; Financing `financ` (then "Auto Finance" = Financing) or `financing` (then "Auto Finance" = Can't classify, as v2 intended it not to be Financing)? | `financ`; check against the real PR_PRODUCTS list |
-| Q-N18 | **Go-live cutoff.** D-022 says go-live minus 30 days; myloans suggests the go-live date itself (C4). Keep minus 30? | Keep minus 30 (a setting either way) |
+| Q-N16 | ~~Keyword matching rule~~ | **Resolved by D-031:** case-insensitive, hyphens and extra spaces ignored; Refinancing keyword first, then Financing, else the default (a setting); no conflict state |
+| Q-N17 | ~~Starting keywords~~ | **Resolved by D-031:** Refinancing `refinanc`, `refi`; Financing `financ`; default Refinancing. Check against the real PR_PRODUCTS list before go-live |
+| Q-N18 | ~~Go-live cutoff~~ | **Resolved by D-032:** go-live minus 30 days, a setting |
+| Q-N19 | **Finance and borrower corrections.** Finance has "Review borrower detail corrections" by default with All branches, so under D-029 Finance can decide (and is told about) borrower corrections for every branch. Keep it, or untick it on Finance? | Untick on Finance (the LA Supervisor/Head and Admin decide); one click in the matrix |

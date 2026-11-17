@@ -6,7 +6,8 @@ import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { can, inScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { andWhere, holdsAllWhere, holdsWhere } from "@/lib/auth/holders";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
+import { worksAtWhere } from "@/lib/branches/access";
 import { BORROWER_KEYS, FIELDS, type FieldChange, type Tracked } from "@/lib/myloans/changes";
 import { fmtDateTime } from "@/lib/time";
 import { UserError, NotInScopeError } from "./errors";
@@ -15,8 +16,9 @@ import { UserError, NotInScopeError } from "./errors";
  * "Borrower details" (name, address, contact number, CIF, CIN): MyLoans corrects the borrower, a person
  * decides. Never a silent update and never a block on Send, Accept or funds. One open item per loan (apart
  * from the Admin item for amount, status and replacement); a newer correction updates it and keeps the
- * earlier one in its history. Decided by the people with myloans:review_borrower in the loan's branch
- * (supervisors, approvers), or by Admin when the branch has nobody with the tick.
+ * earlier one in its history. Decided by anyone with myloans:review_borrower whose access includes the
+ * loan's branch (D-029): the branch's LA Supervisor/Head, and approvers with "All branches" (Admin by
+ * default). No automatic fallback: a branch with no approver of its own is shown as a warning instead.
  */
 
 type Db = Tx | typeof prisma;
@@ -42,25 +44,27 @@ export function borrowerDiffs(dms: DmsBorrower, myloans: Pick<Tracked, BorrowerK
   }));
 }
 
-/** People who may decide a correction on a loan of this branch: the tick, and the branch in their own access (not "All branches"). */
-export async function branchDeciderIds(db: Db, branchId: string): Promise<string[]> {
+/**
+ * Everyone who may decide a correction on a loan of this branch (D-029): the tick, and the branch in their
+ * access ("All branches" covers every branch). These are the people told about it.
+ */
+export async function deciderIds(db: Db, branchId: string): Promise<string[]> {
+  const rows = await db.user.findMany({ where: andWhere(holdsWhere(PERMISSIONS.SOURCE_REVIEW_BORROWER), worksAtWhere(branchId)), select: { id: true } });
+  return rows.map((r) => r.id);
+}
+/** The branch's own approvers (the branch assigned to them, not through "All branches"): none = "No approver assigned". */
+export async function branchApproverIds(db: Db, branchId: string): Promise<string[]> {
   const rows = await db.user.findMany({
     where: andWhere({ allBranches: false, branches: { some: { branchId } } }, holdsWhere(PERMISSIONS.SOURCE_REVIEW_BORROWER)),
     select: { id: true },
   });
   return rows.map((r) => r.id);
 }
-/** When the branch has nobody: Admin (those who also review MyLoans changes and hold the tick). */
-async function adminDeciderIds(db: Db): Promise<string[]> {
-  const rows = await db.user.findMany({
-    where: holdsAllWhere([PERMISSIONS.SOURCE_REVIEW_BORROWER, PERMISSIONS.SOURCE_REVIEW]),
-    select: { id: true },
-  });
-  return rows.map((r) => r.id);
-}
-export async function deciderIds(db: Db, branchId: string): Promise<{ ids: string[]; toAdmin: boolean }> {
-  const branch = await branchDeciderIds(db, branchId);
-  return branch.length ? { ids: branch, toAdmin: false } : { ids: await adminDeciderIds(db), toAdmin: true };
+/** What people who cannot decide read while it waits. */
+export function waitingText(deciders: number): string {
+  return deciders
+    ? "Waiting for review by an approver for this branch."
+    : "Nobody can approve this yet. Ask a Superadmin to give someone the approver tick for this branch.";
 }
 
 const list = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
@@ -99,14 +103,13 @@ export async function raiseBorrowerReview(tx: Tx, a: { loanId: string; pn: strin
   }
   const who = await deciderIds(tx, loan.branchId);
   const what = `MyLoans changed the borrower's ${fieldWords(diffs)}`;
-  const waiting = who.toAdmin ? "No supervisor or approver in this branch. Admin reviews it." : "Waiting for review by the branch supervisor or approver.";
   await writeAudit(tx, {
     actor: SYSTEM_ACTOR, mode: a.mode, action: "source_change_detected", entityType: "SourceChange", entityId: id, loanId: a.loanId, pn: a.pn,
-    summary: `${what}. ${waiting}`, details: { category: "BORROWER", fields: diffs.map((d) => d.label), toAdmin: who.toAdmin },
+    summary: `${what}. ${waitingText(who.length)}`, details: { category: "BORROWER", fields: diffs.map((d) => d.label), deciders: who.length },
   });
   // Field names only: the values (names, addresses, numbers) never go in a notification or an email.
   await notify(tx, {
-    userIds: who.ids, loanId: a.loanId,
+    userIds: who, loanId: a.loanId,
     title: `${a.pn}: MyLoans changed the borrower's details`, body: `${what}. Please review it.`, link: `/loans/${a.pn}?tab=todo&correction=1`,
     email: { event: "borrower_changed", vars: { pn: a.pn, reason: `${what}.` } },
   });
@@ -126,8 +129,8 @@ export interface BorrowerReviewData {
   /** What it means: sent work whose papers may carry the old details, and what accepting changes. */
   sentences: string[];
   canDecide: boolean;
-  /** The branch has nobody with the tick: Admin reviews it. */
-  toAdmin: boolean;
+  /** The branch has no approver of its own (only "All branches" approvers, or nobody): a warning, never a block. */
+  noBranchApprover: boolean;
   /** For people who cannot decide. */
   waiting: string;
   history: number;
@@ -154,7 +157,7 @@ export async function borrowerReviewFor(user: CurrentUser, loanId: string): Prom
   const item = await prisma.sourceChange.findFirst({ where: { loanId, state: "OPEN", category: "BORROWER" }, include: { loan: { select: { branchId: true } } } });
   if (!item || !inScope(user, item.loan.branchId)) return null;
   const changes = item.changes as unknown as (FieldChange & { at?: string })[];
-  const who = await deciderIds(prisma, item.loan.branchId);
+  const [who, own] = await Promise.all([deciderIds(prisma, item.loan.branchId), branchApproverIds(prisma, item.loan.branchId)]);
   const canDecide = mayDecideBorrower(user, item.loan.branchId);
   return {
     id: item.id,
@@ -163,8 +166,8 @@ export async function borrowerReviewFor(user: CurrentUser, loanId: string): Prom
     rows: changes.map((c) => ({ field: c.field, label: c.label, dms: c.was === null ? "blank" : String(c.was), myloans: c.now === null ? "blank" : String(c.now), at: fmtDateTime(c.at ? new Date(c.at) : item.detectedAt) })),
     sentences: await borrowerMeaning(prisma, loanId),
     canDecide,
-    toAdmin: who.toAdmin,
-    waiting: who.toAdmin ? "No supervisor or approver in this branch. Admin reviews it." : "Waiting for review by your supervisor.",
+    noBranchApprover: own.length === 0,
+    waiting: waitingText(who.length),
     history: (item.history as unknown[]).length,
     simulated: item.simulated,
   };
@@ -178,7 +181,7 @@ export async function borrowerChangedLoanIds(ids: string[]): Promise<Set<string>
 }
 export { BORROWER_CHIP } from "@/lib/ui/borrower-chip";
 
-/** Home: the corrections this person may decide (their branches), oldest first; Admin also those routed to Admin. */
+/** Home: the corrections this person may decide (the branches in their access), oldest first. */
 export async function borrowerToDo(user: CurrentUser, take = 5) {
   if (!can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER)) return { count: 0, items: [] as { pn: string; borrowerName: string; fields: string; since: string }[] };
   const scope = loanScope(user);
@@ -192,14 +195,6 @@ export async function borrowerToDo(user: CurrentUser, take = 5) {
   };
 }
 
-/** Admin Home count: open Borrower details items whose branch has nobody with the tick. */
-export async function borrowerItemsForAdmin(): Promise<number> {
-  const rows = await prisma.sourceChange.findMany({ where: { state: "OPEN", category: "BORROWER" }, select: { loan: { select: { branchId: true } } } });
-  const branches = [...new Set(rows.map((r) => r.loan.branchId))];
-  const empty = new Set<string>();
-  for (const b of branches) if (!(await branchDeciderIds(prisma, b)).length) empty.add(b);
-  return rows.filter((r) => empty.has(r.loan.branchId)).length;
-}
 
 // ---------------------------------------------------------------------------
 // Decisions (myloans:review_borrower, the loan's branch in the person's access)
@@ -264,4 +259,26 @@ export async function keepBorrowerCurrent(u: CurrentUser, id: string, rawNote: u
       details: { kept: Object.fromEntries(changes.map((c) => [c.label, c.was])), myloans: Object.fromEntries(changes.map((c) => [c.label, c.now])) },
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Branches with no approver of their own (D-029): a warning on Settings, Branches and on the Superadmin's
+// Home, so it gets fixed. Approvers with "All branches" do not count here (they still see and decide the
+// items, so nothing is hidden or blocked).
+// ---------------------------------------------------------------------------
+
+export async function branchesWithoutApprover(db: Db = prisma): Promise<{ id: string; name: string; code: string | null }[]> {
+  const approvers = await db.user.findMany({
+    where: andWhere({ allBranches: false }, holdsWhere(PERMISSIONS.SOURCE_REVIEW_BORROWER)),
+    select: { branches: { select: { branchId: true } } },
+  });
+  const covered = new Set(approvers.flatMap((a) => a.branches.map((b) => b.branchId)));
+  const branches = await db.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } });
+  return branches.filter((b) => !covered.has(b.id));
+}
+
+/** "2 active branches have no approver assigned." (empty at 0: the line is hidden). */
+export function noApproverText(n: number): string {
+  if (n <= 0) return "";
+  return `${n} active branch${n === 1 ? " has" : "es have"} no approver assigned.`;
 }

@@ -140,7 +140,7 @@ export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: 
               ["Replacement: released within (days)", d.replacementWindowDays], ["Business hours only", d.businessHoursOnly ? "Yes" : "No"],
             ] as const).map(([k, v]) => <div key={k} className="flex justify-between gap-3 border-b border-line py-1"><dt className="text-ink-2">{k}</dt><dd className="font-semibold text-navy">{v}</dd></div>)}
           </dl>
-          <p className="mt-2 text-[13px] text-ink-2">Read only. Ask an Admin to turn on &ldquo;Change MyLoans sync settings&rdquo; for your role to change them.</p>
+          <p className="mt-2 text-[13px] text-ink-2">Read only. Ask a Superadmin to turn on &ldquo;Change MyLoans sync settings&rdquo; for your role to change them.</p>
         </section>
       ) : (
       <form id={formId} data-track-dirty action={action} className="grid gap-4 sm:grid-cols-2">

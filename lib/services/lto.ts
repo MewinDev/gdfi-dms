@@ -71,7 +71,7 @@ export async function dpChangeLtoOffice(u: CurrentUser, assignmentId: string, ra
       before: { ltoOffice: before }, after: { ltoOffice: office.name }, details: { note: p.data.note },
     });
     await notify(tx, {
-      userIds: [...(await branchLaUserIds(tx, a.loan.branchId)), a.assignedById, ...(await financeIds(tx))], loanId: a.loanId,
+      userIds: [...(await branchLaUserIds(tx, a.loan.branchId)), a.assignedById, ...(await financeIds(tx, null, "settle", [a.loan.branchId]))], loanId: a.loanId,
       title: `${a.loan.pn}: ${a.transaction.type.name} LTO office changed`, body: `${u.name}: ${before ? `${before} to ` : ""}${office.name}. ${p.data.note}`, link: `/loans/${a.loan.pn}?tab=journey`,
     });
   });

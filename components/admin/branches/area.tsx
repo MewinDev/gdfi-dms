@@ -7,6 +7,7 @@ import { fmtShort } from "@/lib/time";
 import { getMyLoansAdapter } from "@/lib/myloans";
 import { branchWorkload, recentBranchRuns, reviewRows, openReviewCount } from "@/lib/services/branches";
 import { inactiveEffect } from "@/lib/services/settings-status";
+import { branchesWithoutApprover, noApproverText } from "@/lib/services/borrower-review";
 import { SettingsModal } from "@/components/admin/settings-modal";
 import { SettingsEditForm, type FieldDef } from "@/components/admin/forms";
 import { StatusPanel } from "@/components/admin/status-panel";
@@ -68,11 +69,31 @@ export async function BranchesModal({ common, edit, step, user, filter }: { comm
 
 export interface BranchMay { manage: boolean; import: boolean; review: boolean }
 
+/**
+ * "N active branches have no approver assigned." (D-029): nobody with the approver tick has the branch in
+ * their own access. Items there stay visible to approvers with All branches; this line is so it gets fixed.
+ */
+export function NoApproverLine({ branches }: { branches: { id: string; name: string; code: string | null }[] }) {
+  return (
+    <div role="status" className="rounded-xl border border-act-line bg-act-bg px-4 py-2.5 text-sm text-ink" data-no-approver={branches.length}>
+      <p className="font-semibold">{noApproverText(branches.length)}</p>
+      <p className="mt-0.5 text-ink-2">Approvers with All branches still see and decide their MyLoans changes. To fix it, a Superadmin gives someone of the branch the approver tick on Users, Edit.</p>
+      <details className="mt-1">
+        <summary className="link cursor-pointer text-sm">Show branches</summary>
+        <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-ink-2" data-no-approver-branches>
+          {branches.map((b) => <li key={b.id}>{b.name}{b.code ? ` (${b.code})` : ""}</li>)}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
 async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay }) {
-  const [rows, areas, openReview] = await Promise.all([
+  const [rows, areas, openReview, noApprover] = await Promise.all([
     prisma.branch.findMany({ include: { area: true, division: true, usualLtoOffice: true } }),
     prisma.area.findMany({ orderBy: { name: "asc" } }),
     openReviewCount(),
+    branchesWithoutApprover(),
   ]);
   const q = (filter.q ?? "").trim().toLowerCase();
   const show = filter.show ?? "active";
@@ -101,6 +122,7 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
           {[needCode && `${needCode} branch${needCode === 1 ? "" : "es"} need${needCode === 1 ? "s" : ""} a code`, needArea && `${needArea} need${needArea === 1 ? "s" : ""} an area`].filter(Boolean).join("; ")}. Codes are never guessed: import the MyLoans list or type the code.
         </p>
       )}
+      {noApprover.length > 0 && <NoApproverLine branches={noApprover} />}
       <form method="get" action={BASE} className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end" aria-label="Filter branches">
         <input type="hidden" name="open" value="branches" />
         <div className="flex h-[46px] min-w-0 items-center gap-2.5 rounded-xl border border-line-input bg-fill-soft px-4 focus-within:border-navy focus-within:bg-white sm:flex-1">
@@ -184,7 +206,7 @@ async function EditStep({ common, id, may, back }: { common: Common; id: string 
   const work = b && !b.active ? await branchWorkload(b.id) : null;
   return (
     <SettingsModal {...common} title={b ? `Branches: ${b.name}` : "Branches: Add branch"} backHref={back} footer={may.manage ? { kind: "save", formId: "settings-form", cancelHref: back } : { kind: "done" }}>
-      {!may.manage && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask an Admin to turn on &ldquo;Change branches&rdquo; for your role to change it.</p>}
+      {!may.manage && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask a Superadmin to turn on &ldquo;Change branches&rdquo; for your role to change it.</p>}
       {may.manage && ro && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-readonly-note>This branch comes from MyLoans: its code, name, division, area, address and status are read-only here. Only the usual LTO office is the DMS&apos;s own.{b?.lastSyncedAt ? ` Last sync ${fmtShort(b.lastSyncedAt)}.` : ""}</p>}
       <SettingsEditForm key={id ?? "new"} kind="branch" id={id} fields={fields} formId="settings-form" listHref={back} />
       {b && may.manage && (
@@ -203,7 +225,7 @@ async function ReviewStep({ canDecide }: { canDecide: boolean }) {
   const [open, decided] = await Promise.all([reviewRows("OPEN"), reviewRows("DECIDED", 30)]);
   return (
     <div className="flex flex-col gap-5" data-branch-review>
-      {!canDecide && <p className="rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask an Admin to turn on &ldquo;Decide branch changes&rdquo; for your role to accept or ignore them.</p>}
+      {!canDecide && <p className="rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask a Superadmin to turn on &ldquo;Decide branch changes&rdquo; for your role to accept or ignore them.</p>}
       <section aria-labelledby="rv-open">
         <h3 id="rv-open" className="text-base font-bold text-navy">Waiting for a decision ({open.length})</h3>
         <ul className="mt-2 divide-y divide-[rgb(12_35_64/0.1)] rounded-xl border border-line">

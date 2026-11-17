@@ -4,7 +4,6 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
-import { grantFormerSupervisorTicks } from "@/lib/kit/supervisor";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { openLoanFile } from "@/lib/services/loan-file";
@@ -45,11 +44,9 @@ beforeAll(async () => {
   await prisma.user.create({ data: { email: "zz.lagone@gdfi.ph", name: "Leaving Loan Associate", roleId: laRole.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });
   const supRole = await prisma.role.create({ data: { key: "ZSUP", name: "Z Branch supervisor", builtIn: false, branchAccess: "ASSIGNED", permissions: [PERMISSIONS.LOANS_VIEW, PERMISSIONS.HOLDS_TRANSFER] } });
   await prisma.user.create({ data: { email: "zz.sup@gdfi.ph", name: "Z Supervisor", roleId: supRole.id, isTestUser: true, branches: { create: [{ branchId: otherBranch }] } } });
-  // The built-in Branch Supervisor of the loan's branch, and an LA of another branch only.
+  // The built-in LA Supervisor/Head of the loan's branch (moves holds by default, D-029), and an LA of another branch only.
   const builtInSup = await prisma.role.findUniqueOrThrow({ where: { key: "SUP" } });
-  const madeSup = await prisma.user.create({ data: { email: "zz.branchsup@gdfi.ph", name: "Z Angono Supervisor", roleId: builtInSup.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });
-  // A former Branch Supervisor: the role migration (D-010) keeps their supervisor ticks as per-person grants.
-  await grantFormerSupervisorTicks(madeSup.id);
+  await prisma.user.create({ data: { email: "zz.branchsup@gdfi.ph", name: "Z Angono Supervisor", roleId: builtInSup.id, isTestUser: true, branches: { create: [{ branchId: loanBranch }] } } });
   await prisma.user.create({ data: { email: "zz.laother@gdfi.ph", name: "Antipolo Only LA", roleId: laRole.id, isTestUser: true, branches: { create: [{ branchId: otherBranch }] } } });
   branchSup = await asUser("zz.branchsup@gdfi.ph");
   laOther = await asUser("zz.laother@gdfi.ph");

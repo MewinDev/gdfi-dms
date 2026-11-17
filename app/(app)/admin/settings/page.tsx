@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { can, requirePageAny, type CurrentUser } from "@/lib/auth/current-user";
+import { advanceScope, can, requirePageAny, type CurrentUser } from "@/lib/auth/current-user";
 import { ALL_PERMISSIONS, AREA_PERMISSIONS, SETTINGS_PERMISSIONS, VISIBLE_PERMISSION_GROUPS } from "@/lib/auth/permissions";
 import { PermissionMatrix } from "@/components/admin/permission-matrix";
 import { effectivePermissions } from "@/lib/auth/access";
@@ -339,7 +339,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
 async function ExpenseKindsArea({ common, edit, user }: { common: { id: string; title: string; help: string; closeHref: string; returnFocusId: string }; edit?: string; user: CurrentUser }) {
   const manage = can(user, PERMISSIONS.FUNDS_KINDS_MANAGE);
   const key = "expense-kinds";
-  const [kinds, usage] = await Promise.all([allKinds(), kindUsage()]);
+  const [kinds, usage] = await Promise.all([allKinds(), kindUsage(undefined, advanceScope(user))]);
   if (edit && manage) {
     const k = edit === "new" ? null : kinds.find((x) => x.id === edit);
     if (edit !== "new" && !k) return null;
@@ -348,7 +348,7 @@ async function ExpenseKindsArea({ common, edit, user }: { common: { id: string; 
     return (
       <SettingsModal {...common} title={k ? `Expense kinds: ${k.name}` : "Expense kinds: Add kind"} backHref={listHref(key)} footer={{ kind: "save", formId: "settings-form", cancelHref: listHref(key) }}>
         <ExpenseKindForm key={edit} id={k?.id ?? null} formId="settings-form" listHref={listHref(key)} kind={k ? { name: k.name, builtIn: k.builtIn, amountMode: k.amountMode as AmountMode, amountCents: k.amountCents } : null}
-          openRequests={k ? await openRequestsUsing(k.code) : 0} maxRule={lowest} />
+          openRequests={k ? await openRequestsUsing(k.code, undefined, advanceScope(user)) : 0} maxRule={lowest} />
         {k && <StatusPanel kind="expenseKind" id={k.id} active={k.active} noun="expense kind" effect={await inactiveEffect("expenseKind", k.id)} lockedReason={k.builtIn ? "Other is built in: it is always active, so there is always a kind for anything else." : undefined} />}
       </SettingsModal>
     );

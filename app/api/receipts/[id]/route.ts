@@ -12,8 +12,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await getCurrentUser();
   if (!user) return new Response("Sign in first.", { status: 401 });
   const { id } = await ctx.params;
-  const r = await prisma.receipt.findUnique({ where: { id }, include: { line: { include: { advance: { select: { requestedById: true, fundsTypeId: true, branchId: true } } } } } });
-  const allowed = r && mayOpenReceipt(user, r.line.advance);
+  const r = await prisma.receipt.findUnique({ where: { id }, include: { line: { include: { advance: { select: { requestedById: true, fundsTypeId: true, branchId: true, lines: { select: { transaction: { select: { loan: { select: { branchId: true } } } } } } } } } } } });
+  const allowed = r && mayOpenReceipt(user, { ...r.line.advance, lineBranchIds: r.line.advance.lines.map((l) => l.transaction?.loan.branchId) });
   if (!r || !allowed || !r.fileKey) return new Response("Not found.", { status: 404 });
   let bytes: Uint8Array;
   try {

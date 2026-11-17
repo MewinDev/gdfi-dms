@@ -88,7 +88,8 @@ async function branchMoveFor(loan: { id: string; pn: string; branchId: string },
 
 export async function reviewFor(user: CurrentUser, loanId: string): Promise<ReviewData | null> {
   const found = await prisma.sourceChange.findFirst({ where: { loanId, state: "OPEN", category: { not: "BORROWER" } }, include: { loan: true } });
-  if (!found) return null;
+  // Same scope rule as every other screen (D-019): out of scope = nothing to show.
+  if (!found || !inScope(user, found.loan.branchId)) return null;
   // The Admin item only (Borrower details has its own review: lib/services/borrower-review.ts).
   const item = { ...found, category: found.category as ReviewData["category"] };
   const seesAmounts = can(user, PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
@@ -96,7 +97,8 @@ export async function reviewFor(user: CurrentUser, loanId: string): Promise<Revi
   const p = item.proposed as unknown as Proposed;
   const canReview = can(user, PERMISSIONS.SOURCE_REVIEW);
   const cash = item.category === "MATERIAL" ? [] : await outstandingCash(prisma, loanId);
-  const same = item.category === "MATERIAL" ? [] : await replacementCandidates(prisma, item.loan);
+  // Only loans in the person's branches (D-019), as on the Related loans card.
+  const same = item.category === "MATERIAL" ? [] : (await replacementCandidates(prisma, item.loan)).filter((r) => inScope(user, r.loan.branchId));
   const oldCopy = item.category === "MATERIAL" ? null : (await relatedLoans(prisma, item.loan)).find((r) => r.oldPn === item.loan.pn);
   const branchNames = new Map((await prisma.branch.findMany({ where: { id: { in: [item.loan.branchId, ...same.map((r) => r.loan.branchId)] } }, select: { id: true, name: true } })).map((b) => [b.id, b.name]));
   const newLoan = item.loan.replacedByPn ? await prisma.loan.findUnique({ where: { pn: item.loan.replacedByPn }, select: { id: true } }) : null;

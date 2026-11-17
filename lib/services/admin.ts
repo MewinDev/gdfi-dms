@@ -53,7 +53,7 @@ export const USER_SCHEMA = z.object({
   handlesFt: z.preprocess((v) => (v === undefined ? undefined : v === "on" || v === "true" || v === true), z.boolean().optional()),
 });
 
-export const NO_ACCESS_MANAGE = "Ask an Admin to turn on \"Change branch access\" for your role.";
+export const NO_ACCESS_MANAGE = "Ask a Superadmin to turn on \"Change branch access\" for your role.";
 
 export async function saveUser(user: CurrentUser, id: string | null, raw: Record<string, unknown>) {
   if (!can(user, PERMISSIONS.USERS_EDIT)) throw new UserError("Your role does not allow adding or editing users.");

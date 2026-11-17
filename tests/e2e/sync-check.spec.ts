@@ -4,7 +4,7 @@ import { watchConsole, signInWith } from "./helpers";
 
 /**
  * MyLoans sync check through the real screens (scenarios 2, 4, 5 and 8): the review pop-up for an amount
- * change and for a branch change, the blocked Send message, the "Waiting for Admin to review" view, the
+ * change and for a branch change, the blocked Send message, the "Waiting for an approver to review" view, the
  * access change after Apply, Close as cancelled and Keep current (each with a note).
  * Screenshots at 1440, 820 and 390: docs/screenshots/sync-check/.
  */
@@ -49,11 +49,13 @@ const reviewSheet = (page: Page) => page.getByRole("dialog", { name: /^MyLoans c
 
 test.beforeEach(async () => {
   await resetLoans();
+  await db.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
   await setting("myloans.mockOverrides", {});
   await setting("myloans.paused", false);
 });
 test.afterAll(async () => {
   await resetLoans();
+  await db.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
   await setting("myloans.mockOverrides", {});
 });
 
@@ -65,7 +67,7 @@ test("2. Amount change: Send held where it reaches, LA read-only (no amounts), A
   await refresh(page, PN);
   // The blocked Send message (Mortgage would be removed).
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
-  await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText("MyLoans changed this loan. Admin is reviewing.");
+  await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText("MyLoans changed this loan. An approver is reviewing it.");
   await noSideways(page);
   await shot(page, "send-blocked");
   // Notary is not reached: no hold message there.
@@ -75,7 +77,7 @@ test("2. Amount change: Send held where it reaches, LA read-only (no amounts), A
   await page.goto(`/loans/${PN}?tab=todo&review=1`);
   const ro = reviewSheet(page);
   await expect(ro.locator("[data-amount-hidden]")).toHaveText("Amount changed");
-  await expect(ro.locator("[data-source-waiting]")).toHaveText("Waiting for Admin to review.");
+  await expect(ro.locator("[data-source-waiting]")).toHaveText("Waiting for an approver to review.");
   await expect(ro.getByRole("button", { name: "Apply changes" })).toHaveCount(0);
   await noSideways(page);
   await shot(page, "waiting-for-admin");
@@ -149,7 +151,7 @@ test("5 and 8. Cancelled in MyLoans: Send blocked for the whole loan; Admin clos
   await refresh(page, PN);
   for (const tx of ["NOTARY", "MORTGAGE"]) {
     await page.goto(`/loans/${PN}?tab=todo&tx=${tx}`);
-    await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText("MyLoans says this loan is cancelled. Admin is reviewing.");
+    await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText("MyLoans says this loan is cancelled. An approver is reviewing it.");
   }
   await noSideways(page);
   await signInWith(page, BUTTONS.admin);
@@ -167,6 +169,8 @@ test("5 and 8. Cancelled in MyLoans: Send blocked for the whole loan; Admin clos
 
 test("3. Borrower details: chip, old and new side by side, read-only for the LA; Admin (no supervisor in the branch) accepts with a note", async ({ page }) => {
   const clean = watchConsole(page);
+  // No supervisor in the branch: the seeded LA Supervisor/Head (Angono) is parked for this test.
+  await db.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
   await signInWith(page, BUTTONS.la);
   await openPn(page, PN);
   await change(PN, { borrowerName: "Ana Villanueva-Reyes", address: "12 Rizal Ave, Angono", contactNo: "09171234567" });

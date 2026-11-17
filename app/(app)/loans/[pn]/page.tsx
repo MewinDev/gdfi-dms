@@ -897,7 +897,7 @@ function sourceRow(r: ReviewData): OpenRow {
   return {
     id: r.id, kind: "source", txnCode: "", txnName: "MyLoans", days: 0, href: "", target: "", canResume: false, review: r,
     reason: r.category === "MATERIAL" ? `Changed: ${r.fields}` : r.category === "REPLACEMENT" ? "A replacement PN was given" : "Cancelled or not released in MyLoans",
-    who: r.canReview ? "Review it" : "Waiting for Admin to review", since: "",
+    who: r.canReview ? "Review it" : "Waiting for an approver to review", since: "",
   };
 }
 

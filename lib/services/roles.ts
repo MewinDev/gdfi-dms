@@ -56,7 +56,7 @@ export function permissionDiff(before: Iterable<string>, after: Iterable<string>
 export async function lockoutReason(user: CurrentUser, role: RoleRow, next: { permissions: Set<string>; active: boolean }): Promise<string | null> {
   const had = effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE) && role.active;
   const keeps = next.permissions.has(PERMISSIONS.ROLES_MANAGE) && next.active;
-  if (had && !keeps && user.roleId === role.id) return "You cannot take \"Manage roles\" away from your own role. Ask another person who can manage roles.";
+  if (had && !keeps && user.roleId === role.id) return "You cannot take \"Manage permissions\" away from your own role. Ask another person who can manage permissions.";
   return checkLockout({ kind: "role", roleId: role.id, permissions: next.permissions, active: next.active });
 }
 async function guardManageAbility(user: CurrentUser, role: RoleRow, next: { permissions: Set<string>; active: boolean }) {

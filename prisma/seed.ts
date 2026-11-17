@@ -253,6 +253,8 @@ async function seedTestUsers() {
   // "ALL": All branches. Codes: Antipolo 101, Angono 165, Alaminos 390 (the "other branch").
   const users: { email: string; name: string; role: string; branches: string[] | "ALL"; isTestUser: boolean }[] = [
     { email: "test.superadmin@gdfi.ph", name: "Test Superadmin", role: "SUPERADMIN", branches: "ALL", isTestUser: true },
+    // A second Superadmin (D-028): one can always fix the other's access.
+    { email: "test.superadmin2@gdfi.ph", name: "Test Superadmin Two", role: "SUPERADMIN", branches: "ALL", isTestUser: true },
     { email: "test.admin@gdfi.ph", name: "Test Admin", role: "ADMIN", branches: "ALL", isTestUser: true },
     // LA Supervisor/Head (D-002): approves myloans changes for Antipolo and Angono.
     { email: "test.lahead@gdfi.ph", name: "Test LA Supervisor", role: "SUP", branches: ["101", "165"], isTestUser: true },

@@ -50,12 +50,12 @@ The ten decided roles (D-002) and Monitoring (D-010). Every built-in role may si
 
 | Role | Main work |
 |---|---|
-| Superadmin | The permission matrix, per-person overrides, "Can approve LA Open Items", All branches; everything Admin sees and does. Not a work step or an Open Item approver unless ticked (D-023) |
+| Superadmin (two are seeded; a warning when only one active is left) | Setup and configuration: the permission matrix, per-person overrides, "Can approve LA Open Items", All branches, Settings, users, the myloans integration. No day-to-day action by default: no approving, releasing funds, Accept / Forward, job work, moving holds or resolving problems, unless ticked (D-023, D-028). Told on Home about branches with no approver |
 | LA | Search and open loans, check papers, flag funds, send, receive forwarded packages, EDST |
 | DP | Accept or decline, stages, attempts, funds requests (Cash advance or Fund transfer), liquidation, return to LA, Pasuyo, check and verify, forward to a branch |
-| LA Supervisor/Head (built in, key SUP: the former Branch Supervisor; the same role is used for an area head by giving the person Area access) | Every LA tick, plus approving or rejecting myloans changes for their branches (D-002, D-010, D-011). The people moved from the Branch Supervisor role keep its other ticks (move a hold, resolve any problem, Monitoring, TAT report) as per-person grants. No money, Settings, users, roles or branch imports |
+| LA Supervisor/Head (built in, key SUP: the former Branch Supervisor; the same role is used for an area head by giving the person Area access) | Every LA tick, plus approving or rejecting myloans changes and moving holds, for their branches (D-002, D-010, D-029). No per-person legacy grants (the migration removed them and listed each person). No money, Settings, users, roles or branch imports |
 | Finance (one role; each person ticks Handles CA and/or Handles FT, D-009; approvers are Finance people with the approve tick only, D-010) | Approve and release cash advances, send fund transfers, change a request's funds type before release (with remarks), change or add a line before approval, add expense kinds ("+ Add new kind"), confirm returns, close advances, follow up overdue liquidation |
-| Admin (Group Head) | Settings, users and day-to-day staffing (specific branches, Handles CA / FT), Audit Log, TAT reports, review of MyLoans changes (until the Open Items piece), closing cancelled loans. Not the permission matrix, overrides or All branches (D-023) |
+| Admin (Group Head) | Settings, users and day-to-day staffing (specific branches, Handles CA / FT), Audit Log, TAT reports, All branches with the Open Item approver tick by default (approves MyLoans changes for every branch, D-029), closing cancelled loans. Not the permission matrix, overrides or All branches (D-023) |
 | Custodian, QA, Digicur, Archiver | See loan files of their branches; their work steps come with their modules |
 | Monitoring (read-only; the former Operations Monitor) | Read-only, all branches: the Monitoring page (DPs and LTO offices) and LTO advisories (resolve, edit, file from Monitoring). No loan files and no amounts. Told when an advisory is filed or resolved |
 
@@ -140,3 +140,9 @@ Examples: `loans:refresh` (Refresh from MyLoans on a loan file; LA, Admin, DP, V
 Monitoring (group "Monitoring" in Roles): `monitor:dp` (the DP monitor), `monitor:lto` (the LTO monitor), `ltoreports:create` (file an LTO advisory from a job at an LTO stage; DP by default), `ltoreports:manage` (resolve or edit any advisory, file one from Monitoring; Admin and Operations Monitor by default), `ltoreports:notify` (be told about advisories; Operations Monitor by default) and `dpcapacity:manage` (Settings, Processor capacity: the default capacity, a processor's own capacity and On leave; Admin only by default). Admin has them all. They are not given to Finance by default; the Branch Supervisor has `monitor:dp` and `monitor:lto` (for their branches). A monitor sees counts, times and PN lists; opening a loan needs `loans:view` in that branch and amounts need `journey:view_amounts`. Definitions: [Monitoring](11-monitoring.md).
 
 [Back to the workflow index](README.md)
+
+### Approvers (D-029, 17 November 2026)
+
+- Approving MyLoans changes is **permission only**: anyone with the approver tick whose access includes the loan's branch decides it, and is told about it. "All branches" covers every branch, including branches with no approver of their own.
+- There is **no automatic fallback to Admin**. A branch where nobody has the approver tick in their own access is listed as "N active branches have no approver assigned." on Settings, Branches and on the Superadmin's Home, so it gets fixed. Its items stay visible to All-branches approvers.
+- Funds requests and their notices follow branch scope too (D-030): a request is in a person's scope only when the processor's branch and every line's loan are in their access.

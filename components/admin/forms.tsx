@@ -207,7 +207,7 @@ export function UserEditForm({
             <div data-branch-access-readonly>
               <p className="label">Branch access</p>
               <p className="rounded-xl bg-fill px-3 py-2 text-sm">{access.readOnlySummary}</p>
-              <p className="help">Read only. Ask an Admin to turn on &ldquo;Change branch access&rdquo; for your role to change it.</p>
+              <p className="help">Read only. Ask a Superadmin to turn on &ldquo;Change branch access&rdquo; for your role to change it.</p>
             </div>
           ) : (
           <BranchAccessField

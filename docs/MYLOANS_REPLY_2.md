@@ -87,6 +87,17 @@ Thank you for **option D2 with an HMAC in the API**. The DMS will never receive 
 2. **An alternative, if API 5 cannot be built in time:** add `ProductName` to the ContentHash. This is heavier: every product rename would then re-send every loan of that product.
 3. **Now, please:** the **current `PR_PRODUCTS` list** (ProductID, ProductCode, Name, active flag) as a file, so we can set and test the keyword lists against real product names.
 
+### REQUIRED: paid / closed status and date
+
+**Why it is needed:** the DMS closes a loan file ("Loan closed/released": the papers go back to the borrower or are archived) only when the loan is **fully paid**. Only myloans knows that. Without it, "Loan closed/released" cannot be built, and the sync has no end point (we sync each loan until it is closed).
+
+**Request:** in API 1 and API 2 (and in the ContentHash), for every loan:
+1. a **paid / closed status** (for example `IsFullyPaid` or a status code, with the list of values);
+2. the **date** it became fully paid or closed (`FullyPaidAt` / `ClosedAt`, Philippine time or UTC, please say which);
+3. whether it can be **re-opened** (and, if yes, how the API shows it).
+
+Until this field is in the contract, the DMS step "Loan closed/released" is **blocked** on our side.
+
 ---
 
 ## Still open

@@ -28,6 +28,7 @@ Sign in at `/login`, under **Test sign-in**. The accounts are grouped by role, w
 | Account | Role | Branch access |
 |---|---|---|
 | Superadmin | Superadmin | All branches |
+| Superadmin Two | Superadmin | All branches |
 | Admin | Admin | All branches |
 | Finance | Finance | All branches |
 | Approver Small | Approver (lowest band) | All branches |

@@ -29,7 +29,6 @@ import { setRowActive } from "@/lib/services/settings-status";
 import { BRANCH_NAMES, KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_LOANS, KIT_OTHER_SAMPLES, SUPERVISOR_ROLE_KEY, SUPERVISOR_ROLE_NAME, NO_REFRESH_ROLE_NAME, type KitAccountKey, type KitLoan } from "./catalog";
 import { kitRefusal } from "./guard";
 import { ticksFromRole } from "@/lib/auth/effective";
-import { grantFormerSupervisorTicks } from "./supervisor";
 import { branchGrants, writeUserAccess, type AccessInput } from "@/lib/services/access";
 import type { GrantLike } from "@/lib/branches/access";
 import { shiftBusinessDays } from "./rebase";
@@ -70,8 +69,6 @@ async function createAccounts(log: Log): Promise<Users> {
     // The fund types its role works with (D-009), as the role migration sets them.
     const made = await prisma.user.create({ data: { email: a.email, name: a.name, roleId, isTestUser: true, ...ticksFromRole(role.permissions) } });
     await prisma.$transaction(async (tx) => writeUserAccess(tx, made.id, await kitAccess(a, branchId)));
-    // Supervisors keep the former Branch Supervisor ticks as per-user grants (D-010), as the migration gives them.
-    if (a.role === "SUPERVISOR") await grantFormerSupervisorTicks(made.id);
   };
   const roleId = async (key: string) => (await prisma.role.findUniqueOrThrow({ where: { key } })).id;
   // The Superadmin first: it makes the kit's own sample roles through the Roles screen's own code (D-023).

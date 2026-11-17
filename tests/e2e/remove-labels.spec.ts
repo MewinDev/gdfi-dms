@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice, signIn, signInWith } from "./helpers";
+import { SUPERADMIN, pickLtoOffice, signIn, signInWith } from "./helpers";
 
 /**
  * Print labels were removed (11 November 2026, confirmed by the users): labels are not used in the LA
@@ -107,7 +107,7 @@ test("LA checks the papers and sends with no label step; the DP accepts with no 
 
 test("Role editor: no label permission tick, even with the technical names", async ({ page }) => {
   const clean = watchConsole(page);
-  await signIn(page, "admin");
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
   const la = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   await page.goto(`/admin/settings?open=roles&edit=${la.id}`);
   await expect(page.locator("[data-group]").first()).toBeVisible();

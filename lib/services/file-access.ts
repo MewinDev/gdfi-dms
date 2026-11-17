@@ -1,4 +1,4 @@
-import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
+import { allInScope, can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canFunds } from "@/lib/funds/access";
 import { canSeeJob } from "./jobs";
@@ -8,10 +8,13 @@ import { canSeeJob } from "./jobs";
  * everyone else, so the rule is tested without HTTP. Branch scope comes from lib/auth/scope.ts.
  */
 
-/** A receipt: the processor who owns the advance, or someone who sees that fund type AND the advance's branch. */
-export function mayOpenReceipt(user: CurrentUser, advance: { requestedById: string; fundsTypeId: string | null; branchId: string }): boolean {
+/**
+ * A receipt: the processor who owns the advance, or someone who sees that fund type AND every branch of the
+ * request (the advance's branch and its lines' loans, D-019).
+ */
+export function mayOpenReceipt(user: CurrentUser, advance: { requestedById: string; fundsTypeId: string | null; branchId: string; lineBranchIds?: (string | null | undefined)[] }): boolean {
   if (advance.requestedById === user.id) return true;
-  return canFunds(user, "view", advance) && inScope(user, advance.branchId);
+  return canFunds(user, "view", advance) && allInScope(user, [advance.branchId, ...(advance.lineBranchIds ?? [])]);
 }
 
 /** Stage evidence: someone who sees loan files and the job (their own job) or the loan's branch. */

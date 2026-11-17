@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { signInWith } from "./helpers";
+import { SUPERADMIN, signInWith } from "./helpers";
 import { cleanTestRoles, db, resetLoans } from "./db";
+import { OPEN_ITEM_APPROVER_KEYS } from "../../lib/auth/permissions";
 import { approveWindow } from "./approve";
 
 /**
@@ -38,6 +39,9 @@ async function clean() {
   await db.loan.deleteMany({ where: { pn: PN } });
   const admin = await db.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
   if (!admin.permissions.includes("holds:transfer")) await db.role.update({ where: { id: admin.id }, data: { permissions: [...admin.permissions, "holds:transfer"] } });
+  const sa = await db.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } });
+  if (!sa.permissions.includes("holds:transfer")) await db.role.update({ where: { id: sa.id }, data: { permissions: [...sa.permissions, "holds:transfer"] } });
+  await db.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
   const fin = await db.role.findUniqueOrThrow({ where: { key: "FIN" } });
   await db.role.update({ where: { id: fin.id }, data: { permissions: fin.permissions.filter((k) => k !== "holds:transfer") } });
 }
@@ -145,7 +149,7 @@ test("Print liquidation report: Finance prints; a role without the tick has no P
   await expect(page.locator(`[data-advance="${DONE}"] [data-print-link]`).filter({ visible: true })).toHaveCount(1);
 
   const role = await db.role.create({ data: { key: "C_Z_NO_PRINT", name: "Z Funds viewer no print", builtIn: false, permissions: ["loans:view", "funds:ca_view", "funds:ft_view"] } });
-  await db.user.create({ data: { email: "zz.noprint@gdfi.ph", name: "Zz No Print", roleId: role.id, isTestUser: true, allBranches: true } });
+  await db.user.create({ data: { email: "zz.noprint@gdfi.ph", name: "Zz No Print", roleId: role.id, isTestUser: true, allBranches: true, handlesCa: true, handlesFt: true } });
   await signInWith(page, { other: "Zz No Print (Z Funds viewer no print)" });
   await page.goto("/funds?tab=outstanding");
   await expect(page.locator(`[data-advance="${DONE}"]`).first()).toBeAttached();
@@ -153,16 +157,16 @@ test("Print liquidation report: Finance prints; a role without the tick has no P
   await page.goto("/funds?tab=history");
   await expect(page.locator("[data-print-link]")).toHaveCount(0);
   await page.goto(`/funds/${DONE}/print`);
-  await expect(page.locator("[data-print-refused]")).toContainText("Ask an Admin to turn on ‘Print liquidation report for cash advances’ for your role.");
+  await expect(page.locator("[data-print-refused]")).toContainText("Ask a Superadmin to turn on ‘Print liquidation report for cash advances’ for your role.");
   await expect(page.locator("[data-liquidation-report]")).toHaveCount(0);
   await noSideways(page);
   await shot(page, "print-refused");
 });
 
-test("Role editor: the Print liquidation report tick, the Branch Supervisor role, Finance losing Move a hold", async ({ page }) => {
+test("Role editor: the Print liquidation report tick, the LA Supervisor/Head role, Finance losing Move a hold", async ({ page }) => {
   const finRole = await db.role.findUniqueOrThrow({ where: { key: "FIN" } });
   const sup = await db.role.findUniqueOrThrow({ where: { key: "SUP" } });
-  await signInWith(page, BUTTONS.admin);
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
   await page.goto(`/admin/settings?open=roles&edit=${finRole.id}`);
   const print = page.locator('[data-perm="funds:ca_print"]');
   await expect(print).toContainText("Print liquidation report for cash advances");
@@ -173,17 +177,18 @@ test("Role editor: the Print liquidation report tick, the Branch Supervisor role
   await shot(page, "role-editor-funds-print");
 
   await page.goto(`/admin/settings?open=roles&edit=${sup.id}`);
-  await expect(page.getByRole("dialog")).toContainText("Roles and access: Branch Supervisor");
-  for (const k of ["loans:view", "loans:search", "holds:transfer", "problems:resolve_any", "monitor:dp", "monitor:lto", "reports:tat"]) {
+  await expect(page.getByRole("dialog")).toContainText("Roles and access: LA Supervisor/Head");
+  // D-010: every LA tick plus the Open Item approver ticks; moving holds is a per-user grant now, not the role's.
+  for (const k of ["loans:view", ...OPEN_ITEM_APPROVER_KEYS]) {
     await expect(page.locator(`[data-perm="${k}"]`).getByRole("checkbox"), k).toBeChecked();
   }
-  for (const k of ["funds:ca_approve", "funds:ft_release", "roles:manage", "users:edit", "branches:import", "settings:system"]) {
+  for (const k of ["holds:transfer", "funds:ca_approve", "funds:ft_release", "roles:manage", "users:edit", "branches:import", "settings:system"]) {
     await expect(page.locator(`[data-perm="${k}"]`).getByRole("checkbox"), k).not.toBeChecked();
   }
   await expect(page.locator('[data-perm="holds:transfer"]')).toContainText("Move a hold to another person");
   await page.locator('[data-perm="holds:transfer"]').scrollIntoViewIfNeeded();
   await noSideways(page);
-  await shot(page, "role-editor-branch-supervisor");
+  await shot(page, "role-editor-la-supervisor-head");
 
   // Unticking "Move a hold to another person" on a Finance that still has it: who loses it, and the usual confirm.
   await db.role.update({ where: { id: finRole.id }, data: { permissions: [...finRole.permissions.filter((k) => k !== "holds:transfer"), "holds:transfer"] } });
@@ -199,13 +204,16 @@ test("Role editor: the Print liquidation report tick, the Branch Supervisor role
 });
 
 test("Settings, Roles: 'N active branches have nobody who can move a hold', with the branches", async ({ page }) => {
-  await signInWith(page, BUTTONS.admin);
+  await signInWith(page, SUPERADMIN);
   await page.goto("/admin/settings?open=roles");
   await expect(page.getByRole("dialog")).toContainText("Roles and access");
-  await expect(page.locator("[data-hold-mover-health]")).toHaveCount(0); // Admin (All branches) can move holds everywhere
-  // Without the tick on Admin, and no supervisors: every active branch has nobody.
-  const admin = await db.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
-  await db.role.update({ where: { id: admin.id }, data: { permissions: admin.permissions.filter((k) => k !== "holds:transfer") } });
+  await expect(page.locator("[data-hold-mover-health]")).toHaveCount(0); // Admin and Superadmin (All branches) can move holds everywhere
+  // Without the tick on Admin and Superadmin, and no supervisors (the seeded LA Supervisor/Head is parked): every active branch has nobody.
+  for (const key of ["ADMIN", "SUPERADMIN"]) {
+    const role = await db.role.findUniqueOrThrow({ where: { key } });
+    await db.role.update({ where: { id: role.id }, data: { permissions: role.permissions.filter((k) => k !== "holds:transfer") } });
+  }
+  await db.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
   const active = await db.branch.count({ where: { active: true, hidden: false } });
   await page.reload();
   const line = page.locator("[data-hold-mover-health]");
@@ -215,7 +223,7 @@ test("Settings, Roles: 'N active branches have nobody who can move a hold', with
   await expect(line.locator("[data-hold-mover-branches]")).toContainText("Angono");
   await noSideways(page);
   await shot(page, "hold-transfer-health-line");
-  // A Branch Supervisor of Angono covers Angono.
+  // An LA Supervisor/Head of Angono who kept "Move a hold" (D-010) covers Angono.
   const sup = await db.role.findUniqueOrThrow({ where: { key: "SUP" } });
   const angono = await db.branch.findUniqueOrThrow({ where: { code: "165" } });
   await db.user.create({ data: { email: "zz.health.sup@gdfi.ph", name: "Zz Health Supervisor", roleId: sup.id, isTestUser: true, branches: { create: [{ branchId: angono.id }] } } });
@@ -223,7 +231,7 @@ test("Settings, Roles: 'N active branches have nobody who can move a hold', with
   await expect(page.locator("[data-hold-mover-health]")).toContainText(`${active - 1} active branch`);
 });
 
-test("The Branch Supervisor moves a hold inside their branch, not outside it", async ({ page }) => {
+test("The LA Supervisor/Head (former Branch Supervisor ticks) moves a hold inside their branch, not outside it", async ({ page }) => {
   const { loan } = await fixtures();
   const sup = await db.role.findUniqueOrThrow({ where: { key: "SUP" } });
   const [angono, antipolo] = await Promise.all([db.branch.findUniqueOrThrow({ where: { code: "165" } }), db.branch.findUniqueOrThrow({ where: { code: "101" } })]);
@@ -233,13 +241,13 @@ test("The Branch Supervisor moves a hold inside their branch, not outside it", a
   const reason = await db.holdReason.findFirstOrThrow({ where: { active: true } });
   await db.hold.create({ data: { loanId: loan.id, transactionId: loan.transactions[0].id, reasonId: reason.id, reasonName: reason.name, note: "Waiting for the client's papers", raisedById: la.id, raisedByLabel: la.name, ownerId: la.id, ownerLabel: la.name } });
 
-  await signInWith(page, { other: "Zz Angono Sup (Branch Supervisor)" });
+  await signInWith(page, { other: "Zz Angono Sup (LA Supervisor/Head)" });
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(page.locator("[data-hold-summary] [data-transfer-hold]").filter({ visible: true }).first()).toBeVisible();
   await expect(page.locator("[data-hold-summary] [data-resume]")).toHaveCount(0);
   await noSideways(page);
 
-  await signInWith(page, { other: "Zz Antipolo Sup (Branch Supervisor)" });
+  await signInWith(page, { other: "Zz Antipolo Sup (LA Supervisor/Head)" });
   const res = await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   expect(res?.status()).toBe(404);
   await expect(page.locator("[data-transfer-hold]")).toHaveCount(0);
