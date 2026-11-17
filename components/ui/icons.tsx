@@ -12,6 +12,7 @@ function Svg({ size = 22, className, strokeWidth = 2, children }: P & { children
 
 export const HomeIcon = (p: P) => <Svg {...p}><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></Svg>;
 export const FolderIcon = (p: P) => <Svg {...p}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></Svg>;
+export const InboxIcon = (p: P) => <Svg {...p}><path d="M3 13l3-8h12l3 8" /><path d="M3 13v6h18v-6h-5l-1.5 2.5h-5L8 13z" /></Svg>;
 export const BellIcon = (p: P) => <Svg {...p}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10 21a2 2 0 0 0 4 0" /></Svg>;
 export const SearchIcon = (p: P) => <Svg {...p}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></Svg>;
 export const CheckIcon = (p: P) => <Svg {...p}><path d="M5 12l5 5L20 7" /></Svg>;

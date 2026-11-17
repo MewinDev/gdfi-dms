@@ -364,3 +364,8 @@ export async function receiveReleasedLoan(tx: Tx, loan: { pn: string; branchId: 
 }
 
 export { outcomeText };
+
+/** The Inbox badge: items named to the person and not accepted yet. */
+export async function inboxCount(u: CurrentUser): Promise<number> {
+  return prisma.workItem.count({ where: { holderUserId: u.id, state: "INBOX" } });
+}

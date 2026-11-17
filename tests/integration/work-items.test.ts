@@ -7,7 +7,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { assignToDp, saveChecklist } from "@/lib/services/workflow";
+import { assignToDp, POOL_CHOICE, saveChecklist } from "@/lib/services/workflow";
+import { acceptFromPool, takeBackFromPool } from "@/lib/services/dp-pool";
+import { acceptWork } from "@/lib/services/inbox";
+import { backfillWorkItems } from "@/lib/work/backfill";
 import { acceptJob, returnJob } from "@/lib/services/jobs";
 import { pullBack } from "@/lib/services/sent-changes";
 import { acceptItemTx, arriveItem, closeItem, itemsWithAway, moveItem, myItems, openItem, poolItems, setAway, supervisorWorkCounts, tatByPerson } from "@/lib/services/work-items";
@@ -53,15 +56,15 @@ afterAll(async () => {
 });
 
 /** Find loan, tick the papers, send the Notary to a processor (today, real time). */
-async function send(to: CurrentUser = dp) {
+async function send(to: CurrentUser | typeof POOL_CHOICE = dp, pasuyo = false) {
   await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" }).catch(() => null);
   const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: PN } });
   const txn = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code: "NOTARY" } }, include: { checks: true } });
   await saveChecklist(la, { transactionId: txn.id, checkedIds: txn.checks.filter((c) => c.required).map((c) => c.id), newOthers: [] });
   const lto = await prisma.ltoOffice.findFirst({ where: { active: true }, orderBy: { code: "asc" } });
-  await assignToDp(la, { transactionId: txn.id, dpBranchId: loan.branchId, dpUserId: to.id, ltoOfficeId: lto?.id ?? null, fundsNeeded: "NO", fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null });
-  const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id }, orderBy: { createdAt: "desc" } });
-  return { loan, txn, job };
+  await assignToDp(la, { transactionId: txn.id, dpBranchId: loan.branchId, dpUserId: to === POOL_CHOICE ? POOL_CHOICE : to.id, ltoOfficeId: lto?.id ?? null, fundsNeeded: "NO", fundsKinds: [], beyondTatReason: "Integration test", pasuyo, secondaryDpUserId: pasuyo ? dp2.id : null, pasuyoReason: pasuyo ? "Near the office" : null });
+  const job = await prisma.dpAssignment.findFirst({ where: { transactionId: txn.id }, orderBy: { createdAt: "desc" } });
+  return { loan, txn, job: job! };
 }
 const lastMove = async (itemId: string) => prisma.workMovement.findFirstOrThrow({ where: { workItemId: itemId }, orderBy: { at: "desc" } });
 const item = (subjectId: string, label = "Test item") => ({ kind: "TRANSACTION" as const, subjectId, role: "LA" as const, branchId, label });
@@ -210,3 +213,71 @@ describe("pool, inbox, Away, reports (D-046)", () => {
     expect((await tatByPerson(admin)).find((r) => r.userId === la.id && r.measure === "TAT")).toMatchObject({ rounds: 1, avgUsed: 1 });
   });
 });
+
+describe("Branch DP pool (D-046 item 6)", () => {
+  it("sent to the pool: no named job yet; every processor of the branch sees it; Pasuyo needs a named processor", async () => {
+    await expect(send(POOL_CHOICE, true)).rejects.toThrow(/goes with a named processor/);
+    const { txn } = await send(POOL_CHOICE);
+    expect(await prisma.dpAssignment.count({ where: { transactionId: txn.id } })).toBe(0);
+    expect((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } })).status).toBe("ASSIGNED");
+    for (const u of [dp, dp2]) expect((await poolItems(u)).some((r) => r.kind === "DP_JOB" && r.pn === PN)).toBe(true);
+    expect((await poolItems(la)).some((r) => r.kind === "DP_JOB")).toBe(false); // not LA work
+    expect(await prisma.notification.count({ where: { userId: { in: [dp.id, dp2.id] }, title: { contains: "DP pool" } } })).toBe(2);
+  });
+
+  it("two processors accept at the same moment: one gets the normal named job, accepted; the other is told who has it", async () => {
+    const { txn } = await send(POOL_CHOICE);
+    const it = (await openItem(prisma, "DP_JOB", txn.id))!;
+    const tries = await Promise.allSettled([acceptFromPool(dp, it.id), acceptFromPool(dp2, it.id)]);
+    expect(tries.filter((t) => t.status === "fulfilled")).toHaveLength(1);
+    const lost = tries.find((t) => t.status === "rejected") as PromiseRejectedResult;
+    const jobs = await prisma.dpAssignment.findMany({ where: { transactionId: txn.id }, include: { dpUser: true } });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ status: "ACCEPTED", assignedById: la.id });
+    expect(jobs[0].dueDate).not.toBeNull();
+    expect(String(lost.reason.message)).toContain(`Already accepted by ${jobs[0].dpUser.name}`);
+    expect((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } })).status).toBe("IN_PROCESS");
+    const docs = await prisma.documentItem.findMany({ where: { transactionId: txn.id, documentId: { not: null } } });
+    expect(docs.length > 0 && docs.every((d) => d.stage === "WITH_DP")).toBe(true);
+    expect(await openItem(prisma, "DP_JOB", txn.id)).toMatchObject({ state: "HELD", holderUserId: jobs[0].dpUserId });
+    expect(await prisma.notification.count({ where: { userId: la.id, title: { contains: "accepted" } } })).toBe(1);
+  });
+
+  it("the LA takes it back before anyone accepts; after an accept it is refused", async () => {
+    const { txn } = await send(POOL_CHOICE);
+    await expect(takeBackFromPool(la, txn.id, "x")).rejects.toThrow(/at least 3/);
+    await takeBackFromPool(la, txn.id, "Wrong office");
+    expect((await prisma.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } })).status).toBe("READY");
+    expect(await openItem(prisma, "TRANSACTION", txn.id)).toMatchObject({ state: "HELD", holderUserId: la.id });
+    const lto = await prisma.ltoOffice.findFirst({ where: { active: true }, orderBy: { code: "asc" } });
+    await assignToDp(la, { transactionId: txn.id, dpBranchId: branchId, dpUserId: POOL_CHOICE, ltoOfficeId: lto?.id ?? null, fundsNeeded: "NO", fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null });
+    await acceptWork(dp, (await openItem(prisma, "DP_JOB", txn.id))!.id);
+    await expect(takeBackFromPool(la, txn.id, "Too late")).rejects.toThrow(/already accepted it from the pool/);
+  });
+
+  it("Accept on the Inbox runs the job's own Accept for a named processor", async () => {
+    const { txn, job } = await send();
+    const it = (await openItem(prisma, "DP_JOB", txn.id))!;
+    await expect(acceptWork(dp, it.id)).resolves.toBe(`/jobs/${job.id}`);
+    expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("ACCEPTED");
+  });
+});
+
+describe("backfill of existing open work (D-046 item 7)", () => {
+  it("makes items from the recorded times, marks the ones with a missing time Migrated, and is safe to run again", async () => {
+    const { txn, job } = await send();
+    await acceptJob(dp, job.id);
+    await prisma.workItem.deleteMany({});
+    await prisma.dpAssignment.update({ where: { id: job.id }, data: { decidedAt: null } }); // a missing time
+    const first = await backfillWorkItems(prisma);
+    expect(first.made).toBeGreaterThan(0);
+    const dpItem = (await openItem(prisma, "DP_JOB", txn.id))!;
+    expect(dpItem).toMatchObject({ state: "HELD", holderUserId: dp.id, migrated: true });
+    const laItem = await prisma.workItem.findFirstOrThrow({ where: { kind: "TRANSACTION", pn: PN } });
+    expect(laItem).toMatchObject({ holderUserId: la.id, migrated: false, state: "HELD" });
+    const again = await backfillWorkItems(prisma);
+    expect(again.made).toBe(0);
+    expect(again.skipped).toBe(first.made);
+  });
+});
+

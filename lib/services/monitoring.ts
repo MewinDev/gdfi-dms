@@ -9,6 +9,7 @@ import { getSetting, getTatMap } from "@/lib/settings";
 import { getCalendar } from "@/lib/calendar/load";
 import { daysFor } from "@/lib/calendar/core";
 import { businessDate, fmtDate, fmtShort, startOfBusinessDay } from "@/lib/time";
+import { isAway } from "@/lib/work/rules";
 import { stepClock, targetOf, txnStepKey } from "@/lib/workflow/tat";
 import {
   AVAILABILITY, availability, avg, bucketOf, phtDate, buckets, branchDayCounters, onLeaveToday, parseRange, ymdAdd, type Availability, type DateRange,
@@ -174,6 +175,8 @@ export interface DpPerson {
   capacity: number;
   ownCapacity: number | null;
   onLeave: boolean;
+  /** D-046: marked away today ("Away until Nov 20, 2026"), or null: not offered for new work. */
+  awayText?: string | null;
   leaveUntil: string | null;
 }
 
@@ -182,7 +185,7 @@ export async function processors(today: string = businessDate(new Date())): Prom
   const [rows, def, everyBranch] = await Promise.all([
     prisma.user.findMany({
       where: holdsWhere(PERMISSIONS.DP_RECEIVE), orderBy: { name: "asc" },
-      select: { id: true, name: true, allBranches: true, dpCapacity: true, dpOnLeave: true, dpLeaveUntil: true, branches: { select: { branch: { select: { id: true, name: true } } } } },
+      select: { id: true, name: true, allBranches: true, dpCapacity: true, dpOnLeave: true, dpLeaveUntil: true, awayFrom: true, awayTo: true, branches: { select: { branch: { select: { id: true, name: true } } } } },
     }),
     defaultCapacity(),
     prisma.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -192,6 +195,7 @@ export async function processors(today: string = businessDate(new Date())): Prom
     return {
       id: r.id, name: r.name, allBranches: r.allBranches, branchIds: b.map((x) => x.id), branchNames: r.allBranches ? ["All branches"] : b.map((x) => x.name), capacity: r.dpCapacity ?? def, ownCapacity: r.dpCapacity,
       onLeave: onLeaveToday(r, today), leaveUntil: r.dpOnLeave ? r.dpLeaveUntil : null,
+      awayText: isAway(r, today) ? `Away until ${fmtDate(r.awayTo)}` : null,
     };
   });
 }

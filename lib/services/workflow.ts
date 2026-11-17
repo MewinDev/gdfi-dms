@@ -1,5 +1,5 @@
 import "server-only";
-import { arriveItem, closeItem, refuseAway } from "./work-items";
+import { arriveItem, closeItem, openItem, refuseAway } from "./work-items";
 import { txnStepKey } from "@/lib/workflow/tat";
 import { refreshLiquidationForTransaction } from "./liquidation";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
@@ -453,6 +453,9 @@ export interface AssignInput {
   pasuyoReason: string | null;
 }
 
+/** The Send panel's "Branch DP pool" choice (D-046). */
+export const POOL_CHOICE = "POOL";
+
 /** Transaction statuses before it is sent to a DP. */
 const PRE_SEND: string[] = ["FOR_CHECKLIST", "READY", "RETURNED"];
 
@@ -552,15 +555,18 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
   const dpBranch = await prisma.branch.findUnique({ where: { id: input.dpBranchId } });
   if (!dpBranch?.active || dpBranch.hidden) throw new UserError("Pick a DP branch.", "dpBranchId");
   // The processor works at that branch: it is in their branch access (or they have All branches).
-  const dp = await prisma.user.findFirst({
+  // D-046: "POOL" sends to the Branch DP pool (any processor of that branch accepts it; the first accept wins).
+  const toPool = input.dpUserId === POOL_CHOICE;
+  const dp = toPool ? null : await prisma.user.findFirst({
     where: andWhere(processor(input.dpUserId), worksAtWhere(dpBranch.id)),
   });
-  if (!dp) throw new UserError("Pick an active DP of the selected DP branch.", "dpUserId");
+  if (!toPool && !dp) throw new UserError("Pick an active DP of the selected DP branch.", "dpUserId");
   // On leave (Settings, Processor capacity): shown disabled in the Send panel, and refused here too.
-  if (onLeaveToday(dp, businessDate(new Date()))) throw new UserError(`${dp.name} is ${leaveText(dp.dpLeaveUntil, fmtDate).toLowerCase()}. Pick another processor.`, "dpUserId");
-  await refuseAway(prisma, dp.id); // D-046: someone away is not named for new work
+  if (dp && onLeaveToday(dp, businessDate(new Date()))) throw new UserError(`${dp.name} is ${leaveText(dp.dpLeaveUntil, fmtDate).toLowerCase()}. Pick another processor.`, "dpUserId");
+  if (dp) await refuseAway(prisma, dp.id); // D-046: someone away is not named for new work
+  if (toPool && input.pasuyo) throw new UserError("A second processor (Pasuyo) goes with a named processor. Pick a processor, or remove the second processor.", "secondaryDpUserId");
   let secondary: { id: string; name: string } | null = null;
-  if (input.pasuyo) {
+  if (input.pasuyo && dp) {
     secondary = await prisma.user.findFirst({ where: processor(input.secondaryDpUserId ?? ""), select: { id: true, name: true } });
     if (!secondary) throw new UserError("Pasuyo: pick the secondary DP.", "secondaryDpUserId");
     if (secondary.id === dp.id) throw new UserError("Pasuyo: the secondary DP must be a different person.", "secondaryDpUserId");
@@ -591,58 +597,99 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
     if (!completeness.complete) throw new MissingPapersError(completeness.missing, completeness.needsRemarks);
     if (txn.status === "FOR_CHECKLIST") throw new UserError(`Save the ${t0.type.name} checklist first, then try again.`);
     const now = new Date();
-    const assignment = await tx.dpAssignment.create({
-      data: {
-        loanId: t0.loanId, transactionId: txn.id, dpBranchId: dpBranch.id, dpUserId: dp.id,
-        secondaryDpUserId: secondary?.id ?? null, pasuyoReason: input.pasuyo ? input.pasuyoReason!.trim() : null,
-        ltoOfficeId: lto?.id ?? null, fundStatus: input.fundsNeeded === "YES" ? "FOR_FUNDING" : "NOT_REQUIRED", beyondTatReason: beyond,
-        recommendedDpUserId: recommended?.id ?? null, assignedById: user.id, endorsedAt: now,
-      },
-    });
-    // D-046: the LA's round ends (forwarded); the job waits in the processor's inbox for Accept.
-    await closeItem(tx, "TRANSACTION", txn.id, "FORWARDED", { at: now, by: actorOf(user) });
-    await arriveItem(tx, { kind: "DP_JOB", subjectId: txn.id, role: "DP", branchId: dpBranch.id, loanId: t0.loanId, pn: t0.loan.pn, label: `${t0.loan.pn}: ${t0.type.name}`, holderUserId: dp.id, targetKey: txnStepKey("IN_PROCESS", t0.type.code), at: now, by: actorOf(user) });
-    // Second processor (Pasuyo) chosen at Send: one history row (append-only).
-    if (secondary) {
-      await tx.pasuyoEvent.create({ data: { assignmentId: assignment.id, toUserId: secondary.id, toLabel: secondary.name, byUserId: user.id, byLabel: user.name, reason: input.pasuyoReason!.trim() } });
-    }
-    await tx.loanTransaction.update({ where: { id: txn.id }, data: { status: "ASSIGNED", statusSince: now, fundsNeeded: input.fundsNeeded!, fundsKinds: (input.fundsNeeded === "YES" ? fundsKinds : []) as never, fundsFlaggedAt: now } });
-    // Hand-over: items are In Transit; the LA stays accountable until the DP acknowledges.
-    for (const d of txn.documents.filter((d) => d.documentId && d.stage === "AT_BRANCH")) {
-      await tx.documentItem.update({ where: { id: d.id }, data: { stage: "IN_TRANSIT", since: now, location: `In transit to DP ${dp.name}` } });
-      await tx.documentMovement.create({
-        data: { documentItemId: d.id, action: "DISPATCHED_TO_DP", fromCustodian: d.custodianLabel, toCustodian: `${dp.name} (DP)`, purpose: t0.type.name, actorId: user.id, actorLabel: user.name, location: `In transit to DP ${dp.name}`, remarks: "Awaiting DP acknowledgment" },
+    if (toPool) {
+      // D-046: the Branch DP pool. Nothing is handed over yet; the first processor of the branch to accept gets it.
+      if (await openItem(tx, "DP_JOB", txn.id)) throw new UserError(`${t0.type.name} is already waiting for a processor.`);
+      await closeItem(tx, "TRANSACTION", txn.id, "FORWARDED", { at: now, by: actorOf(user) });
+      const sendInput = { dpBranchId: dpBranch.id, ltoOfficeId: lto?.id ?? null, fundsNeeded: input.fundsNeeded, fundsKinds, beyond, byId: user.id, byName: user.name, recommendedId: recommended?.id ?? null };
+      await arriveItem(tx, { kind: "DP_JOB", subjectId: txn.id, role: "DP", branchId: dpBranch.id, loanId: t0.loanId, pn: t0.loan.pn, label: `${t0.loan.pn}: ${t0.type.name}`, holderUserId: null, targetKey: txnStepKey("IN_PROCESS", t0.type.code), sendInput, at: now, by: actorOf(user) });
+      await tx.loanTransaction.update({ where: { id: txn.id }, data: { status: "ASSIGNED", statusSince: now, fundsNeeded: input.fundsNeeded!, fundsKinds: (input.fundsNeeded === "YES" ? fundsKinds : []) as never, fundsFlaggedAt: now } });
+      await writeAudit(tx, {
+        actor: actorOf(user), mode: "MANUAL", action: "sent_to_dp_pool", entityType: "LoanTransaction", entityId: txn.id, loanId: t0.loanId, pn: t0.loan.pn, journeyStep: "3.6",
+        summary: `Sent ${t0.type.name} to the ${dpBranch.name} DP pool${beyond ? " beyond Day 2 TAT" : ""}`, after: { status: "ASSIGNED", dpBranch: dpBranch.name, ltoOffice: lto?.name ?? null, fundsNeeded: input.fundsNeeded, fundsKinds, beyondTatReason: beyond },
       });
+      const dps = (await tx.user.findMany({ where: andWhere(holdsWhere(PERMISSIONS.JOBS_WORK), worksAtWhere(dpBranch.id)), select: { id: true, active: true } })).filter((x) => x.active).map((x) => x.id);
+      await notify(tx, { userIds: dps, loanId: t0.loanId, title: `New in the ${dpBranch.name} DP pool: ${t0.type.name} for ${t0.loan.pn}`, body: `${user.name} sent it to the branch pool. The first processor to accept it gets it.`, link: "/inbox" });
+      await recomputeStage(tx, t0.loanId);
+      return;
     }
-    await writeAudit(tx, {
-      actor: actorOf(user), mode: "MANUAL", action: "assigned_to_dp", entityType: "DpAssignment", entityId: assignment.id, loanId: t0.loanId, pn: t0.loan.pn,
-      journeyStep: "3.6",
-      summary: `Assigned ${t0.type.name} to DP ${dp.name}${secondary ? ` (Pasuyo: ${secondary.name})` : ""}${beyond ? " beyond Day 2 TAT" : ""}`,
-      before: { status: txn.status },
-      after: {
-        status: "ASSIGNED", dp: dp.name, dpBranch: dpBranch.name, ltoOffice: lto?.name ?? null, fundsNeeded: input.fundsNeeded, fundsKinds,
-        beyondTatReason: beyond, pasuyo: secondary?.name ?? null, recommendedDp: recommended?.name ?? null, endorsedAt: now,
-      },
-    });
-    await notify(tx, {
-      userIds: [dp.id, ...(secondary ? [secondary.id] : [])],
-      loanId: t0.loanId,
-      title: `New assignment: ${t0.type.name} for ${t0.loan.pn}`,
-      body: `${user.name} assigned ${t0.type.name} (${t0.loan.borrowerName}, ${t0.loan.branch.name}) to you. Please accept or decline today.`,
-      link: `/jobs/${assignment.id}`,
-      email: { event: txn.status === "RETURNED" ? "job_resent" : "job_sent", transactionId: txn.id, vars: { pn: t0.loan.pn, transaction: t0.type.name, who: user.name, reason: lto ? `Process at: ${lto.name}.` : "" } },
-    });
-    await writeAudit(tx, {
-      actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "dp_notified", entityType: "DpAssignment", entityId: assignment.id, loanId: t0.loanId, pn: t0.loan.pn,
-      journeyStep: "3.7", summary: `Notified ${dp.name}${secondary ? ` and ${secondary.name}` : ""} in-app and by email`,
-    });
-    await recomputeStage(tx, t0.loanId);
+    await createAssignmentTx(tx, { t0, txn, dpBranch, dp: dp!, secondary, lto, input, fundsKinds, beyond, recommended, by: { id: user.id, label: user.name }, now });
   });
   } catch (e) {
     // The locked transaction rolled back; record the refusal on its own.
     if (e instanceof MissingPapersError) await refuseMissingPapers(user, t0, e.missing, "MANUAL", e.needsRemarks);
     throw e;
   }
+}
+
+/** What a send needs (also kept on a Branch DP pool item until a processor accepts it, D-046). */
+export interface SendCore {
+  t0: { id: string; loanId: string; loan: { pn: string; borrowerName: string; branch: { name: string } }; type: { name: string; code: string } };
+  txn: { id: string; status: string; documents: { id: string; documentId: string | null; stage: string; custodianLabel: string | null }[] };
+  dpBranch: { id: string; name: string };
+  dp: { id: string; name: string };
+  secondary: { id: string; name: string } | null;
+  lto: { id: string; name: string } | null;
+  input: Pick<AssignInput, "fundsNeeded" | "pasuyo" | "pasuyoReason">;
+  fundsKinds: string[];
+  beyond: string | null;
+  recommended: { id: string; name: string } | null;
+  by: { id: string; label: string };
+  now: Date;
+  /** A processor accepted it from the Branch DP pool: they are not asked to accept. */
+  fromPool?: boolean;
+}
+
+/** The send itself, inside the loan lock: the job, custody in transit, the audit, the message (3.6, 3.7). */
+export async function createAssignmentTx(tx: Tx, c: SendCore) {
+  const { t0, txn, dpBranch, dp, secondary, lto, input, fundsKinds, beyond, recommended, by, now, fromPool } = c;
+  const assignment = await tx.dpAssignment.create({
+    data: {
+      loanId: t0.loanId, transactionId: txn.id, dpBranchId: dpBranch.id, dpUserId: dp.id,
+      secondaryDpUserId: secondary?.id ?? null, pasuyoReason: input.pasuyo ? input.pasuyoReason!.trim() : null,
+      ltoOfficeId: lto?.id ?? null, fundStatus: input.fundsNeeded === "YES" ? "FOR_FUNDING" : "NOT_REQUIRED", beyondTatReason: beyond,
+      recommendedDpUserId: recommended?.id ?? null, assignedById: by.id, endorsedAt: now,
+    },
+  });
+  // D-046: the LA's round ends (forwarded); the job waits in the processor's inbox for Accept.
+  await closeItem(tx, "TRANSACTION", txn.id, "FORWARDED", { at: now, by: by });
+  await arriveItem(tx, { kind: "DP_JOB", subjectId: txn.id, role: "DP", branchId: dpBranch.id, loanId: t0.loanId, pn: t0.loan.pn, label: `${t0.loan.pn}: ${t0.type.name}`, holderUserId: dp.id, targetKey: txnStepKey("IN_PROCESS", t0.type.code), at: now, by: by });
+  // Second processor (Pasuyo) chosen at Send: one history row (append-only).
+  if (secondary) {
+    await tx.pasuyoEvent.create({ data: { assignmentId: assignment.id, toUserId: secondary.id, toLabel: secondary.name, byUserId: by.id, byLabel: by.label, reason: input.pasuyoReason!.trim() } });
+  }
+  await tx.loanTransaction.update({ where: { id: txn.id }, data: { status: "ASSIGNED", statusSince: now, fundsNeeded: input.fundsNeeded!, fundsKinds: (input.fundsNeeded === "YES" ? fundsKinds : []) as never, fundsFlaggedAt: now } });
+  // Hand-over: items are In Transit; the LA stays accountable until the DP acknowledges.
+  for (const d of txn.documents.filter((d) => d.documentId && d.stage === "AT_BRANCH")) {
+    await tx.documentItem.update({ where: { id: d.id }, data: { stage: "IN_TRANSIT", since: now, location: `In transit to DP ${dp.name}` } });
+    await tx.documentMovement.create({
+      data: { documentItemId: d.id, action: "DISPATCHED_TO_DP", fromCustodian: d.custodianLabel, toCustodian: `${dp.name} (DP)`, purpose: t0.type.name, actorId: by.id, actorLabel: by.label, location: `In transit to DP ${dp.name}`, remarks: "Awaiting DP acknowledgment" },
+    });
+  }
+  await writeAudit(tx, {
+    actor: by, mode: "MANUAL", action: "assigned_to_dp", entityType: "DpAssignment", entityId: assignment.id, loanId: t0.loanId, pn: t0.loan.pn,
+    journeyStep: "3.6",
+    summary: `Assigned ${t0.type.name} to DP ${dp.name}${secondary ? ` (Pasuyo: ${secondary.name})` : ""}${beyond ? " beyond Day 2 TAT" : ""}`,
+    before: { status: txn.status },
+    after: {
+      status: "ASSIGNED", dp: dp.name, dpBranch: dpBranch.name, ltoOffice: lto?.name ?? null, fundsNeeded: input.fundsNeeded, fundsKinds,
+      beyondTatReason: beyond, pasuyo: secondary?.name ?? null, recommendedDp: recommended?.name ?? null, endorsedAt: now,
+    },
+  });
+  if (!fromPool) await notify(tx, {
+    userIds: [dp.id, ...(secondary ? [secondary.id] : [])],
+    loanId: t0.loanId,
+    title: `New assignment: ${t0.type.name} for ${t0.loan.pn}`,
+    body: `${by.label} assigned ${t0.type.name} (${t0.loan.borrowerName}, ${t0.loan.branch.name}) to you. Please accept or decline today.`,
+    link: `/jobs/${assignment.id}`,
+    email: { event: txn.status === "RETURNED" ? "job_resent" : "job_sent", transactionId: txn.id, vars: { pn: t0.loan.pn, transaction: t0.type.name, who: by.label, reason: lto ? `Process at: ${lto.name}.` : "" } },
+  });
+  if (!fromPool) await writeAudit(tx, {
+    actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "dp_notified", entityType: "DpAssignment", entityId: assignment.id, loanId: t0.loanId, pn: t0.loan.pn,
+    journeyStep: "3.7", summary: `Notified ${dp.name}${secondary ? ` and ${secondary.name}` : ""} in-app and by email`,
+  });
+  await recomputeStage(tx, t0.loanId);
+  return assignment;
 }
 
 // ---------------------------------------------------------------------------

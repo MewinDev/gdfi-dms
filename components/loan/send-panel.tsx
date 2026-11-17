@@ -133,8 +133,11 @@ export function SendPanel(p: SendPanelProps) {
     () => o.dps.filter((d) => d.branchIds.includes(branchId)).sort((a, b) => Number(!!a.leave) - Number(!!b.leave) || Number(b.id === rec) - Number(a.id === rec) || a.open - b.open || a.name.localeCompare(b.name)),
     [o.dps, branchId, rec],
   );
-  const dpId = chosen && dpsHere.some((d) => d.id === chosen && !d.leave) ? chosen : o.resend ? "" : rec && !dpsHere.find((d) => d.id === rec)?.leave ? rec : "";
-  const dp = o.dps.find((d) => d.id === dpId) ?? null;
+  const dpId = chosen === "POOL" ? "" : chosen && dpsHere.some((d) => d.id === chosen && !d.leave) ? chosen : o.resend ? "" : rec && !dpsHere.find((d) => d.id === rec)?.leave ? rec : "";
+  // D-046: "Branch DP pool": any processor of the branch can accept it; the first accept wins.
+  const pool = chosen === "POOL";
+  const dp = pool ? null : o.dps.find((d) => d.id === dpId) ?? null;
+  const who = pool ? `the ${branchName} DP pool` : dp?.name ?? null;
   const shown = showAll ? dpsHere : [...dpsHere.slice(0, 3), ...dpsHere.slice(3).filter((d) => d.id === dpId)];
   // From the type's "Needs LTO processing" setting (no type is special-cased).
   const ltoRequired = !!o.needsLto;
@@ -155,7 +158,7 @@ export function SendPanel(p: SendPanelProps) {
     : p.waitingForSave ? "Saving your ticks..."
     : !funds ? "Answer the funds question"
     : funds === "YES" && kinds.length === 0 ? "Pick what the funds are for"
-    : !dp ? "Pick a processor"
+    : !dp && !pool ? "Pick a processor"
     : second && !secondDp ? "Pick the second processor"
     : second && secondReason.trim().length < 3 ? "Tell us why a second processor is needed"
     : ltoRequired && !lto ? "Pick the LTO office"
@@ -179,7 +182,7 @@ export function SendPanel(p: SendPanelProps) {
       if (!r?.ok) { setErr({ msg: plainMessage(r?.error), field: r?.field }); return; }
       try {
         if (o.next) sessionStorage.setItem(TOAST_KEY, `${p.name} sent. Next: ${o.next.name}`);
-        else sessionStorage.setItem(sentKey(p.txnId), dp?.name ?? "");
+        else sessionStorage.setItem(sentKey(p.txnId), who ?? "");
       } catch { /* the toast is a nicety */ }
       // Move on to the next transaction that needs the LA.
       if (o.next) { router.push(o.next.href, { scroll: false }); window.scrollTo({ top: 0 }); }
@@ -302,6 +305,15 @@ export function SendPanel(p: SendPanelProps) {
                   </label>
                 );
               })}
+              <label data-dp-choice="Branch DP pool" className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed px-3 py-1.5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${pool ? "border-navy bg-fill-soft" : "border-line hover:border-navy/40"}`}>
+                <input type="radio" name="dpUserId" value="POOL" checked={pool} onChange={() => { setChosen("POOL"); setSecond(false); }} className="sr-only" />
+                <span aria-hidden="true" className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${pool ? "bg-navy text-white" : "bg-fill-strong text-navy"}`}><UsersIcon size={18} /></span>
+                <span className="min-w-0 flex-1 leading-snug">
+                  <span className="block text-[15px] font-semibold">Branch DP pool</span>
+                  <span className="block text-[13px] text-ink-2">Any processor of {branchName} can accept it. The first to accept gets it.</span>
+                </span>
+                <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${pool ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.3)]"}`}>{pool && <CheckIcon size={12} strokeWidth={3} />}</span>
+              </label>
               {dp?.availStatus === "FULL" && (
                 <p className="rounded-lg border border-act-line bg-act-bg px-3 py-2 text-[13px] text-act-fg" data-full-warning>{dp.name} is full ({dp.open} of {dp.capacity} open jobs). You can still send it; it may take longer.</p>
               )}
@@ -312,7 +324,7 @@ export function SendPanel(p: SendPanelProps) {
               )}
             </div>
           )}
-          {!second ? (
+          {pool ? null : !second ? (
             <button type="button" className="inline-flex min-h-11 items-center self-start text-[13px] font-semibold text-navy underline underline-offset-2" onClick={() => setSecond(true)}>
               Also assign a second processor (Pasuyo)
             </button>
@@ -374,7 +386,7 @@ export function SendPanel(p: SendPanelProps) {
       <div className="flex flex-col gap-2 border-t border-[rgb(12_35_64/0.1)] pt-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 text-[15px]">
           <p>
-            {p.name} goes to {dp ? <strong>{dp.name}</strong> : <span className="text-ink-2">(no processor yet)</span>} ({branchName}){secondDp ? <>, with a second processor (Pasuyo) <strong>{secondDp.name}</strong> ({secondBranchName})</> : null}{ltoRequired && ltoName ? <>, processed at <strong>{ltoName}</strong></> : null}.{" "}
+            {p.name} goes to {pool ? <strong>{who}</strong> : dp ? <><strong>{dp.name}</strong> ({branchName})</> : <><span className="text-ink-2">(no processor yet)</span> ({branchName})</>}{secondDp ? <>, with a second processor (Pasuyo) <strong>{secondDp.name}</strong> ({secondBranchName})</> : null}{ltoRequired && ltoName ? <>, processed at <strong>{ltoName}</strong></> : null}.{" "}
             Funds: {funds ? <strong>{funds === "YES" ? "Needs funds" : "No funds needed"}</strong> : <span className="text-ink-2">not answered</span>}
             {funds === "YES" && kinds.length > 0 ? ` (${kinds.map(kindName).join(", ")})` : ""}.
           </p>
@@ -382,14 +394,14 @@ export function SendPanel(p: SendPanelProps) {
         </div>
         <div className="fixed inset-x-0 bottom-[calc(69px+env(safe-area-inset-bottom))] z-20 flex flex-col gap-1.5 border-t border-line bg-cream px-4 pb-3 pt-3 shadow-[0_-4px_12px_rgb(12_35_64/0.08)] sm:static sm:shadow-none sm:z-auto sm:shrink-0 sm:flex-row-reverse sm:items-center sm:border-0 sm:bg-transparent sm:p-0">
           <button type="submit" className="btn-gold h-12 w-full px-6 sm:w-auto" disabled={!!reason || pending} aria-describedby={reason ? reasonId : undefined}>
-            {dp ? `Send to ${dp.name}` : "Send to processor"}
+            {pool ? "Send to the branch pool" : dp ? `Send to ${dp.name}` : "Send to processor"}
           </button>
           <p id={reasonId} role="status" aria-live="polite" className={reason ? "text-center text-[13px] font-semibold text-act-fg sm:text-right" : "sr-only"}>{reason ?? ""}</p>
         </div>
       </div>
 
       <Sheet open={confirm} onClose={() => setConfirm(false)} title="Send it now?">
-        <p className="text-base">Send <strong>{p.name}</strong> for <strong>{p.borrower}</strong> to <strong>{dp?.name}</strong> ({branchName}){secondDp ? <>, with a second processor (Pasuyo) <strong>{secondDp.name}</strong></> : null}?</p>
+        <p className="text-base">Send <strong>{p.name}</strong> for <strong>{p.borrower}</strong> to <strong>{who}</strong>{pool ? null : ` (${branchName})`}{secondDp ? <>, with a second processor (Pasuyo) <strong>{secondDp.name}</strong></> : null}?</p>
         {funds === "YES" && <p className="mt-2 text-[15px] text-ink-2">Flagged: needs funds ({kinds.map(kindName).join(", ")}). The processor will ask Finance.</p>}
         <div className="mt-6 flex flex-col gap-3 sm:flex-row-reverse">
           <button type="button" className="btn-gold btn-lg" onClick={send} disabled={pending}>{pending ? "Sending..." : "Send"}</button>

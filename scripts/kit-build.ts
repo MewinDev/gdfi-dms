@@ -15,6 +15,9 @@ async function main() {
   try {
     if (process.argv.includes("--with-scenarios")) await (await import("@/lib/kit/build")).buildSamples(log);
     else await (await import("@/lib/kit/build-clean")).buildClean(log);
+    // D-046: any open work made directly (not through the screens) gets its inbox item.
+    const c = await (await import("@/lib/work/backfill")).backfillWorkItems(prisma);
+    if (c.made) log(`Inbox items made from the records: ${c.made}`);
   } finally {
     await prisma.$disconnect();
   }

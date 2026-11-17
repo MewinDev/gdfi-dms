@@ -59,6 +59,8 @@ import { BorrowerReviewEntry } from "@/components/loan/borrower-review";
 import { borrowerReviewFor, type BorrowerReviewData } from "@/lib/services/borrower-review";
 import { BORROWER_CHIP } from "@/lib/ui/borrower-chip";
 import { getSetting } from "@/lib/settings";
+import { poolLine } from "@/lib/services/dp-pool";
+import { PoolTakeBack } from "@/components/loan/pool-take-back";
 
 type Ctx = Awaited<ReturnType<typeof getLoanContext>>;
 type Txn = LoanDetail["transactions"][number];
@@ -238,8 +240,9 @@ function stepFor(loan: LoanDetail, held: ReadonlySet<string>): NextStep {
   if (loan.stage === "For Vault Transmittal") return { title: "Send the papers to the vault", help: "Everything is done. The papers are ready to go to the vault. (The transmittal screen comes in a later release.)" };
   const waiting = live.find((t) => t.status === "ASSIGNED" || t.status === "IN_PROCESS");
   if (waiting) {
-    const a = waiting.dpAssignments[0];
-    return { title: `Nothing for you right now`, help: `${a?.dpUser.name ?? "The processor"} has the ${name(waiting)}. We will tell you when it comes back.` };
+    const a = waiting.dpAssignments.find((x) => liveAssignment(x.status));
+    if (!a) return { title: "Nothing for you right now", help: `The ${name(waiting)} is in the branch DP pool. We will tell you when a processor accepts it.` };
+    return { title: `Nothing for you right now`, help: `${a.dpUser.name} has the ${name(waiting)}. We will tell you when it comes back.` };
   }
   return { title: "Nothing for you right now", help: `Stage: ${stageLabel(loan.stage)}.` };
 }
@@ -512,7 +515,7 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
     dps: dps.map((d) => {
       const open = openCounts.get(d.id) ?? 0;
       const a = availability(d.capacity, open, d.onLeave);
-      return { id: d.id, name: d.name, branchIds: d.branchIds, open, capacity: a.capacity, availPct: a.pct, availStatus: a.status, leave: d.onLeave ? leaveText(d.leaveUntil, fmtDate) : null };
+      return { id: d.id, name: d.name, branchIds: d.branchIds, open, capacity: a.capacity, availPct: a.pct, availStatus: a.status, leave: d.onLeave ? leaveText(d.leaveUntil, fmtDate) : d.awayText ?? null };
     }),
     ltoWarnings,
     recommended,
@@ -564,6 +567,8 @@ async function WorkView({ loan, ctx, user, selected, review, correction }: { loa
   // Returned with papers handed over by the processor: the LA confirms them before sending again.
   const papersBack = selected.status === "RETURNED" ? loan.documents.filter((d) => d.transactionId === selected.id && d.stage === "IN_TRANSIT") : [];
   const handedAt = selected.dpAssignments.find((x) => x.papersHandedAt)?.papersHandedAt ?? null;
+  // D-046: sent to the Branch DP pool, nobody accepted yet.
+  const poolText = selected.status === "ASSIGNED" && !a ? await poolLine(selected.id) : null;
   const assignmentText = sb ? null :
     selected.status === "ASSIGNED" && a ? `Sent to ${a.dpUser.name} on ${dayText(a.endorsedAt)}. Waiting for them to accept.`
     : selected.status === "IN_PROCESS" && a ? `${a.dpUser.name} is working on it.`
@@ -713,6 +718,7 @@ async function WorkView({ loan, ctx, user, selected, review, correction }: { loa
         edstReference={selected.edstReference}
         send={send}
       />
+      {poolText && <PoolTakeBack transactionId={selected.id} text={poolText} canTake={la && can(user, PERMISSIONS.DP_SEND) && inScope(user, loan.branchId)} />}
       {jobCard && <TxnJobPanel loan={loan} txn={selected} user={user} tats={ctx.tats} cal={ctx.cal} statusText={assignmentText} />}
       {!jobCard && <LaHoldStrip txn={selected} user={user} />}
       {laCustom && <div id={`finish-${selected.id}`} className="scroll-mt-28"><MarkDone transactionId={selected.id} name={selected.type.name} ready={checklist.complete} /></div>}
