@@ -544,3 +544,13 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
 - **Finance (Q-N19, D-034):** the role migration no longer carries "Review borrower detail corrections" over to people moved to Finance. It lists them in its report instead, so an admin can review and give it by hand if someone really needs it. The four migrated kit accounts (Finance Cash, Finance Transfer, Approver Cash, Approver Transfer) no longer have it.
 - **Keyword rule (D-034), agreed behaviour:** unticked, a keyword must **start a word**; ticked "Whole word only", it must be the whole word. Hyphens inside a word are ignored, and a hyphen is also a word break.
 - **Reason:** the user's review; Finance stays on funds.
+
+## D-039 Piece 3 scope rules: files, jobs, funds exceptions, holds; no dead buttons
+
+- **Date:** 17 November 2026
+- **Files:** one download route `/api/files/[kind]/[id]` for receipts, stage evidence and LTO proof: session required, branch scope checked on the parent record, 404 otherwise, no public or static file URLs, and a `FileAccessLog` row for every view, download and log export. The log is append-only (a database trigger refuses updates and deletes). It is read on Audit, File access log, with the tick "View file access log" (`audit:files`), on by default for Superadmin and Admin and customizable (for example for a Data Protection Officer). Filters: user, branch, PN #, file type, date range; CSV export, itself logged.
+- **Job pages:** require the loan's branch. A processor's **own** jobs stay visible anywhere; other people's jobs only when the loan is in the person's branches.
+- **Funds exception:** a Finance user grants a funds exception only to processors who work in their ticked branches ("All branches" = any processor).
+- **Holds and problems:** allowed on the processor's **own** job even when the loan is outside their branches (the own-job rule).
+- **UX rule (extends D-033):** never show a button that leads to "not found". Either allow the action or hide it, or disable it with the reason.
+- **Reason:** the user's decisions on the piece 3 audit; D-019.
