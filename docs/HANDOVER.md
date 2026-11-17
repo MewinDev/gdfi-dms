@@ -1,4 +1,4 @@
-# Handover: piece 4 and D-042 done; piece 5 planned, not built
+# Handover: pieces 4 and 5 done; stop before piece 6
 
 Last updated: 17 November 2026 (PHT)
 Branch: `feature/foundation-settings-rbac-myloans` (pushed)
@@ -10,8 +10,10 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
   - full e2e (`npm run e2e:groups`, production build, workers=1): 570 passed, 0 failed (191 / 191 / 188 at 1440 / 820 / 390);
   - tsc and lint clean.
 - **18 November 2026, after piece 4 (D-042, committed):** the holiday CSV import, Make inactive / active and the generic paths all go through the calendar rule; deactivation undoes only its own extensions; "Correct due dates" (`duedates:correct`, migration 019); screenshots only with `npm run docs:screenshots`; `docs/STATUS.md` (the status table). Vitest 1,249 passed, 1 skipped; tsc and lint clean; kit rebuilt after migration 019.
-- **The full e2e run for D-042 is still owed:** it was stopped by Claude Code for low memory during `next build` (nothing ran). Run `npm run e2e:groups` when the machine is free (close other apps first); `tests/e2e/calendar-settings.spec.ts` now also covers Make inactive.
-- **Next: piece 5 (liquidation due date, D-017): worked examples sent, waiting for the owner's confirmation before building.
+- **Piece 5 done (D-044):** the liquidation due date after the last LTO pickup (`lib/funds/liquidation.ts` rule, `lib/services/liquidation.ts` triggers), migration `20261119090020_liquidation_due`, the late record, the Funds / My funds line and the TAT report section; `liquidationDueDays` on Settings, Funds types. D-043 records the holiday-removal chain case.
+- **Last runs (18 November 2026):** vitest green (1,272 and the 2 updated funds tests); full e2e: 194 / 194 / 191 passed with the only failure a wrong fixture in the new liquidation spec, fixed and rerun at all three widths (pass); tsc and lint clean; kit rebuilt after migration 020.
+- **Next: piece 6 (myloans mock APIs), not started.** Wait for the project owner.
+- **Open small items:** the funds-types CSV import has no `liquidation_due_days` column yet (new types get 2); Correct due date is on the job page and the Funds liquidation details only.
 - Decisions: `docs/DECISIONS.md` (D-001 to D-041); plan: `IMPLEMENTATION_PLAN.md` (piece 5 is section 6; myloans round 3 is 7.3).
 
 ## Piece 4: what was built (D-041)
@@ -30,7 +32,7 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
 
 ## Things a fresh session must know
 
-- **Both databases are on migration 018.** `gdfi_dms_test` was reset (with the owner's consent) and re-seeded on 17 November 2026; the kit was rebuilt after migrations 017 and 018 (`gdfi_dms` holds the CLEAN kit; automatic backups in `storage/kit/backups/`). Never touch the test DB directly; use the sanctioned scripts.
+- **Both databases are on migration 020.** `gdfi_dms_test` was reset (with the owner's consent) and re-seeded on 17 November 2026; the kit was rebuilt after each migration up to 020 (`gdfi_dms` holds the CLEAN kit; automatic backups in `storage/kit/backups/`). Never touch the test DB directly; use the sanctioned scripts.
 - **File access log rows keep their user forever** (append-only, `ON DELETE RESTRICT`). In tests, only seeded users that are never deleted (such as Test Admin) may open files or export the log; a temporary `zz.` user who does can never be removed, and every test that cleans `zz.` users then fails (this happened once; it took a test DB reset to fix).
 - **Migrations:** never `prisma migrate dev`. Use `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`, put it in the next numbered folder (`20261119090018_...`), remove the trigram DROP INDEX lines, apply with `npm run db:deploy`, then print the folder list and `npx prisma migrate status`. Full rules: `CLAUDE.md`.
 - **The project owner's dev server is on port 3000.** Never touch it. The e2e tests use their own server on port 3100. A production build (`next build`) is allowed only when the project owner says the dev server is stopped.

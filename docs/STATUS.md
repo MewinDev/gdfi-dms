@@ -1,6 +1,6 @@
 # GDFI-DMS: project status
 
-As of 18 November 2026 (PHT). Branch `feature/foundation-settings-rbac-myloans`.
+As of 18 November 2026 (PHT), after piece 5. Branch `feature/foundation-settings-rbac-myloans`.
 
 Effort is in **developer-days for one experienced developer**. Figures for the foundation pieces are the plan's estimates (`IMPLEMENTATION_PLAN.md`, section 1), adjusted for work already done. Figures for the later modules and go-live are **rough estimates** (no detailed plan yet); they will change once each module is planned.
 
@@ -8,13 +8,13 @@ Effort is in **developer-days for one experienced developer**. Figures for the f
 
 | | Remaining effort |
 |---|---|
-| Foundation (pieces 5 to 12, plus CI) | **33 to 45 days** |
+| Foundation (pieces 6 to 12, plus CI) | **31 to 43 days** |
 | Go-live preparation (phase A) | **10 to 15 days** |
-| **Phase A go-live: LA, DP and Funds on the live myloans feed** | **43 to 60 days** (about 9 to 12 weeks) |
+| **Phase A go-live: LA, DP and Funds on the live myloans feed** | **41 to 58 days** (about 8 to 12 weeks) |
 | v2 modules after the foundation (phases B and C) | **34 to 52 days** |
-| **Everything to the last phase** | **77 to 112 days** |
+| **Everything to the last phase** | **75 to 110 days** |
 
-Done so far: pieces 1, 2, 3, 3a and 4 (the plan estimated 16.5 to 22.5 days for them). Last full test run (18 November 2026): every automated test passes; see `docs/HANDOVER.md` for the numbers.
+Done so far: pieces 1, 2, 3, 3a, 4 and 5 (the plan estimated 18.5 to 24.5 days for them), plus the calendar fixes (D-042). Last full test run (18 November 2026): every automated test passes; see `docs/HANDOVER.md` for the numbers.
 
 ## Foundation pieces (`IMPLEMENTATION_PLAN.md`)
 
@@ -25,8 +25,8 @@ Done so far: pieces 1, 2, 3, 3a and 4 (the plan estimated 16.5 to 22.5 days for 
 | 3 | Branch scope everywhere; one file route; file access log; cross-branch tests | **Done** | 0 |
 | 3a | Product classification by keywords | **Done** | 0 |
 | 4 | One working-days calendar: holidays, office closures, saved due dates, pauses (with the D-042 fixes) | **Done** | 0 |
-| 5 | Liquidation due date: N working days after the last LTO, per CA / FT | **Next** (worked examples first) | 2 |
-| 6 | myloans mock APIs 1 to 5 (the agreed contract) | **Partly done**: contract, hash, mock and sync planning are built and tested as code; the mock endpoints and their tables are not | 2 |
+| 5 | Liquidation due date: N working days after the last LTO pickup, per CA / FT; fallback; late record (D-044) | **Done** | 0 |
+| 6 | myloans mock APIs 1 to 5 (the agreed contract) | **Next**. Partly done: contract, hash, mock and sync planning are built and tested as code; the mock endpoints and their tables are not | 2 |
 | 7 | myloans sync on API 2: checkpoint, paging, superseded copies, duplicates, run log, alerts | **Pending** (needs 6). Can be built against the mock now; **going live is blocked** by myloans: credentials (C5), limits (C2), timings (R2-6) | 5 to 7 |
 | 8 | Open Items per field: approver queues, Unassigned, superseded, cancellations, monitored fields | **Pending** (needs 7) | 7 to 9 |
 | 9 | Accept / Forward engine: movement ledger, branch pool and personal inbox, per-user TAT and waiting time | **Pending** | 8 to 12 |
@@ -34,7 +34,7 @@ Done so far: pieces 1, 2, 3, 3a and 4 (the plan estimated 16.5 to 22.5 days for 
 | 11 | Products (API 5) and branches (API 4) | **Pending**. Products are **blocked** by myloans for real data: the product list and API 5 (R2-3) | 2 to 3 |
 | 12 | Docs, Manual Test Kit, e2e update, final verification | **Pending** (ongoing with each piece) | 4 to 6 |
 | — | CI on GitHub (approved proposal) | **Blocked**: waiting for the GitHub setup (Actions, one secret, branch protection) | 1 |
-| | **Foundation remaining** | | **33 to 45** |
+| | **Foundation remaining** | | **31 to 43** |
 
 ## Outside decisions and blockers
 
@@ -58,6 +58,7 @@ Done so far: pieces 1, 2, 3, 3a and 4 (the plan estimated 16.5 to 22.5 days for 
 | Digital Records (Digicur) | Scan and scan reference; For NTC / NTE / NOD stages | 5 to 8 | C |
 | Archival and warehousing | Boxes, parts, locations, the QR code | 6 to 9 | C |
 | Closure | "Loan closed / released" (blocked by myloans R2-4) | 3 to 5 | C |
+| Demerit points | Read the liquidation late record (D-044) and the TAT record | in the module that needs them | later |
 | Retention | Retention rules and the disposal log | 3 to 5 | C |
 | | **v2 modules** | **34 to 52** | |
 
@@ -65,8 +66,8 @@ Done so far: pieces 1, 2, 3, 3a and 4 (the plan estimated 16.5 to 22.5 days for 
 
 | Phase | Contents | Remaining effort (days) | Cumulative |
 |---|---|---|---|
-| **A** | Foundation (pieces 5 to 12, CI) and go-live preparation: production sign-in (Entra), staging, backups and monitoring, first load of open loans (branch pool cutoff), user acceptance testing, training, first weeks of support | 43 to 60 | 43 to 60 |
-| **B** | Vault transmittal, Collateral, Quality Assurance | 17 to 25 | 60 to 85 |
-| **C** | Digital Records, archival and warehousing, closure, retention | 17 to 27 | 77 to 112 |
+| **A** | Foundation (pieces 6 to 12, CI) and go-live preparation: production sign-in (Entra), staging, backups and monitoring, first load of open loans (branch pool cutoff), user acceptance testing, training, first weeks of support | 41 to 58 | 41 to 58 |
+| **B** | Vault transmittal, Collateral, Quality Assurance | 17 to 25 | 58 to 83 |
+| **C** | Digital Records, archival and warehousing, closure, retention | 17 to 27 | 75 to 110 |
 
 Phase A can go live without B and C: loans then stop at "For Vault Transmittal" until phase B. Any myloans item still open at that point delays only the parts listed under "Blocks".
