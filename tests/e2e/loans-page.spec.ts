@@ -20,7 +20,6 @@ test("Admin Loans: one toolbar, Filters with a count, chips, Clear all, Show res
   await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
   await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
-  await page.context().clearCookies();
   await signIn(page, "admin");
 
   await page.goto("/loans?tab=all");

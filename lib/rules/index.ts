@@ -10,6 +10,10 @@
  */
 
 import { encodeFiring, plainRuleText, plainRuleValue, ruleText, storedRuleText, type RuleFiring } from "./names";
+import { DEFAULT_CLASSIFICATION_RULES, classifyByKeywords, type ClassificationRules } from "./classify";
+
+export type { ClassificationRules } from "./classify";
+export { DEFAULT_CLASSIFICATION_RULES } from "./classify";
 
 export type { RuleFiring, RuleKey } from "./names";
 export { RULE_NAMES, RULE_KEYS, decodeFiring, encodeFiring } from "./names";
@@ -31,37 +35,24 @@ export const MORTGAGE_THRESHOLDS: Record<LoanTypeValue, number> = {
 export const TRANSACTION_ORDER: TransactionCode[] = ["NOTARY", "EDST", "PPSR", "MORTGAGE"];
 
 // ---------------------------------------------------------------------------
-// Rule 1: classification from Product Name (whole words, case and spacing ignored)
+// Rule 1: classification from the product name by keywords (D-031; lib/rules/classify.ts)
 // ---------------------------------------------------------------------------
-
-function normalizeProductName(productName: string | null | undefined): string {
-  return (productName ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function containsWholeWord(text: string, word: string): boolean {
-  // A "word" is a run of letters/digits. "Auto Finance" does not contain "financing",
-  // and "Refinancing" does not contain the whole word "financing".
-  const tokens = text.split(/[^a-z0-9]+/).filter(Boolean);
-  return tokens.includes(word.toLowerCase());
-}
 
 export interface ClassificationResult {
   classification: Classification;
   /** The stored key form (names.ts). */
   rule: string;
   fired: RuleFiring;
+  /** No keyword matched: the default decided it (the "Classified by default" label). */
+  byDefault: boolean;
 }
 
-export function classifyProductName(productName: string | null | undefined): ClassificationResult {
-  const name = normalizeProductName(productName);
-  const out = (classification: Classification, reason: Extract<RuleFiring, { key: "PRODUCT_CLASSIFICATION" }>["reason"]): ClassificationResult => {
-    const fired: RuleFiring = { key: "PRODUCT_CLASSIFICATION", reason };
-    return { classification, rule: encodeFiring(fired), fired };
-  };
-  if (containsWholeWord(name, "refinancing")) return out("REFINANCING", "REFINANCING_WORD");
-  if (containsWholeWord(name, "financing")) return out("FINANCING", "FINANCING_WORD");
-  // Neither whole word, or blank: default Refinancing.
-  return out("REFINANCING", name ? "NEITHER_WORD" : "BLANK");
+export function classifyProductName(productName: string | null | undefined, rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES): ClassificationResult {
+  const r = classifyByKeywords(productName, rules);
+  const fired: RuleFiring = r.step === "DEFAULT"
+    ? { key: "PRODUCT_CLASSIFICATION", reason: "DEFAULT", result: r.classification }
+    : { key: "PRODUCT_CLASSIFICATION", reason: r.step, keyword: r.keyword! };
+  return { classification: r.classification, rule: encodeFiring(fired), fired, byDefault: r.step === "DEFAULT" };
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +94,8 @@ export interface RuleInputs {
   financingType?: FinancingType | null;
   /** Financing only: picked by the LA on the preview card. */
   orcrStatus?: OrcrStatus | null;
+  /** The keyword lists and the default (Settings, Product classification); the starting values when missing. */
+  classificationRules?: ClassificationRules;
 }
 
 export interface RuleOutcome {
@@ -131,7 +124,7 @@ export class RuleInputError extends Error {
 
 export function evaluateLoanRules(input: RuleInputs): RuleOutcome {
   const rulesFired: RuleFiring[] = [];
-  const cls = classifyProductName(input.productName);
+  const cls = classifyProductName(input.productName, input.classificationRules);
   rulesFired.push(cls.fired);
 
   if (cls.classification === "FINANCING") {
@@ -214,23 +207,6 @@ export function outcomesDiffer(a: RuleOutcome, b: RuleOutcome): boolean {
 // Labels
 // ---------------------------------------------------------------------------
 
-export const CLASSIFICATION_LABEL: Record<Classification, string> = {
-  FINANCING: "Financing",
-  REFINANCING: "Refinancing",
-};
-export const FINANCING_TYPE_LABEL: Record<FinancingType, string> = {
-  UNDERTAKING: "Undertaking",
-  NON_UNDERTAKING: "Non-Undertaking",
-};
-export const ORCR_LABEL: Record<OrcrStatus, string> = {
-  TRANSFERRED: "Transferred",
-  UNTRANSFERRED: "Untransferred",
-};
-export const MORTGAGE_LABEL: Record<MortgageResult, string> = {
-  MORTGAGE: "Mortgage",
-  NOT_MORTGAGE: "Not Mortgage",
-  NOT_EVALUATED: "Not evaluated",
-};
 export const TRANSACTION_LABEL: Record<TransactionCode, string> = {
   NOTARY: "Notary",
   EDST: "For EDST",

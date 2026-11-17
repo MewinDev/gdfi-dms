@@ -5,9 +5,6 @@ import { addBusinessDays, businessDate, businessDaysBetween, endOfBusinessDay } 
 
 export const EXPENSE_KINDS = ["NOTARY_FEE", "PPSR_FEE", "LTO_FEE", "TRANSPORT", "OTHER"] as const;
 export type ExpenseKindKey = (typeof EXPENSE_KINDS)[number];
-export const EXPENSE_LABEL: Record<ExpenseKindKey, string> = {
-  NOTARY_FEE: "Notary fee", PPSR_FEE: "PPSR fee", LTO_FEE: "LTO fee", TRANSPORT: "Transport", OTHER: "Other",
-};
 
 /** "₱12,500.00" from centavos. */
 export function peso(cents: number): string {

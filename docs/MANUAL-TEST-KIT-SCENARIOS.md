@@ -1,6 +1,6 @@
 # Manual Test Kit: scenarios
 
-Last updated: 12 November 2026 (PHT)
+Last updated: 13 November 2026 (PHT)
 
 The old scenario data: sample accounts and one sample loan per case, already moved through the steps (sent, accepted, on hold, funded, returned, overdue and so on). It loads **only** with `--with-scenarios`; the default kit is the clean one ([Manual Test Kit](MANUAL-TEST-KIT.md)). The automated kit tests use it too.
 
@@ -27,7 +27,9 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 |---|---|---|
 | Admin | Admin | All branches |
 | Finance | Finance | All branches |
-| Branch Supervisor | Branch Supervisor (the built-in role: loans of their branches, move a hold to another person, resolve any problem, Monitoring, TAT report) | Antipolo (101), Angono (165) |
+| Superadmin | Superadmin (the permission matrix, per-user overrides, All branches; makes the kit's sample roles) | All branches |
+| Superadmin Two | Superadmin (the second one, D-028) | All branches |
+| Branch Supervisor | LA Supervisor/Head (the built-in role: every LA tick, approving myloans changes and moving a hold to another person, D-029) | Antipolo (101), Angono (165) |
 | LA 1 | Loan Associate | Antipolo (101), Angono (165) |
 | LA 2 | Loan Associate | Antipolo (101), Angono (165) |
 | LA Alaminos (was "LA Davao") | Loan Associate | Alaminos (390) |
@@ -37,8 +39,8 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | Inactive LA | Loan Associate, inactive (not in the list) | Antipolo (101), Angono (165) |
 | DP 3 | Document Processor, on leave for a week | Alaminos (390) |
 | DP 4 | Document Processor, own capacity 5 | A. Mabini (168) |
-| Operations Monitor | Operations Monitor (read-only: Monitoring and LTO advisories) | All branches |
-| Area Supervisor Luzon 1 | Branch Supervisor | The whole Area LUZON 1 (NGMA + RIZAL) in Branch Division, plus Alaminos (390); home Antipolo |
+| Operations Monitor | Monitoring (read-only: Monitoring and LTO advisories) | All branches |
+| Area Supervisor Luzon 1 | LA Supervisor/Head | The whole Area LUZON 1 (NGMA + RIZAL) in Branch Division, plus Alaminos (390); home Antipolo |
 | LA Luzon 1 (not Amang Rodriguez) | Loan Associate | The whole Area LUZON 1 (NGMA + RIZAL) except Amang Rodriguez (174); home Angono |
 | Roving LA | Loan Associate | All branches |
 | LA Alicia | Loan Associate | Alicia (709), Alicia-Inactive (718) |
@@ -56,12 +58,12 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 | GD1012026902002 | Financing, Undertaking, Transferred | LA 1 | Open the loan file. | Financing, Undertaking and Transferred (picked by the LA); New 350,000 is Mortgage: Notary, For EDST, For Entry PPSR and Mortgage. |
 | GD1012026902003 | Blank product, default Refinancing | LA 1 | Open the loan file. | Blank Product Name defaults to Refinancing; Renewal 800,000 is Mortgage: 4 transactions. |
 | GD1012026902004 | Financing, Non-Undertaking | LA 1 | Open the loan file. | Financing, Non-Undertaking (picked by the LA), Transferred; Mortgage: 4 transactions. |
-| GD1012026902005 | Financing, Untransferred | LA 1 | Open the loan file. | Mortgage check not needed: Untransferred gives Notary and For EDST. |
+| GD1012026902005 | Financing, Untransferred | LA 1 | Open the loan file. | OR/CR transfer check: Untransferred gives Notary and For EDST; the amount is not checked for a Mortgage. |
 | GD1012026902006 | New at 500,000 | LA 1 | Open the loan file. | Exactly 500,000 is Mortgage: 4 transactions. |
 | GD1012026902007 | New at 500,001 | LA 1 | Open the loan file. | Above 500,000 is Not Mortgage: Notary and For EDST. |
 | GD1652026902008 | Renewal at 1,000,000 (Angono) | LA 1 | Open the loan file. | Exactly 1,000,000 is Mortgage: 4 transactions. |
 | GD1652026902009 | Renewal at 1,000,001 (Angono) | LA 1 | Open the loan file. | Above 1,000,000 is Not Mortgage: Notary and For EDST. |
-| GD1012026902010 | "Auto Finance" is not the word Financing | LA 1 | Open the loan file. | Not the whole word Financing, so Refinancing; Not Mortgage. |
+| GD1012026902010 | "Car Loan" has no keyword | LA 1 | Open the loan file. | No Financing or Refinancing keyword, so Refinancing by default ("Classified by default"); Not Mortgage. |
 | GD1012026902011 | Needs LTO: office and cash estimate | LA 1 | Mortgage: the papers are ticked. Send it to DP 1. | Send asks for the LTO office and whether it needs funds, with the cash estimate. Then it waits for DP 1 to accept. |
 | GD1012026902012 | Required paper missing, with remarks | LA 1 | Notary: Valid IDs of borrower (2) is marked Missing (Borrower to submit later, with remarks). Send it to DP 1. Then mark it Received with today's date. | The row is amber "Missing, with remarks"; Send is allowed. Received keeps the reason and remarks in the history and clears the "Missing papers" row. |
 | GD1012026902080 | Optional paper included and missing | LA 1 | Notary: Valid ID of co-maker has "Include in this file" ticked and is Missing with remarks. Send Notary to DP 1. | An included optional paper behaves like a required one. An optional paper not included needs nothing. |

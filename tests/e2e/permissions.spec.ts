@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { signIn } from "./helpers";
+import { signIn, signInWith } from "./helpers";
 
 /**
  * Roles are just ticks: the loan file without and with "Refresh a loan from MyLoans".
@@ -26,14 +26,6 @@ async function noRefreshUser() {
   return role;
 }
 
-/** A test user of a custom role: the "Other test user" list on the sign-in page. */
-async function signInAs(page: Page, name: string, role: string) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByLabel("Other test user").selectOption({ label: `${name} (${role})` });
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 
 test.beforeEach(async () => {
   await resetLoans();
@@ -52,7 +44,7 @@ test("Loan File: no Refresh button without the tick; it appears once Admin ticks
   await expect(page.getByRole("button", { name: "Refresh from MyLoans" })).toBeVisible();
 
   const role = await noRefreshUser();
-  await signInAs(page, "Zz No Refresh LA", "Z LA (no refresh)");
+  await signInWith(page, { other: "Zz No Refresh LA (Z LA (no refresh))" });
   await page.goto(`/loans/${PN}`);
   const strip = page.locator("[data-source-strip]");
   await expect(strip.locator("[data-last-checked]")).toBeVisible();
@@ -74,7 +66,7 @@ test("Loan File: without \"See when MyLoans was last checked\" the strip shows n
   await page.getByRole("button", { name: /Open loan file/ }).click();
   const role = await noRefreshUser();
   await db.role.update({ where: { id: role.id }, data: { permissions: LA_TICKS.filter((k) => k !== "myloans:view") } });
-  await signInAs(page, "Zz No Refresh LA", "Z LA (no refresh)");
+  await signInWith(page, { other: "Zz No Refresh LA (Z LA (no refresh))" });
   await page.goto(`/loans/${PN}`);
   await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expect(page.locator("[data-last-checked]")).toHaveCount(0);

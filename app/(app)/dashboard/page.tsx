@@ -16,6 +16,7 @@ import { DpHome } from "@/components/jobs/dp-home";
 import { FinanceHome } from "@/components/funds/finance-home";
 import { TatProblemsCard, tatToDo } from "@/components/jobs/tat-report";
 import { SourceChangesCard, sourceChangesToDo } from "@/components/loan/source-changes-card";
+import { SetupWarningsCard, setupWarnings } from "@/components/home/setup-warnings";
 import { BorrowerCorrectionsCard } from "@/components/loan/borrower-corrections-card";
 import { BranchReviewCard, branchReviewToDo } from "@/components/admin/branches/review-card";
 import { PackagesToReceive, packagesFor } from "@/components/jobs/packages-to-receive";
@@ -41,18 +42,20 @@ export default async function HomePage() {
 
   // The attention blocks, each only for the ticks that show it today (permission ticks, never a role name).
   const none = { count: 0, items: [] };
-  const [rows, holidays, updates, samples, packages, sentBack, source, corrections, branches, tat] = await Promise.all([
+  const [rows, holidays, updates, samples, packages, sentBack, source, corrections, branches, tat, setup] = await Promise.all([
     listLoans(user, { tab: "all" }),
     getHolidaySet(),
     prisma.notification.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 3, include: { loan: { select: { borrowerName: true } } } }),
     loadSampleCards(user),
     packagesFor(user),
     sentBackFor(user),
-    can(user, PERMISSIONS.SOURCE_REVIEW) ? sourceChangesToDo() : null,
-    // Supervisors and approvers: the corrections of their branches (Admin sees those routed to it in MyLoans changes).
-    can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER) && !can(user, PERMISSIONS.SOURCE_REVIEW) ? borrowerToDo(user) : null,
+    can(user, PERMISSIONS.SOURCE_REVIEW) ? sourceChangesToDo(user) : null,
+    // Approvers: the borrower details corrections of the branches in their access (D-029).
+    can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER) ? borrowerToDo(user) : null,
     can(user, PERMISSIONS.BRANCHES_REVIEW) ? branchReviewToDo() : null,
     can(user, PERMISSIONS.REPORTS_TAT) ? tatToDo(user) : null,
+    // The Superadmin (Manage permissions): setup gaps only they can fix (D-028, D-029).
+    can(user, PERMISSIONS.ROLES_MANAGE) ? setupWarnings() : [],
   ]);
   const cards = rows.map((r) => cardFor(r, holidays));
   const need = sortByUrgency(cards.filter((c) => c.group === "need"));
@@ -72,6 +75,7 @@ export default async function HomePage() {
   ];
 
   const alerts = [
+    setup.length > 0 && <SetupWarningsCard key="setup" lines={setup} />,
     packages.length > 0 && <PackagesToReceive key="packages" rows={packages} />,
     sentBack.length > 0 && <SentBackToYou key="sent" rows={sentBack} />,
     source && source.count > 0 && <SourceChangesCard key="source" data={source} />,

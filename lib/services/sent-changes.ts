@@ -5,6 +5,7 @@ import { writeAudit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { evaluateChecklist, pendingJobInLock } from "./workflow";
 import { moveDocs } from "./custody";
 import { recomputeStage } from "./stage";
@@ -57,7 +58,8 @@ export const processorSchema = z.object({
   reason: reasonText("change the processor"),
 });
 
-const PROCESSOR_ROLE = { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } };
+/** Who can be a processor (lib/auth/holders.ts): holds "Receive and process transactions". */
+const processor = (id: string) => andWhere({ id }, holdsWhere(PERMISSIONS.DP_RECEIVE));
 
 /** Reassign to a different processor (and add or remove the second processor). The first processor is told. */
 export async function changeProcessor(u: CurrentUser, transactionId: string, raw: unknown) {
@@ -65,9 +67,9 @@ export async function changeProcessor(u: CurrentUser, transactionId: string, raw
   if (!p.success) throw firstIssue(p.error);
   const d = p.data;
   const t = await loadForLa(u, transactionId);
-  const dp = await prisma.user.findFirst({ where: { id: d.dpUserId, active: true, role: PROCESSOR_ROLE }, include: { branches: true } });
+  const dp = await prisma.user.findFirst({ where: processor(d.dpUserId), include: { branches: true } });
   if (!dp) throw new UserError("Pick an active processor.", "dpUserId");
-  const second = d.secondaryDpUserId ? await prisma.user.findFirst({ where: { id: d.secondaryDpUserId, active: true, role: PROCESSOR_ROLE } }) : null;
+  const second = d.secondaryDpUserId ? await prisma.user.findFirst({ where: processor(d.secondaryDpUserId) }) : null;
   if (d.secondaryDpUserId && !second) throw new UserError("Pick an active second processor.", "secondaryDpUserId");
   if (second && second.id === dp.id) throw new UserError("The second processor must be a different person.", "secondaryDpUserId");
   return withLoanLock(t.loanId, async (tx) => {

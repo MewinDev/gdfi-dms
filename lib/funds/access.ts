@@ -23,7 +23,7 @@ export const TYPE_NOUN: Record<TypeKey, string> = { CA: "cash advances", FT: "fu
 export const TYPE_TITLE: Record<TypeKey, string> = { CA: "Cash advances", FT: "Fund transfers" };
 
 /** Anything that names its type: a request, a top-up, a funds type row. */
-export interface TypeRef { fundsTypeId?: string | null; id?: string }
+export interface TypeRef { fundsTypeId?: string | null; id?: string; /** A request's number (CA-2026-0001): its branches limit who is told (D-019). */ number?: string }
 /** CA or FT for a built-in type; null for a type added later. */
 export function typeKeyOf(t: TypeRef | string | null | undefined): TypeKey | null {
   const id = typeof t === "string" ? t : t?.fundsTypeId ?? null;

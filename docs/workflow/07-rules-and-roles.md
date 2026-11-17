@@ -2,13 +2,13 @@
 
 The automatic rules, the turnaround targets, the roles and examples of permissions.
 
-Last updated: 12 November 2026 (PHT)
+Last updated: 17 November 2026 (PHT)
 
 ### Automatic rules (run once, when the LA clicks Open Loan File)
 
 | Rule | Input | Result |
 |---|---|---|
-| 1 Classification | Product Name contains the whole word "Refinancing", else "Financing", else (or blank) | Refinancing, Financing, or Refinancing by default |
+| 1 Classification | Product name (case, hyphens and extra spaces ignored) contains a Refinancing keyword, else a Financing keyword, else the default (D-031; keywords and default in Settings, Product classification) | Refinancing, Financing, or the default (Refinancing to start), labelled "Classified by default" |
 | 2 Undertaking | Financing only, picked by the LA | Undertaking or Non-Undertaking |
 | 3 ORCR | Financing + Untransferred | Notary + EDST |
 | 4 Mortgage | New and amount at or below PHP 500,000; Renewal and amount at or below PHP 1,000,000 | Mortgage: Notary, EDST, Entry of PPSR, Mortgage. Otherwise Notary and EDST |
@@ -44,16 +44,20 @@ Decline and Return to LA: the transaction goes back to the specific Loan Associa
 
 Details and evidence fields: [Processing stages](10-processing-stages.md).
 
-### Roles (Admin is locked from LA, DP and Finance work steps)
+### Roles (Admin and Superadmin are locked from LA, DP and Finance work steps by default)
+
+The ten decided roles (D-002) and Monitoring (D-010). Every built-in role may sign in. What a role does is its ticks in Settings, Permissions (the matrix); a person can also have overrides (Granted / Denied) on Users, Edit (D-008).
 
 | Role | Main work |
 |---|---|
+| Superadmin (two are seeded; a warning when only one active is left) | Setup and configuration: the permission matrix, per-person overrides, "Can approve LA Open Items", All branches, Settings, users, the myloans integration. No day-to-day action by default: no approving, releasing funds, Accept / Forward, job work, moving holds or resolving problems, unless ticked (D-023, D-028). Told on Home about branches with no approver |
 | LA | Search and open loans, check papers, flag funds, send, receive forwarded packages, EDST |
 | DP | Accept or decline, stages, attempts, funds requests (Cash advance or Fund transfer), liquidation, return to LA, Pasuyo, check and verify, forward to a branch |
-| Branch Supervisor (built in; the same role is used for an area supervisor by giving the person Area access) | See the loans of their branches and open loan files, move a hold to another person, resolve any problem there, the Monitoring pages for DPs and LTO offices, the TAT report, review borrower detail corrections from MyLoans (their branches). No money, Settings, users, roles or branch imports |
-| Finance and approvers (per type: cash advances and fund transfers can be handled by different people) | Approve and release cash advances, send fund transfers, change a request's funds type before release (with remarks), change or add a line before approval, add expense kinds ("+ Add new kind"), confirm returns, close advances, follow up overdue liquidation |
-| Admin | Settings, roles and access, Audit Log, TAT reports, review of MyLoans changes, closing cancelled loans |
-| Operations Monitor | Read-only, all branches: the Monitoring page (DPs and LTO offices) and LTO advisories (resolve, edit, file from Monitoring). No loan files and no amounts. Told when an advisory is filed or resolved |
+| LA Supervisor/Head (built in, key SUP: the former Branch Supervisor; the same role is used for an area head by giving the person Area access) | Every LA tick, plus approving or rejecting myloans changes and moving holds, for their branches (D-002, D-010, D-029). No per-person legacy grants (the migration removed them and listed each person). No money, Settings, users, roles or branch imports |
+| Finance (one role; each person ticks Handles CA and/or Handles FT, D-009, and the branches they handle, D-035: not All branches by default; approvers are Finance people with the approve tick only, D-010) | Approve and release cash advances, send fund transfers, change a request's funds type before release (with remarks), change or add a line before approval, add expense kinds ("+ Add new kind"), confirm returns, close advances, follow up overdue liquidation |
+| Admin (Group Head) | Settings, users and day-to-day staffing (specific branches, Handles CA / FT), Audit Log, TAT reports, All branches with the Open Item approver tick by default (approves MyLoans changes for every branch, D-029), closing cancelled loans. Not the permission matrix, overrides or All branches (D-023) |
+| Custodian, QA, Digicur, Archiver | See loan files of their branches; their work steps come with their modules |
+| Monitoring (read-only; the former Operations Monitor) | Read-only, all branches: the Monitoring page (DPs and LTO offices) and LTO advisories (resolve, edit, file from Monitoring). No loan files and no amounts. Told when an advisory is filed or resolved |
 
 ### Home: the same layout for every role
 
@@ -102,6 +106,23 @@ One column per fact: **Borrower** (the name, the PN under it), **Branch**, **Pro
 
 Steps 1 (Loan opened) and 2 (Classified) are done as soon as the loan file exists, so a loan is never shown at them; 7 (Quality Assurance) and 8 (Digital Records) have no stage in the app yet (Phase 2), so a loan goes from 6 (Collateral) straight to 9 (In Safekeeping). Archiving, Warehousing and Warehoused come after Closed, under step 10 (Phase 2). The full table, with the next steps, owners and the Phase 2 stages: [Stages and next steps](13-stages-and-next-steps.md).
 
+### Long lists: pages
+
+Long lists are shown a page at a time, with one compact line under the list: "1–50 of 312 · Previous · Next" (no line when everything fits on one page).
+
+| List | Rows a page | Notes |
+|---|---|---|
+| Loans (the Loans table) and My loans | 50 | The tabs, their counts, the filters, the search and the order are as before; the whole list is filtered and put in order first, then one page is shown. |
+| Settings > Users | 100 | "N of M users" counts the whole filtered list. |
+| Settings > Branches | 100 | Was cut at 400 rows ("N more: narrow the search"); now every branch can be reached. |
+| Home: Do these next, Waiting on others, Problems to fix | 6 | Unchanged: already limited, with **See all (N)** to My loans. |
+| Monitoring drill-downs (a processor's jobs, an LTO office's jobs, Loan files with missing papers) | 100 rows each | A row limit, not pages: a pop-up holds up to three lists. The heading keeps the whole count and a line says "Showing the first 100 of N" and how to narrow it. |
+
+- **Counts are the total.** Tab counts, "Showing X of Y" and "N of M users" never count only the page.
+- **The page is in the address** (`page=2`), so Back and refresh keep it. A new filter, search, tab or grouping goes back to page 1.
+- **Group by area and branch.** The whole result is grouped (Area, then Branch, the usual order inside each), then cut into pages of 50 rows. Each heading shows its group's count over the whole result, and "(continued)" when the group began on an earlier page. Whole groups per page were not chosen: one branch with 300 loan files would make a page of 300.
+- **Still read in full on the server.** The order of My loans (most urgent first) and the TAT filter are worked out from every loan file, so the server still reads the whole filtered list (at most 500 loan files per tab, as before) and sends one page to the browser. Settings > Users is paged in the database.
+
 ### Branch access: where a person works
 
 Roles say what a person can do; branch access says where. It is set per user (Users, Edit, Branch access): **All branches**, or **Selected**: whole Divisions, whole Areas (the pair Division and Area) and single Branches together, minus exceptions (a branch unticked inside a ticked Area or Division). A ticked Area or Division includes a branch added to it later. The result is kept in a derived table (`user_branch_access`), rebuilt when a person's access changes, a branch moves to another Area, or a branch, Area or Division appears; every query that is limited by branch reads it. Admin people have All branches (stored on each person, like anyone else). Changing a person's branch access needs the tick `access:manage` (Change branch access). Each person who works on loans has a **home branch** inside their access: the default for new work and sending. Every branch in the access is workable, not only the home branch. Forwarding a finished package stays unrestricted: the processor picks any branch, then the named LA. A role's branch access is now only the default for new users of that role. Existing users kept what they had: their branch became their home branch and a single-branch grant; users whose role gave all branches got All branches.
@@ -110,10 +131,18 @@ Branches themselves come from MyLoans (Settings, Branches): for MyLoans branches
 
 ### Roles are just ticks
 
-A role is a name and a list of ticks (permissions). Admin opens Settings, Roles and ticks what each role may see or do; the app follows on each person's next page, and the server checks every action (a button only hides for convenience). No code decides anything by a role's name, Admin included: Admin is an ordinary role whose default ticks are everything except the loan-file work steps. The full catalogue, the defaults, the role editor, lock-out protection (someone active always keeps `roles:manage` and `access:manage`) and the audit are in [Permissions](12-permissions.md).
+A role is a name and a list of ticks (permissions). Admin opens Settings, Roles and ticks what each role may see or do; the app follows on each person's next page, and the server checks every action (a button only hides for convenience). No code decides anything by a role's name, Admin included: Admin is an ordinary role whose default ticks are everything except the loan-file work steps. The full catalogue, the defaults, the role editor, lock-out protection (someone active always keeps `roles:manage` and `access:manage`, counting per-person overrides) and the audit are in [Permissions](12-permissions.md).
+
+Who changes what (D-023): only the Superadmin (by default) changes the matrix, per-person overrides, "Can approve LA Open Items" and All branches; the Admin and the Superadmin assign specific branches and Handles CA / FT. Nobody changes their own role, access, scope or overrides. Someone who cannot manage permissions cannot give a role that can manage permissions or give All branches. Every change is audited. One server-side helper (`lib/auth/scope.ts`, `lib/auth/holders.ts`) applies branch scope and "who holds this permission" everywhere; a record outside a person's branches is "not found".
 
 Examples: `loans:refresh` (Refresh from MyLoans on a loan file; LA, Admin, DP, Vault, Digital Records, QA by default, not Finance, Approvers or Operations Monitor), `myloans:view` ("MyLoans · Last checked"), `funds:flag`, `funds:request`, per funds type (cash advances `funds:ca_*` and fund transfers `funds:ft_*`, handled by different people): `view` (the Funds page, CSV, receipts), `approve` (within that type's approval bands), `release`, `settle` (confirm returned cash, close), `edit_lines` (change or add a line before approval), `change_type` (the type before release; changing into the other type needs that type's tick too) and `print` (the liquidation report); Finance has both types, Admin has See and Print of both; they replaced `funds:view_all`, `funds:approve`, `funds:release` and `funds:print` (migration 20261119090007_funds_per_type gave both types to every role that had the old key), `jobs:work`, `jobs:pasuyo`, `jobs:return_to_la`, `holds:raise`, `holds:resolve` (resume: only the hold owner), `holds:transfer` ("Move a hold to another person": in the person's branches, to someone with access there; Admin and the Branch Supervisor by default, not Finance since 10 November 2026), `holds:manage` (Settings, Hold reasons; Admin only by default), `problems:raise`, `problems:resolve`, `problems:resolve_any` (also told about problems, holds and overdue work in the branch), `journey:view_amounts`, `myloans:review` (decide MyLoans changes), `myloans:review_borrower` ("Review borrower detail corrections"; renamed from its first "source" name on 12 November 2026, migration 20261119090013_myloans_shared_limits: Accept the correction or Keep current when MyLoans changes a borrower's name, address, contact number, CIF or CIN; loans in the person's branches only; the Branch Supervisor, Admin and every role that approves funds by default, migration 20261119090012_borrower_details; when nobody assigned to the branch has it, Admin reviews it), `myloans:manage` (MyLoans sync settings), `myloans:sync` (Run now), `email:view` and `email:manage`, `stages:manage` (Settings, Processing stages; Admin only by default), `branches:view`, `branches:manage` (the DMS-only fields of a branch, branches made by hand, Hide from DMS), `branches:import` (Import from MyLoans, Branches from MyLoans), `branches:review` (the Branch review and Hide from DMS), `settings:system` (Settings, System switches), `settings:pn_format` (the PN format), `users:edit` (a person's name, role and status), `access:manage` (a person's branch access), `roles:manage`, `fundtypes:manage` (Settings, Funds types; Admin only by default), `funds:kinds_view` (see Settings, Expense kinds; every role that sees funds) and `funds:kinds_manage` (add, edit, reorder, make inactive expense kinds, "+ Add new kind" on the funds screens, change a fixed amount on one request; Admin, Finance and Approvers by default). Changing a request's funds type before release goes with `funds:release` (Finance).
 
 Monitoring (group "Monitoring" in Roles): `monitor:dp` (the DP monitor), `monitor:lto` (the LTO monitor), `ltoreports:create` (file an LTO advisory from a job at an LTO stage; DP by default), `ltoreports:manage` (resolve or edit any advisory, file one from Monitoring; Admin and Operations Monitor by default), `ltoreports:notify` (be told about advisories; Operations Monitor by default) and `dpcapacity:manage` (Settings, Processor capacity: the default capacity, a processor's own capacity and On leave; Admin only by default). Admin has them all. They are not given to Finance by default; the Branch Supervisor has `monitor:dp` and `monitor:lto` (for their branches). A monitor sees counts, times and PN lists; opening a loan needs `loans:view` in that branch and amounts need `journey:view_amounts`. Definitions: [Monitoring](11-monitoring.md).
 
 [Back to the workflow index](README.md)
+
+### Approvers (D-029, 17 November 2026)
+
+- Approving MyLoans changes is **permission only**: anyone with the approver tick whose access includes the loan's branch decides it, and is told about it. "All branches" covers every branch, including branches with no approver of their own.
+- There is **no automatic fallback to Admin**. A branch where nobody has the approver tick in their own access is listed as "N active branches have no approver assigned." on Settings, Branches and on the Superadmin's Home, so it gets fixed. Its items stay visible to All-branches approvers.
+- Funds requests and their notices follow branch scope too (D-030): a request is in a person's scope only when the processor's branch and every line's loan are in their access.

@@ -6,11 +6,7 @@ import { prisma } from "@/lib/db";
 import { testProvider } from "@/lib/auth/providers";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth/session";
 import { getCurrentUser } from "@/lib/auth/current-user";
-
-function safeNext(next: FormDataEntryValue | null): string {
-  const v = typeof next === "string" ? next : "";
-  return v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/login") ? v : "/dashboard";
-}
+import { safeNext } from "@/lib/auth/mode";
 
 export async function testSignIn(formData: FormData) {
   const email = String(formData.get("email") ?? "");

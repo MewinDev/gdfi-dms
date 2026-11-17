@@ -1,4 +1,4 @@
-import { requireUser, can } from "@/lib/auth/current-user";
+import { requireUser, can, hasAllBranches } from "@/lib/auth/current-user";
 import { canFundsAny } from "@/lib/funds/access";
 import { PERMISSIONS, SETTINGS_PERMISSIONS } from "@/lib/auth/permissions";
 import { unreadNotificationCount } from "@/lib/services/queries";
@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ...(settings ? [{ href: "/admin/settings", label: "Settings", icon: "settings" as const }] : []),
     ...(admin[2] ? [{ href: "/admin/audit", label: "Audit Log", short: "Audit", icon: "audit" as const }] : []),
   ];
-  const subtitle = user.scopeBranchIds === null ? `${user.roleName} · All branches` : user.branchNames.length > 3 ? `${user.roleName} · ${user.branchNames.length} branches` : user.branchNames.join(" · ");
+  const subtitle = hasAllBranches(user) ? `${user.roleName} · All branches` : user.branchNames.length > 3 ? `${user.roleName} · ${user.branchNames.length} branches` : user.branchNames.join(" · ");
 
   return (
     <>

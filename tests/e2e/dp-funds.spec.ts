@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
-import { completeAndForwardUi, workStagesUi } from "./helpers";
+import { completeAndForwardUi, workStagesUi, signInWith } from "./helpers";
 
 /**
  * Full path with GD1652026901003: LA sends Mortgage flagged for an LTO fee → DP accepts →
@@ -15,12 +15,6 @@ test.beforeEach(async () => {
 
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor", fin: "Continue as Test Finance" } as const;
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
@@ -71,7 +65,7 @@ async function sendTxn(page: Page, code: string, funds: "YES" | "NO", kinds: str
 }
 
 test("Full path with GD1652026901003: flag, accept, LTO block, request, approve, release, problem, resume, complete, forward, receive", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   const mortgage = await sendTxn(page, "MORTGAGE", "YES", ["LTO fee"]);
   await expect(page.getByText("The processor will ask Finance for the amount.")).toBeVisible();
@@ -86,7 +80,7 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   await expect(page.getByRole("region", { name: "Mortgage: job" }).locator('[data-funds="NEEDED"]')).toBeVisible();
 
   // DP: Home, review and accept.
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await expect(page.getByRole("heading", { name: "Do these next" })).toBeVisible();
   await shot(page, "dp-home");
   await noSideways(page);
@@ -111,7 +105,7 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   expect((await db.cashAdvance.findFirstOrThrow()).number).toMatch(/^CA-\d{4}-\d{4}$/);
 
   // Finance: approve, release.
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   await expect(page.locator("[data-advance] [data-amount]")).toHaveText("₱1,500.00");
   await shot(page, "finance-to-approve");
@@ -130,7 +124,7 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   await noSideways(page);
 
   // DP: Not processed → problem (red) → Resume → Done → Complete → Forward.
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${job.id}`);
   await expect(page.getByText("Funded", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Log today/ }).click();
@@ -159,7 +153,7 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
   await completeAndForwardUi(page, "Angono");
 
   // LA: the real Phase 5 receive.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/GD1652026901003?tab=todo&work=${mortgage}`);
   await page.getByRole("button", { name: "Received complete" }).click();
   await expect.poll(async () => (await db.loanTransaction.findUniqueOrThrow({ where: { id: mortgage } })).status).toBe("COMPLETED");
@@ -167,7 +161,7 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
 });
 
 test("TAT chips: Waiting, Processing, Due today, Overdue, Problem and Done on the TAT and problems report", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   for (const code of ["NOTARY", "PPSR", "MORTGAGE"]) {
     await sendTxn(page, code, "NO");
@@ -192,7 +186,7 @@ test("TAT chips: Waiting, Processing, Due today, Overdue, Problem and Done on th
       await db.problem.create({ data: { loanId: j.loanId, transactionId: j.transactionId, reasonId: reason.id, raisedByLabel: "E2E", raisedAt: new Date(now - day) } });
     }
   }
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await expect(page.getByRole("heading", { name: "TAT and problems" })).toBeVisible();
   await page.goto("/reports/tat?show=all");
   await expect(page.locator('[data-tat="problem"]').filter({ visible: true }).first()).toBeVisible();

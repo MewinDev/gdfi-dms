@@ -43,20 +43,21 @@ async function userWith(name: string, perms: string[]): Promise<CurrentUser> {
 beforeAll(async () => {
   await restore();
   await cleanLoans();
-  admin = await asUser("test.admin@gdfi.ph");
+  // Managing roles is the Superadmin's (D-023); this actor is the role manager.
+  admin = await asUser("test.superadmin@gdfi.ph");
   la = await asUser("test.la@gdfi.ph");
   await openLoanFile(la, { pn: PN }).catch(() => null);
 }, 120_000);
 afterAll(restore);
 
 describe("the migration gives every role the new ticks for what it could already do", () => {
-  it("built-in roles hold exactly their defaults: Refresh for LA, Admin, DP, Vault, DIG, QA; not Finance, Approvers, Operations Monitor", async () => {
+  it("built-in roles hold exactly their defaults: Refresh for every role that sees loan files; not Finance or Monitoring", async () => {
     for (const [key, d] of Object.entries(ROLE_DEFAULTS)) {
       const r = await prisma.role.findUniqueOrThrow({ where: { key } });
       expect([...effectivePermissions(r)].sort(), key).toEqual([...d.permissions].sort());
     }
     const refresh = Object.entries(ROLE_DEFAULTS).filter(([, d]) => d.permissions.includes(P.LOANS_REFRESH)).map(([k]) => k).sort();
-    expect(refresh).toEqual(["ADMIN", "DIG", "DP", "LA", "QA", "SUP", "VAULT"]);
+    expect(refresh).toEqual(["ADMIN", "ARCHIVER", "DIG", "DP", "LA", "QA", "SUP", "SUPERADMIN", "VAULT"]);
   });
 
   it("a custom role saved with the old keys is read with the new ones; built-in roles are the defaults", async () => {
@@ -91,7 +92,7 @@ describe("loans:refresh: Refresh a loan from MyLoans", () => {
     expect(noRefresh.permissions.has(P.LOANS_VIEW)).toBe(true);
     expect(noRefresh.permissions.has(P.MYLOANS_VIEW)).toBe(true);
     await expect(refreshFromMyLoans(noRefresh, loan.id)).rejects.toThrow(NO_REFRESH);
-    expect(NO_REFRESH).toBe("Ask an Admin to turn on \"Refresh a loan from MyLoans\" for your role.");
+    expect(NO_REFRESH).toBe("Ask a Superadmin to turn on \"Refresh a loan from MyLoans\" for your role.");
   });
 
   it("ticking it on the role turns it on at the person's next request", async () => {
@@ -120,7 +121,9 @@ describe("notifications follow ticks, not role names", () => {
   it("problems, holds and overdue work: told to people with \"Resolve any problem\" at that branch", async () => {
     const branch = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
     const ids = await overseerIds(prisma, branch.id);
-    expect(ids).toContain(admin.id);
+    // Admin resolves any problem by default; the Superadmin does not (no day-to-day action, D-028).
+    expect(ids).toContain((await asUser("test.admin@gdfi.ph")).id);
+    expect(ids).not.toContain(admin.id);
     expect(ids).not.toContain(la.id);
     const overseer = await userWith("Z Overseer", [P.LOANS_VIEW, P.PROBLEMS_RESOLVE_ANY]);
     expect(await overseerIds(prisma, branch.id)).toContain(overseer.id);
@@ -130,14 +133,15 @@ describe("notifications follow ticks, not role names", () => {
 });
 
 describe("lock-out protection", () => {
-  it("the last role that can manage roles cannot lose that tick", async () => {
-    const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
+  // Since D-023 the Superadmin role alone holds "Manage permissions"; Admin and Superadmin hold "Change branch access".
+  it("the last role that can manage permissions cannot lose that tick", async () => {
+    const saRole = await prisma.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } });
     const snap = await loadSnapshot();
-    const why = lockoutRefusal(snap, { kind: "role", roleId: adminRole.id, permissions: [...adminRole.permissions].filter((k) => k !== P.ROLES_MANAGE) });
-    expect(why).toBe("Admin is the last role that can manage roles. Keep \"Manage roles\" ticked, or tick it on another role first.");
+    const why = lockoutRefusal(snap, { kind: "role", roleId: saRole.id, permissions: [...saRole.permissions].filter((k) => k !== P.ROLES_MANAGE) });
+    expect(why).toBe("Superadmin is the last role that can manage permissions. Keep \"Manage permissions\" ticked, or tick it on another role first.");
     // Through the service: the editor's own role says so first.
-    await expect(saveRole(admin, adminRole.id, { name: adminRole.name, description: adminRole.description, branchAccess: adminRole.branchAccess, permissions: adminRole.permissions.filter((k) => k !== P.ROLES_MANAGE) })).rejects.toBeInstanceOf(UserError);
-    await expect(setRoleActive(admin, adminRole.id, false)).rejects.toBeInstanceOf(UserError);
+    await expect(saveRole(admin, saRole.id, { name: saRole.name, description: saRole.description, branchAccess: saRole.branchAccess, permissions: saRole.permissions.filter((k) => k !== P.ROLES_MANAGE) })).rejects.toBeInstanceOf(UserError);
+    await expect(setRoleActive(admin, saRole.id, false)).rejects.toBeInstanceOf(UserError);
   });
 
   it("the last active person who can change branch access cannot lose it", async () => {
@@ -147,26 +151,28 @@ describe("lock-out protection", () => {
     let s = snap;
     for (const id of holders.slice(1)) s = applyChange(s, { kind: "user", userId: id, active: false });
     const laRole = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
-    expect(lockoutRefusal(s, { kind: "user", userId: holders[0], roleId: laRole.id })).toMatch(/^This is the last active person who can manage roles\.|^This is the last active person who can change branch access\./);
+    expect(lockoutRefusal(s, { kind: "user", userId: holders[0], roleId: laRole.id })).toMatch(/^This is the last active person who can (manage permissions|change branch access)\./);
     expect(lockoutRefusal(s, { kind: "user", userId: holders[0], active: true })).toBeNull();
   });
 
-  it("a role with Manage roles but no people does not count; another role with people does", async () => {
+  it("a role with the tick but no people does not count; another role with people does", async () => {
     const adminRole = await prisma.role.findUniqueOrThrow({ where: { key: "ADMIN" } });
-    const without = adminRole.permissions.filter((k) => k !== P.ACCESS_MANAGE);
+    const saRole = await prisma.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } });
+    const without = (r: { permissions: string[] }) => r.permissions.filter((k) => k !== P.ACCESS_MANAGE);
+    // Superadmin's role loses it first (in the snapshot only); then Admin's role is the last with people.
+    const base = async () => applyChange(await loadSnapshot(), { kind: "role", roleId: saRole.id, permissions: without(saRole) });
     const spare = await prisma.role.create({ data: { key: "C_Z_SPARE", name: "Z Spare", builtIn: false, permissions: [P.USERS_VIEW, P.USERS_EDIT, P.ACCESS_MANAGE] } });
-    const snap = await loadSnapshot();
-    expect(lockoutRefusal(snap, { kind: "role", roleId: adminRole.id, permissions: without })).toMatch(/^Nobody active could change branch access after this change\./);
+    expect(lockoutRefusal(await base(), { kind: "role", roleId: adminRole.id, permissions: without(adminRole) })).toMatch(/^Nobody active could change branch access after this change\./);
     const u = await prisma.user.create({ data: { email: "zz.spare@gdfi.ph", name: "Zz Spare", roleId: spare.id, isTestUser: true } });
-    expect(lockoutRefusal(await loadSnapshot(), { kind: "role", roleId: adminRole.id, permissions: without })).toBeNull();
+    expect(lockoutRefusal(await base(), { kind: "role", roleId: adminRole.id, permissions: without(adminRole) })).toBeNull();
     await prisma.user.delete({ where: { id: u.id } });
   });
 
-  it("making the last Admin person inactive is refused by the same rule (no role name involved)", async () => {
-    const others = await prisma.user.findMany({ where: { active: true, role: { key: "ADMIN" }, id: { not: admin.id } } });
+  it("making the last Superadmin person inactive is refused by the same rule (no role name involved)", async () => {
+    const others = await prisma.user.findMany({ where: { active: true, role: { key: "SUPERADMIN" }, id: { not: admin.id } } });
     await prisma.user.updateMany({ where: { id: { in: others.map((o) => o.id) } }, data: { active: false } });
     try {
-      expect(await inactiveRefusal("user", { id: admin.id }, { id: "someone-else" })).toMatch(/^This is the last active person who can (manage roles|change branch access)\./);
+      expect(await inactiveRefusal("user", { id: admin.id }, { id: "someone-else" })).toMatch(/^This is the last active person who can (manage permissions|change branch access)\./);
     } finally {
       await prisma.user.updateMany({ where: { id: { in: others.map((o) => o.id) } }, data: { active: true } });
     }
@@ -198,7 +204,8 @@ describe("roles are just ticks", () => {
     const walk = (d: string) => { for (const n of readdirSync(d)) { const p = path.join(d, n); if (statSync(p).isDirectory()) walk(p); else if (/\.(ts|tsx)$/.test(n) && !/\.test\.tsx?$/.test(n)) files.push(p); } };
     for (const d of ["app", "components", "lib"]) walk(d);
     const bad = /role\.key\s*[!=]==|roleKey\s*[!=]==|\.key\s*===\s*"(ADMIN|LA|DP|FIN|MONITOR|APPR|VAULT|DIG|QA)"|key:\s*"(ADMIN|LA|DP|FIN|MONITOR|APPR|VAULT|DIG|QA)"\s*[,}]|isLockedAdminRole|ADMIN_ROLE_KEY|MONITOR_ROLE_KEY/;
-    const hits = files.filter((f) => !f.includes(`${path.sep}kit${path.sep}`)).flatMap((f) => readFileSync(f, "utf8").split("\n").map((l, i) => [f, i + 1, l] as const).filter(([, , l]) => bad.test(l)).map(([f, n, l]) => `${f}:${n} ${l.trim()}`));
+    // lib/kit and lib/seed (npm run db:reset-seed) only build sample data; they never decide access.
+    const hits = files.filter((f) => !f.includes(`${path.sep}kit${path.sep}`) && !f.includes(`${path.sep}seed${path.sep}`)).flatMap((f) => readFileSync(f, "utf8").split("\n").map((l, i) => [f, i + 1, l] as const).filter(([, , l]) => bad.test(l)).map(([f, n, l]) => `${f}:${n} ${l.trim()}`));
     expect(hits).toEqual([]);
   });
 });

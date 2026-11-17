@@ -2,7 +2,7 @@
 
 How to make the background MyLoans sync and the email reminders run on a schedule, and how to check that they do.
 
-Last updated: 12 November 2026 (PHT)
+Last updated: 13 November 2026 (PHT)
 
 - **Nothing runs by itself.** The DMS has no timer of its own for the MyLoans sync or the email reminders. Something outside the app must call them: a scheduler on this PC, a cron job on a server, or Supabase.
 - **The rules live in the app.** The scheduler only knocks on the door. Business hours, "every N minutes", the cap per run and the hourly limit are checked by the app (`lib/services/source-sync.ts`, `runMyLoansSync`).
@@ -56,12 +56,28 @@ Settings > System > MyLoans sync. Saving needs "Change MyLoans sync settings"; i
 | `myloans.maxPerRun` | Loans per run (at most) | 50 | The most loans one run checks. The app halves its own cap after a slow or troubled run and raises it again by a quarter after a healthy one, never above this. 1 to 500. |
 | `myloans.pauseMs` | Pause between calls (milliseconds) | 500 | The wait between two calls in a run, plus up to half again at random. 0 to 10,000. |
 | `myloans.tierMinutes` | Work in progress / Not yet sent / Finished, not closed: check every (minutes) | A 60, B 240, C 1,440 | When a loan is due again, by tier. A loan MyLoans did not answer for is asked again within 30 minutes. Closed and cancelled loans are never checked. |
-| `myloans.hourlyCeiling` | Calls to MyLoans per hour (at most) | 600 | At the limit, the background run stops and waits for the next clock hour. People opening a loan still get it. 10 to 100,000. |
+| `myloans.hourlyCeiling` | Calls to MyLoans per hour (at most) | 600 | At the limit, every automatic call stops until the next clock hour: the background run, the stale refresh in Find a loan, the Find lookup of a new PN and the refresh when a loan file is opened (section 3a). The Refresh button is never stopped by it. 10 to 100,000. |
 | `myloans.refreshOnOpenMinutes` | Refresh when opened if older than (minutes) | 60 | Not part of the schedule: opening a loan file refreshes it when its copy is older than this. 0 means every time. |
 | `myloans.refreshOnFindHours` | When a saved loan is found, refresh it from MyLoans if last checked more than this many hours ago | 4 | Not part of the schedule: Find a loan refreshes a saved loan in the background. 0 means never. |
 | `myloans.slowMs` | (not on screen) | 2000 | An average answer slower than this marks the run "Slowed down" and halves the cap. |
 
 **Pause MyLoans calls** (`myloans.paused`, default off; an Admin switch on the same card). When it is on, the background run, the stale refresh and refresh on open make no call to MyLoans, and the run history shows "Paused". The scheduler can keep calling; nothing reaches MyLoans until the switch is off.
+
+### 3a. Which calls the hourly limit stops
+
+Every call to MyLoans is counted in the one shared hourly count (`MyLoansCallHour`). The automatic ones are also **limited**: at the ceiling, or while the circuit breaker is open, they make no call (fail closed). A person's own Refresh is counted but never limited.
+
+| Call | Who starts it | Counted | Stopped at the limit / breaker open | What the person sees when stopped |
+|---|---|---|---|---|
+| Background run (due loans, or the changed-since feed) | The schedule, Run now, the console script | Yes | Yes | Run history "Paused: hourly limit reached" |
+| Stale refresh in Find a loan (a saved loan last checked more than `refreshOnFindHours` ago) | Automatic, after Find loan | Yes | Yes | The "Already in the DMS" card as it is |
+| Find loan on a PN that is not saved yet | A person pressing Find loan | Yes | Yes | "MyLoans is busy, please try again in a few minutes." |
+| **Refresh when a loan file is opened** (older than `refreshOnOpenMinutes`) | Automatic, on opening | Yes | **Yes (since 13 November 2026)** | Nothing: the loan file opens from the DMS copy, "Last checked" stays as it was, no error banner. The server logs one line, `[myloans] refresh on open skipped for loan <id>: the hourly limit is reached` (or `the circuit breaker is open`). |
+| Refresh from MyLoans (the button on a loan file) | A person | Yes | No | Its own message when MyLoans does not answer or the breaker is open ("MyLoans did not answer several times. We will try again in a minute.") |
+
+Not counted (unchanged, outside this limit): opening a new loan file (it asks MyLoans once more to re-run the Data Check before saving), the daily branch list, and the simulator in test mode.
+
+How the open refresh is limited: it reads the breaker and the count first (the same functions as the Find stale refresh, `callsThisHour` and `breakerState`), then the call itself reserves its place in the hour atomically (`countCall` with the ceiling), so two instances cannot both slip past it. If the breaker cannot be read it counts as open. Code: `refreshOnOpen` in `lib/services/source-sync.ts`; test: `tests/integration/sync-check.test.ts`, "refresh on open obeys the shared hourly limit".
 
 **What one run does.** Only one sync runs at a time (a database advisory lock). If MyLoans offers a changed-since feed, the run makes one call for what changed since the last run (with 5 minutes of overlap) and updates only the loans open here. Otherwise it reads the due loans, oldest first, up to the cap, with the pause between calls. Unchanged loans get one batched "last checked" update; only changes are written. The last 10 runs are kept for the card (`myloans.state`).
 

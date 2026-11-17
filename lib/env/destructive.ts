@@ -16,8 +16,3 @@ export function destructiveRefusal(what: string, env: Record<string, string | un
   if (env.ALLOW_DESTRUCTIVE === "1") return null;
   return `${what} would change the database "${names.join('", "')}". Use a database with "test" in its name, or set ALLOW_DESTRUCTIVE=1 if you mean it.`;
 }
-
-export function assertDestructiveAllowed(what: string, env: Record<string, string | undefined> = process.env): void {
-  const why = destructiveRefusal(what, env);
-  if (why) throw new Error(why);
-}

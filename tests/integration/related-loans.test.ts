@@ -92,7 +92,7 @@ describe("Replacement or additional unit", () => {
     expect(review.candidates[0]).toMatchObject({ pn: "GD1012026909210", matched: "Product name, Loan type, Amount, Plate number, Chassis number, Engine number" });
     expect(review.payment).toEqual({ known: false, recorded: false, text: null });
     await expect(linkReplacement(admin, item.id, { newPn: "GD1012026909210", note: "Unit issue after release" })).rejects.toThrow(/I confirmed no payment was made on the old PN/);
-    await expect(linkReplacement(la, item.id, { newPn: "GD1012026909210", note: "x note", confirmNoPayment: true })).rejects.toThrow(/Only Admin/);
+    await expect(linkReplacement(la, item.id, { newPn: "GD1012026909210", note: "x note", confirmNoPayment: true })).rejects.toThrow(/Only approvers/);
     await linkReplacement(admin, item.id, { newPn: "GD1012026909210", note: "Unit issue after release", confirmNoPayment: true });
     const nw = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026909210" } });
     expect(nw).toMatchObject({ replacesPn: OLD, replacementEvidence: "Test Admin confirmed no payment was made on GD1652026901003. Note: Unit issue after release" });
@@ -120,7 +120,7 @@ describe("Replacement or additional unit", () => {
     await extra({ pn: "GD1012026909230", totalReleasedAmount: 950_000 });
     await open("GD1012026909230");
     const me = await loanOf("GD1012026909230");
-    await expect(linkFromRelated(la, me.id, OLD, { note: "x note", confirmNoPayment: true })).rejects.toThrow(/Only Admin/);
+    await expect(linkFromRelated(la, me.id, OLD, { note: "x note", confirmNoPayment: true })).rejects.toThrow(/Only approvers/);
     await expect(linkFromRelated(admin, me.id, OLD, { confirmNoPayment: true })).rejects.toThrow(/short note/);
     await expect(linkFromRelated(admin, me.id, OLD, { note: "Amount was corrected" })).rejects.toThrow(/I confirmed no payment/);
     await linkFromRelated(admin, me.id, OLD, { note: "Amount was corrected", confirmNoPayment: true });

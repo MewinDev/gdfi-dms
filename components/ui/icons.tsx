@@ -25,7 +25,6 @@ export const ListIcon = (p: P) => <Svg {...p}><path d="M8 6h13M8 12h13M8 18h13" 
 export const AlertIcon = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16h.01" /></Svg>;
 export const InfoIcon = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></Svg>;
 export const FilterIcon = (p: P) => <Svg {...p}><path d="M3 5h18l-7 8v6l-4-2v-4z" /></Svg>;
-export const DownloadIcon = (p: P) => <Svg {...p}><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></Svg>;
 export const XIcon = (p: P) => <Svg {...p}><path d="M6 6l12 12M18 6L6 18" /></Svg>;
 export const PlusIcon = (p: P) => <Svg {...p}><path d="M12 5v14M5 12h14" /></Svg>;
 export const RefreshIcon = (p: P) => <Svg {...p}><path d="M21 12a9 9 0 1 1-2.6-6.4" /><path d="M21 3v6h-6" /></Svg>;

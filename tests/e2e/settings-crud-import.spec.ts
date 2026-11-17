@@ -38,7 +38,6 @@ test("Add a transaction type, then the Loan Associate adds it from Check documen
   await expect(dialog(page).getByText(/always active/)).toBeVisible();
   await expect(dialog(page).getByRole("button", { name: "Make inactive" })).toHaveCount(0);
 
-  await page.context().clearCookies();
   await signIn(page, "la");
   await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
@@ -74,7 +73,8 @@ test("Users: search, filters, Add and Edit pop-ups, and the roles pop-up", async
   await expect(page.getByRole("link", { name: /^Edit / })).toHaveCount(1);
   await page.goto("/admin/users");
   await expect(page.getByText("DP · Collateral & Mortgage").filter({ visible: true }).first()).toBeVisible();
-  await expect(page.getByText("Not signed in yet").filter({ visible: true }).first()).toBeVisible();
+  // Every built-in role can sign in since D-002 (piece 2): no "Not signed in yet" chip on the list.
+  await expect(page.getByText("Not signed in yet").filter({ visible: true })).toHaveCount(0);
 
   // Add user
   await page.getByRole("link", { name: "Add user" }).click();

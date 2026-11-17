@@ -45,7 +45,7 @@ export function BorrowerReviewSheet({ review, open, onClose }: { review: Borrowe
       <form onSubmit={(e) => keepValues(e, action)} className="flex flex-col gap-4" data-borrower-review>
         <input type="hidden" name="changeId" value={review.id} />
         {review.simulated && <p><span className="chip c-wait h-6 text-xs">Simulated</span></p>}
-        {review.toAdmin && <p className="rounded-xl bg-wait-bg px-3 py-2 text-[14px] font-semibold text-wait-fg" data-borrower-to-admin>No supervisor or approver in this branch. Admin reviews it.</p>}
+        {review.noBranchApprover && <p className="rounded-xl bg-wait-bg px-3 py-2 text-[14px] font-semibold text-wait-fg" data-no-branch-approver>No approver assigned to this branch. Approvers with All branches can still decide it; a Superadmin can assign one on Users, Edit.</p>}
         <section aria-labelledby={`${uid}-what`}>
           <h3 id={`${uid}-what`} className="mb-1.5 text-[15px] font-bold text-navy">What changed</h3>
           {/* Desktop and tablet: a table. Phone: one block per field (no sideways scroll). */}

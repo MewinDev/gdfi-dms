@@ -19,7 +19,7 @@ import { asUser } from "./helpers";
 let admin: CurrentUser;
 const as = (keys: Permission[]): CurrentUser => ({ ...admin, permissions: new Set<string>(keys) });
 /** Refused for the permission (not for another reason). */
-const DENIED = /Ask an Admin|does not allow|Only Admin/;
+const DENIED = /Ask a Superadmin|does not allow|Only approvers/;
 async function refused(p: Promise<unknown>) {
   await expect(p).rejects.toThrow(DENIED);
 }
@@ -117,7 +117,7 @@ describe("Users: editing a person is not changing their branch access", () => {
     const base = { name: la.name, email: la.email, roleId: la.roleId, active: la.active };
     const access = JSON.stringify({ all: la.allBranches, grants: la.accessGrants.map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude })), homeBranchId: la.homeBranchId });
     const editor = as([P.USERS_VIEW, P.USERS_EDIT]);
-    await expect(saveUser(editor, la.id, { ...base, access })).rejects.toThrow('Ask an Admin to turn on "Change branch access" for your role.');
+    await expect(saveUser(editor, la.id, { ...base, access })).rejects.toThrow('Ask a Superadmin to turn on "Change branch access" for your role.');
     await expect(saveUser(editor, la.id, { ...base, branchIds: [] })).rejects.toThrow(/Change branch access/);
     await saveUser(editor, la.id, base); // no access sent: kept as it was
     const after = await prisma.user.findUniqueOrThrow({ where: { id: la.id }, include: { accessGrants: true } });

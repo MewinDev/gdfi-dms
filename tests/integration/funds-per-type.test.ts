@@ -37,8 +37,11 @@ beforeAll(async () => {
   await prisma.role.deleteMany({ where: { key: { in: ["C_Z_CA_FIN", "C_Z_FT_FIN", "C_Z_OLD_KEYS"] } } });
   caRoleId = (await prisma.role.create({ data: { key: "C_Z_CA_FIN", name: "Z Finance cash", permissions: [P.LOANS_VIEW, ...CA_KEYS] } })).id;
   ftRoleId = (await prisma.role.create({ data: { key: "C_Z_FT_FIN", name: "Z Finance transfer", permissions: [P.LOANS_VIEW, ...FT_KEYS] } })).id;
-  await prisma.user.create({ data: { email: "zz.pertype.ca@gdfi.ph", name: "Z Cash Person", roleId: caRoleId, isTestUser: true, allBranches: true } });
-  await prisma.user.create({ data: { email: "zz.pertype.ft@gdfi.ph", name: "Z Transfer Person", roleId: ftRoleId, isTestUser: true, allBranches: true } });
+  // Each person handles the fund type of their role (D-009).
+  await prisma.user.create({ data: { email: "zz.pertype.ca@gdfi.ph", name: "Z Cash Person", roleId: caRoleId, isTestUser: true, allBranches: true, handlesCa: true } });
+  await prisma.user.create({ data: { email: "zz.pertype.ft@gdfi.ph", name: "Z Transfer Person", roleId: ftRoleId, isTestUser: true, allBranches: true, handlesFt: true } });
+  // This file tests approval bands, which are off by default since D-024.
+  await setSetting("funds.approvalBandsOn", true);
   caFin = await asUser("zz.pertype.ca@gdfi.ph");
   ftFin = await asUser("zz.pertype.ft@gdfi.ph");
   dp = await asUser("test.dp@gdfi.ph");
@@ -55,6 +58,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await cleanLoans();
   await restoreBands();
+  await setSetting("funds.approvalBandsOn", false);
   await prisma.user.deleteMany({ where: { email: { startsWith: "zz.pertype" } } });
   await prisma.role.deleteMany({ where: { key: { in: ["C_Z_CA_FIN", "C_Z_FT_FIN", "C_Z_OLD_KEYS"] } } });
   await prisma.$disconnect();

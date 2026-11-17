@@ -58,6 +58,30 @@ enum Originality {
   COPY
 }
 
+/// A per-user permission override (D-008).
+enum PermissionEffect {
+  GRANT
+  DENY
+}
+
+/// One override per person and permission key. Effective permissions = the role's ticks + GRANTs - DENYs
+/// (lib/auth/build-user.ts). Only people who can manage permissions change them; never their own.
+model UserPermissionOverride {
+  id      String           @id @default(cuid())
+  userId  String
+  user    User             @relation("UserOverrides", fields: [userId], references: [id], onDelete: Cascade)
+  key     String
+  effect  PermissionEffect
+  /// Why (shown on the user screen and in the audit log).
+  note    String           @default("")
+  setById String?
+  setBy   User?            @relation("OverrideSetBy", fields: [setById], references: [id])
+  setAt   DateTime         @default(now())
+
+  @@unique([userId, key])
+  @@index([key])
+}
+
 enum BranchAccess {
   ASSIGNED
   ALL
@@ -180,37 +204,44 @@ model Role {
 }
 
 model User {
-  id              String            @id @default(cuid())
-  email           String            @unique
-  name            String
-  active          Boolean           @default(true)
+  id                  String                   @id @default(cuid())
+  email               String                   @unique
+  name                String
+  active              Boolean                  @default(true)
   /// Inactive instead of delete: when and by whom it was made inactive (null while active).
-  deactivatedAt   DateTime?
-  deactivatedById String?
-  roleId          String
-  role            Role              @relation(fields: [roleId], references: [id])
+  deactivatedAt       DateTime?
+  deactivatedById     String?
+  roleId              String
+  role                Role                     @relation(fields: [roleId], references: [id])
   /// Identity provider subject (Entra object id) once Microsoft sign-in is enabled.
-  externalId      String?           @unique
-  isTestUser      Boolean           @default(false)
+  externalId          String?                  @unique
+  isTestUser          Boolean                  @default(false)
   /// Email me for non-urgent updates (urgent ones always go while emails are on).
-  emailNonUrgent  Boolean           @default(true)
+  emailNonUrgent      Boolean                  @default(true)
   /// Processors: their own capacity in open jobs (null = the default in Settings, Processor capacity).
-  dpCapacity      Int?
+  dpCapacity          Int?
   /// Processors: On leave (0% available, shown disabled in the Send panel), optionally until a date.
-  dpOnLeave       Boolean           @default(false)
+  dpOnLeave           Boolean                  @default(false)
   /// The last day of the leave, YYYY-MM-DD in Philippine time (null = until switched off).
-  dpLeaveUntil    String?
+  dpLeaveUntil        String?
   /// The derived access set (user_branch_access). Empty when allBranches is true.
-  branches        UserBranch[]
+  branches            UserBranch[]
   /// All branches (no rows in user_branch_access). Admin is always All.
-  allBranches     Boolean           @default(false)
+  allBranches         Boolean                  @default(false)
   /// Grants and exceptions (Users, Edit, Branch access).
-  accessGrants    UserAccessGrant[]
+  accessGrants        UserAccessGrant[]
+  /// Per-user permission overrides (D-008): GRANT adds a key the role lacks, DENY removes one it has.
+  permissionOverrides UserPermissionOverride[] @relation("UserOverrides")
+  overridesSet        UserPermissionOverride[] @relation("OverrideSetBy")
+  /// Finance (D-009): which fund types this person handles. The per-type funds keys (view, approve,
+  /// release, settle, edit lines, change type, print) count only for a type that is ticked here.
+  handlesCa           Boolean                  @default(false)
+  handlesFt           Boolean                  @default(false)
   /// Default branch for new work and sending; must be inside the access.
-  homeBranchId    String?
-  homeBranch      Branch?           @relation("UserHomeBranch", fields: [homeBranchId], references: [id])
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  homeBranchId        String?
+  homeBranch          Branch?                  @relation("UserHomeBranch", fields: [homeBranchId], references: [id])
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
 
   openedLoans        Loan[]               @relation("LoanOpenedBy")
   notifications      Notification[]
@@ -229,6 +260,7 @@ model User {
   holdsOwned         Hold[]               @relation("HoldOwner")
   ltoAdvisoriesFiled LtoAdvisory[]        @relation("AdvisoryFiledBy")
   exceptionsResolved LoanException[]      @relation("ExceptionResolvedBy")
+  fileAccesses       FileAccessLog[]      @relation("FileAccessBy")
 }
 
 /// Where a record comes from: the MyLoans branch list (code, name, area, division and status are
@@ -663,13 +695,18 @@ model Loan {
   openedById  String
   openedBy    User     @relation("LoanOpenedBy", fields: [openedById], references: [id])
 
-  classification Classification
-  financingType  FinancingType?
-  orcrStatus     OrcrStatus?
-  mortgageResult MortgageResult
-  ruleFired      String
+  classification      Classification
+  /// D-031: no keyword matched when it was classified (the "Classified by default" label and filter). Never blocks.
+  classifiedByDefault Boolean         @default(false)
+  /// D-031: what the keyword rules say now when it differs from the saved classification ("Classification
+  /// changed since accepted"); null when they agree. Changed only by Reclassify (loans:reclassify).
+  classificationNow   Classification?
+  financingType       FinancingType?
+  orcrStatus          OrcrStatus?
+  mortgageResult      MortgageResult
+  ruleFired           String
   /// True when an Admin (Supervisor) overrode the automatic result.
-  overridden     Boolean        @default(false)
+  overridden          Boolean         @default(false)
 
   /// Derived from the transactions on every write (never typed in). Cached for list filters.
   stage      String   @default("Opened")
@@ -1945,4 +1982,30 @@ model MyLoansBreaker {
   failures  Int       @default(0)
   openUntil DateTime?
   updatedAt DateTime  @updatedAt
+}
+
+/// Piece 3 (D-019, D-039): one row per file view, download or log export. Append-only: the app never updates
+/// or deletes these rows. Read on Audit, File access log ("View file access log").
+model FileAccessLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation("FileAccessBy", fields: [userId], references: [id])
+  /// RECEIPT, STAGE_EVIDENCE, LTO_PROOF, or FILE_ACCESS_LOG for a CSV export of this log.
+  entityType String
+  entityId   String
+  loanId     String?
+  pn         String?
+  branchId   String?
+  fileKey    String   @default("")
+  fileName   String   @default("")
+  /// VIEW, DOWNLOAD or EXPORT.
+  action     String
+  at         DateTime @default(now())
+  ip         String?
+  userAgent  String?
+
+  @@index([at])
+  @@index([userId, at])
+  @@index([branchId, at])
+  @@index([pn])
 }

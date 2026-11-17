@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { notifyOverdue } from "@/lib/services/funds";
 import { OPEN_ADVANCE, isOverdue, peso } from "@/lib/funds/rules";
-import { can } from "@/lib/auth/current-user";
+import { advanceScope, can } from "@/lib/auth/current-user";
+import { typeWhere } from "@/lib/funds/access";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { borrowerToDo } from "@/lib/services/borrower-review";
 import { BorrowerCorrectionsCard } from "@/components/loan/borrower-corrections-card";
@@ -17,12 +18,14 @@ import { ChecklistIcon, ClockIcon, CoinsIcon, WarningIcon } from "@/components/u
 export async function FinanceHome({ user }: { user: CurrentUser }) {
   await notifyOverdue();
   const now = new Date();
+  // The same scope as the Funds page (D-019): the person's branches and the fund types they handle.
+  const scope = { ...advanceScope(user), ...typeWhere(user) };
   const [toApprove, toRelease, outstanding, topUps, carries, corrections] = await Promise.all([
-    prisma.cashAdvance.count({ where: { status: "REQUESTED", requestedById: { not: user.id } } }),
-    prisma.cashAdvance.count({ where: { status: "APPROVED" } }),
-    prisma.cashAdvance.findMany({ where: { status: { in: OPEN_ADVANCE as never } }, select: { releasedCents: true, status: true, liquidationDueAt: true } }),
-    prisma.cashAdvanceTopUp.count({ where: { status: { in: ["REQUESTED", "APPROVED"] }, releasedAt: null } }),
-    prisma.carryOver.count({ where: { status: "PENDING" } }),
+    prisma.cashAdvance.count({ where: { ...scope, status: "REQUESTED", requestedById: { not: user.id } } }),
+    prisma.cashAdvance.count({ where: { ...scope, status: "APPROVED" } }),
+    prisma.cashAdvance.findMany({ where: { ...scope, status: { in: OPEN_ADVANCE as never } }, select: { releasedCents: true, status: true, liquidationDueAt: true } }),
+    prisma.cashAdvanceTopUp.count({ where: { status: { in: ["REQUESTED", "APPROVED"] }, releasedAt: null, line: { advance: scope } } }),
+    prisma.carryOver.count({ where: { status: "PENDING", line: { advance: scope } } }),
     can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER) ? borrowerToDo(user) : null,
   ]);
   const overdue = outstanding.filter((a) => isOverdue(a, now)).length;

@@ -9,6 +9,8 @@ import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
+import { worksAtWhere } from "@/lib/branches/access";
 import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloans";
 import { mapLoan } from "@/lib/myloans/live-mapping";
 import { MINOR_ACCOUNT_COLUMNS, sourceTime } from "@/lib/myloans/account";
@@ -17,10 +19,10 @@ import {
   type ChangeCategory, type FieldChange, type Proposed, type Tracked, type TxnNow,
 } from "@/lib/myloans/changes";
 import { isTestMode } from "@/lib/test-mode";
-import { getHolidaySet, getSetting, setSetting } from "@/lib/settings";
+import { getClassificationRules, getHolidaySet, getSetting, setSetting } from "@/lib/settings";
 import { businessDate, isBusinessDay, startOfBusinessDay } from "@/lib/time";
 import { advanceBalance, peso } from "@/lib/funds/rules";
-import { MORTGAGE_THRESHOLDS, type FinancingType, type OrcrStatus } from "@/lib/rules";
+import { MORTGAGE_THRESHOLDS, classifyProductName, type FinancingType, type OrcrStatus } from "@/lib/rules";
 import { recomputeStage } from "./stage";
 import { beginStats, callStore, callsThisHour, countCall, DbCallStore, lookupPn, noteCall, readStats } from "@/lib/myloans/client";
 import { jitteredPause, nextCap, nextCheckAt } from "@/lib/myloans/tiers";
@@ -74,17 +76,20 @@ function stateLine(t: { status: string; dpAssignments: { status: string; dpUser:
   }
 }
 
-async function txnsNow(db: Tx | typeof prisma, loanId: string): Promise<TxnNow[]> {
+export async function txnsNow(db: Tx | typeof prisma, loanId: string): Promise<TxnNow[]> {
   const rows = await db.loanTransaction.findMany({
     where: { loanId }, include: { type: true, dpAssignments: { include: { dpUser: { select: { name: true } } }, orderBy: { createdAt: "desc" } } }, orderBy: { createdAt: "asc" },
   });
   return rows.map((t) => ({ id: t.id, code: t.type.code, name: t.type.name, status: t.status, stateLine: `${t.type.name}: ${stateLine(t)}` }));
 }
 
-/** People who review MyLoans changes (every role with "Review MyLoans changes"). */
-export async function reviewerIds(db: Tx | typeof prisma): Promise<string[]> {
+/**
+ * People who review MyLoans changes for a loan's branch: "Review MyLoans changes", and the branch in their
+ * access (D-011: approvers handle their assigned branches; All branches covers every branch).
+ */
+export async function reviewerIds(db: Tx | typeof prisma, branchId: string): Promise<string[]> {
   const rows = await db.user.findMany({
-    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.SOURCE_REVIEW } } }, select: { id: true },
+    where: andWhere(holdsWhere(PERMISSIONS.SOURCE_REVIEW), worksAtWhere(branchId)), select: { id: true },
   });
   return rows.map((r) => r.id);
 }
@@ -244,7 +249,7 @@ async function proposedFor(db: Tx | typeof prisma, loanId: string, category: Cha
   const rec = snap ? recordFromPayload(snap.payload) : null;
   const next = (snap?.tracked as Tracked | null) ?? (rec ? trackedOf(rec) : null);
   if (!next) throw new UserError("There is no MyLoans copy to compare with.");
-  return proposeEffect({ category, loan: { ...loan, financingType: loan.financingType as FinancingType | null, orcrStatus: loan.orcrStatus as OrcrStatus | null }, txns: await txnsNow(db, loanId), next, picks });
+  return proposeEffect({ category, loan: { ...loan, financingType: loan.financingType as FinancingType | null, orcrStatus: loan.orcrStatus as OrcrStatus | null }, txns: await txnsNow(db, loanId), next, picks, rules: await getClassificationRules(db) });
 }
 
 /** A new loan file of the same borrower: if it may replace an ended loan under review, add it as a possible replacement. */
@@ -307,12 +312,12 @@ async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Ex
   const what = category === "REPLACEMENT" ? `MyLoans gave this loan a replacement PN (${a.candidates[0] ?? "new PN"})` : `MyLoans changed ${words(a.changes)}`;
   await writeAudit(tx, {
     actor: SYSTEM_ACTOR, mode: a.mode, action: "source_change_detected", entityType: "SourceChange", entityId: id, loanId: a.loanId, pn: a.pn,
-    summary: `${what}. Admin is reviewing.`, details: { category, fields: a.changes.map((c) => c.label) },
+    summary: `${what}. An approver is reviewing it.`, details: { category, fields: a.changes.map((c) => c.label) },
   });
   // Field names only: amounts are never in the notification or the email.
   await notify(tx, {
-    userIds: [...(await reviewerIds(tx)), ...(await branchLaUserIds(tx, loan.branchId)), ...(await liveDpIds(tx, a.loanId))], loanId: a.loanId,
-    title: `${a.pn}: MyLoans changed this loan`, body: `${what}. Admin is reviewing.`, link: `/loans/${a.pn}?tab=todo&review=1`,
+    userIds: [...(await reviewerIds(tx, loan.branchId)), ...(await branchLaUserIds(tx, loan.branchId)), ...(await liveDpIds(tx, a.loanId))], loanId: a.loanId,
+    title: `${a.pn}: MyLoans changed this loan`, body: `${what}. An approver is reviewing it.`, link: `/loans/${a.pn}?tab=todo&review=1`,
     email: { event: "source_changed", vars: { pn: a.pn, transaction: "the loan file", reason: `${what}.`, status: category === "STATUS" ? "cancelled or not released" : category === "REPLACEMENT" ? "replaced" : "changed" } },
   });
 }
@@ -326,7 +331,7 @@ async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Ex
 // ---------------------------------------------------------------------------
 
 function needReview(u: CurrentUser) {
-  if (!can(u, PERMISSIONS.SOURCE_REVIEW)) throw new UserError("Only Admin reviews MyLoans changes. Your view is read-only.");
+  if (!can(u, PERMISSIONS.SOURCE_REVIEW)) throw new UserError("Only approvers review MyLoans changes. Your view is read-only. Ask a Superadmin for the approver tick if you should decide these.");
 }
 /** Every review decision: a note of 5 to 500 characters (the same rule as the borrower details review). */
 export const REVIEW_NOTE_MIN = 5;
@@ -368,6 +373,29 @@ const applySchema = z.object({
  * are added or removed (ticked papers stay where the item still exists); sent or in-process ones are
  * never changed: that part is refused with the reason.
  */
+/**
+ * The transactions a re-run of the rules adds or removes (Apply of a MyLoans change, and Reclassify, D-031).
+ * Only unsent transactions change; the callers refuse first when sent work would.
+ */
+export async function applyTransactionChanges(tx: Tx, loanId: string, p: Pick<Proposed, "added" | "removed">, now: Date = new Date()) {
+  const txns = await tx.loanTransaction.findMany({ where: { loanId }, include: { type: true } });
+  for (const code of p.removed) {
+    const t = txns.find((x) => x.type.code === code && x.status !== "CANCELLED");
+    if (t && UNSENT.includes(t.status)) await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now } });
+  }
+  for (const code of p.added) {
+    const back = txns.find((x) => x.type.code === code && x.status === "CANCELLED");
+    if (back) {
+      // Added back: the same checklist rows, so ticked papers stay ticked.
+      const done = await tx.checklistCheck.count({ where: { transactionId: back.id, required: true, checked: false } });
+      await tx.loanTransaction.update({ where: { id: back.id }, data: { status: done === 0 ? "READY" : "FOR_CHECKLIST", statusSince: now } });
+    } else {
+      const type = await tx.transactionType.findFirstOrThrow({ where: { code }, include: { rules: { where: { active: true }, include: { documentType: true }, orderBy: { sortOrder: "asc" } } } });
+      await createTransactionOfType(tx, { loanId, type, origin: "AUTOMATIC" });
+    }
+  }
+}
+
 export async function applySourceChange(u: CurrentUser, id: string, raw: unknown) {
   needReview(u);
   const d = applySchema.parse(raw);
@@ -394,6 +422,8 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
       ...(next.branchCode || next.branchName ? { sourceBranchCode: next.branchCode, sourceBranchName: next.branchName } : {}),
       totalReleasedAmount: typeof next.amount === "number" ? new Prisma.Decimal(next.amount / 100) : loan.totalReleasedAmount,
       classification: p.classificationNext!, mortgageResult: p.mortgageNext as never, ruleFired: p.ruleNext,
+      // Re-classified from the new product name (D-031): the label follows it, and any earlier flag is settled.
+      classifiedByDefault: classifyProductName(next.productName ?? "", await getClassificationRules(tx)).byDefault, classificationNow: null,
       financingType: p.classificationNext === "FINANCING" ? (d.financingType ?? loan.financingType) : null,
       orcrStatus: p.classificationNext === "FINANCING" ? (d.orcrStatus ?? loan.orcrStatus) : null,
     };
@@ -412,23 +442,8 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
     }
     await tx.loan.update({ where: { id: loan.id }, data });
 
-    const txns = await tx.loanTransaction.findMany({ where: { loanId: loan.id }, include: { type: true } });
     const now = new Date();
-    for (const code of p.removed) {
-      const t = txns.find((x) => x.type.code === code && x.status !== "CANCELLED");
-      if (t && UNSENT.includes(t.status)) await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now } });
-    }
-    for (const code of p.added) {
-      const back = txns.find((x) => x.type.code === code && x.status === "CANCELLED");
-      if (back) {
-        // Added back: the same checklist rows, so ticked papers stay ticked.
-        const done = await tx.checklistCheck.count({ where: { transactionId: back.id, required: true, checked: false } });
-        await tx.loanTransaction.update({ where: { id: back.id }, data: { status: done === 0 ? "READY" : "FOR_CHECKLIST", statusSince: now } });
-      } else {
-        const type = await tx.transactionType.findFirstOrThrow({ where: { code }, include: { rules: { where: { active: true }, include: { documentType: true }, orderBy: { sortOrder: "asc" } } } });
-        await createTransactionOfType(tx, { loanId: loan.id, type, origin: "AUTOMATIC" });
-      }
-    }
+    await applyTransactionChanges(tx, loan.id, p, now);
     await tx.sourceChange.update({ where: { id: item.id }, data: { state: "APPLIED", decidedById: u.id, decidedByLabel: u.name, decidedAt: now, note, proposed: p as unknown as Prisma.InputJsonValue } });
     await writeAudit(tx, {
       actor: actorOf(u), mode: "MANUAL", action: "source_change_applied", entityType: "SourceChange", entityId: item.id, loanId: loan.id, pn: loan.pn,
@@ -609,6 +624,7 @@ export async function moveCashToNewPn(u: CurrentUser, id: string, lineId: string
     if (!old.replacedByPn) throw new UserError("Link the replacement PN first.");
     const nw = await tx.loan.findUnique({ where: { pn: old.replacedByPn }, include: { transactions: { include: { type: true } } } });
     if (!nw) throw new UserError(`${old.replacedByPn} is not opened yet. Ask the LA to open it first.`);
+    if (!inScope(u, nw.branchId)) throw new NotInScopeError(); // the new loan may have moved branch since the link
     const cash = (await outstandingCash(tx, old.id)).find((c) => c.lineId === lineId);
     if (!cash || cash.notReleased) throw new UserError("Pick released cash that is still out.");
     if (await tx.cashAdvance.findFirst({ where: { movedFromLineId: lineId, status: "REQUESTED" } })) throw new UserError("A move for this cash is already waiting for approval.");
@@ -649,10 +665,11 @@ export interface ReusableOption {
  * they would go on this loan. Replacement: as built. Additional unit: only papers whose form here is
  * Copy; Originals are listed with the reason and never copied. Unit papers are never listed.
  */
-export async function reusablePapers(db: Tx | typeof prisma, newLoanId: string): Promise<ReusableOption[]> {
+export async function reusablePapers(db: Tx | typeof prisma, newLoanId: string, user?: CurrentUser): Promise<ReusableOption[]> {
   const nw = await db.loan.findUnique({ where: { id: newLoanId }, select: RELATED_SELECT });
   if (!nw) return [];
-  const related = (await relatedLoans(db, nw)).filter((r) => r.tag !== "REPLACES"); // never copy back onto the old loan
+  // Never copy back onto the old loan; and only loans in the person's branches (D-019).
+  const related = (await relatedLoans(db, nw)).filter((r) => r.tag !== "REPLACES" && (!user || inScope(user, r.loan.branchId)));
   if (!related.length) return [];
   const newChecks = await db.checklistCheck.findMany({
     where: { checked: false, transaction: { loanId: nw.id, status: { in: ["FOR_CHECKLIST", "READY", "RETURNED"] } } },
@@ -684,8 +701,10 @@ export async function copyReusablePapers(u: CurrentUser, newLoanId: string, from
   return withLoanLock(newLoanId, async (tx) => {
     const nw = await tx.loan.findUniqueOrThrow({ where: { id: newLoanId } });
     if (!inScope(u, nw.branchId)) throw new NotInScopeError();
-    const options = await reusablePapers(tx, newLoanId);
+    const options = await reusablePapers(tx, newLoanId, u);
     const picked = options.filter((o) => fromCheckIds.includes(o.fromCheckId));
+    // A paper of a loan outside the person's branches is not offered, so it cannot be picked (D-019).
+    if (picked.length !== new Set(fromCheckIds).size) throw new NotInScopeError();
     if (picked.length !== new Set(fromCheckIds).size) throw new UserError("Only ticked papers that belong to the borrower can be copied.");
     const blocked = picked.find((o) => o.blocked);
     if (blocked) throw new UserError(`${blocked.label}: ${blocked.blocked}`);
@@ -731,7 +750,13 @@ export async function copyReusablePapers(u: CurrentUser, newLoanId: string, from
 // When to refresh: on open (older than N minutes), and in the background (active loans only)
 // ---------------------------------------------------------------------------
 
-/** Refresh a loan being opened when its copy is older than the setting (0 = always). Never throws. */
+/**
+ * Refresh a loan being opened when its copy is older than the setting (0 = always). Never throws.
+ * Automatic, so it obeys the shared hourly limit (MyLoansCallHour) and fails closed while the circuit
+ * breaker is open, like the stale refresh in Find a loan: no call, the loan file opens from the DMS copy,
+ * the "last checked" line stays as it was, no error is shown, and the server logs one line. The Refresh
+ * button (refreshFromMyLoans) is a person asking: counted, never limited.
+ */
 export async function refreshOnOpen(loan: { id: string; lastCheckedAt: Date | null; retrievedAt: Date; cancelledAt?: Date | null; closedAt?: Date | null; archivedAt?: Date | null }, now: Date = new Date()): Promise<RefreshResult | null> {
   // Paused by Admin, or a closed or cancelled loan: no call.
   if (await getSetting("myloans.paused")) return null;
@@ -740,10 +765,22 @@ export async function refreshOnOpen(loan: { id: string; lastCheckedAt: Date | nu
   const last = loan.lastCheckedAt ?? loan.retrievedAt;
   if (minutes > 0 && now.getTime() - last.getTime() < minutes * 60_000) return null;
   try {
-    return await refreshLoan(loan.id, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "open", now });
+    const ceiling = await getSetting("myloans.hourlyCeiling");
+    // The breaker store fails safe: if it cannot be read, it counts as open.
+    if ((await getMyLoansAdapter().breakerState()).open) return skippedOnOpen(loan.id, "the circuit breaker is open");
+    if ((await callsThisHour()) >= ceiling) return skippedOnOpen(loan.id, "the hourly limit is reached");
+    // The ceiling is reserved again atomically in the call itself: two instances cannot both slip past it.
+    const r = await refreshLoan(loan.id, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "open", now, ceiling });
+    return !r.ok && r.limited ? skippedOnOpen(loan.id, "the hourly limit is reached") : r;
   } catch {
     return null;
   }
+}
+
+/** Refresh on open stopped before any call: one server log line; the loan file opens as it is. */
+function skippedOnOpen(loanId: string, why: string): null {
+  console.warn(`[myloans] refresh on open skipped for loan ${loanId}: ${why}; opened from the DMS copy.`);
+  return null;
 }
 
 /** Mon to Sat, 7:00 AM to 7:00 PM, Philippine time; holidays skipped. */
@@ -949,7 +986,7 @@ async function runLocked(o: SyncOptions, s: Awaited<ReturnType<typeof syncSettin
 
 /** Admin: "Pause MyLoans calls" on or off (myloans:manage). Audited. */
 export async function setMyLoansPaused(u: CurrentUser, on: boolean) {
-  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change MyLoans sync settings\" for your role.");
+  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask a Superadmin to turn on \"Change MyLoans sync settings\" for your role.");
   await prisma.$transaction(async (tx) => {
     const was = await getSetting("myloans.paused", tx);
     if (was === on) return;
@@ -963,7 +1000,7 @@ export async function setMyLoansPaused(u: CurrentUser, on: boolean) {
 }
 
 export async function runSyncNow(u: CurrentUser) {
-  if (!can(u, PERMISSIONS.MYLOANS_SYNC)) throw new UserError("Ask an Admin to turn on \"Run the MyLoans sync now\" for your role.");
+  if (!can(u, PERMISSIONS.MYLOANS_SYNC)) throw new UserError("Ask a Superadmin to turn on \"Run the MyLoans sync now\" for your role.");
   return runMyLoansSync({ trigger: "run_now", force: true, actor: actorOf(u) });
 }
 
@@ -983,7 +1020,7 @@ export const syncSettingsSchema = z.object({
 });
 
 export async function saveSyncSettings(u: CurrentUser, raw: unknown) {
-  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change MyLoans sync settings\" for your role.");
+  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask a Superadmin to turn on \"Change MyLoans sync settings\" for your role.");
   const p = syncSettingsSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   const d = p.data;
@@ -1037,7 +1074,7 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
   if (!isTestMode() || myLoansMode() !== "mock") throw new UserError("The simulator works only in test mode with the mock MyLoans.");
   if (!can(u, PERMISSIONS.SIMULATOR_USE)) throw new UserError("Your role does not allow the simulator.");
   const loan = await prisma.loan.findUnique({ where: { id: loanId } });
-  if (!loan) throw new UserError("Loan File not found.");
+  if (!loan || !inScope(u, loan.branchId)) throw new NotInScopeError();
   const lookup = await getMyLoansAdapter().getByPn(loan.pn);
   if (!lookup.ok) throw new UserError(lookup.message);
   const rec = lookup.record;
@@ -1097,12 +1134,5 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
   await setSetting("myloans.mockOverrides", overrides);
   await refreshLoan(loan.id, { actor: { id: u.id, label: `${u.name} (Simulated)` }, mode: "SIMULATED", trigger: "simulator" });
   return message;
-}
-
-/** For Find loan and the TAT report: loans with an open review item. */
-export async function openReviewLoanIds(ids: string[]): Promise<Set<string>> {
-  if (!ids.length) return new Set();
-  const rows = await prisma.sourceChange.findMany({ where: { loanId: { in: ids }, state: "OPEN", category: { not: "BORROWER" } }, select: { loanId: true } });
-  return new Set(rows.map((r) => r.loanId));
 }
 

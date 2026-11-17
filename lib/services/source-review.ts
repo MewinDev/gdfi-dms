@@ -3,6 +3,7 @@ import { stageLabel } from "@/lib/workflow/stage-map";
 import { prisma } from "@/lib/db";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { changeText, type FieldChange, type Proposed } from "@/lib/myloans/changes";
 import { fmtDateTime } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
@@ -67,7 +68,7 @@ async function branchMoveFor(loan: { id: string; pn: string; branchId: string },
   const was = await prisma.branch.findUniqueOrThrow({ where: { id: loan.branchId }, select: { id: true, name: true, code: true } });
   const to = await resolveLoanBranch(prisma, { branchCode: next.branchCode ?? null, branchName: next.branchName ?? null });
   const who = async (branchId: string) => (await prisma.user.findMany({
-    where: { active: true, OR: [{ allBranches: true }, { branches: { some: { branchId } } }], role: { permissions: { has: PERMISSIONS.LOANS_VIEW } } },
+    where: andWhere({ OR: [{ allBranches: true }, { branches: { some: { branchId } } }] }, holdsWhere(PERMISSIONS.LOANS_VIEW)),
     select: { id: true, name: true, allBranches: true },
   }));
   const before = await who(was.id);
@@ -87,7 +88,8 @@ async function branchMoveFor(loan: { id: string; pn: string; branchId: string },
 
 export async function reviewFor(user: CurrentUser, loanId: string): Promise<ReviewData | null> {
   const found = await prisma.sourceChange.findFirst({ where: { loanId, state: "OPEN", category: { not: "BORROWER" } }, include: { loan: true } });
-  if (!found) return null;
+  // Same scope rule as every other screen (D-019): out of scope = nothing to show.
+  if (!found || !inScope(user, found.loan.branchId)) return null;
   // The Admin item only (Borrower details has its own review: lib/services/borrower-review.ts).
   const item = { ...found, category: found.category as ReviewData["category"] };
   const seesAmounts = can(user, PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
@@ -95,7 +97,8 @@ export async function reviewFor(user: CurrentUser, loanId: string): Promise<Revi
   const p = item.proposed as unknown as Proposed;
   const canReview = can(user, PERMISSIONS.SOURCE_REVIEW);
   const cash = item.category === "MATERIAL" ? [] : await outstandingCash(prisma, loanId);
-  const same = item.category === "MATERIAL" ? [] : await replacementCandidates(prisma, item.loan);
+  // Only loans in the person's branches (D-019), as on the Related loans card.
+  const same = item.category === "MATERIAL" ? [] : (await replacementCandidates(prisma, item.loan)).filter((r) => inScope(user, r.loan.branchId));
   const oldCopy = item.category === "MATERIAL" ? null : (await relatedLoans(prisma, item.loan)).find((r) => r.oldPn === item.loan.pn);
   const branchNames = new Map((await prisma.branch.findMany({ where: { id: { in: [item.loan.branchId, ...same.map((r) => r.loan.branchId)] } }, select: { id: true, name: true } })).map((b) => [b.id, b.name]));
   const newLoan = item.loan.replacedByPn ? await prisma.loan.findUnique({ where: { pn: item.loan.replacedByPn }, select: { id: true } }) : null;
@@ -135,7 +138,7 @@ export function differentBranch(oldName: string | undefined, newName: string | u
 /** Copy reusable papers: the options for the new loan file (Admin), or none. */
 export async function reusableFor(user: CurrentUser, loanId: string) {
   if (!can(user, PERMISSIONS.SOURCE_REVIEW)) return [];
-  return reusablePapers(prisma, loanId);
+  return reusablePapers(prisma, loanId, user);
 }
 
 /** The Related loans card: every other loan of the same borrower (CIN or CIF), scope respected. */

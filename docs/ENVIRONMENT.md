@@ -113,13 +113,13 @@ At startup (`instrumentation.ts`, and in the console scripts), `lib/env` checks 
 - `CRON_SECRET` is missing or shorter than 24 characters.
 - `SESSION_SECRET` is missing or shorter than 32 characters.
 - `MYLOANS_BASE_URL` or `MYLOANS_API_KEY` is missing.
+- `AUTH_MODE` is `test`. Test sign-in has no password and is for local development only; `staging` refuses it too (D-021).
 - A variable has a value it doesn't know, such as `MYLOANS_MODE=sandbox`. An unknown `APP_ENV` is checked as strictly as production.
 
 **These only print a warning:**
 
 - `EMAIL_AUTO_DRAIN=false`.
 - Any `GRAPH_*` value is missing. Emails stay Not set up.
-- `AUTH_MODE=test` in production.
 
 **`staging`** runs the same checks, with two exceptions:
 
@@ -180,7 +180,7 @@ PowerShell, a random secret: `[Convert]::ToBase64String((1..36 | ForEach-Object 
 | `DB_HOST_PORT`, `ADMINER_HOST_PORT` | Local Docker ports | no | local |
 | `APP_BASE_URL` | Public address, for links in emails | no | all |
 | `SESSION_SECRET` | Signs the sign-in cookie (32+ characters) | **yes** | all |
-| `AUTH_MODE` | test or entra | no | all |
+| `AUTH_MODE` | `test` (local only) or `entra`. Not set: `test` when `APP_ENV=local`, otherwise `entra` (`lib/auth/mode.ts`) | no | all |
 | `CRON_SECRET` | `x-cron-secret` header for the cron endpoints (24+ in staging and production) | **yes** | staging, production |
 | `MYLOANS_MODE` | mock or live | no | all; live in production |
 | `MYLOANS_BASE_URL` | MyLoans API address (old name `MYLOANS_API_BASE_URL` is still read, with a warning) | **yes** | production, or when live |
@@ -210,4 +210,4 @@ PowerShell, a random secret: `[Convert]::ToBase64String((1..36 | ForEach-Object 
 6. **Rotate secrets.** Replace any secret that was ever pasted into chat, email or a ticket: the Microsoft client secret, the MyLoans key, `SESSION_SECRET` and `CRON_SECRET`.
 7. **Microsoft app.** Confirm it has the **Mail.Send** application permission with **admin consent** granted. Better still, limit it to the sender mailbox with an application access policy.
 8. **Start the app.** If any setting is unsafe it refuses to start and lists the variable names. Fix them and start again.
-9. **Sign-in.** `AUTH_MODE=test` only gives a warning, because Microsoft sign-in is not built yet. The test sign-in buttons must not be on a public production address.
+9. **Sign-in.** `AUTH_MODE=test` stops the start (D-021). Until Microsoft sign-in (Entra ID) is built, nobody can sign in to staging or production; that is intended.

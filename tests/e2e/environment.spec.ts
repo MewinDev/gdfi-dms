@@ -1,16 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 
 /**
  * Settings > System shows the environment and test mode (never a value); Staging shows a banner;
  * GET /api/health answers without sign-in and without variable names. Works against a server
  * started with APP_ENV=local or APP_ENV=staging (read from /api/health).
  */
-async function signInAsAdmin(page: Page) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Continue as Admin" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
@@ -32,7 +27,7 @@ test("Health, the environment line in Settings, and the Staging banner", async (
   expect(JSON.stringify(body)).not.toMatch(/[A-Z]{3,}_[A-Z_]{3,}/); // no variable names
   const env = body.environment as keyof typeof LABEL;
 
-  await signInAsAdmin(page);
+  await signInWith(page, "Continue as Admin");
   await page.goto("/admin/settings");
   await expect(page.getByRole("link", { name: /^System and test mode/ }).filter({ visible: true }).first()).toContainText(LABEL[env]);
   await page.goto("/admin/settings?open=system");

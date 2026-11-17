@@ -54,9 +54,6 @@ export function doneTat(code: string, start: Date, end: Date, tats: TatMap, holi
   return tatChip(stepClock({ targetDays: targetOf(tats, key), start, end }, holidays, end), businessDate(end));
 }
 
-/** Total problem days on a transaction (all problems, holidays skipped). */
-export const txnProblemDays = (t: Pick<TxnLike, "problems">, holidays: ReadonlySet<string>, now: Date = new Date()) => problemDays(t.problems, holidays, now);
-
 export const FUNDS_TONE: Record<FundsStatus, "mute" | "act" | "wait" | "ok" | "bad" | "navy"> = {
   NOT_NEEDED: "mute", NEEDED: "act", REQUESTED: "wait", FUNDED: "navy", SETTLED: "ok", DENIED: "bad",
 };

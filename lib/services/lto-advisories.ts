@@ -6,6 +6,7 @@ import { writeAudit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere, lacksWhere } from "@/lib/auth/holders";
 import { fmtDateTime } from "@/lib/time";
 import { stageRows } from "./job-stages";
 import { UserError } from "./errors";
@@ -28,7 +29,7 @@ const firstIssue = (e: z.ZodError) => { const i = e.issues[0]; return new UserEr
 /** The people told about advisories (the "Be told about LTO advisories" tick). Processors are never told. */
 async function monitorIds(tx: Tx): Promise<string[]> {
   const rows = await tx.user.findMany({
-    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.LTO_REPORTS_NOTIFY }, NOT: { permissions: { has: PERMISSIONS.DP_RECEIVE } } } },
+    where: andWhere(holdsWhere(PERMISSIONS.LTO_REPORTS_NOTIFY), lacksWhere(PERMISSIONS.DP_RECEIVE)),
     select: { id: true },
   });
   return rows.map((r) => r.id);

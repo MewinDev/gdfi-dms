@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { openFundsDetails, pickLtoOffice } from "./helpers";
+import { openFundsDetails, pickLtoOffice, signInWith } from "./helpers";
 
 /**
  * Second processor (Pasuyo): the LA adds one at Send; the DP passes a job on, choosing what happens
@@ -11,12 +11,6 @@ test.beforeEach(async () => {
 });
 
 const BUTTONS = { la: "Continue as Loan Associate", dp: "Continue as Test Document Processor", fin: "Continue as Test Finance" } as const;
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
@@ -39,7 +33,7 @@ async function readyTxn(page: Page, code: string) {
 }
 
 test("LA: Send with a second processor (Pasuyo): reasons beside Send, summary, then the job card shows both", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await readyTxn(page, "NOTARY");
   const why = page.locator('[id^="send-why-"]');
   await page.getByText("No funds needed", { exact: true }).click();
@@ -73,7 +67,7 @@ test("LA: Send with a second processor (Pasuyo): reasons beside Send, summary, t
 
 test("DP: Pasuyo pop-up asks about held cash first; Hand the balance; Jobs shows the tag; Finance sees it under the second processor", async ({ page }) => {
   // LA sends Mortgage (needs an LTO fee) to the test processor.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await readyTxn(page, "MORTGAGE");
   await page.getByText("Needs funds", { exact: true }).click();
   await page.locator("label", { hasText: "LTO fee" }).click();
@@ -88,7 +82,7 @@ test("DP: Pasuyo pop-up asks about held cash first; Hand the balance; Jobs shows
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id } });
 
   // DP accepts; Finance has released ₱2,000.00 for it (test setup).
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${job.id}`);
   await page.getByRole("button", { name: "Accept" }).click();
   await expect(page.getByRole("button", { name: /Log today/ })).toBeVisible();
@@ -131,7 +125,7 @@ test("DP: Pasuyo pop-up asks about held cash first; Hand the balance; Jobs shows
   await noSideways(page);
 
   // Finance: the balance shows under the second processor in Outstanding, with the note.
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=outstanding");
   const grace = page.locator("[data-advance]", { has: page.locator(".fl-asked", { hasText: "Grace Tan" }) });
   await expect(grace.locator("[data-amount]")).toHaveText("₱2,000.00");

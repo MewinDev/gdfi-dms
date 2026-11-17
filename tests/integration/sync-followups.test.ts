@@ -108,7 +108,9 @@ describe("1. Return the cash", () => {
       docs: await prisma.documentItem.count({ where: { loanId: loan.id } }),
     };
     // Who may: only those who review MyLoans changes.
-    for (const u of [la, dp, sup]) await expect(askCashBack(u, item.id, "Return it please")).rejects.toThrow(/Only Admin reviews/);
+    // The LA Supervisor/Head (sup) approves myloans changes since D-010; the LA and the DP do not.
+    for (const u of [la, dp]) await expect(askCashBack(u, item.id, "Return it please")).rejects.toThrow(/Only approvers review/);
+    void sup;
     // A note of 5 to 500 characters.
     await expect(askCashBack(admin, item.id)).rejects.toThrow(/at least 5 characters/);
     await expect(askCashBack(admin, item.id, "1234")).rejects.toThrow(/at least 5 characters/);
@@ -157,7 +159,8 @@ describe("3. The renamed tick", () => {
     const roles = await prisma.role.findMany({ select: { key: true, permissions: true } });
     const old = ["source", "review_borrower"].join(":");
     expect(roles.filter((r) => r.permissions.includes(old)).map((r) => r.key)).toEqual([]);
-    for (const k of ["SUP", "ADMIN", "FIN"]) expect(roles.find((r) => r.key === k)!.permissions, k).toContain("myloans:review_borrower");
+    for (const k of ["SUP", "ADMIN"]) expect(roles.find((r) => r.key === k)!.permissions, k).toContain("myloans:review_borrower");
+    expect(roles.find((r) => r.key === "FIN")!.permissions).not.toContain("myloans:review_borrower"); // D-034 (Q-N19)
   });
 });
 

@@ -84,6 +84,8 @@ export const PERMISSIONS = {
   SETTINGS_LTO: "settings:lto",
   SETTINGS_SYSTEM: "settings:system", // MyLoans test switches, simulator switch, mock source changes
   SETTINGS_PN_FORMAT: "settings:pn_format", // Settings, System, PN format
+  SETTINGS_CLASSIFICATION: "settings:classification", // Settings, Product classification (D-031)
+  LOANS_RECLASSIFY: "loans:reclassify", // Loan File: apply a changed classification (D-031)
   SETTINGS_PROBLEM_REASONS: "settings:problem_reasons",
   HOLDS_MANAGE: "holds:manage", // Settings > Hold reasons (Admin only by default; was settings:hold_reasons)
   SETTINGS_RETURN_REASONS: "settings:return_reasons",
@@ -108,10 +110,12 @@ export const PERMISSIONS = {
   BRANCHES_REVIEW: "branches:review", // decide Branch review items
   USERS_VIEW: "users:view",
   USERS_EDIT: "users:edit",
-  ACCESS_MANAGE: "access:manage", // a person's branch access (All, Division, Area, Branch, exceptions, home branch)
-  ROLES_MANAGE: "roles:manage",
+  ACCESS_MANAGE: "access:manage", // a person's branches (Division, Area, Branch, exceptions, home branch) and Handles CA / FT (D-023)
+  ACCESS_ALL_BRANCHES: "access:all_branches", // give a person "All branches" (D-023: Superadmin only by default)
+  ROLES_MANAGE: "roles:manage", // manage permissions: the role matrix, per-user overrides, the Open Item approver tick (D-023)
   // Reports and audit
   AUDIT_VIEW: "audit:view",
+  FILES_LOG_VIEW: "audit:files", // Audit, File access log (D-039)
   // Test tools
   SIMULATOR_USE: "simulator:use",
   TESTDATA_RESET: "testdata:reset",
@@ -256,14 +260,16 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.REPORTS_TAT, label: "See the TAT and problems report", help: "Problems and holds by reason, days, overdue counts.", requires: [P.LOANS_VIEW], can: "see the TAT and problems report", where: "Reports, TAT", was: "reports:tat" },
       { key: P.REPORTS_TAT_EXPORT, label: "Download the TAT report (CSV)", help: "Download the TAT and problems report as a spreadsheet file.", requires: [P.REPORTS_TAT], view: P.REPORTS_TAT, can: "download the TAT report", where: "Reports, TAT, Download CSV", was: "reports:tat + loans:export", hidden: true },
       { key: P.AUDIT_VIEW, label: "See the audit log", help: "Every automatic decision and user action (the technical log).", can: "see the audit log", where: "Audit log", was: "audit:view" },
+      { key: P.FILES_LOG_VIEW, label: "View file access log", help: "Who opened or downloaded which receipt, stage evidence or LTO proof, and when; filter and export it (each export is logged too). Give it to a Data Protection Officer if needed.", can: "view the file access log", where: "Audit, File access log", was: "new on 17 November 2026" },
     ],
   },
   {
     key: "myloans", label: "MyLoans and sync", items: [
       { key: P.MYLOANS_VIEW, label: "See when MyLoans was last checked", help: "Show \"MyLoans · Last checked\" on a loan file.", requires: [P.LOANS_VIEW], can: "see when MyLoans was last checked", where: "Loan File, top strip", was: "loans:view" },
+      { key: P.LOANS_RECLASSIFY, label: "Reclassify a loan", help: "When the keyword rules changed after a loan file was opened (\"Classification changed since accepted\"): apply the new Financing or Refinancing result, with remarks. Sent work never changes.", requires: [P.LOANS_VIEW], can: "reclassify a loan file", where: "Loan File, Classification changed since accepted", was: "new on 17 November 2026" },
       { key: P.LOANS_REFRESH, label: "Refresh a loan from MyLoans", help: "The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now.", requires: [P.MYLOANS_VIEW], view: P.MYLOANS_VIEW, can: "refresh a loan from MyLoans", where: "Loan File, Refresh from MyLoans", was: "none (shown to everyone who sees the loan file)" },
       { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
-      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches; when nobody in the branch has this tick, Admin reviews it.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
+      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
       { key: P.SOURCE_MANAGE, label: "Change MyLoans sync settings", help: "How often loans are checked against MyLoans and the business hours.", can: "change MyLoans sync settings", where: "Settings, MyLoans sync", was: "source:manage" },
       { key: P.MYLOANS_SYNC, label: "Run the MyLoans sync now", help: "The Run now button: check every open loan against MyLoans at once.", can: "run the MyLoans sync now", where: "Settings, MyLoans sync, Run now", was: "source:manage" },
     ],
@@ -276,8 +282,9 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.BRANCHES_REVIEW, label: "Decide branch changes", help: "The Branch review: accept or ignore new, renamed, closed or moved branches from MyLoans.", requires: [P.BRANCHES_VIEW], can: "decide branch changes", where: "Settings, Branches, Branch review", was: "source:manage" },
       { key: P.USERS_VIEW, label: "See users", help: "See the Users page.", can: "see users", where: "Users", was: "users:view" },
       { key: P.USERS_EDIT, label: "Add or edit users", help: "Add users, change their name, role and status.", requires: [P.USERS_VIEW], view: P.USERS_VIEW, can: "add and edit users", where: "Users, Add and Edit", was: "users:edit" },
-      { key: P.ACCESS_MANAGE, label: "Change branch access", help: "Choose which branches a person works in: All, divisions, areas, branches, exceptions and the home branch.", requires: [P.USERS_EDIT], can: "change branch access", where: "Users, Edit, Branch access; Copy access", was: "users:edit" },
-      { key: P.ROLES_MANAGE, label: "Manage roles", help: "Add roles and change what each one may see and do.", requires: [P.USERS_VIEW], can: "manage roles", where: "Settings, Roles", was: "roles:manage" },
+      { key: P.ACCESS_MANAGE, label: "Change branch access", help: "Choose which branches a person works in (divisions, areas, branches, exceptions, home branch) and whether they handle cash advances and fund transfers. Never your own.", requires: [P.USERS_EDIT], can: "change branch access", where: "Users, Edit, Branch access; Copy access", was: "users:edit" },
+      { key: P.ACCESS_ALL_BRANCHES, label: "Give All branches", help: "Give a person access to every branch. Never your own.", requires: [P.ACCESS_MANAGE], can: "give All branches access", where: "Users, Edit, Branch access", was: "access:manage" },
+      { key: P.ROLES_MANAGE, label: "Manage permissions", help: "The permission matrix (what each role may see and do), per-user overrides, and who can approve LA Open Items. Never your own.", requires: [P.USERS_VIEW], can: "manage permissions", where: "Settings, Permissions; Roles; Users, Edit, Permissions", was: "roles:manage" },
     ],
   },
   {
@@ -297,6 +304,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.FUNDS_TYPES_MANAGE, label: "Change funds types", help: "Rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off.", can: "change funds types", where: "Settings, Funds types", was: "fundtypes:manage" },
       { key: P.STAGES_MANAGE, label: "Change processing stages", help: "The stages of each transaction type, their evidence and targets.", can: "change processing stages", where: "Settings, Processing stages", was: "stages:manage" },
       { key: P.SETTINGS_SYSTEM, label: "Change system switches", help: "MyLoans test switches, the simulator switch, sample MyLoans changes.", can: "change system switches", where: "Settings, System", was: "settings:system" },
+      { key: P.SETTINGS_CLASSIFICATION, label: "Change product classification keywords", help: "The Refinancing and Financing keyword lists and the default for a product name with no keyword (D-031). Saving re-checks open loan files.", can: "change the product classification keywords", where: "Settings, Product classification", was: "new on 17 November 2026" },
       { key: P.SETTINGS_PN_FORMAT, label: "Change the PN format", help: "The parts of a PN (prefix, branch code, year, system digit, running number) and the PN check.", can: "change the PN format", where: "Settings, System, PN format", was: "settings:system" },
       { key: P.SETTINGS_IMPORT, label: "Import data", help: "Import / Export files, for the lists this role may change.", can: "import data", where: "Settings, Import / Export", was: "settings:import" },
       { key: P.SIMULATOR_USE, label: "Use the test simulator", help: "Move sample loans through the processor and vault steps, and simulate MyLoans changes. Only in test mode.", requires: [P.LOANS_VIEW], can: "use the test simulator", where: "Loan File, Simulator (test mode)", was: "simulator:use (the MyLoans change simulator: checked in the service only)" },
@@ -338,8 +346,11 @@ export const WORKFLOW_PERMISSIONS: Permission[] = [
   P.FUNDS_FT_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_FT_SETTLE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_CHANGE_TYPE,
   P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE,
 ];
-/** Not work steps, and not in the default Admin role either: who is told about LTO advisories. */
-const NOT_ADMIN_DEFAULT: Permission[] = [P.LTO_REPORTS_NOTIFY];
+/**
+ * Not in the default Admin role either: who is told about LTO advisories, and what only the Superadmin
+ * does by default (D-023): the permission matrix and overrides, and giving "All branches".
+ */
+const NOT_ADMIN_DEFAULT: Permission[] = [P.LTO_REPORTS_NOTIFY, P.ROLES_MANAGE, P.ACCESS_ALL_BRANCHES];
 export const ADMIN_PERMISSIONS: Permission[] = ALL_PERMISSIONS.filter((k) => !WORKFLOW_PERMISSIONS.includes(k) && !NOT_ADMIN_DEFAULT.includes(k));
 
 /** Turning keys on adds what they require (recursively). */
@@ -403,43 +414,85 @@ export const FUNDS_BOTH_TYPES: Permission[] = [
   P.FUNDS_FT_VIEW, P.FUNDS_FT_APPROVE, P.FUNDS_FT_RELEASE, P.FUNDS_FT_SETTLE, P.FUNDS_FT_EDIT_LINES, P.FUNDS_FT_CHANGE_TYPE, P.FUNDS_FT_PRINT,
 ];
 
-/** Seeded built-in roles: the defaults that "Reset to default" restores. */
+/** The Loan Associate's ticks (also the base of the LA Supervisor/Head, D-002). */
+const LA_PERMISSIONS: Permission[] = [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING, P.PAPERS_RECEIVE_LATE, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP];
+/** Finance's default ticks (D-034): every funds tick of both types (the person's Handles CA / FT and branches decide). */
+const FIN_DEFAULT: Permission[] = [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW];
+/** The LA Supervisor/Head's oversight ticks (D-034): what the former Branch Supervisors kept as grants, now the role's own. */
+const SUP_OVERSIGHT: Permission[] = [P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT];
+/**
+ * Approve or reject myloans changes ("Can approve LA Open Items", D-010). Purely permission-based (D-029):
+ * anyone with these ticks approves for the branches in their access; with "All branches", every branch.
+ * Default on the LA Supervisor/Head and on Admin (All branches); never an automatic fallback.
+ */
+export const OPEN_ITEM_APPROVER_KEYS: Permission[] = [P.SOURCE_REVIEW, P.SOURCE_REVIEW_BORROWER];
+
+/**
+ * Day-to-day actions (D-028, 17 Nov 2026): approving, releasing funds, accepting and forwarding, working
+ * jobs, moving holds, resolving problems and LTO advisories. Not in the Superadmin's default (setup and
+ * configuration only); the Superadmin can still tick them on a role or a person.
+ */
+export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
+  ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY,
+];
+/** Keys added on 17 November 2026 (D-031): the role migration ignores them when it compares a role with an earlier default. */
+export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW];
+
+/**
+ * Seeded built-in roles: the defaults that "Reset to default" restores. The ten decided roles (D-002) plus
+ * the read-only Monitoring role (D-010). Keys are internal ids (never checked in code); names are shown.
+ */
 export const ROLE_DEFAULTS: Record<string, { name: string; description: string; canSignIn: boolean; sortOrder: number; branchAccess: "ASSIGNED" | "ALL"; permissions: Permission[] }> = {
+  SUPERADMIN: {
+    name: "Superadmin", canSignIn: true, sortOrder: 0, branchAccess: "ALL",
+    description: "Setup and configuration: users, the permission matrix and overrides, All branches, settings, the myloans integration. No day-to-day actions unless ticked.",
+    // Every setup and configuration right; no day-to-day action (D-028): not an approver, not Finance, not a
+    // processor or LA, no hold moves. All tickable.
+    permissions: ALL_PERMISSIONS.filter((k) => !DAY_TO_DAY_PERMISSIONS.includes(k)),
+  },
   LA: {
     name: "Loan Associate", canSignIn: true, sortOrder: 1, branchAccess: "ASSIGNED",
     description: "Finds and opens loan files, checks papers, sends to processors.",
-    permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING, P.PAPERS_RECEIVE_LATE, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP],
+    permissions: LA_PERMISSIONS,
   },
   ADMIN: {
     name: "Admin", canSignIn: true, sortOrder: 2, branchAccess: "ALL",
-    description: "Users, roles, Settings, audit log, CSV export, all loans (read-only), Supervisor override, test tools.",
+    description: "Group Head: users and staffing (branches, CA / FT), Settings, audit log, all loans (read-only), override, test tools. Not permissions or All branches.",
     permissions: ADMIN_PERMISSIONS,
   },
-  DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: false, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, P.LTO_REPORTS_CREATE, ...SOURCE_STRIP] },
-  FIN: { name: "Finance", canSignIn: false, sortOrder: 4, branchAccess: "ALL", description: "Approves and releases cash advances; confirms liquidation; prints liquidation reports.", permissions: [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.SOURCE_REVIEW_BORROWER] },
-  VAULT: { name: "Vault Custodian", canSignIn: false, sortOrder: 5, branchAccess: "ASSIGNED", description: "Phases 6 and 8.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
-  DIG: { name: "Digital Records", canSignIn: false, sortOrder: 6, branchAccess: "ASSIGNED", description: "Digital Records: the digital copy.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
-  QA: { name: "QA", canSignIn: false, sortOrder: 7, branchAccess: "ASSIGNED", description: "Quality Assurance checks.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
-  APPR: { name: "Approvers, Records, Compliance", canSignIn: false, sortOrder: 8, branchAccess: "ASSIGNED", description: "Phase 8 and 10 approvals.", permissions: [P.LOANS_VIEW, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE] },
-  /** Read-only, all branches: the Monitoring page and LTO advisories. No loan files, no amounts. */
-  MONITOR: { name: "Operations Monitor", canSignIn: true, sortOrder: 9, branchAccess: "ALL", description: "Watches processors and LTO offices (Monitoring page) and resolves LTO advisories. Read-only.", permissions: [P.MONITOR_DP, P.MONITOR_LTO, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY] },
+  DP: { name: "Document Processor / Collateral & Mortgage", canSignIn: true, sortOrder: 3, branchAccess: "ASSIGNED", description: "Phase 4 processing, mortgage cancellation.", permissions: [P.LOANS_VIEW, P.DP_RECEIVE, P.JOBS_WORK, P.JOBS_PASUYO, P.JOBS_RETURN_TO_LA, P.FUNDS_REQUEST, P.FUNDS_LIQUIDATE, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, P.LTO_REPORTS_CREATE, ...SOURCE_STRIP] },
+  // Finance (D-034, D-035): branch-scoped like the LA (no All branches by default; only the Superadmin gives
+  // it); no borrower corrections (Q-N19). A person handles only the fund types AND branches ticked for them.
+  FIN: { name: "Finance", canSignIn: true, sortOrder: 4, branchAccess: "ASSIGNED", description: "Approves and releases cash advances and fund transfers for the fund types and branches ticked on the person; confirms liquidation; prints liquidation reports.", permissions: FIN_DEFAULT },
+  VAULT: { name: "Custodian", canSignIn: true, sortOrder: 5, branchAccess: "ASSIGNED", description: "The vault team (Collateral): receives, verifies and keeps documents. Work steps come with the vault module.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
+  DIG: { name: "Digicur", canSignIn: true, sortOrder: 6, branchAccess: "ASSIGNED", description: "Scans documents and records the scan reference. Work steps come with the digitization module.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
+  QA: { name: "QA", canSignIn: true, sortOrder: 7, branchAccess: "ASSIGNED", description: "Quality Assurance checks. Work steps come with the QA module.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
+  ARCHIVER: { name: "Archiver", canSignIn: true, sortOrder: 8, branchAccess: "ALL", description: "Files and warehouses documents. Work steps come with the archive module.", permissions: [P.LOANS_VIEW, ...SOURCE_STRIP] },
+  /** Read-only, all branches: the Monitoring page and LTO advisories. No loan files, no amounts (D-010). */
+  MONITOR: { name: "Monitoring (read-only)", canSignIn: true, sortOrder: 9, branchAccess: "ALL", description: "Watches processors and LTO offices (Monitoring page) and resolves LTO advisories. Read-only.", permissions: [P.MONITOR_DP, P.MONITOR_LTO, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY] },
   /**
-   * Branch Supervisor (also the Area Supervisor: the same role with Area access on the person). Sees the
-   * loans of their branches, moves holds there, resolves any problem there, the Monitoring pages and the
-   * TAT report. Never money, Settings, users, roles or branch imports. Created by migration
-   * 20261119090006_decisions_batch only when no role of this name exists (the seed does the same).
+   * LA Supervisor/Head (D-002, D-010, D-029): every LA tick, approving or rejecting myloans changes, and
+   * moving holds, for the branches in the person's access. The key SUP is the former Branch Supervisor
+   * (also the Area Supervisor: the same role with Area access on the person). No per-user legacy grants.
    */
-  SUP: { name: "Branch Supervisor", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Sees the loans of their branches, moves holds to another person, resolves any problem there, the Monitoring pages and the TAT report. No money, Settings, users or roles.", permissions: [P.LOANS_VIEW, P.LOANS_SEARCH, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, P.SOURCE_REVIEW_BORROWER, ...SOURCE_STRIP] },
+  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission, approving or rejecting myloans changes (Open Items) and moving holds, for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.LOANS_RECLASSIFY, ...SUP_OVERSIGHT] },
 };
-/** The plain ticks of the Branch Supervisor role and their keys (the report and the role's docs). */
+/** The plain ticks of the LA Supervisor/Head role (key SUP) and their keys (the report and the role's docs). */
 export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
-  { plain: "See loans and open loan files (within their branches)", keys: [P.LOANS_VIEW, P.LOANS_SEARCH, P.MYLOANS_VIEW, P.LOANS_REFRESH] },
-  { plain: "Move a hold to another person", keys: [P.HOLDS_TRANSFER] },
-  { plain: "Resolve any problem (at their branches)", keys: [P.PROBLEMS_RESOLVE_ANY] },
-  { plain: "See the Monitoring pages for DPs and LTO offices (their branches)", keys: [P.MONITOR_DP, P.MONITOR_LTO] },
-  { plain: "See the TAT report", keys: [P.REPORTS_TAT] },
-  { plain: "Review borrower detail corrections from MyLoans (their branches)", keys: [P.SOURCE_REVIEW_BORROWER] },
+  { plain: "Everything a Loan Associate can do (within their branches)", keys: LA_PERMISSIONS },
+  { plain: "Approve or reject myloans changes (Open Items) for their branches", keys: OPEN_ITEM_APPROVER_KEYS },
+  { plain: "Move a hold to another person (within their branches)", keys: [P.HOLDS_TRANSFER] },
+  { plain: "Reclassify a loan when the keyword rules changed (within their branches)", keys: [P.LOANS_RECLASSIFY] },
+  { plain: "Resolve any problem, see the DP and LTO monitors and the TAT report (within their branches)", keys: SUP_OVERSIGHT },
 ];
+/** Finance's default ticks before D-034 (with "Review borrower detail corrections"). */
+export const FIN_DEFAULT_BEFORE_D034: Permission[] = [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.SOURCE_REVIEW_BORROWER];
+/** The SUP role's default from D-029 to D-034 (17 Nov 2026): LA, approver, holds, reclassify. */
+export const SUP_DEFAULT_D029: Permission[] = [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.LOANS_RECLASSIFY];
+/** The SUP role's default before D-029 (17 Nov 2026), so the migration can bring an unchanged role up to date. */
+export const SUP_DEFAULT_BEFORE_D029: Permission[] = [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS];
+/** The Superadmin's default before D-028 was final (17 Nov 2026). */
+export const SUPERADMIN_DEFAULT_BEFORE_D028: Permission[] = ALL_PERMISSIONS.filter((k) => !WORKFLOW_PERMISSIONS.includes(k) && k !== P.LTO_REPORTS_NOTIFY && !OPEN_ITEM_APPROVER_KEYS.includes(k));
 
 /** Role chips used everywhere (role key -> label and CSS token). */
 export const ROLE_CHIPS: Record<string, { label: string; token: string }> = {
@@ -451,9 +504,11 @@ export const ROLE_CHIPS: Record<string, { label: string; token: string }> = {
   FIN: { label: "FIN", token: "fin" },
   APPR: { label: "APPR", token: "appr" },
   MONITOR: { label: "Monitor", token: "sys" },
+  SUPERADMIN: { label: "Superadmin", token: "sys" },
+  ARCHIVER: { label: "Archiver", token: "vault" },
   SYS: { label: "SYS", token: "sys" },
   ADMIN: { label: "Admin", token: "sys" },
-  SUP: { label: "Supervisor", token: "appr" },
+  SUP: { label: "LA Head", token: "appr" },
 };
 
 /** Which permission changes each list (Settings areas and Import list keys use the same names). */
@@ -493,9 +548,12 @@ export const AREA_PERMISSIONS: Record<string, Permission[]> = {
   ...Object.fromEntries(Object.entries(LIST_PERMISSION).map(([k, v]) => [k, [v]])),
   branches: [P.BRANCHES_VIEW],
   system: [P.SETTINGS_SYSTEM, P.SETTINGS_PN_FORMAT],
+  classification: [P.SETTINGS_CLASSIFICATION],
   email: [P.EMAIL_VIEW],
   "expense-kinds": [P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE],
   "myloans-sync": [P.SOURCE_MANAGE, P.MYLOANS_SYNC],
+  // The matrix (D-003): changed with Manage permissions; read only for anyone who can see users.
+  permissions: [P.ROLES_MANAGE, P.USERS_VIEW],
 };
 
 /** Same, by the kind names the services use. */

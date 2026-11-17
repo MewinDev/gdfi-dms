@@ -46,6 +46,9 @@ test("no question when nothing changed: list step, untouched form, read-only pop
   await modal(page).getByRole("button", { name: "Back" }).click();
   await expect(page).not.toHaveURL(/edit=/);
   await modal(page).getByRole("link", { name: "Edit Zeta Discard (860)" }).click();
+  // The edit step is on screen before Esc (else Esc closes the list and the edit step opens after).
+  await expect(page).toHaveURL(/edit=/);
+  await expect(modal(page).getByLabel("Name", { exact: true })).toHaveValue("Zeta Discard");
   await page.keyboard.press("Escape");
   await expect(modal(page)).toHaveCount(0);
 
@@ -58,6 +61,7 @@ test("no question when nothing changed: list step, untouched form, read-only pop
 
   // Read-only pop-up.
   await page.goto("/admin/users?open=roles");
+  await expect(page.getByRole("dialog")).toBeVisible(); // opened (the page is interactive) before Esc
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
@@ -173,6 +177,10 @@ test("Import: a chosen file that is not imported asks first", async ({ page }, i
   const file = info.outputPath("b.csv");
   writeFileSync(file, "code,name\r\nZQQ,Zeta Q\r\n");
   await modal(page).locator('input[type="file"]').setInputFiles(file);
+  // The file is shown as chosen (and the step marks itself unsaved) before the X is pressed: the guard
+  // reads that mark, which React sets on the render after the pick.
+  await expect(modal(page).locator("[data-chosen-file]")).toHaveText("b.csv");
+  await expect(modal(page).locator('[data-unsaved-import="true"]')).toHaveCount(1);
   await modal(page).getByRole("button", { name: "Close" }).click();
   await expect(confirm(page)).toContainText("You chose a file but have not imported it. If you leave now, nothing will be imported.");
   await confirm(page).getByRole("button", { name: "Discard changes" }).click();

@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -17,12 +18,6 @@ test.beforeEach(async () => {
 });
 
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor" } as const;
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 const wide = (page: Page) => page.viewportSize()!.width >= 1100;
 async function shot(page: Page, name: string, fullPage = true) {
   await page.waitForTimeout(300); // let button colour transitions finish
@@ -72,7 +67,7 @@ async function send(page: Page, code: string) {
 
 test("Hold owner and lock: the held transaction is locked; only the holder resumes; the remark counter", async ({ page }) => {
   test.setTimeout(240_000);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   await tickAll(page, "MORTGAGE");
 
@@ -115,7 +110,7 @@ test("Hold owner and lock: the held transaction is locked; only the holder resum
   await expect(page.getByRole("group", { name: /papers$/ }).first().getByRole("checkbox").first()).toBeEnabled();
 
   // Anyone else (Admin here): Resume is disabled with "Only {name} can resume this."
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   const summary = page.locator("[data-hold-summary]");
   await expect(summary.locator("[data-resume-disabled]")).toBeDisabled();
@@ -125,7 +120,7 @@ test("Hold owner and lock: the held transaction is locked; only the holder resum
   await noSideways(page);
 
   // The holder resumes: the lock lifts.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await page.locator("[data-hold-summary] [data-resume]").click();
   const resume = page.getByRole("dialog", { name: "Resume the work" });
@@ -136,7 +131,7 @@ test("Hold owner and lock: the held transaction is locked; only the holder resum
 });
 
 test("Hold reasons settings: the proposed list, add, reorder, switch off", async ({ page }) => {
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings?open=hold-reasons");
   const dlg = page.getByRole("dialog").filter({ hasText: "Hold reasons" }).first();
   for (const name of ["No available DP", "Waiting for the client's papers", "Waiting for a MyLoans update", "Other"]) await expect(dlg.getByText(name, { exact: true }).first()).toBeVisible();
@@ -147,7 +142,7 @@ test("Hold reasons settings: the proposed list, add, reorder, switch off", async
 
 test("Decline and Return to LA go back to the LA who sent it; the DP no longer sees it; send again is round 2", async ({ page }) => {
   test.setTimeout(300_000);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   await tickAll(page, "NOTARY");
   await send(page, "NOTARY");
@@ -157,7 +152,7 @@ test("Decline and Return to LA go back to the LA who sent it; the DP no longer s
   const ppsrJob = await jobOf("PPSR");
 
   // DP: Decline Notary (reason from the short list and remarks, both required).
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${notaryJob.id}`);
   await page.getByRole("button", { name: "Decline", exact: true }).click();
   const decline = page.getByRole("dialog", { name: "Decline the job" });
@@ -200,7 +195,7 @@ test("Decline and Return to LA go back to the LA who sent it; the DP no longer s
   expect(await db.notification.count({ where: { user: { email: "test.dp@gdfi.ph" }, link: { startsWith: `/jobs/${ppsrJob.id}` } } })).toBe(0);
 
   // The LA who sent them: Home, the findings at the top, Open items; nothing pre-selected on the re-send.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   const home = page.locator("[data-sent-back-home]");
   await expect(home.locator("[data-sent-back-row]")).toHaveCount(2);
   await expect(home).toContainText("Declined by the DP");

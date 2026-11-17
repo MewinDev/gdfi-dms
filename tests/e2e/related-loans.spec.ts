@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -8,12 +9,6 @@ import { db, resetLoans } from "./db";
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin" } as const;
 const OLD = "GD1652026901003";
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
@@ -66,7 +61,7 @@ test.beforeEach(async () => {
 test.afterAll(resetLoans);
 
 test("Additional unit: Related loans says Additional; Copy reusable papers copies only copies, never Originals", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page, OLD);
   await tickAll(page, "NOTARY");
   await tickAll(page, "MORTGAGE");
@@ -82,7 +77,7 @@ test("Additional unit: Related loans says Additional; Copy reusable papers copie
   await shot(page, "related-additional");
   await noSideways(page);
 
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/loans/GD1012026909301?tab=todo");
   await expect(related(page)).toContainText("₱1,000,000");
   const card = page.locator('[data-copy-papers="additional"]');
@@ -101,7 +96,7 @@ test("Additional unit: Related loans says Additional; Copy reusable papers copie
 });
 
 test("Replacement: the review pop-up asks to confirm no payment; linked, both files say so", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn(page, OLD);
   await newPn("GD1012026909302");
   await openPn(page, "GD1012026909302");
@@ -109,7 +104,7 @@ test("Replacement: the review pop-up asks to confirm no payment; linked, both fi
   await expect(related(page).locator('[data-related-row="ADDITIONAL"]')).toContainText(OLD); // still active: not a replacement yet
   await change(OLD, { status: "CANCELLED" });
 
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${OLD}?tab=todo`);
   await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from MyLoans" }).click();
   await expect(page.getByText("Changes found: review.")).toBeVisible();

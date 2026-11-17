@@ -21,7 +21,7 @@ export const SAMPLE_PNS: { pn: string; tests: string }[] = [
 /** Other mock PNs used by the Data Check and rule tests (hidden unless Admin turns them on). */
 export const DATA_CHECK_PNS: { pn: string; tests: string }[] = [
   { pn: "GD1012026901002", tests: "Financing, New 300,000: the two questions; Mortgage when Transferred." },
-  { pn: "GD1012026901005", tests: "\"Auto Finance\" is not the word Financing, so Refinancing. Not a mortgage." },
+  { pn: "GD1012026901005", tests: "\"Car Loan\" has no keyword, so Refinancing by default (labelled). Not a mortgage." },
   { pn: "GD1012026901006", tests: "Blank product name defaults to Refinancing. Mortgage." },
   { pn: "GD3902026901007", tests: "Other branch (Alaminos): refused, outside your branches." },
   { pn: "GD1652026901008", tests: "MyLoans status 8, Check Prepared: the not-released card, no Open button." },

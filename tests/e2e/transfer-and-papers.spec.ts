@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { cleanSettingsTestRows, db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
 
@@ -21,12 +22,6 @@ test.afterAll(async () => {
 });
 
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor", fin: "Continue as Test Finance" } as const;
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string, fullPage = true) {
   await page.waitForTimeout(300); // let colour transitions finish
   await page.screenshot({ path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
@@ -99,11 +94,11 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   const role = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Angono" } });
   await db.user.create({ data: { email: "zz.la2@gdfi.ph", name: "Second Loan Associate", roleId: role.id, isTestUser: true, branches: { create: [{ branchId: loanBranch.id }] } } });
-  // The built-in Branch Supervisor of the loan's branch (Finance no longer moves holds).
+  // An LA Supervisor/Head of the loan's branch who kept the former Branch Supervisor ticks (D-010; Finance no longer moves holds).
   const supRole = await db.role.findUniqueOrThrow({ where: { key: "SUP" } });
   await db.user.create({ data: { email: "zz.angono.sup@gdfi.ph", name: "Zz Angono Supervisor", roleId: supRole.id, isTestUser: true, branches: { create: [{ branchId: loanBranch.id }] } } });
 
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   await tickAll(page, "MORTGAGE");
   await page.getByRole("button", { name: "Put on hold" }).click();
@@ -114,7 +109,7 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   await expect(form).toBeHidden();
 
   // A plain user (the DP can view the loan file): no transfer, and who must resume it.
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   const summary = page.locator("[data-hold-summary]");
   await expect(summary.locator("[data-needs-resume]")).toHaveText("Needs to be resumed by Test Loan Associate. Ask your supervisor if Test Loan Associate is away.");
@@ -123,16 +118,12 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   await shot(page, "hold-summary-plain-user");
 
   // Finance no longer moves holds (decision 10 November 2026): no Transfer hold.
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(summary.locator("[data-transfer-hold]")).toHaveCount(0);
 
-  // The Branch Supervisor of the loan's branch ("Move a hold to another person"): Transfer hold, never Resume.
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByLabel("Other test user").selectOption({ label: "Zz Angono Supervisor (Branch Supervisor)" });
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  // The LA Supervisor/Head of the loan's branch ("Move a hold to another person"): Transfer hold, never Resume.
+  await signInWith(page, { other: "Zz Angono Supervisor (LA Supervisor/Head)" });
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(summary.locator("[data-only-holder]")).toHaveText("Only Test Loan Associate can resume this.");
   await expect(summary.locator("[data-resume]")).toHaveCount(0);
@@ -157,7 +148,7 @@ test("Transfer hold: the form for Finance (supervisor role), the summary for a p
   await noSideways(page);
 
   // The old holder lost Resume.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
   await expect(summary.locator("[data-resume]")).toHaveCount(0);
   await expect(summary.locator("[data-resume-disabled]")).toBeDisabled();
@@ -173,14 +164,14 @@ test("Inactive sender: the branch LAs see it on Home and in the Do this now card
   const role = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   const loanBranch = await db.branch.findFirstOrThrow({ where: { name: "Angono" } });
   const gone = await db.user.create({ data: { email: "zz.lagone@gdfi.ph", name: "Leaving Loan Associate", roleId: role.id, isTestUser: true, active: false, branches: { create: [{ branchId: loanBranch.id }] } } });
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   await tickAll(page, "NOTARY");
   await send(page, "NOTARY");
   // Sent by an LA who has since left.
   const job = await jobOf("NOTARY");
   await db.dpAssignment.update({ where: { id: job.id }, data: { assignedById: gone.id } });
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${job.id}`);
   await page.getByRole("button", { name: "Decline", exact: true }).click();
   const d = page.getByRole("dialog", { name: "Decline the job" });
@@ -189,7 +180,7 @@ test("Inactive sender: the branch LAs see it on Home and in the Do this now card
   await d.getByRole("button", { name: "Decline", exact: true }).click();
   await expect.poll(async () => (await db.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("DECLINED");
 
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await expect(page.locator("[data-sent-back-home] [data-inactive-sender]")).toHaveText("Sender Leaving Loan Associate is inactive");
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
   await expect(page.locator("[data-do-now] [data-inactive-sender]")).toContainText("Sender Leaving Loan Associate is inactive.");
@@ -201,12 +192,12 @@ test("Inactive sender: the branch LAs see it on Home and in the Do this now card
 
 test("Return to LA with cash released and papers: liquidation notice, Cash to settle, the LA confirms the papers before sending again", async ({ page }) => {
   test.setTimeout(300_000);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   await tickAll(page, "PPSR");
   await send(page, "PPSR");
   const job = await jobOf("PPSR");
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await accept(page, job.id);
   const adv = await releasedAdvance(job.transactionId);
   await page.reload();
@@ -237,7 +228,7 @@ test("Return to LA with cash released and papers: liquidation notice, Cash to se
   await noSideways(page);
 
   // The LA: Send is blocked until the papers are confirmed; one paper "Not received" raises a Problem.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/${PN}?tab=todo&tx=PPSR`);
   const papers = page.locator("[data-papers-back]");
   await expect(papers.getByRole("button", { name: n === 1 ? "Received" : `All ${n} received` })).toBeVisible();
@@ -260,7 +251,7 @@ test("Return to LA with cash released and papers: liquidation notice, Cash to se
 
 test("Finance on a held transaction: approving is refused with the lock message", async ({ page }) => {
   test.setTimeout(240_000);
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await openPn3(page);
   await tickAll(page, "MORTGAGE");
   await send(page, "MORTGAGE");
@@ -274,7 +265,7 @@ test("Finance on a held transaction: approving is refused with the lock message"
   const raisedAt = new Date();
   await db.hold.create({ data: { loanId: loan.id, transactionId: job.transactionId, reasonId: reason.id, reasonName: reason.name, note: "Waiting for the LTO fee schedule", raisedById: dp.id, raisedByLabel: dp.name, ownerId: dp.id, ownerLabel: dp.name, raisedAt } });
 
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   const card = page.locator(`[data-advance="${adv.number}"]`);
   await approveWithConfirm(page, card);

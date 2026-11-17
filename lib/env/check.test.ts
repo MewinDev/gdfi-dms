@@ -78,8 +78,21 @@ describe("warnings only", () => {
     expect(r.errors).toEqual([]);
     expect(r.warnings).toEqual(["GRAPH_CLIENT_SECRET, GRAPH_TENANT_ID are not set: emails stay Not set up."]);
   });
-  it("AUTH_MODE=test in production warns", () => {
-    expect(checkEnv({ ...PROD, AUTH_MODE: "test" }).warnings.join(" ")).toContain("AUTH_MODE");
+  it("AUTH_MODE=test in production refuses to start (D-021)", () => {
+    const r = checkEnv({ ...PROD, AUTH_MODE: "test" });
+    expect(r.errors.join(" ")).toContain("AUTH_MODE must not be test in production");
+  });
+
+  it("AUTH_MODE=test in staging refuses to start", () => {
+    expect(checkEnv({ ...PROD, APP_ENV: "staging", AUTH_MODE: "test" }).errors.join(" ")).toContain("AUTH_MODE must not be test in staging");
+  });
+
+  it("AUTH_MODE not set in production is not an error (it means entra)", () => {
+    expect(checkEnv({ ...PROD, AUTH_MODE: undefined }).errors.join(" ")).not.toContain("AUTH_MODE");
+  });
+
+  it("AUTH_MODE=test locally is fine", () => {
+    expect(checkEnv({ ...PROD, APP_ENV: "local", TEST_MODE: "true", MYLOANS_MODE: "mock", AUTH_MODE: "test" }).errors.join(" ")).not.toContain("AUTH_MODE");
   });
 });
 

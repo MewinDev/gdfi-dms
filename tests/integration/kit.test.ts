@@ -17,6 +17,7 @@ import { autoBackup, baselineStatus, buildBaseline, FIRST_CLEAN_BACKUP, listSave
 import { buildSamples } from "@/lib/kit/build";
 import { buildClean, CLEAN_EMPTY_TABLES } from "@/lib/kit/build-clean";
 import { APPROVER_ROLES, CLEAN_ACCOUNTS, CLEAN_POOL, poolHeading } from "@/lib/kit/clean";
+import { SUPERVISOR_ROLE_NAME } from "@/lib/kit/catalog";
 import { getMyLoansAdapter } from "@/lib/myloans";
 import { KIT_ACCOUNTS, KIT_BRANCH_CHANGES, KIT_L1, KIT_LOANS, KIT_OTHER_SAMPLES, KIT_REPLACEMENT_PN } from "@/lib/kit/catalog";
 import { shiftBusinessDays } from "@/lib/kit/rebase";
@@ -73,7 +74,7 @@ describe("Manual Test Kit on the test database", () => {
     expect(users).toHaveLength(CLEAN_ACCOUNTS.length);
     const codesOf = async (email: string) => (await prisma.userBranch.findMany({ where: { user: { email } }, include: { branch: true } })).map((x) => x.branch.code).sort();
     const l1 = (await prisma.branch.findMany({ where: { area: { name: KIT_L1.area }, division: { name: KIT_L1.division } } })).map((b) => b.code!).sort();
-    const roleName: Record<string, string> = { SUPERVISOR: "Branch Supervisor", LA_NO_REFRESH: "LA (no refresh)", APPROVER_SMALL: APPROVER_ROLES.small.name, APPROVER_LARGE: APPROVER_ROLES.large.name,
+    const roleName: Record<string, string> = { SUPERVISOR: SUPERVISOR_ROLE_NAME, LA_NO_REFRESH: "LA (no refresh)", APPROVER_SMALL: APPROVER_ROLES.small.name, APPROVER_LARGE: APPROVER_ROLES.large.name,
       FIN_CA: "Finance (cash advance)", FIN_FT: "Finance (fund transfer)", APPR_CA: "Approver (cash advance)", APPR_FT: "Approver (fund transfer)" };
     for (const a of CLEAN_ACCOUNTS) {
       const u = users.find((x) => x.email === a.email);
@@ -139,7 +140,8 @@ describe("Manual Test Kit on the test database", () => {
     expect(outcomes.luzonAngono, "LA Luzon 1 at Angono").toBe("opened");
     expect(outcomes.antipoloAtAngono, "LA Antipolo at Angono").toBe("Outside your branch access.");
     expect(outcomes.alaminosByLuzon, "LA Luzon 1 at Alaminos").toBe("Outside your branch access.");
-    expect(outcomes.alaminosByArea, "Area Supervisor at Alaminos").toBe("Your role does not allow opening loan files.");
+    // The Area Supervisor is an LA Supervisor/Head (every LA tick, D-002): Alaminos is in their access.
+    expect(outcomes.alaminosByArea, "Area Supervisor at Alaminos").toBe("opened");
     expect(outcomes.alaminosByRoving, "Roving LA at Alaminos").toBe("opened");
     expect(await prisma.branchReview.count()).toBe(0); // opening the PNs made no review item
     const opened = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026903001" }, include: { transactions: true } });
@@ -175,10 +177,11 @@ describe("Manual Test Kit on the test database", () => {
     expect((await prisma.user.findUniqueOrThrow({ where: { email: "kit.la.luzon1@example.test" }, include: { homeBranch: true } })).homeBranch?.code).toBe("165");
     expect(await prisma.userBranch.count({ where: { user: { email: "kit.la.roving@example.test" } } })).toBe(0);
     expect(users.every((u) => u.email.endsWith("@example.test"))).toBe(true);
-    expect((await prisma.role.findFirstOrThrow({ where: { name: "Branch Supervisor" } })).permissions).toContain("holds:transfer");
-    // The supervisors use the built-in Branch Supervisor role (migration 20261119090006_decisions_batch), not a kit-made one.
-    expect((await prisma.role.findFirstOrThrow({ where: { name: "Branch Supervisor" } })).key).toBe("SUP");
-    expect(await prisma.role.count({ where: { name: "Branch Supervisor" } })).toBe(1);
+    // The supervisors use the built-in LA Supervisor/Head role (key SUP, the former Branch Supervisor), not a kit-made one,
+    // whose default moves holds (D-029); no per-person legacy grants.
+    expect((await prisma.role.findFirstOrThrow({ where: { name: SUPERVISOR_ROLE_NAME } })).key).toBe("SUP");
+    expect(await prisma.role.count({ where: { name: SUPERVISOR_ROLE_NAME } })).toBe(1);
+    expect((await asUser("kit.supervisor@example.test")).permissions.has("holds:transfer")).toBe(true);
     // The email switch stays Not active.
     expect(await getSetting("email.active")).toBe(false);
 

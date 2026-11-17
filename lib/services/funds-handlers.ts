@@ -1,6 +1,9 @@
 import "server-only";
 import { prisma, type Tx } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { getSetting } from "@/lib/settings";
+import { andWhere, holdsAnyWhere, holdsWhere } from "@/lib/auth/holders";
+import { worksAtWhere } from "@/lib/branches/access";
 import { bandRolesFor } from "@/lib/funds/rules";
 import { STEP_KEY, TYPE_ID, TYPE_KEYS, TYPE_NOUN, stepKeys, type FundsStep, type TypeKey, type TypeRef } from "@/lib/funds/access";
 
@@ -12,23 +15,39 @@ import { STEP_KEY, TYPE_ID, TYPE_KEYS, TYPE_NOUN, stepKeys, type FundsStep, type
  */
 type Db = Tx | typeof prisma;
 
-/** Active people whose active role has the step's tick for this type (either built-in type's tick for a type added later). */
-export async function handlerIds(db: Db, step: FundsStep, type: TypeRef | string | null | undefined): Promise<string[]> {
+/**
+ * The branches a request is about (D-019): the requesting processor's branch and the branch of every loan
+ * on its lines. Only people whose access covers all of them are told (All branches covers every branch).
+ * No number (a type only): no limit.
+ */
+export async function requestBranchIds(db: Db, type: TypeRef | string | null | undefined): Promise<string[]> {
+  const number = typeof type === "object" && type ? type.number : undefined;
+  if (!number) return [];
+  const a = await db.cashAdvance.findUnique({ where: { number }, select: { branchId: true, lines: { select: { transaction: { select: { loan: { select: { branchId: true } } } } } } } });
+  if (!a) return [];
+  return [...new Set([a.branchId, ...a.lines.map((l) => l.transaction?.loan.branchId)].filter((b): b is string => !!b))];
+}
+const coversAll = (branchIds: string[]) => andWhere(...branchIds.map(worksAtWhere));
+
+/** Active people whose active role has the step's tick for this type (either built-in type's tick for a type added later), whose access covers the request's branches. */
+export async function handlerIds(db: Db, step: FundsStep, type: TypeRef | string | null | undefined, branchIds?: string[]): Promise<string[]> {
   const keys = stepKeys(step, type);
-  const rows = await db.user.findMany({ where: { active: true, role: { active: true, permissions: { hasSome: keys } } }, select: { id: true } });
+  const scope = branchIds ?? (await requestBranchIds(db, type));
+  const rows = await db.user.findMany({ where: andWhere(holdsAnyWhere(keys), coversAll(scope)), select: { id: true } });
   return rows.map((r) => r.id);
 }
 
-/** The people who can manage roles (Admin): told when nobody can handle a step of a type. */
-export async function roleManagerIds(db: Db): Promise<string[]> {
-  const rows = await db.user.findMany({ where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.ROLES_MANAGE } } }, select: { id: true } });
+/** The people who can change branch access (Admin): told when nobody can handle a step of a type (their access covers the branches too). */
+export async function roleManagerIds(db: Db, branchIds: string[] = []): Promise<string[]> {
+  const rows = await db.user.findMany({ where: andWhere(holdsWhere(PERMISSIONS.ACCESS_MANAGE), coversAll(branchIds)), select: { id: true } });
   return rows.map((r) => r.id);
 }
 
 /** The step's handlers for the type, or the Admins when there are none. */
-export async function handlersOrAdmins(db: Db, step: FundsStep, type: TypeRef | string | null | undefined): Promise<string[]> {
-  const ids = await handlerIds(db, step, type);
-  return ids.length ? ids : roleManagerIds(db);
+export async function handlersOrAdmins(db: Db, step: FundsStep, type: TypeRef | string | null | undefined, branchIds?: string[]): Promise<string[]> {
+  const scope = branchIds ?? (await requestBranchIds(db, type));
+  const ids = await handlerIds(db, step, type, scope);
+  return ids.length ? ids : roleManagerIds(db, scope);
 }
 
 /**
@@ -36,13 +55,16 @@ export async function handlersOrAdmins(db: Db, step: FundsStep, type: TypeRef | 
  * roles of the type's approval band for that amount. Nobody (no band, nobody in the band's role): the Admins.
  */
 export async function typeBandApprovers(db: Db, amountCents: number, type: TypeRef | string | null | undefined): Promise<string[]> {
+  const scope = await requestBranchIds(db, type);
+  // Approval bands off (the default, D-024): everyone who may approve the type (and handles it).
+  if (!(await getSetting("funds.approvalBandsOn", db))) return handlersOrAdmins(db, "approve", type, scope);
   const fundsTypeId = bandTypeId(type);
   const roleIds = bandRolesFor(amountCents, await db.approvalBand.findMany({ where: { fundsTypeId } }));
   if (roleIds.length) {
-    const rows = await db.user.findMany({ where: { active: true, roleId: { in: roleIds }, role: { active: true, permissions: { hasSome: stepKeys("approve", type) } } }, select: { id: true } });
+    const rows = await db.user.findMany({ where: andWhere({ roleId: { in: roleIds } }, holdsAnyWhere(stepKeys("approve", type)), coversAll(scope)), select: { id: true } });
     if (rows.length) return rows.map((r) => r.id);
   }
-  return roleManagerIds(db);
+  return roleManagerIds(db, scope);
 }
 
 /** The bands a request uses: its own built-in type's; a type added later uses the Cash advance bands. */
@@ -81,8 +103,22 @@ export async function fundsGaps(db: Db = prisma): Promise<string[]> {
   return (await fundsHandlers(db)).flatMap((h) => h.gaps);
 }
 
-/** "Ana Cruz, Ben Uy, ... +3 more" (up to 5 names). */
-export function namesText(names: string[], max = 5): string {
-  if (!names.length) return "Nobody";
-  return names.length > max ? `${names.slice(0, max).join(", ")} +${names.length - max} more` : names.join(", ");
+/**
+ * Branches where nobody handles a fund type (D-035): no active person who handles the type (Handles CA / FT)
+ * and holds its approve or release tick has the branch in their access ("All branches" covers every branch,
+ * new ones too). Shown on Settings, Branches and on the Superadmin's Home, like the approver warning.
+ */
+export async function branchesWithoutHandler(type: TypeKey, db: Db = prisma): Promise<{ id: string; name: string; code: string | null }[]> {
+  const keys = type === "CA" ? [PERMISSIONS.FUNDS_CA_APPROVE, PERMISSIONS.FUNDS_CA_RELEASE] : [PERMISSIONS.FUNDS_FT_APPROVE, PERMISSIONS.FUNDS_FT_RELEASE];
+  const people = await db.user.findMany({ where: holdsAnyWhere(keys), select: { allBranches: true, branches: { select: { branchId: true } } } });
+  if (people.some((p) => p.allBranches)) return [];
+  const covered = new Set(people.flatMap((p) => p.branches.map((b) => b.branchId)));
+  const branches = await db.branch.findMany({ where: { active: true, hidden: false }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } });
+  return branches.filter((b) => !covered.has(b.id));
+}
+
+/** "3 active branches have no CA handler." (empty at 0). */
+export function noHandlerText(type: TypeKey, n: number): string {
+  if (n <= 0) return "";
+  return `${n} active branch${n === 1 ? " has" : "es have"} no ${type} handler.`;
 }

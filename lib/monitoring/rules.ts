@@ -5,7 +5,7 @@
  *    heading "9 Nov to 9 Nov 2026", and the By day / By week buckets.
  *  - A fast business-day counter over a date range (the TAT calendar: weekends and holidays skipped).
  */
-import { addBusinessDays, isBusinessDay } from "@/lib/time";
+import { isBusinessDay } from "@/lib/time";
 
 /** The Philippine calendar day of an instant (fixed UTC+8, no daylight saving): fast, no formatter. */
 export const phtDate = (d: Date) => new Date(d.getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
@@ -217,9 +217,6 @@ export const avg = (xs: number[]) => (xs.length ? Math.round((xs.reduce((s, x) =
 
 /** "1.5 days" / "1 day" / "-". */
 export const daysText = (n: number | null) => (n === null ? "-" : `${Number.isInteger(n) ? n : n.toFixed(1)} day${n === 1 ? "" : "s"}`);
-
-/** Kept for symmetry with the TAT helpers: the due date of a target from a start date. */
-export const dueDate = (startYmd: string, target: number, holidays: ReadonlySet<string>) => addBusinessDays(startYmd, target, holidays);
 
 // ---------------------------------------------------------------------------
 // The page's look (design only: which tint, which subtotal, the date picker's words)

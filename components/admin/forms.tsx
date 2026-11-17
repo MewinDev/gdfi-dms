@@ -33,58 +33,8 @@ export interface FieldDef {
   offNote?: string;
 }
 
-/** One editable settings row (or the "Add" row when id is null). */
-export function SettingsRowForm({ kind, id, fields, submitLabel }: { kind: string; id: string | null; fields: FieldDef[]; submitLabel?: string }) {
-  const [state, action] = useActionState(saveSettingsAction, null);
-  const uid = `${kind}-${id ?? "new"}`;
-  return (
-    <form action={action} className="rounded-lg border border-line bg-white p-3">
-      <input type="hidden" name="kind" value={kind} />
-      {id && <input type="hidden" name="id" value={id} />}
-      <div className="flex flex-wrap items-end gap-3">
-        {fields.map((f) => {
-          const fid = `${uid}-${f.name}`;
-          const w = f.width === "lg" ? "min-w-64 flex-1" : f.width === "sm" ? "w-24" : "w-44";
-          if (f.type === "checkbox") {
-            return (
-              <label key={f.name} htmlFor={fid} className="flex items-center gap-2 pb-2 text-sm">
-                <input type="hidden" name={`$has_${f.name}`} value="1" />
-                <input id={fid} type="checkbox" name={f.name} defaultChecked={!!f.value} className="h-4 w-4 accent-[var(--navy)]" />
-                {f.label}
-              </label>
-            );
-          }
-          return (
-            <div key={f.name} className={w}>
-              <label htmlFor={fid} className="label">{f.label}</label>
-              {f.type === "select" ? (
-                <select id={fid} name={f.name} defaultValue={String(f.value ?? "")} className="input" aria-invalid={state?.field === f.name}>
-                  {f.options!.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              ) : (
-                <input
-                  id={fid}
-                  name={f.name}
-                  type={f.type === "number" ? "text" : f.type}
-                  inputMode={f.type === "number" ? "decimal" : undefined}
-                  defaultValue={f.value === null || f.value === undefined ? "" : String(f.value)}
-                  readOnly={f.readOnly}
-                  className={`input ${f.readOnly ? "bg-cream" : ""}`}
-                  aria-invalid={state?.field === f.name}
-                />
-              )}
-            </div>
-          );
-        })}
-        <SubmitButton className={id ? "btn-secondary" : "btn-primary"}>{submitLabel ?? (id ? "Save" : "Add")}</SubmitButton>
-      </div>
-      {state && <div className="mt-2"><FormMessage state={state} /></div>}
-    </form>
-  );
-}
-
 /** Cash-advance switches (top of the Cash-advance rules pop-up). */
-export function FundsSettingsForm({ carryOverLimitDays, liquidationDueDays, blockLtoUntilFunded }: { carryOverLimitDays: number; liquidationDueDays: number; blockLtoUntilFunded: boolean }) {
+export function FundsSettingsForm({ carryOverLimitDays, liquidationDueDays, blockLtoUntilFunded, approvalBandsOn }: { carryOverLimitDays: number; liquidationDueDays: number; blockLtoUntilFunded: boolean; approvalBandsOn: boolean }) {
   const [state, action] = useActionState(saveFundsSettingsAction, null);
   return (
     <form onSubmit={(e) => submitKeepingValues(e, action)} className="mb-4 grid gap-3 rounded-lg border border-line bg-white p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_auto] lg:items-end">
@@ -99,6 +49,10 @@ export function FundsSettingsForm({ carryOverLimitDays, liquidationDueDays, bloc
       <label className="inline-flex min-h-11 items-center gap-2 text-[15px]">
         <input type="checkbox" name="blockLtoUntilFunded" defaultChecked={blockLtoUntilFunded} className="h-5 w-5 accent-[var(--navy)]" />
         Block &ldquo;At the LTO&rdquo; until funded
+      </label>
+      <label className="inline-flex min-h-11 items-center gap-2 text-[15px]" title="Off (the default): anyone who can approve the fund type approves any amount. On: only the roles of the approval band for that amount.">
+        <input type="checkbox" name="approvalBandsOn" defaultChecked={approvalBandsOn} className="h-5 w-5 accent-[var(--navy)]" />
+        Use approval bands by amount
       </label>
       <SubmitButton className="btn-secondary">Save switches</SubmitButton>
       {state && <div className="sm:col-span-2 lg:col-span-4"><FormMessage state={state} /></div>}
@@ -149,8 +103,12 @@ export function MockOverrideForm({ current }: { current: [string, { totalRelease
  * Plain errors beside the fields. Never sets passwords or sign-in.
  */
 export function UserEditForm({
-  user, roles, access, formId, listHref, effect,
+  user, roles, access, formId, listHref, effect, allowAll = true, fundTypes,
 }: {
+  /** May this person turn "All branches" on or off here (D-023: the Superadmin)? */
+  allowAll?: boolean;
+  /** Handles CA / Handles FT (D-009): shown always; editable with "Change branch access", never for yourself. */
+  fundTypes?: { handlesCa: boolean; handlesFt: boolean; editable: boolean; readOnlyReason?: string };
   user: { id: string; name: string; email: string; roleId: string; active: boolean } | null;
   roles: { id: string; name: string; canSignIn: boolean; builtIn: boolean; active: boolean; permissions: string[]; admin?: boolean; allByDefault?: boolean }[];
   /** Branch access: the tree, this user's access, other users to copy from. */
@@ -175,7 +133,7 @@ export function UserEditForm({
   }, null);
   const uid = user?.id ?? "new";
   const err = (name: string) => (state && !state.ok && state.field === name ? state.error : undefined);
-  const general = state && !state.ok && !["name", "email", "roleId", "branchIds", "access", "homeBranchId", "active"].includes(state.field ?? "") ? state.error : undefined;
+  const general = state && !state.ok && !["name", "email", "roleId", "branchIds", "access", "homeBranchId", "active", "handlesCa"].includes(state.field ?? "") ? state.error : undefined;
   const fieldErr = (name: string) => err(name) && <p id={`u-${name}-${uid}-err`} className="mt-1.5 text-sm text-bad-fg">{err(name)}</p>;
   return (
     <form
@@ -238,10 +196,10 @@ export function UserEditForm({
         </div>
         <div className="sm:col-span-2">
           <label htmlFor={`u-role-${uid}`} className="label">Role</label>
-          <select id={`u-role-${uid}`} name="roleId" defaultValue={user?.roleId ?? roles.find((r) => r.canSignIn)?.id} className="input" aria-invalid={!!err("roleId")}>
+          <select id={`u-role-${uid}`} name="roleId" defaultValue={user?.roleId ?? (roles.find((r) => r.canSignIn && r.active && !r.allByDefault) ?? roles.find((r) => r.canSignIn))?.id /* a new person: a branch role first (Loan Associate), not the Superadmin at the top of the list */} className="input" aria-invalid={!!err("roleId")}>
             {roles.map((r) => <option key={r.id} value={r.id}>{r.name}{!r.active ? " · Inactive" : r.canSignIn ? "" : r.builtIn ? " (not signed in yet)" : " (test users in test mode)"}</option>)}
           </select>
-          <p className="help">Built-in roles that may sign in: Admin and Loan Associate. Custom roles: test users in test mode only.</p>
+          <p className="help">Every built-in role may sign in. Custom roles: test users in test mode only. You can only give a role whose permissions you have yourself, unless you manage permissions.</p>
           {fieldErr("roleId")}
         </div>
         <div className="sm:col-span-2">
@@ -249,17 +207,36 @@ export function UserEditForm({
             <div data-branch-access-readonly>
               <p className="label">Branch access</p>
               <p className="rounded-xl bg-fill px-3 py-2 text-sm">{access.readOnlySummary}</p>
-              <p className="help">Read only. Ask an Admin to turn on &ldquo;Change branch access&rdquo; for your role to change it.</p>
+              <p className="help">Read only. Ask a Superadmin to turn on &ldquo;Change branch access&rdquo; for your role to change it.</p>
             </div>
           ) : (
           <BranchAccessField
             tree={access.tree} hiddenPlaces={access.hiddenPlaces} initial={access.initial} others={access.others.filter((o) => o.id !== user?.id)}
             adminRoleIds={roles.filter((r) => r.admin).map((r) => r.id)} roleSelectId={`u-role-${uid}`}
-            allByDefaultRoleIds={user ? undefined : roles.filter((r) => r.allByDefault).map((r) => r.id)}
+            allByDefaultRoleIds={user || !allowAll ? undefined : roles.filter((r) => r.allByDefault).map((r) => r.id)}
+            allowAll={allowAll}
             error={err("access") ?? err("branchIds")} homeError={err("homeBranchId")}
           />
           )}
         </div>
+        {fundTypes && (
+          <fieldset className="sm:col-span-2 rounded-xl border border-line p-3" disabled={!fundTypes.editable} data-fund-types>
+            <legend className="px-1 text-[15px] font-semibold">Fund types this person handles</legend>
+            {fundTypes.editable && <input type="hidden" name="fundTypesSent" value="1" />}
+            <div className="flex flex-wrap gap-x-6">
+              <label className="inline-flex min-h-11 items-center gap-2.5 text-[15px]">
+                <input type="checkbox" name="handlesCa" defaultChecked={fundTypes.handlesCa} className="h-5 w-5 accent-[var(--navy)]" />
+                Handles CA (cash advances)
+              </label>
+              <label className="inline-flex min-h-11 items-center gap-2.5 text-[15px]">
+                <input type="checkbox" name="handlesFt" defaultChecked={fundTypes.handlesFt} className="h-5 w-5 accent-[var(--navy)]" />
+                Handles FT (fund transfers)
+              </label>
+            </div>
+            <p className="help">Finance screens, queues and approvals show only the ticked types. {fundTypes.readOnlyReason ?? ""}</p>
+            {fieldErr("handlesCa")}
+          </fieldset>
+        )}
         <div className="sm:col-span-2">
           <label htmlFor={`u-active-${uid}`} className="inline-flex min-h-11 cursor-pointer items-center gap-3 text-[15px] font-medium">
             <input id={`u-active-${uid}`} type="checkbox" role="switch" name="active" defaultChecked={user?.active ?? true} className="h-5 w-5 accent-[var(--navy)]" />

@@ -117,7 +117,7 @@ async function MissingTab({ user, q, now }: { user: CurrentUser; q: MonitorQuery
       </h2>
       {rows.length === 0 ? <p className="text-sm text-ink-2" data-missing-empty>No paper is marked Missing.</p> : (
         <ul className="flex flex-col divide-y divide-line">
-          {rows.map((r) => (
+          {rows.slice(0, DRILL_LIMIT).map((r) => (
             <li key={r.loanId} className="flex flex-col gap-1 py-2" data-missing-loan={r.pn}>
               <p className="flex flex-wrap items-baseline gap-x-2">
                 {r.href ? <Link href={r.href} className="mono font-semibold text-navy">{r.pn}</Link> : <span className="mono font-semibold">{r.pn}</span>}
@@ -136,6 +136,7 @@ async function MissingTab({ user, q, now }: { user: CurrentUser; q: MonitorQuery
           ))}
         </ul>
       )}
+      <MoreLine total={rows.length} how="Narrow the Area, Branch or Transaction filter to see the rest." />
     </section>
   );
 }
@@ -470,13 +471,24 @@ function DpTable({ m, q }: { m: DpMonitor; q: MonitorQuery }) {
   );
 }
 
+/**
+ * Drill-down lists (a processor's or an LTO office's jobs, the loan files with missing papers): at most
+ * DRILL_LIMIT rows, in their own order; the heading keeps the whole count and a line says how to see the
+ * rest. A row limit, not pages: a pop-up holds up to three lists, each would need its own pager.
+ */
+const DRILL_LIMIT = 100;
+function MoreLine({ total, how }: { total: number; how: string }) {
+  if (total <= DRILL_LIMIT) return null;
+  return <p className="text-[13px] text-ink-2" role="status" data-drill-more>Showing the first {DRILL_LIMIT} of {total.toLocaleString("en-PH")}. {how}</p>;
+}
+
 function DrillList({ title, rows, empty, kind }: { title: string; rows: DrillJob[]; empty: string; kind: "open" | "back" }) {
   return (
     <section aria-label={title} className="flex flex-col gap-2">
       <h3 className="text-[15px] font-bold text-navy">{title} ({rows.length})</h3>
       {rows.length === 0 ? <p className="text-[14px] text-ink-2">{empty}</p> : (
         <ul className="flex flex-col gap-1.5">
-          {rows.map((j) => (
+          {rows.slice(0, DRILL_LIMIT).map((j) => (
             <li key={j.id} className="rounded-xl border border-line px-3 py-2 text-[14px]" data-drill-row={j.pn}>
               <span className="flex flex-wrap items-center justify-between gap-2">
                 <span><Pn j={j} /> · {j.typeName}</span>
@@ -489,6 +501,7 @@ function DrillList({ title, rows, empty, kind }: { title: string; rows: DrillJob
           ))}
         </ul>
       )}
+      <MoreLine total={rows.length} how="Narrow the dates or the filters to see the rest." />
     </section>
   );
 }
@@ -499,7 +512,7 @@ function LtoDrillList({ title, rows, empty }: { title: string; rows: LtoDrillJob
       <h3 className="text-[15px] font-bold text-navy">{title} ({rows.length})</h3>
       {rows.length === 0 ? <p className="text-[14px] text-ink-2">{empty}</p> : (
         <ul className="flex flex-col gap-1.5">
-          {rows.map((j) => (
+          {rows.slice(0, DRILL_LIMIT).map((j) => (
             <li key={j.id} className="rounded-xl border border-line px-3 py-2 text-[14px]" data-drill-row={j.pn}>
               <span className="flex flex-wrap items-center justify-between gap-2"><span><Pn j={j} /> · {j.typeName}</span><span className="text-[13px] font-semibold">{j.days}</span></span>
               <span className="mt-0.5 block text-[13px] text-ink-2">{j.dpName} · Drop off {j.dropText} · Pickup {j.pickText}</span>
@@ -507,6 +520,7 @@ function LtoDrillList({ title, rows, empty }: { title: string; rows: LtoDrillJob
           ))}
         </ul>
       )}
+      <MoreLine total={rows.length} how="Narrow the dates or the filters to see the rest." />
     </section>
   );
 }

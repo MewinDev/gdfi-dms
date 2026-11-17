@@ -3,8 +3,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { can, requirePageAny, type CurrentUser } from "@/lib/auth/current-user";
-import { ALL_PERMISSIONS, AREA_PERMISSIONS, SETTINGS_PERMISSIONS } from "@/lib/auth/permissions";
+import { advanceScope, can, requirePageAny, type CurrentUser } from "@/lib/auth/current-user";
+import { ALL_PERMISSIONS, AREA_PERMISSIONS, SETTINGS_PERMISSIONS, VISIBLE_PERMISSION_GROUPS } from "@/lib/auth/permissions";
+import { PermissionMatrix } from "@/components/admin/permission-matrix";
 import { effectivePermissions } from "@/lib/auth/access";
 import { RolesList } from "@/components/admin/roles-list";
 import { RoleEditor } from "@/components/admin/role-editor";
@@ -50,6 +51,8 @@ import { SettingsList, type ListRow } from "@/components/admin/settings-list";
 import { StatusPanel } from "@/components/admin/status-panel";
 import { ImportStep } from "@/components/admin/import-step";
 import { BranchesModal, type BranchFilter } from "@/components/admin/branches/area";
+import { ClassificationForm } from "@/components/admin/classification-form";
+import { getClassificationRules, kwText, previewClassification, rulesFromForm } from "@/lib/services/classification";
 import {
   AlertIcon, ArrowLeftIcon, BellIcon, PauseIcon, RefreshIcon, BuildingIcon, CalendarIcon, ChecklistIcon, ClockIcon, CoinsIcon, FileTextIcon, FlaskIcon, LayersIcon, ListIcon, MapPinIcon, SettingsIcon, TagIcon, UsersIcon,
 } from "@/components/ui/icons";
@@ -66,6 +69,8 @@ const AREAS = [
   { key: "tat", title: "Turnaround times", desc: "Target business days for each step.", help: "Business days skip weekends and holidays. 0 means the same day.", Icon: ClockIcon },
   { key: "loan-types", title: "Loan types", desc: "Display names for the MyLoans loan types.", help: `The Data Check accepts only New and Renewal. The mortgage thresholds are fixed by the rule “${RULE_NAMES.MORTGAGE_THRESHOLD.title}”: ${pesoWhole(MORTGAGE_THRESHOLDS.New)} for New, ${pesoWhole(MORTGAGE_THRESHOLDS.Renewal)} for Renewal.`, Icon: TagIcon },
   { key: "dp-capacity", title: "Processor capacity", desc: "How many open jobs a processor takes, and who is on leave.", help: "Used by the Monitoring page and the Send panel. Open jobs = assigned + in process + on hold. A processor on leave is shown disabled in the Send panel and counts as 0% available. A past \"until\" day ends the leave by itself.", Icon: UsersIcon },
+  { key: "classification", title: "Product classification", desc: "Keywords that decide Financing or Refinancing.", help: "The product name decides it: a Refinancing keyword first, then a Financing keyword, else the default (D-031). Saving re-checks open loan files; a changed result is flagged, never applied by itself.", Icon: TagIcon },
+  { key: "permissions", title: "Permissions", desc: "Every role against every permission, with tickboxes.", help: "The permission matrix (D-003). Ticks apply on each person's next click or page. Per-person changes (Granted / Denied) are on Users, Edit. Only the Superadmin changes it.", Icon: UsersIcon },
   { key: "roles", title: "Roles and access", desc: "What each role may do, and which branches it sees.", help: "Who can do what. A change applies on each person's next click or page.", Icon: UsersIcon },
   { key: "lto", title: "LTO offices", desc: "LTO offices a processor can be sent to.", help: "Add an office or rename it. Nothing is deleted: make it inactive instead.", Icon: MapPinIcon },
   { key: "cash-advance", title: "Cash-advance rules", desc: "Suggested and maximum amounts, carry-over and liquidation.", help: "Used when the processor asks Finance for funds. More than the maximum needs a typed reason.", Icon: CoinsIcon },
@@ -90,7 +95,7 @@ const listHref = (key: string) => `${BASE}?open=${key}`;
 const editHref = (key: string, id: string) => `${BASE}?open=${key}&edit=${id}`;
 const importHref = (key: string) => `${BASE}?open=${key}&step=import`;
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string; btype?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string; btype?: string; page?: string; refinancing?: string; financing?: string; fallback?: string }> }) {
   // Settings opens for anyone who may change at least one area; each card shows only if allowed.
   const user = await requirePageAny(SETTINGS_PERMISSIONS);
   const sp = await searchParams;
@@ -152,7 +157,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </section>
         ))}
       </div>
-      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show }} btype={sp.btype === "FT" ? "FT" : "CA"} />}
+      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show, page: sp.page }} btype={sp.btype === "FT" ? "FT" : "CA"} test={sp.refinancing !== undefined || sp.financing !== undefined ? { refinancing: sp.refinancing, financing: sp.financing, fallback: sp.fallback } : undefined} />}
     </div>
   );
 }
@@ -172,7 +177,9 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
   const stages = await pair(prisma.processingStage);
   const customRoles = await prisma.role.count({ where: { active: true, builtIn: false } });
   const n = ([a, i]: number[], one: string, many: string, more = "") => ({ main: `${a} ${a === 1 ? one : many}${more}`, extra: i > 0 ? `+${i} inactive` : "" });
+  const cls = await getClassificationRules();
   return {
+    classification: { main: `Refinancing: ${kwText(cls.refinancing)} · Financing: ${kwText(cls.financing)}`, extra: `No keyword: ${cls.fallback === "FINANCING" ? "Financing" : "Refinancing"}` },
     branches: n(branches, "branch", "branches"),
     "transaction-types": n(types, "type", "types"),
     "document-types": n(docs, "type", "types"),
@@ -196,6 +203,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     "test-data": { main: testMode ? "Test mode only" : "Off", extra: "" },
     "test-kit": { main: "Local test setup only", extra: "" },
     "dp-capacity": await capacityStatusLine(),
+    permissions: { main: `${roles[0]} roles × ${VISIBLE_PERMISSION_GROUPS.reduce((s, g) => s + g.items.length, 0)} permissions`, extra: "" },
     roles: { main: `${roles[0]} role${roles[0] === 1 ? "" : "s"} · ${customRoles} custom`, extra: roles[1] > 0 ? `+${roles[1]} inactive` : "" },
   };
 }
@@ -217,7 +225,7 @@ interface ListArea {
   filterLabel?: string;
 }
 
-async function AreaModal({ area, edit, step, testMode, user, filter, branchFilter, btype = "CA" }: { area: (typeof AREAS)[number]; edit?: string; step?: string; testMode: boolean; user: CurrentUser; filter: OutboxFilter; branchFilter: BranchFilter; btype?: TypeKey }) {
+async function AreaModal({ area, edit, step, testMode, user, filter, branchFilter, btype = "CA", test }: { area: (typeof AREAS)[number]; edit?: string; step?: string; testMode: boolean; user: CurrentUser; filter: OutboxFilter; branchFilter: BranchFilter; btype?: TypeKey; test?: { refinancing?: string; financing?: string; fallback?: string } }) {
   const common = { id: "settings-modal", title: area.title, help: area.help, closeHref: BASE, returnFocusId: `card-${area.key}` };
 
   // Settings, Branches: its own list, edit, Import from MyLoans, Branch review and sync steps.
@@ -244,6 +252,8 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
   }
 
   if (area.key === "roles") return <RolesArea edit={edit} common={common} />;
+  if (area.key === "permissions") return <PermissionsArea common={common} user={user} />;
+  if (area.key === "classification") return <ClassificationArea common={common} user={user} test={test} />;
   if (area.key === "dp-capacity") {
     return <SettingsModal {...common} footer={{ kind: "done" }}><CapacityArea /></SettingsModal>;
   }
@@ -314,6 +324,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
           carryOverLimitDays={await getSetting("funds.carryOverLimitDays")}
           liquidationDueDays={await getSetting("funds.liquidationDueDays")}
           blockLtoUntilFunded={await getSetting("funds.blockLtoUntilFunded")}
+          approvalBandsOn={await getSetting("funds.approvalBandsOn")}
         />
       )}
       {area.key === "approval-bands" && (
@@ -334,7 +345,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
 async function ExpenseKindsArea({ common, edit, user }: { common: { id: string; title: string; help: string; closeHref: string; returnFocusId: string }; edit?: string; user: CurrentUser }) {
   const manage = can(user, PERMISSIONS.FUNDS_KINDS_MANAGE);
   const key = "expense-kinds";
-  const [kinds, usage] = await Promise.all([allKinds(), kindUsage()]);
+  const [kinds, usage] = await Promise.all([allKinds(), kindUsage(undefined, advanceScope(user))]);
   if (edit && manage) {
     const k = edit === "new" ? null : kinds.find((x) => x.id === edit);
     if (edit !== "new" && !k) return null;
@@ -343,7 +354,7 @@ async function ExpenseKindsArea({ common, edit, user }: { common: { id: string; 
     return (
       <SettingsModal {...common} title={k ? `Expense kinds: ${k.name}` : "Expense kinds: Add kind"} backHref={listHref(key)} footer={{ kind: "save", formId: "settings-form", cancelHref: listHref(key) }}>
         <ExpenseKindForm key={edit} id={k?.id ?? null} formId="settings-form" listHref={listHref(key)} kind={k ? { name: k.name, builtIn: k.builtIn, amountMode: k.amountMode as AmountMode, amountCents: k.amountCents } : null}
-          openRequests={k ? await openRequestsUsing(k.code) : 0} maxRule={lowest} />
+          openRequests={k ? await openRequestsUsing(k.code, undefined, advanceScope(user)) : 0} maxRule={lowest} />
         {k && <StatusPanel kind="expenseKind" id={k.id} active={k.active} noun="expense kind" effect={await inactiveEffect("expenseKind", k.id)} lockedReason={k.builtIn ? "Other is built in: it is always active, so there is always a kind for anything else." : undefined} />}
       </SettingsModal>
     );
@@ -722,6 +733,45 @@ async function loadListArea(key: AreaKey, opts: { btype?: TypeKey } = {}): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Product classification (D-031): the keyword lists, the default, and "Test keyword rules" (a preview).
+// ---------------------------------------------------------------------------
+
+async function ClassificationArea({ common, user, test }: { common: { id: string; title: string; help: string; closeHref: string; returnFocusId: string }; user: CurrentUser; test?: { refinancing?: string; financing?: string; fallback?: string } }) {
+  const canEdit = can(user, PERMISSIONS.SETTINGS_CLASSIFICATION);
+  const saved = await getClassificationRules();
+  // The values being tested (from Test keyword rules), or the saved ones.
+  const tried = test ? rulesFromForm(test) : null;
+  const rules = tried && !tried.problem ? tried.rules : saved;
+  const preview = await previewClassification(rules);
+  return (
+    <SettingsModal {...common} footer={canEdit ? { kind: "save", formId: "classification-form", cancelHref: BASE } : { kind: "done" }}>
+      <ClassificationForm key={JSON.stringify(rules)} formId="classification-form" canEdit={canEdit} refinancing={rules.refinancing} financing={rules.financing} fallback={rules.fallback} />
+      {tried?.problem && <p role="alert" className="mt-3 text-sm font-semibold text-bad-fg" data-test-problem>{tried.problem}</p>}
+      <section aria-labelledby="cls-preview" className="mt-5" data-classification-preview>
+        <h3 id="cls-preview" className="text-[15px] font-bold text-navy">{test ? "Test keyword rules: the result with these keywords (not saved)" : "Product names on open loan files"}</h3>
+        <p className="mt-1 text-sm text-ink-2" data-preview-summary>
+          {preview.loansChanging === 0 ? "No open loan file would change classification." : `${preview.loansChanging} open loan file${preview.loansChanging === 1 ? " would" : "s would"} change classification (flagged, then reclassified by someone with "Reclassify a loan").`}
+          {preview.byDefault > 0 ? ` ${preview.byDefault} would be classified by default (no keyword).` : ""}
+        </p>
+        {preview.rows.length > 0 && (
+          <ul className="mt-2 flex flex-col divide-y divide-line rounded-xl border border-line text-sm">
+            {preview.rows.map((r) => (
+              <li key={r.productName} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" data-preview-row={r.productName}>
+                <span className="min-w-0 flex-1 font-semibold">{r.productName || "(blank)"}</span>
+                <span className="text-ink-2">{r.loans} loan{r.loans === 1 ? "" : "s"}</span>
+                <span data-preview-next>{r.next === "FINANCING" ? "Financing" : "Refinancing"}{r.keyword ? ` ("${r.keyword}"${rules.refinancing.concat(rules.financing).find((k) => k.text === r.keyword)?.wholeWord ? ", whole word" : ""})` : ""}</span>
+                {r.byDefault && <span className="chip c-mute h-6 text-xs">By default</span>}
+                {r.changes > 0 && <span className="chip c-act h-6 text-xs" data-preview-changes>{r.changes} change{r.changes === 1 ? "s" : ""} (was {r.saved === "FINANCING" ? "Financing" : "Refinancing"})</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </SettingsModal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Roles and access: the list (first step) and the role step (second step, with Back).
 // ---------------------------------------------------------------------------
 
@@ -979,5 +1029,22 @@ async function WhoHandles() {
         </div>
       ))}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Permissions: the matrix (D-003), roles across, permissions down.
+// ---------------------------------------------------------------------------
+
+async function PermissionsArea({ common, user }: { common: { id: string; title: string; help: string; closeHref: string; returnFocusId: string }; user: CurrentUser }) {
+  const roles = await prisma.role.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { _count: { select: { users: { where: { active: true } } } } } });
+  const rows = roles.map((r) => ({ id: r.id, name: r.name, builtIn: r.builtIn, active: r.active, people: r._count.users, permissions: [...effectivePermissions(r)] }));
+  const groups = VISIBLE_PERMISSION_GROUPS.map((g) => ({ key: g.key, label: g.label, items: g.items.map((i) => ({ key: i.key, label: i.label, help: i.help })) }));
+  // A new key after each save, so the grid starts again from what is stored.
+  const version = roles.map((r) => `${r.id}:${r.updatedAt.getTime()}`).join(",");
+  return (
+    <SettingsModal {...common} footer={{ kind: "done" }}>
+      <PermissionMatrix key={version} roles={rows} groups={groups} editable={can(user, PERMISSIONS.ROLES_MANAGE)} />
+    </SettingsModal>
   );
 }

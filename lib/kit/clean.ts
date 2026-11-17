@@ -8,7 +8,7 @@
 import { buildPn } from "@/lib/pn/format";
 import { KIT_EMAIL_DOMAIN, KIT_L1 } from "./catalog";
 
-export type CleanRole = "ADMIN" | "FIN" | "LA" | "DP" | "MONITOR" | "VAULT" | "DIG" | "QA" | "SUPERVISOR" | "LA_NO_REFRESH" | "APPROVER_SMALL" | "APPROVER_LARGE"
+export type CleanRole = "SUPERADMIN" | "ADMIN" | "FIN" | "LA" | "DP" | "MONITOR" | "VAULT" | "DIG" | "QA" | "SUPERVISOR" | "LA_NO_REFRESH" | "APPROVER_SMALL" | "APPROVER_LARGE"
   | "FIN_CA" | "FIN_FT" | "APPR_CA" | "APPR_FT";
 
 export interface CleanAccount {
@@ -30,6 +30,9 @@ export interface CleanAccount {
 const e = (slug: string) => `kit.${slug}${KIT_EMAIL_DOMAIN}`;
 
 export const CLEAN_ACCOUNTS: CleanAccount[] = [
+  { key: "superadmin", email: e("superadmin"), name: "Superadmin", role: "SUPERADMIN", roleLabel: "Superadmin", branches: "ALL", accessLabel: "All branches" },
+  // A second Superadmin (D-028): one can always fix the other's access.
+  { key: "superadmin2", email: e("superadmin2"), name: "Superadmin Two", role: "SUPERADMIN", roleLabel: "Superadmin", branches: "ALL", accessLabel: "All branches" },
   { key: "admin", email: e("admin"), name: "Admin", role: "ADMIN", roleLabel: "Admin", branches: "ALL", accessLabel: "All branches" },
   { key: "finance", email: e("finance"), name: "Finance", role: "FIN", roleLabel: "Finance", branches: "ALL", accessLabel: "All branches" },
   { key: "approverSmall", email: e("approver.small"), name: "Approver Small", role: "APPROVER_SMALL", roleLabel: "Approver (lowest band)", branches: "ALL", accessLabel: "All branches" },
@@ -38,9 +41,9 @@ export const CLEAN_ACCOUNTS: CleanAccount[] = [
   { key: "financeTransfer", email: e("finance.transfer"), name: "Finance Transfer", role: "FIN_FT", roleLabel: "Finance (fund transfer)", branches: "ALL", accessLabel: "All branches" },
   { key: "approverCash", email: e("approver.cash"), name: "Approver Cash", role: "APPR_CA", roleLabel: "Approver (cash advance)", branches: "ALL", accessLabel: "All branches" },
   { key: "approverTransfer", email: e("approver.transfer"), name: "Approver Transfer", role: "APPR_FT", roleLabel: "Approver (fund transfer)", branches: "ALL", accessLabel: "All branches" },
-  { key: "monitor", email: e("monitor"), name: "Operations Monitor", role: "MONITOR", roleLabel: "Operations Monitor", branches: "ALL", accessLabel: "All branches" },
-  { key: "supervisor", email: e("supervisor"), name: "Branch Supervisor", role: "SUPERVISOR", roleLabel: "Branch Supervisor", branches: ["101", "165"], accessLabel: "Antipolo and Angono" },
-  { key: "areaSupervisor", email: e("area.supervisor"), name: "Area Supervisor Luzon 1", role: "SUPERVISOR", roleLabel: "Supervisor (Branch Supervisor role)", branches: ["390"], access: { areas: [KIT_L1], home: "101" }, accessLabel: "Whole Luzon 1 area plus Alaminos" },
+  { key: "monitor", email: e("monitor"), name: "Operations Monitor", role: "MONITOR", roleLabel: "Monitoring (read-only)", branches: "ALL", accessLabel: "All branches" },
+  { key: "supervisor", email: e("supervisor"), name: "Branch Supervisor", role: "SUPERVISOR", roleLabel: "LA Supervisor/Head", branches: ["101", "165"], accessLabel: "Antipolo and Angono" },
+  { key: "areaSupervisor", email: e("area.supervisor"), name: "Area Supervisor Luzon 1", role: "SUPERVISOR", roleLabel: "Supervisor (LA Supervisor/Head role)", branches: ["390"], access: { areas: [KIT_L1], home: "101" }, accessLabel: "Whole Luzon 1 area plus Alaminos" },
   { key: "laAntipolo", email: e("la.antipolo"), name: "LA Antipolo", role: "LA", roleLabel: "Loan Associate", branches: ["101"], accessLabel: "Antipolo (101)" },
   { key: "laAngono", email: e("la.angono"), name: "LA Angono", role: "LA", roleLabel: "Loan Associate", branches: ["165"], accessLabel: "Angono (165)" },
   { key: "laMabini", email: e("la.amabini"), name: "LA A. Mabini", role: "LA", roleLabel: "Loan Associate", branches: ["168"], accessLabel: "A. Mabini (168)" },
@@ -113,7 +116,7 @@ export const CLEAN_POOL: PoolLoan[] = [
   P(13, "165", "Leandro Pascual", "Renewal at ₱1,000,001: no Mortgage.", { loanType: "Renewal", amount: 1_000_001 }),
   P(14, "165", "Marivic Santos", "Truck Financing, ₱450,000: pick Non-Undertaking when opening.", { product: "Truck Financing", amount: 450_000 }),
   P(15, "165", "Nicanor Aquino", "Auto Financing, ₱300,000: pick Untransferred to get Notary and EDST.", { product: "Auto Financing", amount: 300_000 }),
-  P(16, "165", "Ofelia Garcia", "Product \"Auto Finance\" (not the word Financing): treated as Refinancing.", { product: "Auto Finance", amount: 600_000 }),
+  P(16, "165", "Ofelia Garcia", "Product \"Car Loan\" (no Financing or Refinancing keyword): Refinancing by default, with the \"Classified by default\" label.", { product: "Car Loan", amount: 600_000 }),
   P(17, "165", "Porfirio Diaz", "Branch moved by MyLoans later: open it, then as Admin Simulate a MyLoans change, Branch; it waits for review until applied.", { amount: 420_000 }),
   P(18, "165", "Remedios Flores", "Unit change (replacement): open it, then as Admin Simulate a MyLoans change, Replace; MyLoans gives a new PN and the old one waits for review.", { amount: 410_000 }),
   P(19, "165", "Salvador Castillo", "Plain Mortgage loan: good for a full Send to DP, Pasuyo between DP 1 and DP 2, and a cash advance for the LTO fee.", { amount: 390_000 }),

@@ -29,6 +29,8 @@ const PN = "GD1652026901003"; // Angono, Renewal, ₱1,000,000, Auto Financing: 
 const sys = { actor: SYSTEM_ACTOR, mode: "MANUAL" as const, trigger: "button" as const };
 
 beforeAll(async () => {
+  // This file counts exactly who is told: the seeded LA Supervisor/Head is parked (afterAll restores).
+  await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
   la = await asUser("test.la@gdfi.ph");
   dp = await asUser("test.dp@gdfi.ph");
   admin = await asUser("test.admin@gdfi.ph");
@@ -49,6 +51,7 @@ beforeEach(async () => {
 });
 afterAll(async () => {
   await cleanLoans();
+  await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
   await setSetting("myloans.lastRun", null);
   await prisma.$disconnect();
 });
@@ -129,7 +132,7 @@ describe("Refresh rules", () => {
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 0, calls: 1 });
     await change("GD1012026901001", { address: "5 Mabini St" });
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 1, changes: 1, calls: 1 });
-    await expect(runSyncNow(la)).rejects.toThrow('Ask an Admin to turn on "Run the MyLoans sync now" for your role.');
+    await expect(runSyncNow(la)).rejects.toThrow('Ask a Superadmin to turn on "Run the MyLoans sync now" for your role.');
     await runSyncNow(admin);
     expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run" } })).toBeGreaterThan(0);
     // A loan closed as cancelled is not checked again (no tier).
@@ -141,7 +144,7 @@ describe("Refresh rules", () => {
 
   it("sync settings: Admin only, checked, audited", async () => {
     const ok = { refreshOnOpenMinutes: "15", backgroundMinutes: "60", businessHoursOnly: true, maxPerRun: "50", pauseMs: "500" };
-    await expect(saveSyncSettings(la, ok)).rejects.toThrow(/Ask an Admin to turn on "Change MyLoans sync settings"/);
+    await expect(saveSyncSettings(la, ok)).rejects.toThrow(/Ask a Superadmin to turn on "Change MyLoans sync settings"/);
     await expect(saveSyncSettings(admin, { ...ok, backgroundMinutes: "1" })).rejects.toThrow("At least 5 minutes.");
     await saveSyncSettings(admin, { ...ok, refreshOnOpenMinutes: "30" });
     expect(await getSetting("myloans.refreshOnOpenMinutes")).toBe(30);
@@ -187,12 +190,12 @@ describe("Changes and the review item", () => {
     expect((it2.changes as { field: string; was: number; now: number }[]).find((c) => c.field === "amount")).toMatchObject({ was: 100_000_000, now: 105_000_000 });
     // Apply never changes sent work; LA and DP cannot decide.
     await expect(applySourceChange(admin, it2.id, { note: "Checked with MyLoans" })).rejects.toThrow(/PPSR: sent to Test Document Processor, waiting to accept\. Apply never changes work that was sent/);
-    await expect(keepCurrent(la, it2.id, "x note")).rejects.toThrow(/Only Admin reviews/);
-    await expect(keepCurrent(dp, it2.id, "x note")).rejects.toThrow(/Only Admin reviews/);
+    await expect(keepCurrent(la, it2.id, "x note")).rejects.toThrow(/Only approvers review/);
+    await expect(keepCurrent(dp, it2.id, "x note")).rejects.toThrow(/Only approvers review/);
     await expect(keepCurrent(admin, it2.id, "")).rejects.toThrow(/short note/);
     await keepCurrent(admin, it2.id, "client confirmed by phone");
     expect((await item(loan.id)).state).toBe("KEPT");
-    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_change_kept" } })).summary).toBe("MyLoans changed Amount. Admin Test Admin kept the current setup: client confirmed by phone");
+    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_change_kept", loanId: loan.id }, orderBy: [{ at: "desc" }, { id: "desc" }] })).summary).toBe("MyLoans changed Amount. Admin Test Admin kept the current setup: client confirmed by phone");
     expect(await refreshLoan(loan.id, sys)).toMatchObject({ outcome: "none" });
     expect(await prisma.sourceChange.count({ where: { loanId: loan.id } })).toBe(1);
     expect(await sendBlockReason(prisma, loan.id, "MORTGAGE")).toBeNull();
@@ -281,7 +284,7 @@ describe("Replacement PN", () => {
     const options = await reusablePapers(prisma, nw.id);
     expect(options.length).toBeGreaterThan(0);
     expect(options.every((o) => /Valid ID|Special Power/.test(o.label))).toBe(true);
-    await expect(copyReusablePapers(la, nw.id, [options[0].fromCheckId])).rejects.toThrow(/Only Admin/);
+    await expect(copyReusablePapers(la, nw.id, [options[0].fromCheckId])).rejects.toThrow(/Only approvers/);
     const unit = notary.checks.find((c) => !options.some((o) => o.fromCheckId === c.id))!;
     await expect(copyReusablePapers(admin, nw.id, [unit.id])).rejects.toThrow(/belong to the borrower/);
     await copyReusablePapers(admin, nw.id, [options[0].fromCheckId]);

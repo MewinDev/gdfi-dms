@@ -192,10 +192,16 @@ describe("Inactive instead of delete", () => {
 
   it("hard limits on the server: yourself, the last active person who can manage roles, the last active branch", async () => {
     await refused(setRowActive(admin, "user", admin.id, false), /cannot make yourself inactive/);
-    await refused(saveUser(admin, admin.id, { name: admin.name, email: admin.email, roleId: (await prisma.role.findUniqueOrThrow({ where: { key: "LA" } })).id, active: true }), /cannot take "Manage roles" away from yourself/);
+    await refused(saveUser(admin, admin.id, { name: admin.name, email: admin.email, roleId: (await prisma.role.findUniqueOrThrow({ where: { key: "LA" } })).id, active: true }), /cannot change your own role/);
     const admins = await prisma.user.count({ where: { active: true, role: { key: "ADMIN" } } });
     expect(admins).toBe(1);
-    expect(await inactiveRefusal("user", { id: admin.id }, { id: "someone-else" })).toMatch(/^This is the last active person who can (manage roles|change branch access)\./);
+    // Admin and Superadmin both change branch access (D-023): with the Superadmin away, the Admin is the last one.
+    await prisma.user.updateMany({ where: { role: { key: "SUPERADMIN" } }, data: { active: false } });
+    try {
+      expect(await inactiveRefusal("user", { id: admin.id }, { id: "someone-else" })).toMatch(/^This is the last active person who can (manage permissions|change branch access)\./);
+    } finally {
+      await prisma.user.updateMany({ where: { email: { in: ["test.superadmin@gdfi.ph", "test.superadmin2@gdfi.ph"] } }, data: { active: true } });
+    }
 
     // The last active branch (a branch made in the DMS; the others switched off as MyLoans would).
     await saveSettingsRow(admin, "branch", null, { code: "869", name: "Zeta Last" });

@@ -5,6 +5,7 @@ import { writeAudit } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { businessDate } from "@/lib/time";
 import { OPEN_ADVANCE, peso } from "@/lib/funds/rules";
 import { lineTotals, withJob, type AssignmentFull } from "./jobs";
@@ -25,7 +26,6 @@ export const pasuyoSchema = z.object({
   /** Cash the passing processor holds for this job: return it to Finance, or hand it to the second processor. */
   funds: z.enum(["RETURN", "HAND"]).nullable().default(null),
 });
-export type PasuyoInput = z.infer<typeof pasuyoSchema>;
 
 /** Released, unliquidated cash the person holds for this job (per line, after spends and returns). */
 export async function heldFor(db: Tx | typeof prisma, a: Pick<AssignmentFull, "transaction">, userId: string) {
@@ -48,7 +48,7 @@ export async function passJob(u: CurrentUser, assignmentId: string, raw: unknown
     if (a.status !== "ACCEPTED" || a.transaction.status !== "IN_PROCESS" || a.processing) {
       throw new UserError("A job can be passed on only while it is accepted and in process, before it is completed or forwarded.");
     }
-    const to = await tx.user.findFirst({ where: { id: d.toUserId, active: true, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } }, select: { id: true, name: true, homeBranchId: true, branches: { select: { branchId: true } } } });
+    const to = await tx.user.findFirst({ where: andWhere({ id: d.toUserId }, holdsWhere(PERMISSIONS.DP_RECEIVE)), select: { id: true, name: true, homeBranchId: true, branches: { select: { branchId: true } } } });
     if (!to) throw new UserError("Pick an active processor.", "toUserId");
     if (to.id === u.id || to.id === a.dpUserId || to.id === a.secondaryDpUserId) throw new UserError("Pick a processor other than the current one.", "toUserId");
 

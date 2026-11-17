@@ -528,16 +528,6 @@ export function ReviewForm({ assignmentId, papers = [], laName = "the Loan Assoc
   );
 }
 
-export function ReturnToLaButton({ assignmentId }: { assignmentId: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button type="button" className="btn-ghost btn-sm" onClick={() => setOpen(true)}>Return to Loan Associate</button>
-      <ReasonsSheet open={open} onClose={() => setOpen(false)} assignmentId={assignmentId} mode="return" />
-    </>
-  );
-}
-
 function ReasonsSheet({ open, onClose, assignmentId, mode }: { open: boolean; onClose: () => void; assignmentId: string; mode: "decline" | "return" }) {
   const [state, action] = useActionState(declineJobAction, null);
   useCloseOnOk(state, onClose);

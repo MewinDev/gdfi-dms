@@ -1,19 +1,22 @@
 import { prisma } from "@/lib/db";
 import { fmtShort } from "@/lib/time";
-import { branchDeciderIds } from "@/lib/services/borrower-review";
+import { loanRelationScope, type CurrentUser } from "@/lib/auth/current-user";
 import { AlertCard, AlertRow } from "@/components/home/home-ui";
 import { RefreshIcon } from "@/components/ui/icons";
 
 const WHAT = { MATERIAL: "Changed", STATUS: "Cancelled or not released", REPLACEMENT: "Replacement PN", BORROWER: "Borrower details" } as const;
 
-/** Admin Home: MyLoans changes waiting for review (count and the oldest five). */
-export async function sourceChangesToDo() {
-  // The Admin items, plus the borrower details corrections of branches with no supervisor or approver.
-  const all = await prisma.sourceChange.findMany({ where: { state: "OPEN" }, orderBy: { firstSeenAt: "asc" }, include: { loan: { select: { pn: true, borrowerName: true, branchId: true } } } });
-  const empty = new Map<string, boolean>();
-  for (const b of new Set(all.filter((i) => i.category === "BORROWER").map((i) => i.loan.branchId))) empty.set(b, (await branchDeciderIds(prisma, b)).length === 0);
-  const mine = all.filter((i) => i.category !== "BORROWER" || empty.get(i.loan.branchId));
-  return { count: mine.length, items: mine.slice(0, 5) };
+/**
+ * Home: MyLoans changes waiting for review (count and the oldest five), only for loans in the person's
+ * branches (D-019; "All branches" sees every branch). Borrower details corrections have their own card.
+ */
+export async function sourceChangesToDo(user: CurrentUser) {
+  const where = { state: "OPEN" as const, category: { not: "BORROWER" as const }, ...loanRelationScope(user) };
+  const [count, items] = await Promise.all([
+    prisma.sourceChange.count({ where }),
+    prisma.sourceChange.findMany({ where, orderBy: { firstSeenAt: "asc" }, take: 5, include: { loan: { select: { pn: true, borrowerName: true, branchId: true } } } }),
+  ]);
+  return { count, items };
 }
 
 /** Shown only when something waits (Home renders nothing for zero). */

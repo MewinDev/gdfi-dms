@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requirePagePermission, can, loanScope, type CurrentUser } from "@/lib/auth/current-user";
+import { requirePagePermission, can, branchRowScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 import { listLoans, type LoanListFilters, type LoanRow } from "@/lib/services/queries";
@@ -12,7 +12,9 @@ import { LoansToolbar } from "@/components/loan/loans-toolbar";
 import { LoanTable } from "@/components/loan/loan-table";
 import { EmptyLine, FilterChips, MyLoansList } from "@/components/loan/my-loans-list";
 import { LoanTabs } from "@/components/loan/loan-tabs";
-import { activeChips, clearAllHref, listHref, type FilterField } from "@/lib/ui/loan-filters";
+import { activeChips, clearAllHref, groupedOrder, groupTotals, listHref, type FilterField } from "@/lib/ui/loan-filters";
+import { PAGE_SIZE, pageOf, pageParam } from "@/lib/ui/paging";
+import { Pager } from "@/components/ui/pager";
 import { isTestMode } from "@/lib/test-mode";
 import { SampleLoans } from "@/components/loan/sample-loans";
 import { loadSampleCards } from "@/lib/ui/samples";
@@ -53,7 +55,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   };
   // Filter choices: branches as "Name (code)" in the person's scope (hidden branches left out), and their Areas.
   const branchRows = await prisma.branch.findMany({
-    where: { hidden: false, ...(user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }) }, orderBy: { name: "asc" },
+    where: { hidden: false, ...branchRowScope(user) }, orderBy: { name: "asc" },
     select: { id: true, name: true, code: true, area: { select: { id: true, name: true } } },
   });
   const branches = branchRows.map((b) => ({ id: b.id, name: b.name }));
@@ -64,7 +66,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   const counts = Object.fromEntries(tabs.map((t, i) => [t.key, perTab[i].length]));
   return la
     ? <LaList user={user} f={f} sp={sp} rows={rows} branches={branches} counts={counts} />
-    : <AdminList f={f} rows={rows} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)}
+    : <AdminList f={f} rows={rows} page={pageParam(sp.page)} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)}
         unfiltered={isFiltered(f) ? (await listLoans(user, { tab: f.tab })).length : null} holidays={await getHolidaySet()} />;
 }
 
@@ -92,6 +94,8 @@ async function LaList({ user, f, sp, rows, branches, counts }: { user: CurrentUs
   let cards = rows.map((r) => cardFor(r, holidays));
   if (sp.group === "waiting") cards = cards.filter((c) => c.group === "wait");
   cards = sortByUrgency(cards);
+  // Paging: the whole list is filtered and ordered first; then one page of 50. Counts stay the total.
+  const paged = pageOf(cards, pageParam(sp.page), PAGE_SIZE.loans);
   // The same stages as before (all but Cancelled in MyLoans); their names from the stage map.
   const stageOptions: [string, string][] = STAGES.filter((s) => s !== "Cancelled in MyLoans").map((s) => [s, stageLabel(s)]);
   const fields: FilterField[] = [
@@ -130,7 +134,10 @@ async function LaList({ user, f, sp, rows, branches, counts }: { user: CurrentUs
       <Tabs tabs={LA_TABS} current={f.tab} counts={counts} params={params} showing={showing} />
       {cards.length === 0
         ? <EmptyLine text={filtersOn ? "No loans match." : emptyText} clearHref={filtersOn ? clearAllHref(params) : undefined} done={!filtersOn && (f.tab === "queue" || f.tab === "exceptions")} />
-        : <MyLoansList cards={cards} />}
+        : <>
+            <MyLoansList cards={paged.rows} />
+            <Pager info={paged.info} href={listHref(params)} label="my loans" />
+          </>}
     </div>
   );
 }
@@ -158,10 +165,10 @@ async function holdReasonCounts(user: CurrentUser) {
   };
 }
 
-function AdminList({ f, rows, branches, areas, byArea, tabs, counts, holds, unfiltered, holidays }: { f: LoanListFilters; rows: LoanRow[]; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>>; unfiltered: number | null; holidays: ReadonlySet<string> }) {
+function AdminList({ f, rows, page, branches, areas, byArea, tabs, counts, holds, unfiltered, holidays }: { f: LoanListFilters; rows: LoanRow[]; page: number; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>>; unfiltered: number | null; holidays: ReadonlySet<string> }) {
   const fields: FilterField[] = [
     { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, stageLabel(s)]) },
-    { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"]] },
+    { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"], ["BY_DEFAULT", "Classified by default"], ["CHANGED", "Classification changed since accepted"]] },
     { name: "area", label: "Area", value: f.area, options: areas.map((a) => [a.id, a.name]) },
     { name: "branch", label: "Branch", value: f.branch, options: branches.map((b) => [b.id, b.name]) },
     { name: "loanType", label: "Loan type", value: f.loanType, options: [["New", "New"], ["Renewal", "Renewal"]] },
@@ -173,6 +180,11 @@ function AdminList({ f, rows, branches, areas, byArea, tabs, counts, holds, unfi
   const chips = activeChips(fields, params);
   const filtersOn = chips.length > 0 || !!f.q;
   const showing = filtersOn && unfiltered !== null ? { x: rows.length, y: unfiltered } : null;
+  // Paging after the filters and the order. Grouped: the whole result in group order, then pages of 50
+  // rows; each heading keeps its group's whole count (lib/ui/loan-filters.ts, groupTotals).
+  const ordered = byArea ? groupedOrder(rows) : rows;
+  const paged = pageOf(ordered, page, PAGE_SIZE.loans);
+  const totals = byArea ? groupTotals(ordered, paged.info.from - 1) : undefined;
   return (
     <div className="flex w-full min-w-0 flex-col gap-3" data-my-loans="read-only">
       <h1 className="text-[22px] font-semibold leading-tight text-navy">Loans</h1>
@@ -204,7 +216,10 @@ function AdminList({ f, rows, branches, areas, byArea, tabs, counts, holds, unfi
       {rows.length === 0
         ? <EmptyLine text={filtersOn ? (f.q ? `No loans match "${f.q}".` : "No loans match.") : "No loan files here yet."} clearHref={filtersOn ? listHref({ tab: f.tab }) : undefined}
             note={!filtersOn && isTestMode() ? "Sample loans are opened from My loans by a Loan Associate." : undefined} />
-        : <LoanTable rows={rows} grouped={byArea} holidays={holidays} />}
+        : <>
+            <LoanTable rows={paged.rows} grouped={byArea} totals={totals} holidays={holidays} />
+            <Pager info={paged.info} href={listHref(params)} label="loan files" />
+          </>}
     </div>
   );
 }

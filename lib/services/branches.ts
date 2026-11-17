@@ -31,7 +31,7 @@ type Db = Tx | typeof prisma;
 
 /** Server checks: Import branches from MyLoans; Decide branch changes; Hide (Change branches or Decide branch changes). */
 function assertCan(u: CurrentUser, ...ps: Permission[]) {
-  if (!ps.some((p) => can(u, p))) throw new UserError(`Ask an Admin to turn on "${permissionLabel(ps[0])}" for your role.`);
+  if (!ps.some((p) => can(u, p))) throw new UserError(`Ask a Superadmin to turn on "${permissionLabel(ps[0])}" for your role.`);
 }
 
 export async function loadDmsState(db: Db = prisma): Promise<DmsState> {

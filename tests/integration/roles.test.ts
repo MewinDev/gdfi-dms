@@ -31,7 +31,7 @@ async function cleanup() {
   for (const [key, d] of Object.entries(ROLE_DEFAULTS)) {
     await prisma.role.update({ where: { key }, data: { permissions: [...d.permissions], branchAccess: d.branchAccess, description: d.description, active: true } });
   }
-  await prisma.user.updateMany({ where: { email: "test.admin@gdfi.ph" }, data: { active: true } });
+  await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph", "test.superadmin2@gdfi.ph"] } }, data: { active: true } });
 }
 
 const refused = async (p: Promise<unknown>, msg: RegExp) => {
@@ -41,7 +41,8 @@ const refused = async (p: Promise<unknown>, msg: RegExp) => {
 
 beforeAll(async () => {
   await cleanup();
-  admin = await asUser("test.admin@gdfi.ph");
+  // Managing roles is the Superadmin's (D-023); this actor is the role manager.
+  admin = await asUser("test.superadmin@gdfi.ph");
   la = await asUser("test.la@gdfi.ph");
 });
 beforeEach(async () => {
@@ -152,28 +153,29 @@ describe("Safety rules", () => {
     await saveRole(admin, adminRole.id, { name: "Admin", description: adminRole.description, branchAccess: "ALL", permissions: ROLE_DEFAULTS.ADMIN.permissions });
     await refused(setRoleActive(admin, adminRole.id, false), /this role/);
     await refused(saveRole(admin, adminRole.id, { name: "Administrator", description: "", branchAccess: "ALL", permissions: [] }), /Built-in role names cannot be changed/);
-    // The editor's own role cannot lose "Manage roles".
-    await refused(saveRole(admin, adminRole.id, { name: "Admin", description: "", branchAccess: "ALL", permissions: without.filter((k) => k !== P.ROLES_MANAGE) }), /your own role/);
+    // The editor's own role (Superadmin, D-023) cannot lose "Manage permissions".
+    const saRole = await prisma.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } });
+    await refused(saveRole(admin, saRole.id, { name: "Superadmin", description: "", branchAccess: "ALL", permissions: ROLE_DEFAULTS.SUPERADMIN.permissions.filter((k) => k !== P.ROLES_MANAGE) }), /your own role/);
   });
 
   it("cannot remove your own ability; the last people who can manage roles keep it", async () => {
     const { roleId, user: manager } = await customUser("Z Access Manager", [P.USERS_VIEW, P.ROLES_MANAGE]);
     await refused(saveRole(manager, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] }), /away from your own role/);
-    // With every Admin inactive, the custom role is the last way to manage roles.
-    await prisma.user.updateMany({ where: { role: { key: "ADMIN" } }, data: { active: false } });
+    // With every Superadmin inactive, the custom role is the last way to manage permissions.
+    await prisma.user.updateMany({ where: { role: { key: "SUPERADMIN" } }, data: { active: false } });
     try {
-      await refused(saveRole(admin, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] }), /Nobody active could manage roles/);
-      await refused(setRowActive(admin, "user", manager.id, false), /last active person who can manage roles/);
+      await refused(saveRole(admin, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] }), /Nobody active could manage permissions/);
+      await refused(setRowActive(admin, "user", manager.id, false), /last active person who can manage permissions/);
     } finally {
-      await prisma.user.updateMany({ where: { email: "test.admin@gdfi.ph" }, data: { active: true } });
+      await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph", "test.superadmin2@gdfi.ph"] } }, data: { active: true } });
     }
-    // With an Admin active again, it may be removed.
+    // With a Superadmin active again, it may be removed.
     await saveRole(admin, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] });
   });
 
-  it("nobody can move themselves to a role without \"Manage roles\"", async () => {
+  it("nobody changes their own role (D-023)", async () => {
     const laRole = await prisma.role.findUniqueOrThrow({ where: { key: "LA" } });
-    await refused(saveUser(admin, admin.id, { name: admin.name, email: admin.email, roleId: laRole.id, active: true }), /away from yourself/);
+    await refused(saveUser(admin, admin.id, { name: admin.name, email: admin.email, roleId: laRole.id, active: true }), /your own role/);
   });
 });
 

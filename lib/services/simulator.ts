@@ -2,6 +2,8 @@ import { appEnv, refuseInProduction } from "@/lib/env";
 import { isTestMode } from "@/lib/test-mode";
 import { runSimulated } from "@/lib/email/context";
 import "server-only";
+import { inScope } from "@/lib/auth/current-user";
+import { NotInScopeError } from "./errors";
 import { prisma, withLoanLock } from "@/lib/db";
 import { writeAudit, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
@@ -60,7 +62,7 @@ export function simulate(user: CurrentUser, input: { loanId: string; action: Sim
 async function simulateInner(user: CurrentUser, input: { loanId: string; action: SimAction; targetId?: string }) {
   await guard(user);
   const loan = await prisma.loan.findUnique({ where: { id: input.loanId }, include: { branch: true } });
-  if (!loan) throw new UserError("Loan File not found.");
+  if (!loan || !inScope(user, loan.branchId)) throw new NotInScopeError(); // D-019, even in test mode
   const base = { loanId: loan.id, pn: loan.pn };
 
   // Same rule as the LA: a transaction cannot move to a DP step until every required paper is ticked.

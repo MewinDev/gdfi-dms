@@ -1,7 +1,8 @@
+import { fileHref } from "@/lib/services/files";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { can, requirePageAny } from "@/lib/auth/current-user";
+import { advanceScope, can, requirePageAny } from "@/lib/auth/current-user";
 import { TYPE_ID, TYPE_NOUN, TYPE_TITLE, anyStepKeys, canFunds, canFundsAny, stepKeys, stepVerb, typeKeyOf, typeWhere, typesFor, type FundsStep, type TypeRef } from "@/lib/funds/access";
 import { bandTypeId, fundsGaps } from "@/lib/services/funds-handlers";
 import { PERMISSIONS, PERMISSION_GROUPS } from "@/lib/auth/permissions";
@@ -98,7 +99,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const tab: TabKey = TABS.find(([k]) => k === sp.tab)?.[0] ?? "approve";
   const now = new Date();
-  const branchScope = user.scopeBranchIds === null ? {} : { branchId: { in: user.scopeBranchIds } };
+  const branchScope = advanceScope(user); // the processor's branch and every line's loan (D-019)
   // Filter by funds type (?ftype=CA): every list, the counts and the CSV follow it.
   const fundsTypes = await prisma.fundsType.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
   const ftype = fundsTypes.find((t) => t.code === sp.ftype)?.code;
@@ -416,7 +417,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
                     <p className="text-[12px] font-semibold text-ink-2">Receipts ({receipts.length})</p>
                     <ul className="text-[13px]">
                       {receipts.map(({ r, l }) => (
-                        <li key={r.id}>{dayText(r.date)} · {r.number} · {peso(r.cents)} · {lineLabel(l)} {r.fileKey && <a href={`/api/receipts/${r.id}`} target="_blank" rel="noopener" className="link">View file</a>}</li>
+                        <li key={r.id}>{dayText(r.date)} · {r.number} · {peso(r.cents)} · {lineLabel(l)} {r.fileKey && <a href={fileHref("receipt", r.id)} target="_blank" rel="noopener" className="link">View file</a>}</li>
                       ))}
                     </ul>
                   </div>

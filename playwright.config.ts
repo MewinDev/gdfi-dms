@@ -11,6 +11,8 @@ const fromFiles: Record<string, string | undefined> = {};
 loadEnvFiles([".env.local", ".env"], fromFiles);
 const testDb = testDatabaseUrl({ ...fromFiles, ...process.env }) ?? "";
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3100";
+// Never against the person's own dev server (port 3000, database gdfi_dms): refuse before anything starts.
+if (new URL(baseURL).port === "3000") throw new Error("The e2e tests never run against port 3000 (your own dev server). Unset E2E_BASE_URL so Playwright starts its own server on port 3100.");
 const E2E_DEV = process.env.E2E_SERVER === "dev";
 
 export default defineConfig({

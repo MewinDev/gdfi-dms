@@ -6,8 +6,9 @@ import { KIND_PERMISSION, LIST_PERMISSION, PERMISSIONS } from "@/lib/auth/permis
 import { runAction, str, strOrNull, type ActionState } from "@/lib/action";
 import { saveSettingsRow, saveUser, setMockOverride, setToggle, type SettingsKind, saveFundsSettings } from "@/lib/services/admin";
 import { UserError } from "@/lib/services/errors";
+import { saveUserOverrides } from "@/lib/services/user-rights";
 import { AuthzError } from "@/lib/auth/current-user";
-import { checkRoleChange, duplicateRole, resetRoleToDefault, saveRole, setRoleActive } from "@/lib/services/roles";
+import { checkRoleChange, duplicateRole, resetRoleToDefault, saveRole, saveRoleMatrix, setRoleActive } from "@/lib/services/roles";
 import { STATUS_KINDS, setRowActive, type StatusKind } from "@/lib/services/settings-status";
 import { IMPORT_LISTS, type ImportListKey } from "@/lib/import/columns";
 import { checkImport, runImport, type ImportPlan } from "@/lib/import/importer";
@@ -34,9 +35,35 @@ export async function saveUserAction(_prev: ActionState, fd: FormData): Promise<
       // Branch access from the tree (JSON); older forms send branch ids.
       // Nothing is sent without "Change branch access" (the form shows the access read only).
       ...(fd.has("access") ? { access: str(fd, "access") } : fd.has("branchIds") ? { branchIds: fd.getAll("branchIds").map(String) } : {}),
+      // Handles CA / FT: only when the form could change them (fundTypesSent); otherwise kept.
+      ...(fd.has("fundTypesSent") ? { handlesCa: fd.get("handlesCa") === "on", handlesFt: fd.get("handlesFt") === "on" } : {}),
     });
     revalidatePath("/admin/users");
     return "User saved.";
+  });
+}
+
+/** Settings, Permissions: the matrix (Manage permissions). Checked together, one audit row per role. */
+export async function saveRoleMatrixAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.ROLES_MANAGE);
+    let changes: unknown;
+    try { changes = JSON.parse(str(fd, "matrix") || "[]"); } catch { throw new UserError("The matrix could not be read. Try again."); }
+    const names = await saveRoleMatrix(user, changes);
+    revalidatePath("/admin/settings");
+    return names.length ? `Saved: ${names.join(", ")}.` : "Nothing changed.";
+  });
+}
+
+/** Users, Edit, Permissions: per-user overrides (Manage permissions; never your own; lock-out checked). */
+export async function saveUserOverridesAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.ROLES_MANAGE);
+    let entries: unknown;
+    try { entries = JSON.parse(str(fd, "overrides") || "[]"); } catch { throw new UserError("The permissions could not be read. Try again."); }
+    const r = await saveUserOverrides(user, str(fd, "userId"), entries);
+    revalidatePath("/admin/users");
+    return r.changed ? `Permissions saved (${r.changed} change${r.changed === 1 ? "" : "s"}).` : "Nothing changed.";
   });
 }
 
@@ -60,7 +87,7 @@ export async function saveSettingsAction(_prev: ActionState, fd: FormData): Prom
 export async function saveFundsSettingsAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const user = await requirePermission(PERMISSIONS.SETTINGS_CASH_ADVANCE);
-    await saveFundsSettings(user, { carryOverLimitDays: str(fd, "carryOverLimitDays"), liquidationDueDays: str(fd, "liquidationDueDays"), blockLtoUntilFunded: fd.get("blockLtoUntilFunded") === "on" });
+    await saveFundsSettings(user, { carryOverLimitDays: str(fd, "carryOverLimitDays"), liquidationDueDays: str(fd, "liquidationDueDays"), blockLtoUntilFunded: fd.get("blockLtoUntilFunded") === "on", approvalBandsOn: fd.get("approvalBandsOn") === "on" });
     revalidatePath("/admin/settings");
     return "Saved.";
   });

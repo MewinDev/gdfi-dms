@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { SUPERADMIN, signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
@@ -12,12 +13,6 @@ const DIR = "docs/screenshots/monitoring";
 mkdirSync(DIR, { recursive: true });
 
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor", monitor: "Continue as Test Operations Monitor" } as const;
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(who === "monitor" ? /\/monitoring/ : /\/dashboard/);
-}
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
 const wide = (page: Page) => width(page) >= 1024;
 /** The layout shown at this width: the full table (1024+), the compact table (640 to 1023) or the cards. */
@@ -119,7 +114,8 @@ test.afterAll(async () => {
 });
 
 test("DP monitor: grouped by area then branch, availability, drill-down without loan links, filters", async ({ page }) => {
-  await signInAs(page, "monitor");
+  await signInWith(page, BUTTONS.monitor);
+  await expect(page).toHaveURL(/\/monitoring/); // sent on from Home
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Monitoring:");
   await expect(page.getByText("Includes time on hold").first()).toBeVisible();
   // No Home or loan files for this role.
@@ -190,7 +186,8 @@ test("DP monitor: grouped by area then branch, availability, drill-down without 
 });
 
 test("LTO monitor: areas, advisories with the 24-hour prompt, drill-down, no amounts without permission", async ({ page }) => {
-  await signInAs(page, "monitor");
+  await signInWith(page, BUTTONS.monitor);
+  await expect(page).toHaveURL(/\/monitoring/); // sent on from Home
   await page.goto("/monitoring?tab=lto");
   await expect(page.locator('[data-tile="Jobs at an LTO now"]')).toContainText("1");
   await expect(page.locator('[data-tile="Offices with an active advisory"]')).toContainText("2");
@@ -223,15 +220,15 @@ test("LTO monitor: areas, advisories with the 24-hour prompt, drill-down, no amo
 });
 
 test("Refusals: no monitor permission means not found; the CSV address is gone; Admin sees amounts and loan links", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   const res = await page.goto("/monitoring");
   expect(res?.status()).toBe(404);
   await expect(page.getByRole("link", { name: "Monitoring" })).toHaveCount(0);
   expect((await page.request.get("/api/monitoring/csv?tab=dp")).status()).toBe(404);
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   expect((await page.goto("/monitoring?tab=lto"))?.status()).toBe(404);
 
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/monitoring?tab=lto");
   if (wide(page)) await expect(page.getByRole("columnheader", { name: "Estimated travel cash" })).toBeVisible();
   else await expect(layout(page, "lto").locator("dt", { hasText: "Estimated travel cash" }).first()).toBeAttached();
@@ -240,7 +237,7 @@ test("Refusals: no monitor permission means not found; the CSV address is gone; 
 });
 
 test("DP job at an LTO stage: Report an LTO problem; the warning on the job", async ({ page }) => {
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${reportJob}`);
   const box = page.locator("[data-process-at]");
   await expect(box.locator("[data-advisory-warning]")).toContainText("LTO Quezon City District Office: System down, reported by Test Document Processor, 2 h ago");
@@ -257,7 +254,7 @@ test("DP job at an LTO stage: Report an LTO problem; the warning on the job", as
 });
 
 test("Check documents: the Send panel shows availability chips, the processor on leave disabled, Full with a warning, and the LTO advisory", async ({ page }) => {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto("/loans");
   const main = page.getByRole("main");
   await main.getByLabel("Find a loan").fill("GD1012026901001");
@@ -289,8 +286,8 @@ test("Check documents: the Send panel shows availability chips, the processor on
   await page.waitForLoadState("networkidle");
 });
 
-test("Roles: the Monitoring group; Operations Monitor has the two monitors and Manage LTO advisories", async ({ page }) => {
-  await signInAs(page, "admin");
+test("Roles: the Monitoring group; Monitoring (read-only) has the two monitors and Manage LTO advisories", async ({ page }) => {
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
   const role = await db.role.findUniqueOrThrow({ where: { key: "MONITOR" } });
   await page.goto(`/admin/settings?open=roles&edit=${role.id}`);
   const g = page.getByRole("region", { name: "Monitoring" });
@@ -331,7 +328,8 @@ const words = (from: string, to: string) => {
 const focusedDay = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.day ?? null);
 
 test("Design: the date range: keyboard open and close, a preset, then a custom range; title and table follow", async ({ page }) => {
-  await signInAs(page, "monitor");
+  await signInWith(page, BUTTONS.monitor);
+  await expect(page).toHaveURL(/\/monitoring/); // sent on from Home
   await page.goto("/monitoring?tab=dp");
   const button = page.locator("[data-date-range-button]");
   await expect(button).toContainText(words(ymdBack(phtToday(), 29), phtToday()));
@@ -382,7 +380,8 @@ test("Design: the date range: keyboard open and close, a preset, then a custom r
 });
 
 test("Design: no sideways scroll on both tabs and By day; tiles, tints and the screenshots", async ({ page }) => {
-  await signInAs(page, "monitor");
+  await signInWith(page, BUTTONS.monitor);
+  await expect(page).toHaveURL(/\/monitoring/); // sent on from Home
   await page.goto("/monitoring?tab=dp");
   await expect(page.locator('[data-tile="Overdue"]')).toHaveAttribute("data-tint", "bad");
   await expect(page.locator('[data-tile="Active DPs"]')).toHaveAttribute("data-tint", "none");
@@ -403,7 +402,8 @@ test("Design: no sideways scroll on both tabs and By day; tiles, tints and the s
 });
 
 test("Design: 820 Details and 390 More open inline; the 390 card shows the same numbers as the 1440 table", async ({ page }) => {
-  await signInAs(page, "monitor");
+  await signInWith(page, BUTTONS.monitor);
+  await expect(page).toHaveURL(/\/monitoring/); // sent on from Home
   const w = width(page);
   // The main numbers of one processor in the 1440 table.
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -452,7 +452,8 @@ test("Design: 820 Details and 390 More open inline; the 390 card shows the same 
 });
 
 test("Design: an empty period: a calm message and Last 30 days", async ({ page }) => {
-  await signInAs(page, "monitor");
+  await signInWith(page, BUTTONS.monitor);
+  await expect(page).toHaveURL(/\/monitoring/); // sent on from Home
   await page.goto("/monitoring?tab=dp&range=custom&from=2026-01-05&to=2026-01-06");
   const empty = page.locator("[data-empty]").first();
   await expect(empty).toContainText("No jobs in this period. Try a wider date range.");

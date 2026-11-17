@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { signIn, visibleSearchBox } from "./helpers";
 
@@ -7,15 +7,27 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
+/** A samples group: one closed row ("Sample loans · TEST MODE"); the title is its heading. */
+const group = (page: Page, title: string) => page.getByRole("main").locator("details", { has: page.getByRole("heading", { name: title, exact: true }) });
+/** Opens the group and returns its sample buttons (one line each: PN, name, then the chip). */
+async function openGroup(page: Page, title: string) {
+  const g = group(page, title);
+  await expect(g).toHaveCount(1);
+  await expect(g).not.toHaveAttribute("open", ""); // closed by default
+  await g.locator("summary").click();
+  await expect(g).toHaveAttribute("open", "");
+  return { g, cards: g.locator("ul").getByRole("button") };
+}
+
 test("fresh start: Home shows the empty state and the three sample loans", async ({ page }) => {
   await signIn(page, "la");
-  await expect(page.getByText("Nothing needs you yet. Find a loan or pick a sample to start.")).toBeVisible();
-  const samples = page.getByRole("region", { name: "Sample loans" });
-  await expect(samples.getByRole("button")).toHaveCount(3);
-  await expect(samples.getByText("TEST MODE")).toBeVisible();
+  await expect(page.getByRole("main").getByText("You're all caught up.")).toBeVisible();
+  await expect(group(page, "Sample loans").locator("summary")).toContainText("TEST MODE");
+  const { cards } = await openGroup(page, "Sample loans");
+  await expect(cards).toHaveCount(3);
 
   // Home has no search box: a card opens My loans with the PN in its box. Nothing is searched or saved.
-  await samples.getByRole("button", { name: /Ana Villanueva/ }).click();
+  await cards.filter({ hasText: "Ana Villanueva" }).click();
   await expect(page).toHaveURL(/\/loans\?fill=GD1652026901003/);
   await expect(visibleSearchBox(page)).toHaveValue("GD1652026901003");
   await expect(visibleSearchBox(page)).toBeFocused();
@@ -25,15 +37,14 @@ test("fresh start: Home shows the empty state and the three sample loans", async
 test("Find a loan: only the 3 samples are listed; a card fills the box; other mock PNs still work if typed", async ({ page }) => {
   await signIn(page, "la");
   await page.goto("/loans");
-  const samples = page.getByRole("region", { name: "Sample loans" });
-  const cards = samples.getByRole("button");
+  const { g: samples, cards } = await openGroup(page, "Sample loans");
   await expect(cards).toHaveCount(3);
-  for (const s of ["GD1012026901001", "GD1652026901003", "GD1652026901004"]) await expect(samples.getByText(new RegExp(s))).toBeVisible();
+  for (const s of ["GD1012026901001", "GD1652026901003", "GD1652026901004"]) await expect(samples.getByText(s, { exact: true })).toBeVisible();
   for (const c of await cards.all()) await expect(c).toContainText("Try it");
   await expect(page.getByText("GD1652026901008")).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Data-check samples" })).toHaveCount(0);
+  await expect(group(page, "Data-check samples")).toHaveCount(0);
 
-  await samples.getByRole("button", { name: /Maria Santos/ }).click();
+  await cards.filter({ hasText: "Maria Santos" }).click();
   const box = page.getByRole("main").getByLabel("Find a loan");
   await expect(box).toHaveValue("GD1012026901001");
   expect(await db.loan.count()).toBe(0);
@@ -51,7 +62,6 @@ test("Admin: Show data-check test PNs; starting over is the Test kit, which is n
   await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
   await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
-  await page.context().clearCookies();
 
   await signIn(page, "admin");
   await page.goto("/admin/settings?open=test-data");
@@ -61,15 +71,14 @@ test("Admin: Show data-check test PNs; starting over is the Test kit, which is n
     await expect(toggle.getByRole("button", { name: "Turn off" })).toBeVisible();
   }
   // The Loan Associate now sees them on My loans (where the search and samples live).
-  await page.context().clearCookies();
   await signIn(page, "la");
   await page.goto("/loans");
-  const extra = page.getByRole("region", { name: "Data-check samples" });
-  await expect(extra.getByText("GD1012026999999")).toBeVisible();
-  await expect(extra.getByText(/Check Prepared: the not-released card/)).toBeVisible();
+  // A second closed row under the sample loans; what each one tests is in its tooltip.
+  const { g: extra } = await openGroup(page, "Data-check samples");
+  await expect(extra.getByText("GD1012026999999", { exact: true })).toBeVisible();
+  await expect(extra.locator("ul").getByRole("button").filter({ hasText: "GD1652026901008" })).toHaveAttribute("title", /Check Prepared: the not-released card/);
 
   // Turn it back off
-  await page.context().clearCookies();
   await signIn(page, "admin");
   await page.goto("/admin/settings?open=test-data");
   await page.locator("form", { hasText: "Show data-check test PNs" }).getByRole("button", { name: "Turn off" }).click();

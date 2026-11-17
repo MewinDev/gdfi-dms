@@ -140,8 +140,3 @@ export function elapsed(since: Date, now: Date = new Date()): string {
   if (h < 48) return `${h} h`;
   return `${Math.floor(h / 24)} d`;
 }
-
-export function fmtPeso(n: number | string | { toString(): string }): string {
-  const v = typeof n === "number" ? n : Number(n.toString());
-  return "PHP " + v.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}

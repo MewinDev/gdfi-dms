@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { signInWith } from "./helpers";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
 
@@ -16,12 +17,6 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string, target?: ReturnType<Page["locator"]>) {
   if (width(page) === 820) return; // 1440 and 390 only
@@ -36,7 +31,7 @@ async function noSideways(page: Page) {
 
 /** LA opens GD1652026901003 and sends Mortgage (needs funds: LTO fee) to the test DP, who accepts. */
 async function acceptedMortgageNeedingFunds(page: Page) {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto("/loans?fill=GD1652026901003");
   const main = page.getByRole("main");
   await main.getByRole("button", { name: /^Find/ }).click();
@@ -61,7 +56,7 @@ async function acceptedMortgageNeedingFunds(page: Page) {
   await page.getByRole("button", { name: /^Send to (?!processor)/ }).click();
   await page.getByRole("dialog", { name: "Send it now?" }).getByRole("button", { name: "Send", exact: true }).click();
   await expect.poll(async () => (await db.loanTransaction.findUniqueOrThrow({ where: { id: t.id } })).status).toBe("ASSIGNED");
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: t.id } });
   await page.goto(`/jobs/${job.id}`);
   await page.getByRole("button", { name: "Accept" }).click();
@@ -70,7 +65,7 @@ async function acceptedMortgageNeedingFunds(page: Page) {
 }
 
 test("Settings > Funds types: the two proposed types and their switches", async ({ page }) => {
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings");
   await expect(page.locator("#card-funds-types")).toBeVisible();
   await page.goto("/admin/settings?open=funds-types");
@@ -108,7 +103,7 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
   expect(ca.fundsTypeCode).toBe("CA"); // a record without a type is a Cash advance
 
   // Finance: To approve with both pills.
-  await signInAs(page, "fin");
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   await expect(page.locator(`[data-advance="${ft.number}"] [data-funds-type="FT"]`)).toBeVisible();
   await expect(page.locator(`[data-advance="CA-E2E-0001"] [data-funds-type="CA"]`)).toBeVisible();
@@ -170,7 +165,7 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
   // Outstanding shows the transfer details (account ending only) and the DP sees the pill.
   await page.goto("/funds?tab=outstanding");
   await expect(page.locator(`[data-advance="${ft.number}"]`)).toContainText("account ending 4821");
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto("/my-funds?tab=advances");
   await expect(page.locator('[data-funds-type="FT"]').first()).toBeVisible();
   // The notification says which type it is.

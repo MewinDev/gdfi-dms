@@ -15,7 +15,7 @@
  * reads it from here (lib/workflow/stage-map.test.ts fails when another file defines them).
  * The business's table: docs/workflow/13-stages-and-next-steps.md.
  */
-import { STAGES, type Stage } from "./stage";
+import type { Stage } from "./stage";
 
 // ---------------------------------------------------------------------------
 // The 10 steps (the loan-file stepper)
@@ -172,6 +172,3 @@ export function listStage(stage: string): { step: number | null; label: string; 
   const d = stageDef(stage);
   return { step: d?.step ?? null, label: d?.label ?? stage, grey: !!d?.grey };
 }
-
-/** Every stored stage (the real list a loan can be in), for checks. */
-export const STORED_STAGES: readonly Stage[] = STAGES;

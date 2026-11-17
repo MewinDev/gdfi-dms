@@ -4,10 +4,11 @@ import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import {
-  VISIBLE_PERMISSION_GROUPS, PERMISSIONS, ROLE_DEFAULTS, normalizePermissions, permissionLabel, type Permission,
+  VISIBLE_PERMISSION_GROUPS, PERMISSIONS, ROLE_DEFAULTS, normalizePermissions, permissionDef, permissionLabel, type Permission,
 } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
-import { checkLockout } from "./lockout";
+import { applyChange, checkLockout, KEEP_PERMISSIONS, loadSnapshot } from "./lockout";
+import { userPermissions } from "@/lib/auth/effective";
 import { lastChangeWhat, roleImpact, type RoleImpact } from "@/lib/roles/impact";
 import { fmtDate } from "@/lib/time";
 import { toCsv } from "@/lib/import/csv";
@@ -55,7 +56,7 @@ export function permissionDiff(before: Iterable<string>, after: Iterable<string>
 export async function lockoutReason(user: CurrentUser, role: RoleRow, next: { permissions: Set<string>; active: boolean }): Promise<string | null> {
   const had = effectivePermissions(role).has(PERMISSIONS.ROLES_MANAGE) && role.active;
   const keeps = next.permissions.has(PERMISSIONS.ROLES_MANAGE) && next.active;
-  if (had && !keeps && user.roleId === role.id) return "You cannot take \"Manage roles\" away from your own role. Ask another person who can manage roles.";
+  if (had && !keeps && user.roleId === role.id) return "You cannot take \"Manage permissions\" away from your own role. Ask another person who can manage permissions.";
   return checkLockout({ kind: "role", roleId: role.id, permissions: next.permissions, active: next.active });
 }
 async function guardManageAbility(user: CurrentUser, role: RoleRow, next: { permissions: Set<string>; active: boolean }) {
@@ -248,3 +249,41 @@ export async function accessMatrixCsv(): Promise<string> {
   return toCsv(header, rows);
 }
 
+
+/**
+ * Settings, Permissions (D-003): save several roles' ticks at once. All the changes are checked together
+ * first (lock-out: someone keeps "Manage permissions" and "Change branch access"; your own role keeps
+ * "Manage permissions"); then roles that add ticks are saved before roles that remove them, each through
+ * saveRole (validation, audit row per role). Returns the names of the roles changed.
+ */
+export async function saveRoleMatrix(user: CurrentUser, raw: unknown): Promise<string[]> {
+  requireManager(user);
+  const p = z.array(z.object({ roleId: z.string(), permissions: z.array(z.string()) })).max(100).safeParse(raw);
+  if (!p.success) throw new UserError("The matrix could not be read. Try again.");
+  const roles = await prisma.role.findMany({ where: { id: { in: p.data.map((c) => c.roleId) } } });
+  const byId = new Map(roles.map((r) => [r.id, r]));
+  const changes = p.data.map((c) => {
+    const role = byId.get(c.roleId);
+    if (!role) throw new UserError("One of the roles no longer exists. Refresh and try again.");
+    return { role, next: normalizePermissions(c.permissions) };
+  });
+  // Checked together: the final state must still have someone who can manage permissions and branch access.
+  let snap = await loadSnapshot();
+  const start = snap;
+  for (const c of changes) {
+    if (user.roleId === c.role.id && effectivePermissions(c.role).has(PERMISSIONS.ROLES_MANAGE) && !c.next.includes(PERMISSIONS.ROLES_MANAGE)) {
+      throw new UserError(`You cannot take "Manage permissions" away from your own role (${c.role.name}). Ask another person who can manage permissions.`);
+    }
+    snap = applyChange(snap, { kind: "role", roleId: c.role.id, permissions: c.next });
+  }
+  for (const key of KEEP_PERMISSIONS) {
+    const holders = (s: typeof snap) => [...s.users.values()].some((u) => u.active && s.roles.get(u.roleId)?.active && userPermissions(s.roles.get(u.roleId)!.permissions, u.overrides, u).has(key));
+    if (holders(start) && !holders(snap)) throw new UserError(`Nobody active could ${permissionDef(key)!.can} after these changes. Keep "${permissionDef(key)!.label}" on a role someone active holds.`);
+  }
+  const adds = (c: (typeof changes)[number]) => c.next.some((k) => !effectivePermissions(c.role).has(k as Permission));
+  const ordered = [...changes.filter(adds), ...changes.filter((c) => !adds(c))];
+  for (const c of ordered) {
+    await saveRole(user, c.role.id, { name: c.role.name, description: c.role.description, branchAccess: c.role.branchAccess, permissions: c.next });
+  }
+  return ordered.map((c) => c.role.name);
+}

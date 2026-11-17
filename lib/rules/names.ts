@@ -9,6 +9,9 @@
  * - On screen a decision reads "<title> · <reason>" (never the title twice).
  * - The classification is not a decision but what the loan is: it reads as one complete sentence with no
  *   title, "This is a Refinancing loan: the product name has the word Refinancing."
+ * - The OR/CR check keeps one name for every outcome, "OR/CR transfer check" (it was "Mortgage check
+ *   needed", too close to "Mortgage needed"); its reason says what follows for the Mortgage.
+ * - No two rules share a title (names.test.ts).
  *
  * Internal history only (never shown): PRODUCT_CLASSIFICATION was Rule 1, UNDERTAKING_CHOICE Rule 2,
  * ORCR_CHECK Rule 3, MORTGAGE_THRESHOLD Rule 4.
@@ -21,6 +24,10 @@ type LoanType = "New" | "Renewal";
 
 /** One rule as it fired for a loan: the key plus the values the wording needs. */
 export type RuleFiring =
+  // Keyword rule (D-031): REFINANCING_KEYWORD / FINANCING_KEYWORD with the keyword, or DEFAULT with the result.
+  // The whole-word reasons are the rule before D-031, kept so older records still read.
+  | { key: "PRODUCT_CLASSIFICATION"; reason: "REFINANCING_KEYWORD" | "FINANCING_KEYWORD"; keyword: string }
+  | { key: "PRODUCT_CLASSIFICATION"; reason: "DEFAULT"; result: "FINANCING" | "REFINANCING" }
   | { key: "PRODUCT_CLASSIFICATION"; reason: "FINANCING_WORD" | "REFINANCING_WORD" | "NEITHER_WORD" | "BLANK" }
   | { key: "UNDERTAKING_CHOICE"; financingType: "UNDERTAKING" | "NON_UNDERTAKING" }
   | { key: "ORCR_CHECK"; orcr: "TRANSFERRED" | "UNTRANSFERRED" | "SKIPPED" }
@@ -41,7 +48,7 @@ export interface RuleName {
 export const RULE_NAMES: Record<RuleKey, RuleName> = {
   PRODUCT_CLASSIFICATION: { key: "PRODUCT_CLASSIFICATION", title: "Loan classification", decides: "Financing or Refinancing, from the product name", formerly: 1 },
   UNDERTAKING_CHOICE: { key: "UNDERTAKING_CHOICE", title: "Undertaking answer required", decides: "Undertaking or Non-Undertaking, picked by the Loan Associate", formerly: 2 },
-  ORCR_CHECK: { key: "ORCR_CHECK", title: "Mortgage check needed", decides: "Whether the mortgage amount check runs, from the OR/CR answer", formerly: 3 },
+  ORCR_CHECK: { key: "ORCR_CHECK", title: "OR/CR transfer check", decides: "Whether the mortgage amount check runs, from the OR/CR answer", formerly: 3 },
   MORTGAGE_THRESHOLD: { key: "MORTGAGE_THRESHOLD", title: "Mortgage needed", decides: "Mortgage or not, from the loan type and the amount threshold", formerly: 4 },
 };
 
@@ -76,6 +83,14 @@ const reasonOf = (sentence: string) => { const i = sentence.indexOf(": "); retur
 function ruleTitleAndSentence(f: RuleFiring, thresholds: Thresholds): Omit<RuleWords, "reason" | "line"> {
   switch (f.key) {
     case "PRODUCT_CLASSIFICATION": {
+      if (f.reason === "REFINANCING_KEYWORD" || f.reason === "FINANCING_KEYWORD") {
+        const c = f.reason === "FINANCING_KEYWORD" ? "Financing" : "Refinancing";
+        return { key: f.key, title: `${c} loan`, sentence: `This is a ${c} loan: the product name contains "${f.keyword}".` };
+      }
+      if (f.reason === "DEFAULT") {
+        const c = f.result === "FINANCING" ? "Financing" : "Refinancing";
+        return { key: f.key, title: `${c} loan`, sentence: `This is a ${c} loan: the product name has no Financing or Refinancing keyword, so it is classified by default.` };
+      }
       const cls = f.reason === "FINANCING_WORD" ? "Financing" : "Refinancing";
       const why =
         f.reason === "FINANCING_WORD" ? "the product name has the word Financing"
@@ -91,11 +106,14 @@ function ruleTitleAndSentence(f: RuleFiring, thresholds: Thresholds): Omit<RuleW
         sentence: `Undertaking answer is required: this is a Financing loan, answered ${f.financingType === "UNDERTAKING" ? "Undertaking" : "Non-Undertaking"}.`,
       };
     case "ORCR_CHECK":
-      if (f.orcr === "UNTRANSFERRED") return { key: f.key, title: "Mortgage check not needed", sentence: "Mortgage check is not needed: the OR/CR is untransferred." };
       return {
         key: f.key,
-        title: "Mortgage check needed",
-        sentence: f.orcr === "TRANSFERRED" ? "Mortgage check is needed: the OR/CR is transferred." : "Mortgage check is needed: a Refinancing loan skips the OR/CR question.",
+        title: RULE_NAMES.ORCR_CHECK.title,
+        sentence: `${RULE_NAMES.ORCR_CHECK.title}: ${
+          f.orcr === "UNTRANSFERRED" ? "the OR/CR is untransferred, so the amount is not checked for a Mortgage"
+          : f.orcr === "TRANSFERRED" ? "the OR/CR is transferred, so the amount is checked for a Mortgage"
+          : "a Refinancing loan skips the OR/CR question, so the amount is checked for a Mortgage"
+        }.`,
       };
     case "MORTGAGE_THRESHOLD": {
       const t = pesoWhole(thresholds[f.loanType]);
@@ -112,7 +130,10 @@ function ruleTitleAndSentence(f: RuleFiring, thresholds: Thresholds): Omit<RuleW
 
 export function encodeFiring(f: RuleFiring): string {
   switch (f.key) {
-    case "PRODUCT_CLASSIFICATION": return `${f.key}:${f.reason}`;
+    case "PRODUCT_CLASSIFICATION":
+      return f.reason === "REFINANCING_KEYWORD" || f.reason === "FINANCING_KEYWORD" ? `${f.key}:${f.reason}:${f.keyword.replace(/:/g, " ")}`
+        : f.reason === "DEFAULT" ? `${f.key}:DEFAULT:${f.result}`
+        : `${f.key}:${f.reason}`;
     case "UNDERTAKING_CHOICE": return `${f.key}:${f.financingType}`;
     case "ORCR_CHECK": return `${f.key}:${f.orcr}`;
     case "MORTGAGE_THRESHOLD": return `${f.key}:${f.loanType}:${f.met ? "MET" : "ABOVE"}`;
@@ -127,6 +148,8 @@ export function encodeFiring(f: RuleFiring): string {
 export function decodeFiring(text: string | null | undefined): RuleFiring | null {
   const s = (text ?? "").trim();
   const [k, a, b] = s.split(":");
+  if (k === "PRODUCT_CLASSIFICATION" && (a === "REFINANCING_KEYWORD" || a === "FINANCING_KEYWORD") && b) return { key: k, reason: a, keyword: b };
+  if (k === "PRODUCT_CLASSIFICATION" && a === "DEFAULT" && (b === "FINANCING" || b === "REFINANCING")) return { key: k, reason: a, result: b };
   if (k === "PRODUCT_CLASSIFICATION" && (a === "FINANCING_WORD" || a === "REFINANCING_WORD" || a === "NEITHER_WORD" || a === "BLANK")) return { key: k, reason: a };
   if (k === "UNDERTAKING_CHOICE" && (a === "UNDERTAKING" || a === "NON_UNDERTAKING")) return { key: k, financingType: a };
   if (k === "ORCR_CHECK" && (a === "TRANSFERRED" || a === "UNTRANSFERRED" || a === "SKIPPED")) return { key: k, orcr: a };

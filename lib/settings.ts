@@ -2,6 +2,7 @@ import { prisma, type Tx } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import type { MockOverride } from "@/lib/myloans/mock-adapter";
 import type { MyLoansRecord } from "@/lib/myloans/types";
+import { DEFAULT_CLASSIFICATION_RULES, asRules, type ClassificationRules, type Keyword } from "@/lib/rules/classify";
 
 /** System toggles and small JSON settings stored in the Setting table. */
 export const SETTING_DEFAULTS = {
@@ -46,6 +47,13 @@ export const SETTING_DEFAULTS = {
   "funds.liquidationDueDays": 10 as number,
   /** Funds: block "At the LTO" while a funds-flagged transaction is not Funded. */
   "funds.blockLtoUntilFunded": true as boolean,
+  /**
+   * Funds (D-024): approval amount bands. Off (the default, as v2): anyone with the type's Approve tick who
+   * handles that type approves. On: only the roles of the band for the amount (Settings, Approval bands).
+   */
+  "funds.approvalBandsOn": false as boolean,
+  /** Product classification (D-031): Refinancing keywords first, then Financing, else the default. */
+  "classification.rules": DEFAULT_CLASSIFICATION_RULES as { refinancing: (Keyword | string)[]; financing: (Keyword | string)[]; fallback: "FINANCING" | "REFINANCING" },
   /** Monitoring: the default capacity of a processor, in open jobs (Settings, Processor capacity). */
   "dp.defaultCapacity": 10 as number,
   /** Email notifications: the master switch. Not active until the system goes live. */
@@ -88,4 +96,9 @@ export async function getHolidaySet(db: Tx | typeof prisma = prisma): Promise<Se
 export async function getTatMap(db: Tx | typeof prisma = prisma): Promise<Map<string, { businessDays: number; note: string; label: string }>> {
   const rows = await db.tatRule.findMany();
   return new Map(rows.map((r) => [r.key, { businessDays: r.businessDays, note: r.note, label: r.label }]));
+}
+
+/** Product classification (D-031, D-034): the saved keyword lists, older plain strings read as "starts a word". */
+export async function getClassificationRules(db: Tx | typeof prisma = prisma): Promise<ClassificationRules> {
+  return asRules(await getSetting("classification.rules", db));
 }

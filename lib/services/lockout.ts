@@ -1,37 +1,40 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { effectivePermissions } from "@/lib/auth/access";
+import { userPermissions, type OverrideLike } from "@/lib/auth/effective";
 import { PERMISSIONS, permissionDef, type Permission } from "@/lib/auth/permissions";
 
 /**
- * Lock-out protection. Roles are just ticks, so a careless change could leave nobody able to change
- * roles or branch access again. These two ticks must always stay with at least one active role that at
- * least one active person holds. Checked on the server for every role change (ticks, inactive, reset),
- * every user change (role, inactive) and the users import; the role editor shows the same reason first.
+ * Lock-out protection. Roles are just ticks and people can have overrides (D-008), so a careless change
+ * could leave nobody able to manage permissions or branch access again. These ticks must always stay with
+ * at least one active role AND at least one active person who effectively holds them (role tick, not
+ * denied, or granted). Checked on the server for every role change (ticks, inactive, reset), every user
+ * change (role, inactive, overrides) and the users import; the screens show the same reason first.
  * Nothing here looks at a role's name or key.
  */
 export const KEEP_PERMISSIONS: Permission[] = [PERMISSIONS.ROLES_MANAGE, PERMISSIONS.ACCESS_MANAGE];
 
 type Db = typeof prisma | Prisma.TransactionClient;
+interface SnapUser { active: boolean; roleId: string; overrides: OverrideLike[]; handlesCa: boolean; handlesFt: boolean }
 export interface AccessSnapshot {
   roles: Map<string, { name: string; active: boolean; permissions: Set<string> }>;
-  users: Map<string, { active: boolean; roleId: string }>;
+  users: Map<string, SnapUser>;
 }
 
 export async function loadSnapshot(db: Db = prisma): Promise<AccessSnapshot> {
   const [roles, users] = await Promise.all([
     db.role.findMany({ select: { id: true, name: true, active: true, permissions: true } }),
-    db.user.findMany({ select: { id: true, active: true, roleId: true } }),
+    db.user.findMany({ select: { id: true, active: true, roleId: true, handlesCa: true, handlesFt: true, permissionOverrides: { select: { key: true, effect: true } } } }),
   ]);
   return {
     roles: new Map(roles.map((r) => [r.id, { name: r.name, active: r.active, permissions: effectivePermissions(r) as Set<string> }])),
-    users: new Map(users.map((u) => [u.id, { active: u.active, roleId: u.roleId }])),
+    users: new Map(users.map((u) => [u.id, { active: u.active, roleId: u.roleId, overrides: u.permissionOverrides, handlesCa: u.handlesCa, handlesFt: u.handlesFt }])),
   };
 }
 
 export type AccessChange =
   | { kind: "role"; roleId: string; permissions?: Iterable<string>; active?: boolean }
-  | { kind: "user"; userId: string; roleId?: string; active?: boolean };
+  | { kind: "user"; userId: string; roleId?: string; active?: boolean; overrides?: OverrideLike[] };
 
 /** The snapshot after one change (a copy; the input is not touched). */
 export function applyChange(s: AccessSnapshot, c: AccessChange): AccessSnapshot {
@@ -40,22 +43,19 @@ export function applyChange(s: AccessSnapshot, c: AccessChange): AccessSnapshot 
     const r = next.roles.get(c.roleId);
     if (r) next.roles.set(c.roleId, { ...r, ...(c.permissions ? { permissions: new Set(c.permissions) } : {}), ...(c.active !== undefined ? { active: c.active } : {}) });
   } else {
-    const u = next.users.get(c.userId) ?? { active: true, roleId: c.roleId ?? "" };
-    next.users.set(c.userId, { roleId: c.roleId ?? u.roleId, active: c.active ?? u.active });
+    const u = next.users.get(c.userId) ?? { active: true, roleId: c.roleId ?? "", overrides: [], handlesCa: false, handlesFt: false };
+    next.users.set(c.userId, { ...u, roleId: c.roleId ?? u.roleId, active: c.active ?? u.active, overrides: c.overrides ?? u.overrides });
   }
   return next;
 }
 
 const rolesWith = (s: AccessSnapshot, key: string) => [...s.roles.entries()].filter(([, r]) => r.active && r.permissions.has(key)).map(([id]) => id);
-const peopleWith = (s: AccessSnapshot, key: string) => {
-  const roles = new Set(rolesWith(s, key));
-  return [...s.users.values()].filter((u) => u.active && roles.has(u.roleId)).length;
-};
-
-/** How many active people hold each protected tick (for the role editor's notes). */
-export function keepCounts(s: AccessSnapshot): Record<string, { roles: number; people: number }> {
-  return Object.fromEntries(KEEP_PERMISSIONS.map((k) => [k, { roles: rolesWith(s, k).length, people: peopleWith(s, k) }]));
-}
+/** Active people who effectively hold the key (their role's ticks, their overrides). */
+const peopleWith = (s: AccessSnapshot, key: string) =>
+  [...s.users.values()].filter((u) => {
+    const role = s.roles.get(u.roleId);
+    return u.active && role?.active && userPermissions(role.permissions, u.overrides, u).has(key as Permission);
+  }).length;
 
 /**
  * Why the change may not be made (plain words), or null. Only a change that takes the LAST holder away

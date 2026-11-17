@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { openFundsDetails } from "./helpers";
+import { openFundsDetails, signInWith } from "./helpers";
 
 /**
  * Funds page design pass: tabs with count pills, the one-line summary, the type filter and the search,
@@ -27,12 +27,6 @@ async function shot(page: Page, name: string, target?: Locator) {
 async function noSideways(page: Page) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(over, `page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
-}
-async function signInFinance(page: Page) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS.fin }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
 }
 const row = (page: Page, number: string) => page.locator(`[data-advance="${number}"]`);
 
@@ -111,8 +105,8 @@ test.afterAll(clean);
 test("Tabs, summary, type filter and search; each row shows the same values at every width", async ({ page }) => {
   test.setTimeout(180_000);
   const keyWarnings: string[] = [];
-  page.on("console", (m) => { if (/unique "key"/.test(m.text())) keyWarnings.push(m.text().slice(0, 1500)); });
-  await signInFinance(page);
+  page.on("console", async (m) => { if (/DEBUGKEY/.test(m.text())) console.log(m.text().slice(0, 400)); if (/unique "key"/.test(m.text())) keyWarnings.push(m.text().slice(0, 1500)); });
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
   const tabs = page.locator("[data-funds-tabs]");
   await expect(tabs.locator('[data-tab="approve"] [data-tab-count]')).toHaveText("2");
@@ -288,12 +282,8 @@ test("Tabs, summary, type filter and search; each row shows the same values at e
 
 test("A view-only role sees one calm line, not a line per row; empty tabs say so", async ({ page }) => {
   const role = await db.role.create({ data: { key: "C_Z_FUNDS_VIEW", name: "Z Funds viewer", builtIn: false, permissions: ["loans:view", "funds:ca_view", "funds:ft_view"] } });
-  await db.user.create({ data: { email: "zz.fundsviewer@gdfi.ph", name: "Zz Funds Viewer", roleId: role.id, isTestUser: true, allBranches: true } });
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByLabel("Other test user").selectOption({ label: "Zz Funds Viewer (Z Funds viewer)" });
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await db.user.create({ data: { email: "zz.fundsviewer@gdfi.ph", name: "Zz Funds Viewer", roleId: role.id, isTestUser: true, allBranches: true, handlesCa: true, handlesFt: true } });
+  await signInWith(page, { other: "Zz Funds Viewer (Z Funds viewer)" });
 
   for (const tab of ["approve", "release", "outstanding"]) {
     await page.goto(`/funds?tab=${tab}`);
@@ -326,7 +316,7 @@ test("A liquidated request has Print: the liquidation report in the GDFI print f
   // FT-2026-7004 fully liquidated: a second receipt covers the balance.
   const adv = await db.cashAdvance.update({ where: { number: "FT-2026-7004" }, data: { status: "LIQUIDATED" }, include: { lines: true, requestedBy: true } });
   await db.receipt.create({ data: { lineId: adv.lines[0].id, date: "2026-11-05", cents: 150_000, number: "OR-5522", uploadedById: adv.requestedById } });
-  await signInFinance(page);
+  await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=outstanding");
   const out = row(page, "FT-2026-7004");
   await expect(out.getByRole("button", { name: "Close advance" })).toBeVisible();

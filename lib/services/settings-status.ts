@@ -210,8 +210,3 @@ export async function setRowActive(user: CurrentUser, kind: StatusKind, id: stri
     });
   });
 }
-
-/** "4 branches" counts active rows only; "+1 inactive" when any. */
-export function countLine(active: number, inactive: number, one: string, many: string) {
-  return { main: `${active} ${active === 1 ? one : many}`, extra: inactive > 0 ? `+${inactive} inactive` : "" };
-}

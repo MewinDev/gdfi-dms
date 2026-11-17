@@ -7,6 +7,7 @@ import { writeAudit, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { getHolidaySet, getSetting } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
 import { carryOverDecision, fundsStatus, lineBalance, liquidationDue } from "@/lib/funds/rules";
@@ -65,7 +66,7 @@ function requireOwnJob(user: CurrentUser, a: { dpUserId: string; secondaryDpUser
 /** Jobs a person may see: their own, or in their branches when they can work jobs; Admin-like roles by loan scope. */
 export function canSeeJob(user: CurrentUser, a: { dpUserId: string; secondaryDpUserId?: string | null; dpBranchId: string; loan: { branchId: string } }) {
   if (a.dpUserId === user.id || a.secondaryDpUserId === user.id) return true;
-  if (can(user, PERMISSIONS.JOBS_WORK)) return user.scopeBranchIds === null || user.scopeBranchIds.includes(a.dpBranchId);
+  if (can(user, PERMISSIONS.JOBS_WORK)) return inScope(user, a.dpBranchId);
   return inScope(user, a.loan.branchId);
 }
 
@@ -261,7 +262,7 @@ export async function bandApprovers(db: Tx | typeof prisma, amountCents: number,
  * about problems, holds and overdue work there (the Admin role by default).
  */
 export async function overseerIds(db: Tx | typeof prisma, branchId: string): Promise<string[]> {
-  const rows = await db.user.findMany({ where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.PROBLEMS_RESOLVE_ANY } }, ...worksAtWhere(branchId) }, select: { id: true } });
+  const rows = await db.user.findMany({ where: andWhere(holdsWhere(PERMISSIONS.PROBLEMS_RESOLVE_ANY), worksAtWhere(branchId)), select: { id: true } });
   return rows.map((r) => r.id);
 }
 export async function notifyProblem(tx: Tx, a: { loanId: string; transactionId: string; loan: { pn: string; branchId: string }; transaction: { type: { name: string } } }, reason: string, what: "opened" | "resolved") {
@@ -333,7 +334,7 @@ export const forwardSchema = z.object({
 export type ForwardInput = z.input<typeof forwardSchema>;
 
 /** People who may receive a forwarded package at a branch: active, may accept returned papers, the branch in their access (or All branches). */
-export const receiverWhere = (branchId: string) => ({ active: true, role: { active: true, permissions: { has: PERMISSIONS.RETURNS_ACCEPT } }, ...worksAtWhere(branchId) }) satisfies Prisma.UserWhereInput;
+export const receiverWhere = (branchId: string): Prisma.UserWhereInput => andWhere(holdsWhere(PERMISSIONS.RETURNS_ACCEPT), worksAtWhere(branchId));
 
 /**
  * Forward to branch: manual, never automatic. The DP chose the branch, then the named LA of that

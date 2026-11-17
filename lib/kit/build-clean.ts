@@ -14,6 +14,7 @@ import { BOTH_TYPES_APPROVER, TYPE_ROLES } from "./funds-roles";
 import { TYPE_ID } from "@/lib/funds/access";
 import { importKitBranches, kitAccess } from "./build";
 import { kitRefusal } from "./guard";
+import { ticksFromRole } from "@/lib/auth/effective";
 import { shiftBusinessDays } from "./rebase";
 
 type Log = (line: string) => void;
@@ -59,13 +60,16 @@ export async function buildClean(log: Log = console.log): Promise<void> {
   const branchId = async (code: string) => (await prisma.branch.findUniqueOrThrow({ where: { code } })).id;
   const builtIn = async (key: string) => (await prisma.role.findUniqueOrThrow({ where: { key } })).id;
   const create = async (a: (typeof CLEAN_ACCOUNTS)[number], roleId: string) => {
-    const made = await prisma.user.create({ data: { email: a.email, name: a.name, roleId, isTestUser: true } });
+    const role = await prisma.role.findUniqueOrThrow({ where: { id: roleId } });
+    // The fund types its role works with (D-009), as the role migration sets them.
+    const made = await prisma.user.create({ data: { email: a.email, name: a.name, roleId, isTestUser: true, ...ticksFromRole(role.permissions) } });
     await prisma.$transaction(async (tx) => writeUserAccess(tx, made.id, await kitAccess(a, branchId)));
     if (a.inactive) await prisma.user.update({ where: { id: made.id }, data: { active: false, deactivatedAt: new Date() } });
   };
-  const adminAcc = CLEAN_ACCOUNTS.find((a) => a.key === "admin")!;
-  await create(adminAcc, await builtIn("ADMIN"));
-  const admin = toCurrentUser(await prisma.user.findUniqueOrThrow({ where: { email: adminAcc.email }, include: CURRENT_USER_INCLUDE }));
+  // The Superadmin first: it makes the kit's own sample roles through the Roles screen's own code (D-023).
+  const superAcc = CLEAN_ACCOUNTS.find((a) => a.key === "superadmin")!;
+  await create(superAcc, await builtIn("SUPERADMIN"));
+  const admin = toCurrentUser(await prisma.user.findUniqueOrThrow({ where: { email: superAcc.email }, include: CURRENT_USER_INCLUDE }));
   const roleIdOf = async (name: string) => (await prisma.role.findFirstOrThrow({ where: { name } })).id;
   const kitRole = async (name: string, description: string, permissions: string[]) => {
     await saveRole(admin, null, { name, branchAccess: "ASSIGNED", description, permissions });
@@ -82,7 +86,7 @@ export async function buildClean(log: Log = console.log): Promise<void> {
     ...Object.fromEntries(await Promise.all(Object.entries(TYPE_ROLES).map(async ([k, r]) => [k, await kitRole(r.name, r.description, r.permissions)]))),
   };
   for (const a of CLEAN_ACCOUNTS) {
-    if (a.key === "admin") continue;
+    if (a.key === "superadmin") continue;
     await create(a, ids[a.role] ?? (await builtIn(a.role)));
   }
   // Approval bands, the same amounts for both types: the lowest band to Approver Small, ₱5,000.00 and up to

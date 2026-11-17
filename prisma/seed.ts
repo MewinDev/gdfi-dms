@@ -247,16 +247,25 @@ async function seedBranches() {
 async function seedTestUsers() {
   await seedBranches();
   const { writeUserAccess, branchGrants } = await import("../lib/services/access");
-  const role = async (key: string) => (await prisma.role.findUniqueOrThrow({ where: { key } })).id;
+  const { ticksFromRole } = await import("../lib/auth/effective");
+  const roleOf = async (key: string) => prisma.role.findUniqueOrThrow({ where: { key } });
   const branch = async (code: string) => (await prisma.branch.findUniqueOrThrow({ where: { code } })).id;
   // "ALL": All branches. Codes: Antipolo 101, Angono 165, Alaminos 390 (the "other branch").
-  const users: { email: string; name: string; role: string; branches: string[] | "ALL"; isTestUser: boolean }[] = [
+  const users: { email: string; name: string; role: string; branches: string[] | "ALL"; isTestUser: boolean; ticks?: { handlesCa: boolean; handlesFt: boolean } }[] = [
+    { email: "test.superadmin@gdfi.ph", name: "Test Superadmin", role: "SUPERADMIN", branches: "ALL", isTestUser: true },
+    // A second Superadmin (D-028): one can always fix the other's access.
+    { email: "test.superadmin2@gdfi.ph", name: "Test Superadmin Two", role: "SUPERADMIN", branches: "ALL", isTestUser: true },
     { email: "test.admin@gdfi.ph", name: "Test Admin", role: "ADMIN", branches: "ALL", isTestUser: true },
+    // LA Supervisor/Head (D-002): approves myloans changes for Antipolo and Angono.
+    { email: "test.lahead@gdfi.ph", name: "Test LA Supervisor", role: "SUP", branches: ["101", "165"], isTestUser: true },
     { email: "test.la@gdfi.ph", name: "Test Loan Associate", role: "LA", branches: ["101", "165"], isTestUser: true },
     // Test mode only: sign in as a processor or as Finance to walk the funds flow.
     { email: "test.dp@gdfi.ph", name: "Test Document Processor", role: "DP", branches: ["101", "165"], isTestUser: true },
-    { email: "test.finance@gdfi.ph", name: "Test Finance", role: "FIN", branches: "ALL", isTestUser: true },
-    // Operations Monitor (read-only, all branches): the Monitoring page and LTO advisories.
+    // Finance (D-035): branch-scoped; a person handles only the fund types AND branches ticked for them.
+    { email: "test.finance@gdfi.ph", name: "Test Finance", role: "FIN", branches: "ALL", isTestUser: true, ticks: { handlesCa: true, handlesFt: true } },
+    { email: "test.finance.ca@gdfi.ph", name: "Test Finance Cash", role: "FIN", branches: ["101", "165"], isTestUser: true, ticks: { handlesCa: true, handlesFt: false } },
+    { email: "test.finance.ft@gdfi.ph", name: "Test Finance Transfer", role: "FIN", branches: ["390"], isTestUser: true, ticks: { handlesCa: false, handlesFt: true } },
+    // Monitoring (read-only, all branches): the Monitoring page and LTO advisories.
     { email: "test.monitor@gdfi.ph", name: "Test Operations Monitor", role: "MONITOR", branches: "ALL", isTestUser: true },
     // Document Processors: no sign-in yet, needed so the LA can assign transactions.
     { email: "dp.rico@gdfi.ph", name: "Rico Dela Cruz", role: "DP", branches: ["101"], isTestUser: false },
@@ -266,9 +275,10 @@ async function seedTestUsers() {
     { email: "dp.ben@gdfi.ph", name: "Ben Ocampo", role: "DP", branches: ["390"], isTestUser: false },
   ];
   for (const u of users) {
-    const roleId = await role(u.role);
+    const r = await roleOf(u.role);
     const existing = await prisma.user.findUnique({ where: { email: u.email } });
-    const user = existing ?? (await prisma.user.create({ data: { email: u.email, name: u.name, roleId, isTestUser: u.isTestUser } }));
+    // A new test user handles the fund types its role works with (D-009); an existing one keeps its ticks.
+    const user = existing ?? (await prisma.user.create({ data: { email: u.email, name: u.name, roleId: r.id, isTestUser: u.isTestUser, ...(u.ticks ?? ticksFromRole(r.permissions)) } }));
     // Existing users keep the access they have (changed in Users); a new one gets the default.
     if (existing && (existing.allBranches || (await prisma.userAccessGrant.count({ where: { userId: existing.id } })) > 0)) continue;
     const ids = u.branches === "ALL" ? [] : await Promise.all(u.branches.map(branch));

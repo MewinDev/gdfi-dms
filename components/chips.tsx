@@ -1,6 +1,5 @@
 import { ROLE_CHIPS } from "@/lib/auth/permissions";
 import { TAT_LABEL, type TatBadge as TatBadgeValue } from "@/lib/time";
-import { stageLabel } from "@/lib/workflow/stage-map";
 
 const ROLE_BG: Record<string, string> = {
   la: "bg-chip-la",
@@ -35,25 +34,6 @@ export function Chip({ tone = "neutral", children, title }: { tone?: Tone; child
   );
 }
 
-const STAGE_TONE: Record<string, Tone> = {
-  Opened: "neutral",
-  "For checklist": "warn",
-  "No DP assignment required": "warn",
-  "Assigned to DP": "info",
-  "In process": "info",
-  "Awaiting LA acceptance": "warn",
-  "For Vault Transmittal": "warn",
-  "In transit to Vault": "info",
-  "In Safekeeping": "ok",
-  Closed: "ok",
-  Archived: "neutral",
-  Disposed: "neutral",
-};
-
-export function StageChip({ stage }: { stage: string }) {
-  return <Chip tone={STAGE_TONE[stage] ?? "neutral"}>{stageLabel(stage)}</Chip>;
-}
-
 export function TatBadge({ badge, title }: { badge: TatBadgeValue | null | undefined; title?: string }) {
   if (!badge) return <span className="text-xs text-ink-2">-</span>;
   const tone: Tone = badge === "OVERDUE" ? "err" : badge === "DUE_TODAY" ? "warn" : "ok";
@@ -62,24 +42,4 @@ export function TatBadge({ badge, title }: { badge: TatBadgeValue | null | undef
       {TAT_LABEL[badge]}
     </Chip>
   );
-}
-
-const TXN_STATUS: Record<string, { label: string; tone: Tone }> = {
-  FOR_CHECKLIST: { label: "For checklist", tone: "warn" },
-  READY: { label: "Ready", tone: "info" },
-  ASSIGNED: { label: "Assigned to DP", tone: "info" },
-  RETURNED: { label: "Returned to LA", tone: "err" },
-  IN_PROCESS: { label: "In process", tone: "info" },
-  FORWARDED: { label: "Forwarded to branch", tone: "warn" },
-  COMPLETED: { label: "Completed", tone: "ok" },
-  CANCELLED: { label: "Cancelled", tone: "neutral" },
-};
-
-export function TxnStatusChip({ status }: { status: string }) {
-  const s = TXN_STATUS[status] ?? { label: status, tone: "neutral" as Tone };
-  return <Chip tone={s.tone}>{s.label}</Chip>;
-}
-
-export function SimulatedTag() {
-  return <Chip tone="warn">Simulated</Chip>;
 }

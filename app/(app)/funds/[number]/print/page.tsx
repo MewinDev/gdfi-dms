@@ -44,11 +44,11 @@ export default async function LiquidationPrintPage({ params }: { params: Promise
     include: {
       requestedBy: { select: { name: true } },
       branch: { select: { name: true } },
-      lines: { include: { transaction: { include: { loan: { select: { pn: true, borrowerName: true } }, type: { select: { name: true } } } }, receipts: { orderBy: { date: "asc" } } } },
+      lines: { include: { transaction: { include: { loan: { select: { pn: true, borrowerName: true, branchId: true } }, type: { select: { name: true } } } }, receipts: { orderBy: { date: "asc" } } } },
       returns: { orderBy: { date: "asc" } },
     },
   });
-  const access = liquidationReportAccess(user, a);
+  const access = liquidationReportAccess(user, a && { ...a, lineBranchIds: a.lines.map((l) => l.transaction?.loan.branchId) });
   if (!a || access === "not-found") notFound();
   // The tick for this request's own type ("Print liquidation report for fund transfers").
   if (access === "refused") return <PrintRefused label={permissionLabel(stepKeys("print", a)[0])} />;
@@ -190,7 +190,7 @@ function PrintRefused({ label }: { label: string }) {
       <h1 className="page-title">Liquidation report</h1>
       <div role="alert" className="mt-3 rounded-xl border border-line bg-white px-4 py-3 text-[15px] text-ink">
         <p className="font-semibold text-navy">You can&rsquo;t open this report.</p>
-        <p className="mt-1 text-ink-2">Ask an Admin to turn on &lsquo;{label}&rsquo; for your role.</p>
+        <p className="mt-1 text-ink-2">Ask a Superadmin to turn on &lsquo;{label}&rsquo; for your role.</p>
       </div>
       <Link href="/funds" className="btn-ghost mt-4">Back to Funds</Link>
     </div>

@@ -33,7 +33,7 @@ export function mockRecords(now: Date = new Date()): MyLoansRecord[] {
     base(2, { borrowerName: "Jose Reyes", productName: "Auto Financing", totalReleasedAmount: 300_000, releaseDate: d(1) }),
     base(3, { borrowerName: "Ana Villanueva", branchName: "Angono", branchCode: "165", loanType: "Renewal", totalReleasedAmount: 1_000_000, releaseDate: d(2) }),
     base(4, { borrowerName: "Ramon Garcia", branchName: "Angono", branchCode: "165", loanType: "Renewal", totalReleasedAmount: 1_250_000, releaseDate: d(3) }),
-    base(5, { borrowerName: "Liza Mendoza", productName: "Auto Finance", totalReleasedAmount: 600_000, releaseDate: d(0) }),
+    base(5, { borrowerName: "Liza Mendoza", productName: "Car Loan", totalReleasedAmount: 600_000, releaseDate: d(0) }),
     base(6, { borrowerName: "Pedro Bautista", loanType: "Renewal", productName: "", totalReleasedAmount: 800_000, releaseDate: d(1) }),
     base(7, { borrowerName: "Carmen Aquino", branchName: "Alaminos", branchCode: "390", totalReleasedAmount: 400_000 }),
     base(8, { borrowerName: "Roberto Cruz", branchName: "Angono", branchCode: "165", ...statusFromId(8, "Check Prepared"), totalReleasedAmount: 400_000 }),

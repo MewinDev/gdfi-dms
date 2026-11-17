@@ -22,10 +22,6 @@ export const REMARKS_MAX = 500;
 export const REMARKS_WARN = 450;
 export const REMARKS_HELP = `At least ${REMARKS_MIN} characters, up to ${REMARKS_MAX}.`;
 export const REMARKS_LIMIT_MESSAGE = `Write ${REMARKS_MIN} to ${REMARKS_MAX} characters.`;
-/** Kept names (older imports). */
-export const HOLD_REMARKS_MIN = REMARKS_MIN;
-export const HOLD_REMARKS_MAX = REMARKS_MAX;
-export const RESUME_REMARKS_MIN = REMARKS_MIN;
 
 /** Any remarks box with the shared limits ("Write 5 to 500 characters." for too short and too long). */
 export const remarksSchema = z.string({ message: REMARKS_LIMIT_MESSAGE }).trim()
@@ -76,8 +72,6 @@ export function mayResumeHold(h: { ownerId: string | null; resumedAt?: Date | nu
 
 export const NO_DETAILS = "No details were written.";
 export const TO_CONTINUE = "To continue: press Resume and write what changed";
-/** The same line for someone who cannot resume it. */
-export const TO_CONTINUE_OTHERS = "To continue: the person doing the work presses Resume and writes what changed";
 export const CLOCK_NOTE = "The TAT clock keeps running";
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;

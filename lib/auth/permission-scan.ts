@@ -7,7 +7,7 @@ import path from "node:path";
  * or is on this short allow-list with the reason and the check it uses instead. Buttons only hide for
  * convenience; the server is the real check. docs/workflow/12-permissions.md prints this list.
  */
-export const CHECK_CALLS = ["requirePermission(", "requireAnyPermission(", "requirePagePermission(", "requirePageAny(", "can(", "canFunds(", "canFundsAny("];
+export const CHECK_CALLS = ["requirePermission(", "requireAnyPermission(", "requirePagePermission(", "requirePageAny(", "can(", "canFunds(", "canFundsAny(", "mayOpenReceipt(", "mayOpenStageFile("];
 
 export interface AllowEntry {
   file: string;
@@ -21,7 +21,7 @@ export const ALLOW_LIST: AllowEntry[] = [
   { file: "app/api/health/route.ts", name: "GET", why: "Health check for the host: ok, environment, database up or down. No data.", mustContain: "health(" },
   { file: "app/api/cron/myloans-sync/route.ts", name: "POST", why: "Scheduled MyLoans sync: its own secret (CRON_SECRET header), not a person.", mustContain: "cronAllowed(" },
   { file: "app/api/cron/email-reminders/route.ts", name: "POST", why: "Scheduled email reminders: its own secret (CRON_SECRET header), not a person.", mustContain: "cronAllowed(" },
-  { file: "app/login/actions.ts", name: "testSignIn", why: "Test sign-in: before anyone is signed in (the test provider refuses outside test mode).", mustContain: "testProvider.resolveUser(" },
+  { file: "app/login/actions.ts", name: "testSignIn", why: "Test sign-in: before anyone is signed in (the test provider refuses unless test sign-in is allowed: AUTH_MODE=test and APP_ENV=local, lib/auth/mode.ts).", mustContain: "testProvider.resolveUser(" },
   { file: "app/login/actions.ts", name: "signOut", why: "Sign out: anyone may end their own session.", mustContain: "cookies()).delete(SESSION_COOKIE)" },
   { file: "app/actions/loan.ts", name: "markNotificationsReadAction", why: "Marks the signed-in person's own notifications as read.", mustContain: "getCurrentUser(" },
   { file: "app/actions/email.ts", name: "myEmailPreferenceAction", why: "The signed-in person's own email choice (non-urgent emails on or off).", mustContain: "getCurrentUser(" },

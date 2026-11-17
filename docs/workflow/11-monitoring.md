@@ -2,7 +2,7 @@
 
 How the Monitoring page counts processors (DPs) and LTO offices, and how LTO advisories work.
 
-Last updated: 11 November 2026 (PHT)
+Last updated: 13 November 2026 (PHT)
 
 The page is **Monitoring** in the sidebar, for people with `monitor:dp` (tab **DPs**) or `monitor:lto` (tab **LTO offices**). A monitor sees counts, times and PN lists only: a PN opens the loan file only for someone who may see loan files in that branch, and amounts show only with `journey:view_amounts`. The person's branch access applies; the Operations Monitor role sees all branches.
 
@@ -12,7 +12,7 @@ The page is calm on purpose: the numbers are the same as before, only the layout
 
 - **The top.** The title says the dates in words ("Monitoring: 11 Oct to 9 Nov 2026"); the grey line under it says Philippine time, business days and that times include time on hold. Two pairs of tabs (DPs or LTO offices; Totals or By day) use the same navy pill.
 - **The date range.** One button with the range in words opens the presets (Today, Yesterday, This week, Last 7 days, Last 30 days, This month, Last month, Custom) and a two-month calendar (one month on a phone). Two clicked days make a Custom range; the picker says how many days and business days. Future days cannot be picked. Over 92 days, By day shows one row per week, and the picker says so. Apply keeps the range in the address (`range`, or `range=custom&from=…&to=…`), so the title and By day follow it and a shared link shows the same days. Esc or Cancel closes it.
-- **Has missing papers.** The button beside the tabs shows how many loan files have a paper marked Missing (as of now, in the person's branches and the Area, Branch and Transaction filters; the dates do not apply). Pressed (`missing=1` in the address), the page lists those loan files, each paper with its transaction, reason and how many days it has been missing (calendar days, Philippine time), longest first. A PN opens the loan file for someone who may see it. There are no alerts and no emails for missing papers.
+- **Has missing papers.** The button beside the tabs shows how many loan files have a paper marked Missing (as of now, in the person's branches and the Area, Branch and Transaction filters; the dates do not apply). Pressed (`missing=1` in the address), the page lists those loan files, each paper with its transaction, reason and how many days it has been missing (calendar days, Philippine time), longest first. A PN opens the loan file for someone who may see it. The list shows at most 100 loan files; past that, a line says "Showing the first 100 of N" and to narrow the Area, Branch or Transaction filter. There are no alerts and no emails for missing papers.
 - **Filters.** Area, Branch and Transaction sit in one row with the gold Apply; **Reset** appears only when something is not at its default. On a phone they fold into a **Filters** button (with a count) that opens a bottom sheet; the date button stays next to it.
 - **Tiles.** Big navy number, small label, one grey line; "As of now" marks today's counts. **Overdue** turns soft red and **On hold** soft amber only above 0. On a phone Overdue and Average availability come first.
 - **The tables.** Each Area is a light navy band with its processor count and a chevron to fold it; branches are plain grey lines under it. Zero is a light grey 0; Overdue above 0 is red, On hold above 0 amber. An average shows "-" alone when no job finished. Availability is a small usage bar (jobs in use out of capacity; green Available, amber Busy, red Full, grey On leave) with "60%" and "2 of 5 in use". A branch subtotal shows only when the branch has more than one processor; the Area subtotal always shows. Click a name to open the processor's (or office's) jobs.
@@ -71,7 +71,7 @@ A job passed to a second processor (Pasuyo) counts for the second processor once
 
 **Example.** DP 2 finished two jobs in the last 30 days. Job A was sent on Monday, accepted on Tuesday and finished the next Monday: time to accept 1 day, processing 4 days, total 5 days. Job B was sent, accepted and finished within two days: 0, 1 and 1. The row shows "Avg time to accept 0.5 days · 2 jobs", "Avg processing 2.5 days · 2 jobs", "Avg total 3 days · 2 jobs". DP 2 has 8 open jobs and the default capacity: "20% · 8 of 10 in use", Busy.
 
-**Drill-down:** a processor's open jobs (PN, transaction, status, age in business days since sent, due date) and the declined and returned of the period.
+**Drill-down:** a processor's open jobs (PN, transaction, status, age in business days since sent, due date) and the declined and returned of the period. Each list shows at most 100 rows; the heading keeps the whole count, with "Showing the first 100 of N. Narrow the dates or the filters to see the rest."
 
 **CSV:** switched off for now (11 November 2026): there is no Download CSV on this page.
 
@@ -89,7 +89,7 @@ A job passed to a second processor (Pasuyo) counts for the second processor once
 | **Actual spent** | Only with `journey:view_amounts`: the spends logged on Transport lines of funds records for that office, on attempt days in the dates chosen. |
 | **Busiest office** | The most transactions in the dates chosen. |
 
-**Grouping:** by the office's area (its city in Settings, LTO offices), with subtotals. (LTO offices are not branches: they keep their own city grouping.) **Drill-down:** the office's jobs at the LTO now and picked up in the period (PN, transaction, processor, drop off, pickup, days). **By day:** drop offs, pickups and advisories filed each day.
+**Grouping:** by the office's area (its city in Settings, LTO offices), with subtotals. (LTO offices are not branches: they keep their own city grouping.) **Drill-down:** the office's jobs at the LTO now and picked up in the period (PN, transaction, processor, drop off, pickup, days), at most 100 rows each, as above. **By day:** drop offs, pickups and advisories filed each day.
 
 ## LTO advisories
 

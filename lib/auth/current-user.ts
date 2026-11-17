@@ -59,14 +59,8 @@ export async function requirePermission(p: Permission): Promise<CurrentUser> {
   return user;
 }
 
-/** Prisma where-clause for loans the user may see. */
-export function loanScope(user: CurrentUser) {
-  return user.scopeBranchIds === null ? {} : { branchId: { in: user.scopeBranchIds } };
-}
-
-export function inScope(user: CurrentUser, branchId: string): boolean {
-  return user.scopeBranchIds === null || user.scopeBranchIds.includes(branchId);
-}
+// Branch scope lives in one module (lib/auth/scope.ts); re-exported here for the existing imports.
+export { advanceScope, allInScope, branchRowScope, hasAllBranches, inScope, loanRelationScope, loanScope, scopeIds } from "./scope";
 
 /** For pages reachable with any one of several permissions (e.g. Settings): 404 when none. */
 export async function requirePageAny(ps: Permission[]): Promise<CurrentUser> {

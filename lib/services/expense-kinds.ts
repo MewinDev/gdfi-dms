@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma, type Tx } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
@@ -74,15 +75,15 @@ export async function checkKind(db: Db, id: string | null, raw: { name?: unknown
 }
 
 /** Open requests (not yet released) that use the kind: they keep their amounts when the kind's amount changes. */
-export async function openRequestsUsing(code: string, db: Db = prisma) {
-  return db.cashAdvance.count({ where: { status: { in: ["REQUESTED", "APPROVED"] }, lines: { some: { kind: code } } } });
+export async function openRequestsUsing(code: string, db: Db = prisma, scope: Prisma.CashAdvanceWhereInput = {}) {
+  return db.cashAdvance.count({ where: { AND: [scope, { status: { in: ["REQUESTED", "APPROVED"] }, lines: { some: { kind: code } } }] } });
 }
 
-/** Rules and request lines that use each kind ("Used in"). */
-export async function kindUsage(db: Db = prisma): Promise<Map<string, { rules: number; lines: number }>> {
+/** Rules and request lines that use each kind ("Used in"); the lines only of requests in the person's branches (`scope`, D-019). */
+export async function kindUsage(db: Db = prisma, scope: Prisma.CashAdvanceWhereInput = {}): Promise<Map<string, { rules: number; lines: number }>> {
   const [rules, lines] = await Promise.all([
     db.cashAdvanceRule.groupBy({ by: ["kind"], _count: { _all: true } }),
-    db.cashAdvanceLine.groupBy({ by: ["kind"], _count: { _all: true } }),
+    db.cashAdvanceLine.groupBy({ by: ["kind"], where: { advance: scope }, _count: { _all: true } }),
   ]);
   const out = new Map<string, { rules: number; lines: number }>();
   for (const r of rules) out.set(r.kind, { rules: r._count._all, lines: 0 });
@@ -185,14 +186,6 @@ export async function addSuggestionAsKind(u: CurrentUser, raw: { name?: unknown;
     }
     return { kind, relabelled };
   });
-}
-
-/** Kind of a line must exist and be active for new work; an inactive one is allowed only if it is already on the record. */
-export async function requireUsableKind(db: Db, code: string, current?: string | null) {
-  const k = await db.expenseKind.findUnique({ where: { code } });
-  if (!k) throw new UserError("Pick an expense kind from the list.", "kind");
-  if (!k.active && k.code !== current) throw new UserError(`${k.name} is inactive. Pick an active expense kind.`, "kind");
-  return k;
 }
 
 /** The LA's funds flag: known kinds only; a kind made inactive stays only if it was already flagged. */

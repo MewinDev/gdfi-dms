@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { evaluateLoanRules, RuleInputError, ruleWording, TRANSACTION_ORDER, type FinancingType, type LoanTypeValue, type OrcrStatus, type RuleOutcome, type TransactionCode } from "@/lib/rules";
+import { evaluateLoanRules, RuleInputError, type ClassificationRules, ruleWording, TRANSACTION_ORDER, type FinancingType, type LoanTypeValue, type OrcrStatus, type RuleOutcome, type TransactionCode } from "@/lib/rules";
 import { parseAmount } from "./data-check";
 import type { MyLoansRecord } from "./types";
 
@@ -175,6 +175,8 @@ export function proposeEffect(input: {
   txns: TxnNow[];
   next: Tracked;
   picks?: { financingType?: FinancingType | null; orcrStatus?: OrcrStatus | null };
+  /** The keyword lists and default (D-031); the starting values when missing. */
+  rules?: ClassificationRules;
 }): Proposed {
   const { loan, txns, next } = input;
   const base: Proposed = { ruleNow: loan.ruleFired, ruleNext: null, classificationNext: null, mortgageNext: null, added: [], removed: [], affected: [], sentences: [], needsPicks: false };
@@ -206,7 +208,7 @@ export function proposeEffect(input: {
   const financingType = input.picks?.financingType ?? loan.financingType;
   const orcrStatus = input.picks?.orcrStatus ?? loan.orcrStatus;
   try {
-    outcome = evaluateLoanRules({ productName: next.productName, loanType: next.loanType as LoanTypeValue, totalReleasedAmount: amount, financingType, orcrStatus });
+    outcome = evaluateLoanRules({ productName: next.productName, loanType: next.loanType as LoanTypeValue, totalReleasedAmount: amount, financingType, orcrStatus, classificationRules: input.rules });
   } catch (e) {
     if (!(e instanceof RuleInputError)) throw e;
     base.needsPicks = true;

@@ -247,8 +247,3 @@ export async function buildBaseline(log: Log = () => {}, opts: { variant?: KitVa
   log(`Loaded: ${variantLabel(variant)}`);
   return m;
 }
-
-/** The scenarios baseline (the old name); the clean one is baselineName("clean"). */
-export const BASELINE_NAME = BASELINE;
-/** Exposed for the integration test (a quoted SQL literal). */
-export const sqlLiteral = lit;

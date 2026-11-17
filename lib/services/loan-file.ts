@@ -2,7 +2,7 @@ import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
-import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
+import { can, hasAllBranches, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloans";
 import { getPnFormat, parsePn, pnHeadline } from "@/lib/pn";
@@ -24,7 +24,7 @@ import {
 } from "@/lib/rules";
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { recomputeStage } from "./stage";
-import { getSetting, setSetting } from "@/lib/settings";
+import { getClassificationRules, getSetting, setSetting } from "@/lib/settings";
 import { linkOnOpen, refreshLoan, sameBorrowerLoans, suggestOnOpen } from "./source-sync";
 import { hashTracked, trackedOf } from "@/lib/myloans/changes";
 import { UserError } from "./errors";
@@ -56,6 +56,8 @@ export type PnLookupResult =
       productName: string | null;
       classification: "FINANCING" | "REFINANCING";
       classificationRule: string;
+      /** No keyword matched: the default decided it (D-031: a small label, never a block). */
+      classifiedByDefault: boolean;
       /** Outcome for Refinancing (no LA picks needed). Null for Financing until the LA picks. */
       outcome: RuleOutcome | null;
       canOpen: boolean;
@@ -80,7 +82,7 @@ async function inactiveRefusal(record: MyLoansRecord): Promise<{ field: DataChec
 }
 
 function allowedBranches(user: CurrentUser): { code: string | null; name: string }[] | null {
-  return user.scopeBranchIds === null ? null : user.branchNames.map((name, i) => ({ name, code: user.branchCodes[i] ?? null }));
+  return hasAllBranches(user) ? null : user.branchNames.map((name, i) => ({ name, code: user.branchCodes[i] ?? null }));
 }
 
 /**
@@ -163,10 +165,12 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   }
   const off = await inactiveRefusal(lookup.record);
   if (off) return { kind: "refused", pn, ...off, record: lookup.record };
-  const cls = classifyProductName(check.normalized.productName);
+  // The keyword lists and default saved in Settings, Product classification (D-031).
+  const classificationRules = await getClassificationRules();
+  const cls = classifyProductName(check.normalized.productName, classificationRules);
   const outcome =
     cls.classification === "REFINANCING"
-      ? evaluateLoanRules({ productName: check.normalized.productName, loanType: check.normalized.loanType, totalReleasedAmount: check.normalized.totalReleasedAmount })
+      ? evaluateLoanRules({ productName: check.normalized.productName, loanType: check.normalized.loanType, totalReleasedAmount: check.normalized.totalReleasedAmount, classificationRules })
       : null;
   return {
     kind: "preview",
@@ -177,6 +181,7 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
     productName: check.normalized.productName,
     classification: cls.classification,
     classificationRule: cls.rule,
+    classifiedByDefault: cls.byDefault,
     outcome,
     canOpen: can(user, PERMISSIONS.LOANS_OPEN),
     ...(await otherLoansOf(user, lookup.record)),
@@ -260,6 +265,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
   if (!inScope(user, branch.id)) throw new UserError("Outside your branch access.", "branch");
 
   let outcome: RuleOutcome;
+  const classificationRules = await getClassificationRules();
   try {
     outcome = evaluateLoanRules({
       productName: check.normalized.productName,
@@ -267,6 +273,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       totalReleasedAmount: check.normalized.totalReleasedAmount,
       financingType: input.financingType ?? null,
       orcrStatus: input.orcrStatus ?? null,
+      classificationRules,
     });
   } catch (e) {
     if (e instanceof RuleInputError) throw new UserError(e.message, e.field);
@@ -298,6 +305,8 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
           retrievedAt: lookup.retrievedAt,
           openedById: user.id,
           classification: outcome.classification,
+          // Saved when the LA opens (accepts) it (D-031); a later keyword change only flags it.
+          classifiedByDefault: classifyProductName(check.normalized.productName, classificationRules).byDefault,
           financingType: outcome.financingType,
           orcrStatus: outcome.orcrStatus,
           mortgageResult: outcome.mortgage,
@@ -422,7 +431,7 @@ export async function createTransactionOfType(
 
 // ---------------------------------------------------------------------------
 // Refresh from MyLoans (the button, loans:refresh): a refresh now, with the result in plain words.
-export const NO_REFRESH = "Ask an Admin to turn on \"Refresh a loan from MyLoans\" for your role.";
+export const NO_REFRESH = "Ask a Superadmin to turn on \"Refresh a loan from MyLoans\" for your role.";
 // ---------------------------------------------------------------------------
 
 export async function refreshFromMyLoans(user: CurrentUser, loanId: string): Promise<{ ok: true; changed: boolean; minor: boolean } | { ok: false; message: string }> {

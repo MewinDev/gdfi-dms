@@ -12,6 +12,9 @@ const ALL: RuleFiring[] = [
   { key: "PRODUCT_CLASSIFICATION", reason: "REFINANCING_WORD" },
   { key: "PRODUCT_CLASSIFICATION", reason: "NEITHER_WORD" },
   { key: "PRODUCT_CLASSIFICATION", reason: "BLANK" },
+  { key: "PRODUCT_CLASSIFICATION", reason: "REFINANCING_KEYWORD", keyword: "refi" },
+  { key: "PRODUCT_CLASSIFICATION", reason: "FINANCING_KEYWORD", keyword: "financ" },
+  { key: "PRODUCT_CLASSIFICATION", reason: "DEFAULT", result: "REFINANCING" },
   { key: "UNDERTAKING_CHOICE", financingType: "UNDERTAKING" },
   { key: "UNDERTAKING_CHOICE", financingType: "NON_UNDERTAKING" },
   { key: "ORCR_CHECK", orcr: "TRANSFERRED" },
@@ -26,7 +29,7 @@ const ALL: RuleFiring[] = [
 describe("rule names: the naming convention", () => {
   it("every key has a title, the old number, and a sentence for every outcome", () => {
     expect(RULE_KEYS.sort()).toEqual(["MORTGAGE_THRESHOLD", "ORCR_CHECK", "PRODUCT_CLASSIFICATION", "UNDERTAKING_CHOICE"]);
-    for (const k of RULE_KEYS) expect(RULE_NAMES[k].title).toMatch(/^[A-Z][a-z/]+( [A-Za-z/]+){1,3}$/);
+    for (const k of RULE_KEYS) expect(RULE_NAMES[k].title).toMatch(/^[A-Z][A-Za-z/]+( [A-Za-z/]+){1,3}$/); // sentence case; an acronym (OR/CR) stays in capitals
     for (const k of RULE_KEYS) expect(ALL.some((f) => f.key === k)).toBe(true);
     for (const f of ALL) {
       const w = ruleText(f, T);
@@ -35,6 +38,13 @@ describe("rule names: the naming convention", () => {
         // A classification, not a decision: one complete sentence, no title on screen.
         expect(w.sentence).toMatch(/^This is a (Financing|Refinancing) loan: the product name .+\.$/);
         expect(w.line).toEqual({ title: null, text: w.sentence });
+        continue;
+      }
+      if (f.key === "ORCR_CHECK") {
+        // One name for every outcome; the reason says what follows for the Mortgage.
+        expect(w.title).toBe("OR/CR transfer check");
+        expect(w.sentence).toMatch(/^OR\/CR transfer check: .+, so the amount is (not )?checked for a Mortgage\.$/);
+        expect(w.line).toEqual({ title: w.title, text: w.reason });
         continue;
       }
       // "<Thing> needed / not needed / required", 2 to 4 words, sentence case, no arrows or numbers.
@@ -47,6 +57,27 @@ describe("rule names: the naming convention", () => {
       // On screen: the title, then only the reason (the title is never said twice).
       expect(w.line).toEqual({ title: w.title, text: w.reason });
     }
+  });
+
+  it("no two rules share a friendly name (the rule title, or a title one of its outcomes shows)", () => {
+    // What a name is about: the title without "needed / not needed / required", and its first word.
+    // "Mortgage check needed" and "Mortgage needed" were two rules both about "Mortgage": that fails here.
+    const about = (title: string) => title.toLowerCase().replace(/ (not needed|needed|required)$/, "");
+    const names = new Map<string, Set<string>>();
+    const add = (k: string, title: string) => {
+      for (const n of new Set([about(title), about(title).split(" ")[0]])) names.set(n, (names.get(n) ?? new Set()).add(k));
+    };
+    for (const k of RULE_KEYS) if (k !== "PRODUCT_CLASSIFICATION") add(k, RULE_NAMES[k].title);
+    for (const f of ALL) if (ruleText(f, T).line.title) add(f.key, ruleText(f, T).line.title!);
+    for (const [n, keys] of names) expect([...keys], `"${n}" is used by ${[...keys].join(" and ")}`).toHaveLength(1);
+    const titles = RULE_KEYS.map((k) => RULE_NAMES[k].title.toLowerCase());
+    expect(new Set(titles).size).toBe(titles.length);
+  });
+
+  it("rule 3 is the OR/CR transfer check, word for word", () => {
+    expect(RULE_NAMES.ORCR_CHECK.title).toBe("OR/CR transfer check");
+    expect(ruleText({ key: "ORCR_CHECK", orcr: "UNTRANSFERRED" }, T).line).toEqual({ title: "OR/CR transfer check", text: "The OR/CR is untransferred, so the amount is not checked for a Mortgage." });
+    expect(ruleText({ key: "ORCR_CHECK", orcr: "TRANSFERRED" }, T).sentence).toBe("OR/CR transfer check: the OR/CR is transferred, so the amount is checked for a Mortgage.");
   });
 
   it("the rule 4 example, word for word", () => {
@@ -68,8 +99,8 @@ describe("rule names: the naming convention", () => {
     const r = evaluateLoanRules({ productName: "Auto Refinancing", loanType: "New", totalReleasedAmount: 450_000 });
     expect(r.summary).toBe("MORTGAGE_THRESHOLD:New:MET");
     expect(r.fired.map((f) => ruleText(f, T).line)).toEqual([
-      { title: null, text: "This is a Refinancing loan: the product name has the word Refinancing." },
-      { title: "Mortgage check needed", text: "A Refinancing loan skips the OR/CR question." },
+      { title: null, text: 'This is a Refinancing loan: the product name contains "refinanc".' },
+      { title: "OR/CR transfer check", text: "A Refinancing loan skips the OR/CR question, so the amount is checked for a Mortgage." },
       { title: "Mortgage needed", text: "This is a New loan of ₱500,000 or below." },
     ]);
   });
@@ -104,7 +135,7 @@ describe("rule names: old stored text maps to the key at display time", () => {
     expect(plainRuleText(old, T)).toBe("MyLoans changed Amount. Admin X applied it: Mortgage is not needed: this is a New loan above ₱500,000. Mortgage would be removed. Note: ok");
     expect(plainRuleText("Rule 4 now applies (at or below ₱1,000,000 for Renewal).", T)).toBe("Mortgage is needed: this is a Renewal loan of ₱1,000,000 or below.");
     expect(plainRuleValue({ rulesFired: ["Rule 3: Refinancing -> ORCR skipped, run Rule 4", "MORTGAGE_THRESHOLD:New:ABOVE"], n: 1 }, T)).toEqual({
-      rulesFired: ["Mortgage check is needed: a Refinancing loan skips the OR/CR question.", "Mortgage is not needed: this is a New loan above ₱500,000."],
+      rulesFired: ["OR/CR transfer check: a Refinancing loan skips the OR/CR question, so the amount is checked for a Mortgage.", "Mortgage is not needed: this is a New loan above ₱500,000."],
       n: 1,
     });
     expect(plainRuleText("Nothing about rules here.", T)).toBe("Nothing about rules here.");

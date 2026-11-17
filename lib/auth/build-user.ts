@@ -1,5 +1,5 @@
-import type { Branch, Role, User, UserBranch } from "@prisma/client";
-import { effectivePermissions } from "./access";
+import type { Branch, Role, User, UserBranch, UserPermissionOverride } from "@prisma/client";
+import { userPermissions } from "./effective";
 
 /**
  * The signed-in person as the app uses it. Roles say WHAT a person can do; branch access says WHERE
@@ -12,7 +12,11 @@ export interface CurrentUser {
   roleId: string;
   roleKey: string;
   roleName: string;
+  /** Effective permissions: the role's ticks + per-user grants - denies, then Handles CA / FT (lib/auth/effective.ts). */
   permissions: Set<string>;
+  /** Finance fund types this person handles (D-009). */
+  handlesCa: boolean;
+  handlesFt: boolean;
   /** The branches in the person's access (user_branch_access). Empty with All branches. */
   branchIds: string[];
   branchNames: string[];
@@ -24,10 +28,10 @@ export interface CurrentUser {
   homeBranchId: string | null;
 }
 
-export type UserWithAccess = User & { role: Role; branches: (UserBranch & { branch: Pick<Branch, "name" | "code"> })[] };
+export type UserWithAccess = User & { role: Role; branches: (UserBranch & { branch: Pick<Branch, "name" | "code"> })[]; permissionOverrides: Pick<UserPermissionOverride, "key" | "effect">[] };
 
 /** The Prisma include that toCurrentUser needs. */
-export const CURRENT_USER_INCLUDE = { role: true, branches: { include: { branch: { select: { name: true, code: true } } } } } as const;
+export const CURRENT_USER_INCLUDE = { role: true, branches: { include: { branch: { select: { name: true, code: true } } } }, permissionOverrides: { select: { key: true, effect: true } } } as const;
 
 /** Same rule for the app (every request), the Manual Test Kit and the tests. */
 export function toCurrentUser(u: UserWithAccess): CurrentUser {
@@ -41,7 +45,9 @@ export function toCurrentUser(u: UserWithAccess): CurrentUser {
     roleId: u.roleId,
     roleKey: u.role.key,
     roleName: u.role.name,
-    permissions: effectivePermissions(u.role) as Set<string>,
+    permissions: userPermissions(u.role.permissions, u.permissionOverrides, { handlesCa: u.handlesCa, handlesFt: u.handlesFt }) as Set<string>,
+    handlesCa: u.handlesCa,
+    handlesFt: u.handlesFt,
     branchIds,
     branchNames: all ? [] : rows.map((b) => b.branch.name),
     branchCodes: all ? [] : rows.map((b) => b.branch.code),

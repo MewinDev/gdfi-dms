@@ -19,9 +19,11 @@
 ## Two databases and the Manual Test Kit
 
 - `gdfi_dms` is the person's own data and manual testing; `gdfi_dms_test` is for the automated tests (`npm run db:create-test`). Vitest, the integration helpers and Playwright always use `gdfi_dms_test` (`lib/env/test-db.ts`) and refuse any database without `test` in its name; `ALLOW_DESTRUCTIVE` does not change that. Never point a test run at `gdfi_dms`.
+- Run vitest and e2e one after the other, never together (they share gdfi_dms_test).
 - The Manual Test Kit (`npm run kit:*`, Settings > Test kit, `docs/MANUAL-TEST-KIT.md`) works only on `gdfi_dms` with `APP_ENV=local`, `TEST_MODE=true` and the sample MyLoans (`lib/kit/guard.ts`). The default is the clean kit (`lib/kit/clean.ts`, `lib/kit/build-clean.ts`, `docs/MANUAL-TEST-KIT.md` and `docs/MANUAL-TEST-KIT-ANSWERS.md`); `--with-scenarios` loads the old scenario data (`lib/kit/catalog.ts`, `lib/kit/build.ts`, `docs/MANUAL-TEST-KIT-SCENARIOS.md`). When an account or PN changes, update the matching catalog, builder and sheets together; `tests/integration/kit.test.ts` checks that they agree.
 
 ## Destructive commands
 
 - `npm run db:reset` refuses unless the database name contains `test` or `ALLOW_DESTRUCTIVE=1` is set, and never runs when `APP_ENV` is `staging` or `production` (`lib/env/destructive.ts`). Set `ALLOW_DESTRUCTIVE=1` only for that one command, on purpose.
+- `npm run db:reset-seed` replaces everything in `gdfi_dms` with fake development data (`scripts/db-reset-seed.ts`): only with `APP_ENV=local`, the database `gdfi_dms` on localhost (never `gdfi_dms_test`), `TEST_MODE=true`, the sample MyLoans and `ALLOW_DESTRUCTIVE=1` (`lib/env/reset-seed-guard.ts`); it asks for RESET and backs up to `backups/` first. Run it only when the person asked.
 - `kit:reset`, `kit:restore` and `kit:rebuild` replace everything in `gdfi_dms`: they ask for RESET (or `--confirm=RESET`) and take an automatic backup first. Run them only when the person asked.

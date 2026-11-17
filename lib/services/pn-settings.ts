@@ -9,7 +9,7 @@ import { UserError } from "./errors";
 
 /** Settings, System, PN format (settings:system). Audited with the pattern before and after. */
 export async function savePnFormat(user: CurrentUser, raw: { enabled: boolean; prefix: string; branchDigits: string; yearDigits: string; system: string; runningDigits: string }) {
-  if (!can(user, PERMISSIONS.SETTINGS_PN_FORMAT)) throw new UserError("Ask an Admin to turn on \"Change the PN format\" for your role.");
+  if (!can(user, PERMISSIONS.SETTINGS_PN_FORMAT)) throw new UserError("Ask a Superadmin to turn on \"Change the PN format\" for your role.");
   const num = (v: string, label: string) => {
     const n = Number(v);
     if (!/^\d+$/.test(v.trim()) || !Number.isInteger(n)) throw new UserError(`${label}: type a whole number.`, label.toLowerCase().replace(/\s+/g, ""));

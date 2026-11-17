@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice } from "./helpers";
+import { pickLtoOffice, signInWith } from "./helpers";
 
 /**
  * The DP's "Review the papers" with missing papers in the same list (no card on top), on the production
@@ -22,12 +22,6 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
 async function shot(page: Page, name: string, target?: Locator) {
   const path = `${DIR}/${name}-${width(page)}.png`;
@@ -51,7 +45,7 @@ function watchConsole(page: Page) {
 /** The LA marks `missing` Missing with a reason and remarks, ticks the rest and sends Notary. Returns the DP job id (given to the test processor). */
 /** tickFirst: the LA ticks the paper Present first (it gets its Document ID), then marks it Missing (the kit case). */
 async function sendWithMissing(page: Page, missing: { label: string; reason: string; remarks: string; tickFirst?: boolean }[]) {
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/search?q=${PN}`);
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
   await expect(page).toHaveURL(new RegExp(`/loans/${PN}`));
@@ -109,7 +103,7 @@ async function expectMissingRow(page: Page, label: string, reason: string, remar
 
 test("one missing paper: in the list with no tick box, Accept works, the return never offers it", async ({ page }) => {
   const jobId = await sendWithMissing(page, [{ label: IDS, reason: "Lost or unavailable", remarks: "Missing valid Id of the borrower" }]);
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const clean = watchConsole(page);
   await page.goto(`/jobs/${jobId}`);
   await expect(review(page)).toBeVisible();
@@ -156,7 +150,7 @@ test("two missing papers; one received late comes back as a normal row", async (
     { label: DISCLOSURE, reason: "Borrower to submit later", remarks: "The borrower signs it on Monday." },
     { label: IDS, reason: "Lost or unavailable", remarks: "Missing valid Id of the borrower" },
   ]);
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const clean = watchConsole(page);
   await page.goto(`/jobs/${jobId}`);
   await expectMissingRow(page, DISCLOSURE, "Borrower to submit later", "The borrower signs it on Monday.");
@@ -168,14 +162,14 @@ test("two missing papers; one received late comes back as a normal row", async (
   clean();
 
   // The LA marks the Disclosure Statement Received (it arrived): a normal present row for the DP.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
   const row = page.locator("[data-paper-row]", { has: page.getByText(DISCLOSURE, { exact: true }) }).filter({ visible: true }).first();
   await row.locator("[data-receive]").click();
   await row.getByRole("button", { name: "Mark Received" }).click();
   await expect(row).toHaveAttribute("data-state", "received-late", { timeout: 15_000 });
 
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto(`/jobs/${jobId}`);
   await expect(missingRow(page, DISCLOSURE)).toHaveCount(0);
   await expect(review(page).getByRole("checkbox", { name: `${DISCLOSURE}: received` })).toBeChecked();
@@ -187,7 +181,7 @@ test("a paper ticked first (it has a Document ID) then marked Missing shows as M
   const jobId = await sendWithMissing(page, [{ label: IDS, reason: "Lost or unavailable", remarks: "Missing valid Id of the borrower", tickFirst: true }]);
   const doc = await db.documentItem.findFirstOrThrow({ where: { label: IDS, transaction: { loan: { pn: PN }, type: { code: "NOTARY" } } } });
   expect(doc.documentId).toMatch(/-ID-01$/);
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   const clean = watchConsole(page);
   await page.goto(`/jobs/${jobId}`);
   await expectMissingRow(page, IDS, "Lost or unavailable", "Missing valid Id of the borrower");
@@ -205,7 +199,7 @@ test("a paper ticked first (it has a Document ID) then marked Missing shows as M
   clean();
 
   // The loan file: header, progress and the Notary card count received papers only.
-  await signInAs(page, "la");
+  await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
   const summary = page.locator("[data-package-summary]").filter({ visible: true }).first();
   await expect(summary).toContainText(/\d+ of \d+ received · 1 missing with remarks/);

@@ -47,7 +47,8 @@ async function zzUser(name: string, access: Parameters<typeof saveUserAccess>[2]
 
 beforeAll(async () => {
   await cleanup();
-  admin = await asUser("test.admin@gdfi.ph");
+  // The access manager: the Superadmin since D-023 (All branches); the Admin limits are in permission-core.test.ts.
+  admin = await asUser("test.superadmin@gdfi.ph");
   la = await asUser("test.la@gdfi.ph");
   laRoleId = (await prisma.role.findUniqueOrThrow({ where: { key: "LA" } })).id;
   D.id = (await prisma.division.create({ data: { name: "ZT Division" } })).id;
@@ -209,10 +210,12 @@ describe("Permissions and refusals", () => {
   it("only access:manage changes access (Change branch access); All branches is kept for the person, not by role name", async () => {
     const u = await zzUser("Guarded", { all: false, grants: [br("b1")], homeBranchId: null });
     await expect(saveUserAccess(la, u.id, { all: true, grants: [], homeBranchId: null })).rejects.toBeInstanceOf(UserError);
-    await expect(copyAccess(la, u.id, la.id)).rejects.toThrow('Ask an Admin to turn on "Change branch access" for your role.');
-    await saveUserAccess(admin, admin.id, { all: true, grants: [], homeBranchId: null });
-    expect(await asUser(admin.email).then((a) => a.scopeBranchIds)).toBeNull();
-    expect((await prisma.user.findUniqueOrThrow({ where: { id: admin.id } })).allBranches).toBe(true);
+    await expect(copyAccess(la, u.id, la.id)).rejects.toThrow('Ask a Superadmin to turn on "Change branch access" for your role.');
+    // Nobody changes their own access (D-023); the access manager gives All branches to someone else.
+    await expect(saveUserAccess(admin, admin.id, { all: false, grants: [br("b1")], homeBranchId: null })).rejects.toThrow(/your own branch access/);
+    await saveUserAccess(admin, u.id, { all: true, grants: [], homeBranchId: null });
+    expect(await asUser(u.email).then((a) => a.scopeBranchIds)).toBeNull();
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: u.id } })).allBranches).toBe(true);
     await expect(saveUserAccess(admin, u.id, "not json")).rejects.toThrow("The branch access could not be read.");
   });
 });

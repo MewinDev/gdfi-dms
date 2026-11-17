@@ -306,7 +306,7 @@ function Preview({ r, warnings }: { r: Extract<PnLookupResult, { kind: "preview"
     <section aria-labelledby="found-title" className="card min-w-0 p-4 sm:px-5 sm:py-4" data-find-preview>
       {(r.otherLoans.length > 0 || r.otherHidden > 0 || r.replacesPn) && (
         <div className="mb-3 flex flex-col gap-1.5" data-preview-warnings>
-          {r.replacesPn && <p className="rounded-xl bg-fill px-3 py-2 text-sm font-semibold text-navy">MyLoans says this PN replaces {r.replacesPn}. Opening it does not link them: Admin reviews the old one and decides whether to link them.</p>}
+          {r.replacesPn && <p className="rounded-xl bg-fill px-3 py-2 text-sm font-semibold text-navy">MyLoans says this PN replaces {r.replacesPn}. Opening it does not link them: an approver reviews the old one and decides whether to link them.</p>}
           {(r.otherLoans.length > 0 || r.otherHidden > 0) && (
             <p className="rounded-xl bg-wait-bg px-3 py-2 text-sm font-semibold text-wait-fg" data-other-loans>
               {r.otherLoans.length > 0 ? `This borrower has another loan: ${r.otherLoans.join(", ")}` : "This borrower has another loan"}

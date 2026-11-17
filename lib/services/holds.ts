@@ -5,6 +5,7 @@ import { writeAudit } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { overseerIds, ownsTransaction } from "./jobs";
 import { currentStageIdFor } from "./job-stages";
 import { NotInScopeError, UserError } from "./errors";
@@ -156,11 +157,12 @@ export async function transferCandidates(u: CurrentUser, holdId: string): Promis
   if (!h || h.resumedAt) return [];
   const { kind, roleId } = await holdKind(h);
   const people = await prisma.user.findMany({
-    where: {
-      active: true, id: { notIn: [u.id, ...(h.ownerId ? [h.ownerId] : [])] },
-      role: { active: true, ...(roleId ? { id: roleId } : {}), permissions: { has: kind === "DP" ? PERMISSIONS.JOBS_WORK : PERMISSIONS.CHECKLIST_TICK } },
-      ...worksAtWhere(h.loan.branchId),
-    },
+    where: andWhere(
+      { id: { notIn: [u.id, ...(h.ownerId ? [h.ownerId] : [])] } },
+      roleId ? { roleId } : {},
+      holdsWhere(kind === "DP" ? PERMISSIONS.JOBS_WORK : PERMISSIONS.CHECKLIST_TICK),
+      worksAtWhere(h.loan.branchId),
+    ),
     orderBy: { name: "asc" }, select: { id: true, name: true },
   });
   return people;
@@ -223,7 +225,7 @@ export async function endHoldsOnCompletion(tx: Tx, t: { id: string; loanId: stri
  */
 export async function branchesWithoutHoldMover(): Promise<{ id: string; name: string; code: string | null }[]> {
   const movers = await prisma.user.findMany({
-    where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.HOLDS_TRANSFER } } },
+    where: holdsWhere(PERMISSIONS.HOLDS_TRANSFER),
     select: { allBranches: true, branches: { select: { branchId: true } } },
   });
   if (movers.some((m) => m.allBranches)) return [];

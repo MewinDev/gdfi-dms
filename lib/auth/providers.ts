@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { isTestMode } from "@/lib/test-mode";
 import { maySignIn } from "./access";
+import { authMode, testSignInAllowed } from "./mode";
 
 /**
  * Identity providers. A provider only answers "which DMS user is this?". Everything after that
@@ -12,16 +13,13 @@ export interface AuthProvider {
   readonly enabled: boolean;
 }
 
-export type AuthMode = "test" | "entra";
-export function authMode(): AuthMode {
-  return process.env.AUTH_MODE === "entra" ? "entra" : "test";
-}
+export { authMode, type AuthMode } from "./mode";
 
-/** Test sign-in: pick a seeded test user. Only enabled when AUTH_MODE=test. */
+/** Test sign-in: pick a seeded test user. Only enabled in local development (lib/auth/mode.ts, D-021). */
 export const testProvider = {
   id: "test" as const,
   get enabled() {
-    return authMode() === "test";
+    return testSignInAllowed();
   },
   async resolveUser(email: string) {
     if (!this.enabled) return null;

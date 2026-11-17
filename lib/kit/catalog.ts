@@ -7,7 +7,7 @@ import { buildPn } from "@/lib/pn/format";
 
 export const KIT_EMAIL_DOMAIN = "@example.test";
 
-export type KitAccountKey = "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
+export type KitAccountKey = "superadmin" | "superadmin2" | "admin" | "finance" | "supervisor" | "la1" | "la2" | "laAlaminos" | "dp1" | "dp2" | "laMabini" | "laInactive" | "dp3" | "dp4" | "monitor"
   | "areaSupervisor" | "laAreaExcept" | "laRoving" | "laAlicia" | "laNoRefresh" | "financeCash" | "financeTransfer" | "approverCash" | "approverTransfer";
 
 export interface KitAccount {
@@ -15,7 +15,7 @@ export interface KitAccount {
   email: string;
   name: string;
   /** Built-in role key, or SUPERVISOR / LA_NO_REFRESH for the kit's own sample roles. */
-  role: "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR" | "LA_NO_REFRESH" | "FIN_CA" | "FIN_FT" | "APPR_CA" | "APPR_FT";
+  role: "SUPERADMIN" | "ADMIN" | "FIN" | "LA" | "DP" | "SUPERVISOR" | "MONITOR" | "LA_NO_REFRESH" | "FIN_CA" | "FIN_FT" | "APPR_CA" | "APPR_FT";
   /** "ALL": All branches. Otherwise single-branch grants (the first is the home branch). */
   branches: KitBranch[] | "ALL";
   /** Extra grants: whole areas (Division, Area), and exceptions (branches unticked inside them). */
@@ -27,6 +27,10 @@ export const KIT_L1 = { division: "Branch Division", area: "LUZON 1 (NGMA + RIZA
 
 
 export const KIT_ACCOUNTS: KitAccount[] = [
+  // The Superadmin (D-002, D-023): the permission matrix, per-user overrides, All branches. Makes the kit's sample roles.
+  { key: "superadmin", email: `kit.superadmin${KIT_EMAIL_DOMAIN}`, name: "Superadmin", role: "SUPERADMIN", branches: "ALL" },
+  // A second Superadmin (D-028): one can always fix the other's access.
+  { key: "superadmin2", email: `kit.superadmin2${KIT_EMAIL_DOMAIN}`, name: "Superadmin Two", role: "SUPERADMIN", branches: "ALL" },
   { key: "admin", email: `kit.admin${KIT_EMAIL_DOMAIN}`, name: "Admin", role: "ADMIN", branches: "ALL" },
   { key: "finance", email: `kit.finance${KIT_EMAIL_DOMAIN}`, name: "Finance", role: "FIN", branches: "ALL" },
   // Funds handled by different people: Finance and an approver for each type (only that type's ticks).
@@ -60,7 +64,8 @@ export const KIT_ACCOUNTS: KitAccount[] = [
  * The Branch Supervisor accounts use the built-in Branch Supervisor role (key SUP, made by migration
  * 20261119090006_decisions_batch). Where a role of that name was made by hand before, that one is used.
  */
-export const SUPERVISOR_ROLE_NAME = "Branch Supervisor";
+/** The built-in LA Supervisor/Head role (key SUP; the former Branch Supervisor, D-010). */
+export const SUPERVISOR_ROLE_NAME = "LA Supervisor/Head";
 export const SUPERVISOR_ROLE_KEY = "SUP";
 /** The kit's sample role for the Refresh tick: the Loan Associate's ticks without "Refresh a loan from MyLoans". */
 export const NO_REFRESH_ROLE_NAME = "LA (no refresh)";
@@ -110,7 +115,7 @@ export const KIT_LOANS: KitLoan[] = [
   L(2007, "New at 500,001 (no Mortgage)", "Rules", { amount: 500_001, borrower: "Gilbert Ramos" }),
   L(2008, "Renewal at 1,000,000 (Mortgage)", "Rules", { branch: "165", loanType: "Renewal", amount: 1_000_000, borrower: "Hilda Aquino" }),
   L(2009, "Renewal at 1,000,001 (no Mortgage)", "Rules", { branch: "165", loanType: "Renewal", amount: 1_000_001, borrower: "Ignacio Torres" }),
-  L(2010, "Auto Finance is not the word Financing (Refinancing)", "Rules", { product: "Auto Finance", amount: 600_000, borrower: "Josefa Lim" }),
+  L(2010, "Car Loan has no keyword (Refinancing by default)", "Rules", { product: "Car Loan", amount: 600_000, borrower: "Josefa Lim" }),
 
   // Loan Associate journey.
   L(2011, "Needs LTO: office and cash estimate", "Loan Associate", { borrower: "Karen Dizon" }),
@@ -195,9 +200,6 @@ export const KIT_BRANCH_CHANGES = {
   code: { branchId: 398, name: "Alicia", from: "709", to: "710" },
 } as const;
 
-/** A PN typed the way people paste it (the test sheet): spaces, dashes and lower case. */
-export const KIT_PASTED_PN = { typed: "gd 101-2026-9-02050", pn: "GD1012026902050" } as const;
-
 /** The new PN the MyLoans "replaced" simulation gives GD1012026902044 (the first free number from 9100). */
 /**
  * Two general expenses typed as Other ("Courier") by DP 1, Cash advance, still waiting for approval:
@@ -213,8 +215,3 @@ export const KIT_REPLACEMENT_PN = "GD1012026909100";
 /** The kit's branches (real MyLoans branches; see lib/branches/builtin.ts). */
 export const BRANCH_NAMES = { "101": "Antipolo", "165": "Angono", "390": "Alaminos", "168": "A. Mabini", "174": "Amang Rodriguez", "189": "Angono - Car Financing", "709": "Alicia", "718": "Alicia-Inactive" } as const;
 export type KitBranch = keyof typeof BRANCH_NAMES;
-
-/** The old made-up sample branches and the real branches that replaced them. */
-export const OLD_BRANCHES: { old: string; code: KitBranch }[] = [
-  { old: "Quezon City (QC)", code: "101" }, { old: "Cebu (CEB)", code: "165" }, { old: "Davao (DVO)", code: "390" }, { old: "Makati (MKT)", code: "168" },
-];

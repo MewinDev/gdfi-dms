@@ -2,8 +2,9 @@ import "server-only";
 import { stageLabel } from "@/lib/workflow/stage-map";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
+import { branchRowScope, can, hasAllBranches, inScope, scopeIds, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { holdsWhere } from "@/lib/auth/holders";
 import { getHolidaySet, getSetting, getTatMap } from "@/lib/settings";
 import { businessDate, fmtDate, fmtShort, startOfBusinessDay } from "@/lib/time";
 import { stepClock, targetOf, txnStepKey } from "@/lib/workflow/tat";
@@ -89,7 +90,8 @@ const phtDay = (col: Prisma.Sql) => Prisma.sql`to_char((${col} + interval '8 hou
 /** The person's branch scope and the Area and Branch filters on the loan (alias l). */
 function loanBranchParts(user: CurrentUser, q: Pick<MonitorQuery, "branchId" | "areaId">): Prisma.Sql[] {
   const parts: Prisma.Sql[] = [];
-  if (user.scopeBranchIds !== null) parts.push(user.scopeBranchIds.length ? Prisma.sql`l."branchId" IN (${Prisma.join(user.scopeBranchIds)})` : Prisma.sql`false`);
+  const ids = scopeIds(user);
+  if (ids !== null) parts.push(ids.length ? Prisma.sql`l."branchId" IN (${Prisma.join(ids)})` : Prisma.sql`false`);
   if (q.areaId) parts.push(Prisma.sql`l."branchId" IN (SELECT b."id" FROM "Branch" b WHERE b."areaId" = ${q.areaId})`);
   if (q.branchId) parts.push(Prisma.sql`l."branchId" = ${q.branchId}`);
   return parts;
@@ -177,7 +179,7 @@ export interface DpPerson {
 export async function processors(today: string = businessDate(new Date())): Promise<DpPerson[]> {
   const [rows, def, everyBranch] = await Promise.all([
     prisma.user.findMany({
-      where: { active: true, role: { active: true, permissions: { has: PERMISSIONS.DP_RECEIVE } } }, orderBy: { name: "asc" },
+      where: holdsWhere(PERMISSIONS.DP_RECEIVE), orderBy: { name: "asc" },
       select: { id: true, name: true, allBranches: true, dpCapacity: true, dpOnLeave: true, dpLeaveUntil: true, branches: { select: { branch: { select: { id: true, name: true } } } } },
     }),
     defaultCapacity(),
@@ -303,7 +305,7 @@ export async function dpMonitor(user: CurrentUser, q: MonitorQuery, now: Date = 
   // In the person's branches (and the Area and Branch filters: any of their branches): processors of
   // those branches, plus anyone with work there.
   const inBranches = (p: DpPerson) =>
-    (user.scopeBranchIds === null || p.branchIds.some((x) => user.scopeBranchIds!.includes(x))) && dpMatches(p, q, places);
+    (hasAllBranches(user) || p.branchIds.some((x) => inScope(user, x))) && dpMatches(p, q, places);
   const list = people.filter((p) => inBranches(p) || seen.has(p.id));
   const times = new Map<string, { accept: number[]; processing: number[]; total: number[] }>();
   for (const f of finished) {
@@ -629,7 +631,7 @@ export async function ltoByDay(user: CurrentUser, q: MonitorQuery): Promise<ByDa
 export async function filterOptions(user: CurrentUser) {
   const [rows, types, offices, people] = await Promise.all([
     prisma.branch.findMany({
-      where: { hidden: false, ...(user.scopeBranchIds === null ? {} : { id: { in: user.scopeBranchIds } }) }, orderBy: { name: "asc" },
+      where: { hidden: false, ...branchRowScope(user) }, orderBy: { name: "asc" },
       select: { id: true, name: true, code: true, area: { select: { id: true, name: true } } },
     }),
     prisma.transactionType.findMany({ where: { requiresDp: true }, orderBy: { sortOrder: "asc" }, select: { code: true, name: true } }),
@@ -651,7 +653,8 @@ export interface MissingLoanRow { loanId: string; pn: string; href: string | nul
 /** Papers marked Missing on live transactions, in the person's branches and the Area, Branch and type filters. */
 function missingWhere(user: CurrentUser, q: Pick<MonitorQuery, "branchId" | "areaId" | "typeCode">): Prisma.ChecklistCheckWhereInput {
   const ids: string[][] = [];
-  if (user.scopeBranchIds !== null) ids.push(user.scopeBranchIds);
+  const mine = scopeIds(user);
+  if (mine !== null) ids.push(mine);
   if (q.branchId) ids.push([q.branchId]);
   const branchIds = ids.length ? ids.reduce((a, b) => a.filter((x) => b.includes(x))) : null;
   const loan: Prisma.LoanWhereInput = { ...(branchIds ? { branchId: { in: branchIds } } : {}), ...(q.areaId ? { branch: { areaId: q.areaId } } : {}) };

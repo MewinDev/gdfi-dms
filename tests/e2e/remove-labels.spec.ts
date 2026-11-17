@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice, signIn } from "./helpers";
+import { SUPERADMIN, pickLtoOffice, signIn, signInWith } from "./helpers";
 
 /**
  * Print labels were removed (11 November 2026, confirmed by the users): labels are not used in the LA
@@ -88,10 +88,7 @@ test("LA checks the papers and sends with no label step; the DP accepts with no 
   clean();
 
   // DP job page: the papers and Accept, no "Labels are on all papers" tick.
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Continue as Test Document Processor" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
+  await signInWith(page, "Continue as Test Document Processor");
   // Test setup: the job goes to the test processor (the Send panel pre-selects the recommended one).
   const testDp = await db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
   const job = await db.dpAssignment.update({ where: { id: (await db.dpAssignment.findFirstOrThrow({ where: { transactionId: txn.id } })).id }, data: { dpUserId: testDp.id } });
@@ -110,7 +107,7 @@ test("LA checks the papers and sends with no label step; the DP accepts with no 
 
 test("Role editor: no label permission tick, even with the technical names", async ({ page }) => {
   const clean = watchConsole(page);
-  await signIn(page, "admin");
+  await signInWith(page, SUPERADMIN); // only the Superadmin edits roles (D-023)
   const la = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
   await page.goto(`/admin/settings?open=roles&edit=${la.id}`);
   await expect(page.locator("[data-group]").first()).toBeVisible();

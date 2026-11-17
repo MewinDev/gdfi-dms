@@ -116,8 +116,8 @@ export function noteCall(ms: number, r: { ok: boolean; retryAfterMs?: number }) 
 /**
  * variant: kept apart in the short cache (the sample MyLoans passes the simulated change for this PN, so
  * a simulated change is seen at once instead of after the cache time).
- * ceiling: the hourly limit applies (the background run, the stale refresh, a new PN in Find loan); without
- * it the call is still counted (a person's Refresh, refresh on open).
+ * ceiling: the hourly limit applies (the background run, the stale refresh, a new PN in Find loan, the
+ * refresh when a loan file is opened); without it the call is still counted (a person's Refresh button).
  */
 export async function lookupPn(adapter: MyLoansAdapter, pn: string, o: { fresh?: boolean; now?: () => number; variant?: string; ceiling?: number } = {}): Promise<MyLoansLookup> {
   const now = o.now ?? Date.now;

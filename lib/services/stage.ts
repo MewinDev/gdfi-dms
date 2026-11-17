@@ -13,7 +13,12 @@ export async function recomputeStage(tx: Tx, loanId: string, opts: { simulated?:
       transactions: { select: { status: true, fundsNeeded: true, type: { select: { requiresDp: true } }, advanceLines: { select: { denied: true, releasedCents: true, advance: { select: { status: true } } } } } },
       // A paper marked Missing (not in hand) does not hold the file at the vault gate: the file goes on
       // "Complete with exceptions" (lib/services/papers.ts) until the paper is Received.
-      documents: { where: { documentId: { not: null }, NOT: { check: { is: { missingState: "MISSING" } } } }, select: { stage: true } },
+      // Written as an OR, not NOT(missingState = MISSING): SQL NOT on a NULL missingState (every normal
+      // paper) is NULL, which dropped every paper, so a loan never showed In transit to Vault or In Safekeeping.
+      documents: {
+        where: { documentId: { not: null }, OR: [{ checkId: null }, { check: { is: { OR: [{ missingState: null }, { missingState: { not: "MISSING" } }] } } }] },
+        select: { stage: true },
+      },
     },
   });
   // Cash out: an advance released and not yet settled.

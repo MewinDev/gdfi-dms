@@ -7,8 +7,6 @@ export interface FilterField {
   options: [string, string][];
 }
 
-export const FILTER_NAMES = ["stage", "classification", "area", "branch", "loanType", "tat", "needsAction", "holdReason", "group"] as const;
-
 export interface Chip { name: string; text: string; removeHref: string }
 
 /** Address of the list with these params (empty values dropped). */
@@ -34,6 +32,34 @@ export function activeChips(fields: FilterField[], params: Record<string, string
 
 /** Clear all filters: keep the tab and the search. */
 export const clearAllHref = (params: Record<string, string | undefined>) => listHref({ tab: params.tab, q: params.q, by: params.by });
+
+/**
+ * Paging a grouped list: the WHOLE result is grouped (Area, then Branch, the list's own order inside each),
+ * then cut into pages of the usual size. A heading shows its group's total over the whole result, and
+ * "continued" when the group began on an earlier page. (Pages of whole groups were the other choice: one
+ * branch with 300 loan files would then be one page of 300.)
+ */
+export interface GroupTotals { areas: Record<string, number>; branches: Record<string, number>; continued: Set<string> }
+export const branchKey = (area: string, branch: string) => JSON.stringify([area, branch]);
+
+/** The rows in the grouped order (what the grouped table shows from top to bottom). */
+export function groupedOrder<T extends { area: string; branch: string }>(rows: T[]): T[] {
+  return groupByAreaBranch(rows).flatMap((g) => g.branches.flatMap((b) => b.rows));
+}
+
+/** Whole-result totals per Area and per Branch, and which groups began before `firstRow` (0-based). */
+export function groupTotals<T extends { area: string; branch: string }>(ordered: T[], firstRow: number): GroupTotals {
+  const areas: Record<string, number> = {};
+  const branches: Record<string, number> = {};
+  const continued = new Set<string>();
+  ordered.forEach((r, i) => {
+    const a = r.area || "Area needed";
+    areas[a] = (areas[a] ?? 0) + 1;
+    branches[branchKey(a, r.branch)] = (branches[branchKey(a, r.branch)] ?? 0) + 1;
+    if (i < firstRow) { continued.add(a); continued.add(branchKey(a, r.branch)); }
+  });
+  return { areas, branches, continued };
+}
 
 /** Loan rows grouped by Area, then Branch (the Admin table's "Group by area and branch"). Pure. */
 export function groupByAreaBranch<T extends { area: string; branch: string }>(rows: T[]): { area: string; count: number; branches: { branch: string; rows: T[] }[] }[] {

@@ -8,6 +8,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { effectivePermissions } from "@/lib/auth/access";
 import { accessSummary, branchPlaces, effectiveBranchIds, normalizeGrants, rebuildAccess, type GrantLike } from "@/lib/branches/access";
 import { UserError } from "./errors";
+import { refuseAllBranchesChange, refuseSelf } from "./user-rights";
 
 /**
  * Writing a person's branch access (where they work). Roles say WHAT a person can do; this says WHERE.
@@ -143,16 +144,18 @@ export async function applyAccess(tx: Tx, actor: Actor, userId: string, role: Ro
 
 /** Users, Edit, Branch access (access:manage). */
 export async function saveUserAccess(user: CurrentUser, targetUserId: string, raw: AccessInput | string) {
-  if (!can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change branch access\" for your role.");
+  if (!can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError("Ask a Superadmin to turn on \"Change branch access\" for your role.");
   const input = parseAccess(raw);
+  refuseSelf(user, targetUserId, "branch access");
   const target = await prisma.user.findUnique({ where: { id: targetUserId }, include: { role: true } });
   if (!target) throw new UserError("User not found.");
+  refuseAllBranchesChange(user, target.allBranches, input.all);
   return prisma.$transaction((tx) => applyAccess(tx, { id: user.id, label: user.name }, target.id, target.role, input), { timeout: 30_000 });
 }
 
 /** Copy access from another user: the same grants and exceptions (and home branch when it fits). */
 export async function copyAccess(user: CurrentUser, fromUserId: string, toUserId: string) {
-  if (!can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError("Ask an Admin to turn on \"Change branch access\" for your role.");
+  if (!can(user, PERMISSIONS.ACCESS_MANAGE)) throw new UserError("Ask a Superadmin to turn on \"Change branch access\" for your role.");
   const from = await describeAccess(prisma, fromUserId);
   const to = await prisma.user.findUniqueOrThrow({ where: { id: toUserId }, select: { homeBranchId: true } });
   const places = await branchPlaces(prisma);

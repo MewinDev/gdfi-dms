@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanTestRoles, db, resetLoans } from "./db";
-import { watchConsole } from "./helpers";
+import { watchConsole, signInWith } from "./helpers";
 
 /**
  * The Loans table (the read-only list: Admin, Supervisor, approvers, Finance, processors): one column per fact,
@@ -14,12 +14,6 @@ const main = (page: Page) => page.getByRole("main");
 const rows = (page: Page) => main(page).locator("[data-loan-row]:visible");
 const BUTTONS = { admin: "Continue as Admin", dp: "Continue as Test Document Processor" } as const;
 
-async function signInAs(page: Page, who: keyof typeof BUTTONS) {
-  await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: BUTTONS[who] }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-}
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -67,7 +61,7 @@ test.afterAll(async () => {
 test("one loan: one column per fact (no Classification); the stage name is the loan file's; TAT with its date; next step only", async ({ page }) => {
   const clean = watchConsole(page);
   const l = await loan("Ana Villanueva", { product: "Auto Financing", loanType: "Renewal" });
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/loans?tab=all");
   const row = rows(page).first();
   if (width(page) >= 640) {
@@ -134,7 +128,7 @@ const TWELVE: [string, string, string, string | null][] = [
 test("twelve loans across the flow: the stage map's Stage and Next step texts, grey for cancelled; grouped by area", async ({ page }) => {
   const clean = watchConsole(page);
   await twelve();
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/loans?tab=all");
   await expect(rows(page)).toHaveCount(12);
   const stageOf = async (name: string) => (await rows(page).filter({ hasText: name }).locator("[data-stage-name], [data-stage-word]").textContent())?.trim();
@@ -171,7 +165,7 @@ test("a loan with a chip (a problem): the chip after the name; filters and tabs 
   const clean = watchConsole(page);
   await loan("Ana Villanueva", { problem: true });
   await loan("Ramon Garcia");
-  await signInAs(page, "admin");
+  await signInWith(page, BUTTONS.admin);
   await page.goto("/loans?tab=exceptions");
   await expect(rows(page)).toHaveCount(1);
   await expect(rows(page).first().locator("[data-flags]")).toContainText("1 problem");
@@ -186,7 +180,7 @@ test("a loan with a chip (a problem): the chip after the name; filters and tabs 
 test("a processor's view: the same table for their branches", async ({ page }) => {
   const clean = watchConsole(page);
   await twelve();
-  await signInAs(page, "dp");
+  await signInWith(page, BUTTONS.dp);
   await page.goto("/loans?tab=all");
   await expect(main(page).getByRole("heading", { level: 1, name: "Loans" })).toBeVisible();
   await expect(rows(page)).toHaveCount(12); // Angono and Antipolo: both their branches

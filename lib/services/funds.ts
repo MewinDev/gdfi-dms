@@ -5,7 +5,7 @@ import { ltoEstimate } from "@/lib/ui/lto";
 import { prisma, type Tx } from "@/lib/db";
 import { writeAudit, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
-import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
+import { allInScope, can, type CurrentUser } from "@/lib/auth/current-user";
 import { PRINTABLE_STATUSES } from "@/lib/funds/list-view";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getHolidaySet, getSetting } from "@/lib/settings";
@@ -14,8 +14,8 @@ import {
   advanceBalance, bandRolesFor, decimalToCents, isOverdue, liquidationDue, liquidationStatus, peso,
 } from "@/lib/funds/rules";
 import { OTHER, kindText, lineAmountSource, otherDescriptionProblem, sortKinds, startingAmount, type AmountMode, type AmountSource } from "@/lib/funds/kinds";
-import { canFunds, canFundsAny, typesFor, TYPE_NOUN, typeKeyOf, type FundsStep, type TypeRef } from "@/lib/funds/access";
-import { handlersOrAdmins, typeBandApprovers, bandTypeId } from "./funds-handlers";
+import { canFunds, canFundsAny, TYPE_NOUN, typeKeyOf, type FundsStep, type TypeRef } from "@/lib/funds/access";
+import { handlersOrAdmins, requestBranchIds, typeBandApprovers, bandTypeId } from "./funds-handlers";
 import { cashBlockReason } from "./source-blocks";
 import { recomputeStage } from "./stage";
 import { UserError } from "./errors";
@@ -28,7 +28,6 @@ import { DEFAULT_FUNDS_TYPE_CODE, checkRelease, defaultFundsType, isTransfer, nu
  * integer centavos. Released amounts, receipts and returns are append-only.
  */
 
-export interface FundsActor { id: string; name: string; roleId?: string }
 const actorOf = (u: { id: string; name: string }): Actor => ({ id: u.id, label: u.name });
 
 function need(u: CurrentUser, p: (typeof PERMISSIONS)[keyof typeof PERMISSIONS], msg: string) {
@@ -41,9 +40,15 @@ function needType(u: CurrentUser, step: FundsStep, type: TypeRef, verb: string) 
     throw new UserError(`Your role does not allow ${verb} ${k ? TYPE_NOUN[k] : "funds requests"}.`);
   }
 }
-/** Seeing a request of this type: otherwise it is not there for this person (the normal refusal). */
-function needSee(u: CurrentUser, type: TypeRef) {
-  if (!canFunds(u, "view", type)) throw new UserError("Request not found.");
+/**
+ * Seeing a request: its type (the person's ticks), and its branches in the person's access (D-019): the
+ * requesting processor's branch and the branch of every loan on its lines. Otherwise it is not there for
+ * this person (the normal refusal). The person who asked for it always sees their own request.
+ */
+async function needSee(tx: Tx, u: CurrentUser, a: TypeRef & { requestedById?: string }) {
+  if (!canFunds(u, "view", a)) throw new UserError("Request not found.");
+  if (a.requestedById === u.id) return;
+  if (!allInScope(u, await requestBranchIds(tx, a))) throw new UserError("Request not found.");
 }
 
 /**
@@ -196,7 +201,7 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
       },
     });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_requested", entityType: "CashAdvance", entityId: adv.id, summary: `${number} (${type.name}) requested by ${u.name}: ${peso(total)} for ${d.lines.length} job line(s)${d.others.length ? ` and ${d.others.length} other expense(s)` : ""}${exceptionId ? " (with a one-time exception)" : ""}`, after: { total, lines: d.lines, others: d.others, fundsType: { id: type.id, code: type.code, name: type.name } } });
-    const approvers = await typeBandApprovers(tx, total, { fundsTypeId: type.id });
+    const approvers = await typeBandApprovers(tx, total, { fundsTypeId: type.id, number }); // its branches limit who is told (D-019)
     await notify(tx, { email: { event: "advance_requested", to: approvers, amountCents: total, vars: { number, who: u.name, kind: type.name } }, userIds: approvers, title: `${number}: ${type.name} to approve`, body: `${u.name} asked for a ${type.name} of ${peso(total)}.`, link: "/funds?tab=approve" });
     const loanIds = await tx.loanTransaction.findMany({ where: { id: { in: d.lines.map((l) => l.transactionId) } }, select: { loanId: true } });
     for (const l of new Set(loanIds.map((x) => x.loanId))) await recomputeStage(tx, l);
@@ -233,7 +238,7 @@ export async function saveAdvanceLine(u: CurrentUser, target: { lineId?: string;
     if (target.lineId && !line) throw new UserError("Line not found.");
     const a = await tx.cashAdvance.findUnique({ where: { id: line?.advanceId ?? target.advanceId ?? "" }, include: { lines: true } });
     if (!a) throw new UserError("Request not found.");
-    needSee(u, a);
+    await needSee(tx, u, a);
     needType(u, "editLines", a, "changing the lines of");
     if (a.status !== "REQUESTED") throw new UserError("Lines can be changed only before the request is decided.");
     if (a.requestedById === u.id) throw new UserError("You cannot change your own request.");
@@ -279,9 +284,11 @@ export type { AmountSource };
 
 /** Can this person approve this amount (approval bands)? Never their own request. */
 async function requireApprover(tx: Tx, u: CurrentUser, amountCents: number, requesterId: string, type: TypeRef) {
-  needSee(u, type);
+  await needSee(tx, u, type);
   needType(u, "approve", type, "approving");
   if (requesterId === u.id) throw new UserError("You cannot approve your own request.");
+  // Approval bands are off by default (D-024): the type's Approve tick (and Handles CA / FT) is enough.
+  if (!(await getSetting("funds.approvalBandsOn", tx))) return;
   // The bands of the request's own type.
   const bands = await tx.approvalBand.findMany({ where: { fundsTypeId: bandTypeId(type) } });
   const me = await tx.user.findUniqueOrThrow({ where: { id: u.id } });
@@ -392,7 +399,7 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
   return prisma.$transaction(async (tx) => {
     const a = await tx.cashAdvance.findUnique({ where: { id: advanceId }, include: { fundsType: true, lines: { include: { transaction: { include: { loan: true, type: true } } } } } });
     if (!a) throw new UserError("Cash advance not found.");
-    needSee(u, a);
+    await needSee(tx, u, a);
     needType(u, "release", a, "releasing");
     if (a.status !== "APPROVED") throw new UserError("Only an approved advance can be released.");
     if (a.requestedById === u.id) throw new UserError("You cannot release your own request.");
@@ -445,7 +452,7 @@ export async function changeFundsType(u: CurrentUser, advanceId: string, raw: un
   return withNumberRetry(() => prisma.$transaction(async (tx) => {
     const a = await tx.cashAdvance.findUnique({ where: { id: advanceId } });
     if (!a) throw new UserError("Cash advance not found.");
-    needSee(u, a);
+    await needSee(tx, u, a);
     needType(u, "changeType", a, "changing the type of");
     if (!["REQUESTED", "APPROVED"].includes(a.status)) throw new UserError("The type can be changed only before the release.");
     const next = await tx.fundsType.findFirst({ where: { id: p.data.fundsTypeId, active: true } });
@@ -527,7 +534,7 @@ export async function releaseTopUp(u: CurrentUser, topUpId: string, raw: Release
   if (!canFundsAny(u, "release")) throw new UserError("Your role does not allow releasing funds.");
   return prisma.$transaction(async (tx) => {
     const t = await tx.cashAdvanceTopUp.findUnique({ where: { id: topUpId }, include: { fundsType: true, line: { include: { advance: true } } } });
-    if (t) { needSee(u, t.line.advance); needType(u, "release", t.line.advance, "releasing"); }
+    if (t) { await needSee(tx, u, t.line.advance); needType(u, "release", t.line.advance, "releasing"); }
     if (!t || t.status !== "APPROVED" || t.releasedAt) throw new UserError("Only an approved top-up can be released.");
     await assertFundsNotHeld(tx, [t.line.transactionId]);
     let type = t.fundsType;
@@ -565,7 +572,7 @@ export async function decideCarryOver(u: CurrentUser, carryId: string, approve: 
     await tx.$queryRaw`SELECT "id" FROM "CarryOver" WHERE "id" = ${carryId} FOR UPDATE`;
     const c = await tx.carryOver.findUnique({ where: { id: carryId }, include: { line: { include: { advance: true } } } });
     if (c && approve && c.status === "APPROVED") return;
-    if (c) { needSee(u, c.line.advance); needType(u, "approve", c.line.advance, "approving carry-overs of"); }
+    if (c) { await needSee(tx, u, c.line.advance); needType(u, "approve", c.line.advance, "approving carry-overs of"); }
     if (!c || c.status !== "PENDING") throw new UserError("This carry-over was already decided.");
     if (c.line.advance.requestedById === u.id) throw new UserError("You cannot approve your own carry-over.");
     if (approve) await assertFundsNotHeld(tx, [c.line.transactionId]); // approving puts cash back to work
@@ -645,7 +652,7 @@ export async function confirmReturn(u: CurrentUser, returnId: string) {
   if (!canFundsAny(u, "settle")) throw new UserError("Your role does not allow confirming returned cash.");
   return prisma.$transaction(async (tx) => {
     const r = await tx.cashReturn.findUnique({ where: { id: returnId }, include: { advance: true } });
-    if (r) { needSee(u, r.advance); needType(u, "settle", r.advance, "confirming returned cash of"); }
+    if (r) { await needSee(tx, u, r.advance); needType(u, "settle", r.advance, "confirming returned cash of"); }
     if (!r || r.confirmedAt) throw new UserError("Already confirmed.");
     await tx.cashReturn.update({ where: { id: r.id }, data: { confirmedById: u.id, confirmedAt: new Date() } });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "cash_return_confirmed", entityType: "CashAdvance", entityId: r.advanceId, summary: `${r.advance.number}: ${u.name} confirmed receipt of ${peso(r.cents)} returned cash` });
@@ -657,7 +664,7 @@ export async function closeAdvance(u: CurrentUser, advanceId: string) {
   return prisma.$transaction(async (tx) => {
     const a = await tx.cashAdvance.findUnique({ where: { id: advanceId }, include: { returns: true } });
     if (!a) throw new UserError("Cash advance not found.");
-    needSee(u, a);
+    await needSee(tx, u, a);
     needType(u, "settle", a, "closing");
     if (a.status !== "LIQUIDATED") throw new UserError("Only a liquidated advance (balance zero) can be closed.");
     if (a.returns.some((r) => !r.confirmedAt)) throw new UserError("Confirm the returned cash first.");
@@ -708,8 +715,8 @@ export async function cashToSettleIds(advances: { id: string; status: string; re
  * default: returned cash, liquidation, overdue; "Release" once approved). Without a type (a job, not a
  * request): either type's tick. Nobody: the Admins (people who can manage roles).
  */
-export async function financeIds(db: Tx | typeof prisma, type?: TypeRef | null, step: FundsStep = "settle") {
-  return handlersOrAdmins(db, step, type ?? null);
+export async function financeIds(db: Tx | typeof prisma, type?: TypeRef | null, step: FundsStep = "settle", branchIds?: string[]) {
+  return handlersOrAdmins(db, step, type ?? null, branchIds);
 }
 
 /** Overdue liquidations: tell the DP and Finance once per advance (called when the funds pages load). */
@@ -729,14 +736,11 @@ export async function notifyOverdue(now: Date = new Date()) {
  * status). "refused": the role lacks the tick (the page says which tick to ask for); "not-found": the
  * request is not there for this person (or not printable yet), so nothing about it is shown.
  */
-export function liquidationReportAccess(u: CurrentUser, a: { branchId: string; status: string; fundsTypeId?: string } | null): "ok" | "refused" | "not-found" {
+export function liquidationReportAccess(u: CurrentUser, a: { branchId: string; status: string; fundsTypeId?: string; lineBranchIds?: (string | null | undefined)[] } | null): "ok" | "refused" | "not-found" {
   if (!canFundsAny(u, "view")) return "not-found";
   if (!a) return canFundsAny(u, "print") ? "ok" : "refused";
   // A type the person may not see is not there for them (the normal refusal: not found).
-  if (!canFunds(u, "view", a) || !inScope(u, a.branchId) || !PRINTABLE_STATUSES.includes(a.status)) return "not-found";
+  if (!canFunds(u, "view", a) || !allInScope(u, [a.branchId, ...(a.lineBranchIds ?? [])]) || !PRINTABLE_STATUSES.includes(a.status)) return "not-found";
   if (!canFunds(u, "print", a)) return "refused";
   return "ok";
 }
-
-/** The types a person may see on the Funds page ("CA", "FT"). */
-export const fundsTypesSeen = (u: CurrentUser) => typesFor(u, "view");

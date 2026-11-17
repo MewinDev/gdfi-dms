@@ -17,7 +17,7 @@ test("LA: find GD1012026901001, open loan file, tick the papers, send to a proce
   await main.getByLabel("Find a loan").fill("GD1012026901001");
   await main.getByRole("button", { name: /^Find/ }).click();
   await expect(main.locator("[data-find-source]")).toBeVisible();
-  await expect(main.getByText("This is a Refinancing loan: the product name has the word Refinancing.")).toBeVisible();
+  await expect(main.getByText('This is a Refinancing loan: the product name contains "refinanc".')).toBeVisible();
   await expect(main.getByText("Notary, EDST, Entry of PPSR, Mortgage")).toBeVisible();
 
   // Open loan file (automatic rules run, no confirmation dialog)

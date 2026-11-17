@@ -7,11 +7,15 @@ import { fmtShort } from "@/lib/time";
 import { getMyLoansAdapter } from "@/lib/myloans";
 import { branchWorkload, recentBranchRuns, reviewRows, openReviewCount } from "@/lib/services/branches";
 import { inactiveEffect } from "@/lib/services/settings-status";
+import { branchesWithoutApprover, noApproverText } from "@/lib/services/borrower-review";
+import { branchesWithoutHandler, noHandlerText } from "@/lib/services/funds-handlers";
 import { SettingsModal } from "@/components/admin/settings-modal";
 import { SettingsEditForm, type FieldDef } from "@/components/admin/forms";
 import { StatusPanel } from "@/components/admin/status-panel";
 import { ImportStep } from "@/components/admin/import-step";
 import { SearchIcon } from "@/components/ui/icons";
+import { Pager } from "@/components/ui/pager";
+import { PAGE_SIZE, pageOf, pageParam } from "@/lib/ui/paging";
 import { BranchScheduleForm, BranchSyncButton, HidePanel, MyLoansImport, ReviewItem } from "./client";
 
 /**
@@ -26,7 +30,7 @@ import { BranchScheduleForm, BranchSyncButton, HidePanel, MyLoansImport, ReviewI
 const BASE = "/admin/settings";
 const href = (q: Record<string, string | undefined>) => `${BASE}?${new URLSearchParams(Object.entries({ open: "branches", ...q }).filter(([, v]) => !!v) as [string, string][]).toString()}`;
 
-export interface BranchFilter { q?: string; area?: string; source?: string; show?: string }
+export interface BranchFilter { q?: string; area?: string; source?: string; show?: string; page?: string }
 
 type Common = { id: string; title: string; help: string; closeHref: string; returnFocusId: string };
 
@@ -66,11 +70,33 @@ export async function BranchesModal({ common, edit, step, user, filter }: { comm
 
 export interface BranchMay { manage: boolean; import: boolean; review: boolean }
 
+/**
+ * "N active branches have no approver assigned." (D-029): nobody with the approver tick has the branch in
+ * their own access. Items there stay visible to approvers with All branches; this line is so it gets fixed.
+ */
+export function NoApproverLine({ branches, text, fix, kind }: { branches: { id: string; name: string; code: string | null }[]; text?: string; fix?: string; kind?: "CA" | "FT" }) {
+  return (
+    <div role="status" className="rounded-xl border border-act-line bg-act-bg px-4 py-2.5 text-sm text-ink" {...(kind ? { "data-no-handler": kind } : { "data-no-approver": branches.length })}>
+      <p className="font-semibold">{text ?? noApproverText(branches.length)}</p>
+      <p className="mt-0.5 text-ink-2">{fix ?? "Approvers with All branches still see and decide their MyLoans changes. To fix it, a Superadmin gives someone of the branch the approver tick on Users, Edit."}</p>
+      <details className="mt-1">
+        <summary className="link cursor-pointer text-sm">Show branches</summary>
+        <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-ink-2" data-no-approver-branches>
+          {branches.map((b) => <li key={b.id}>{b.name}{b.code ? ` (${b.code})` : ""}</li>)}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
 async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay }) {
-  const [rows, areas, openReview] = await Promise.all([
+  const [rows, areas, openReview, noApprover, noCa, noFt] = await Promise.all([
     prisma.branch.findMany({ include: { area: true, division: true, usualLtoOffice: true } }),
     prisma.area.findMany({ orderBy: { name: "asc" } }),
     openReviewCount(),
+    branchesWithoutApprover(),
+    branchesWithoutHandler("CA"),
+    branchesWithoutHandler("FT"),
   ]);
   const q = (filter.q ?? "").trim().toLowerCase();
   const show = filter.show ?? "active";
@@ -81,7 +107,9 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
     .filter((b) => !q || (b.code ?? "").includes(q) || b.name.toLowerCase().includes(q))
     // "Code needed" first, then "Area needed", then by code.
     .sort((a, b) => Number(!!a.code) - Number(!!b.code) || Number(!!a.areaId) - Number(!!b.areaId) || (a.code ?? "").localeCompare(b.code ?? "") || a.name.localeCompare(b.name));
-  const work = new Map(await Promise.all(shown.filter((b) => !b.active).slice(0, 50).map(async (b) => [b.id, await branchWorkload(b.id)] as const)));
+  // Paging: the filters and the order first, then 100 a page ("N of M" stays the total).
+  const paged = pageOf(shown, pageParam(filter.page), PAGE_SIZE.settings);
+  const work = new Map(await Promise.all(paged.rows.filter((b) => !b.active).map(async (b) => [b.id, await branchWorkload(b.id)] as const)));
   const needCode = rows.filter((b) => !b.code).length;
   const needArea = rows.filter((b) => !b.areaId).length;
   return (
@@ -97,6 +125,9 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
           {[needCode && `${needCode} branch${needCode === 1 ? "" : "es"} need${needCode === 1 ? "s" : ""} a code`, needArea && `${needArea} need${needArea === 1 ? "s" : ""} an area`].filter(Boolean).join("; ")}. Codes are never guessed: import the MyLoans list or type the code.
         </p>
       )}
+      {noApprover.length > 0 && <NoApproverLine branches={noApprover} />}
+      {noCa.length > 0 && <NoApproverLine branches={noCa} text={noHandlerText("CA", noCa.length)} fix="To fix it, give a Finance person of the branch (or All branches) the branch and Handles CA on Users, Edit." kind="CA" />}
+      {noFt.length > 0 && <NoApproverLine branches={noFt} text={noHandlerText("FT", noFt.length)} fix="To fix it, give a Finance person of the branch (or All branches) the branch and Handles FT on Users, Edit." kind="FT" />}
       <form method="get" action={BASE} className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end" aria-label="Filter branches">
         <input type="hidden" name="open" value="branches" />
         <div className="flex h-[46px] min-w-0 items-center gap-2.5 rounded-xl border border-line-input bg-fill-soft px-4 focus-within:border-navy focus-within:bg-white sm:flex-1">
@@ -121,7 +152,7 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
       </form>
       <p className="text-xs text-ink-2" role="status">{shown.length} of {rows.length}</p>
       <ul className="divide-y divide-[rgb(12_35_64/0.1)] rounded-xl border border-line">
-        {shown.slice(0, 400).map((b) => {
+        {paged.rows.map((b) => {
           const w = work.get(b.id);
           const title = `${b.name} (${b.code ?? "code needed"})`;
           return (
@@ -149,8 +180,8 @@ async function ListStep({ filter, may }: { filter: BranchFilter; may: BranchMay 
           );
         })}
         {shown.length === 0 && <li className="px-4 py-6 text-center text-sm text-ink-2">Nothing matches.</li>}
-        {shown.length > 400 && <li className="px-4 py-3 text-sm text-ink-2">{shown.length - 400} more: narrow the search.</li>}
       </ul>
+      <Pager info={paged.info} href={href({ q: filter.q, area: filter.area, source: filter.source, show: filter.show })} label="branches" />
     </div>
   );
 }
@@ -180,7 +211,7 @@ async function EditStep({ common, id, may, back }: { common: Common; id: string 
   const work = b && !b.active ? await branchWorkload(b.id) : null;
   return (
     <SettingsModal {...common} title={b ? `Branches: ${b.name}` : "Branches: Add branch"} backHref={back} footer={may.manage ? { kind: "save", formId: "settings-form", cancelHref: back } : { kind: "done" }}>
-      {!may.manage && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask an Admin to turn on &ldquo;Change branches&rdquo; for your role to change it.</p>}
+      {!may.manage && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask a Superadmin to turn on &ldquo;Change branches&rdquo; for your role to change it.</p>}
       {may.manage && ro && <p className="mb-4 rounded-xl bg-fill px-4 py-2.5 text-sm" data-readonly-note>This branch comes from MyLoans: its code, name, division, area, address and status are read-only here. Only the usual LTO office is the DMS&apos;s own.{b?.lastSyncedAt ? ` Last sync ${fmtShort(b.lastSyncedAt)}.` : ""}</p>}
       <SettingsEditForm key={id ?? "new"} kind="branch" id={id} fields={fields} formId="settings-form" listHref={back} />
       {b && may.manage && (
@@ -199,7 +230,7 @@ async function ReviewStep({ canDecide }: { canDecide: boolean }) {
   const [open, decided] = await Promise.all([reviewRows("OPEN"), reviewRows("DECIDED", 30)]);
   return (
     <div className="flex flex-col gap-5" data-branch-review>
-      {!canDecide && <p className="rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask an Admin to turn on &ldquo;Decide branch changes&rdquo; for your role to accept or ignore them.</p>}
+      {!canDecide && <p className="rounded-xl bg-fill px-4 py-2.5 text-sm" data-view-only-note>Read only. Ask a Superadmin to turn on &ldquo;Decide branch changes&rdquo; for your role to accept or ignore them.</p>}
       <section aria-labelledby="rv-open">
         <h3 id="rv-open" className="text-base font-bold text-navy">Waiting for a decision ({open.length})</h3>
         <ul className="mt-2 divide-y divide-[rgb(12_35_64/0.1)] rounded-xl border border-line">
