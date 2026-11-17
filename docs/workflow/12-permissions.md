@@ -143,6 +143,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 |---|---|---|---|---|---|
 | See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | SUPERADMIN, Admin, Branch Supervisor |
 | See the audit log | Every automatic decision and user action (the technical log). | Audit log | - | `audit:view` | SUPERADMIN, Admin |
+| View file access log | Who opened or downloaded which receipt, stage evidence or LTO proof, and when; filter and export it (each export is logged too). Give it to a Data Protection Officer if needed. | Audit, File access log | - | `audit:files` | SUPERADMIN, Admin |
 
 ### MyLoans and sync
 
@@ -259,6 +260,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Set processor capacity and leave | Settings, Processor capacity | dpcapacity:manage | `dpcapacity:manage` |  |
 | See the TAT and problems report | Reports, TAT | reports:tat | `reports:tat` |  |
 | See the audit log | Audit log | audit:view | `audit:view` |  |
+| View file access log | Audit, File access log | new on 17 November 2026 | `audit:files` | Split or renamed |
 | See when MyLoans was last checked | Loan File, top strip | loans:view | `myloans:view` | Split or renamed |
 | Reclassify a loan | Loan File, Classification changed since accepted | new on 17 November 2026 | `loans:reclassify` | Split or renamed |
 | Refresh a loan from MyLoans | Loan File, Refresh from MyLoans | none (shown to everyone who sees the loan file) | `loans:refresh` | **Gap, closed** |
