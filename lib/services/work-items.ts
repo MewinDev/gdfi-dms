@@ -109,6 +109,8 @@ export async function acceptItemTx(tx: Tx, itemId: string, u: { id: string; name
 export async function takeItem(tx: Tx, kind: WorkKind, subjectId: string, u: { id: string; name: string }, at: Date = new Date()) {
   const it = await openItem(tx, kind, subjectId);
   if (!it || it.state === "HELD") return it;
+  // The action is the record: whoever does it holds the item (a job re-pointed elsewhere, a colleague's Receive).
+  if (it.state === "INBOX" && it.holderUserId !== u.id) await tx.workItem.update({ where: { id: it.id }, data: { holderUserId: u.id } });
   return acceptItemTx(tx, it.id, u, at);
 }
 

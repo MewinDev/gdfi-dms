@@ -19,7 +19,10 @@ test("Admin filters the file access log and downloads it; the export is logged",
   const run = `e2e${Date.now().toString(36)}`;
   const admin = await db.user.findUniqueOrThrow({ where: { email: "test.admin@gdfi.ph" } });
   const branch = await db.branch.findUniqueOrThrow({ where: { code: "101" } });
-  const pn = "GD9992099969" + String(Date.now() % 100).padStart(2, "0");
+  // The log is append-only: pick a test PN that has no rows yet (earlier runs keep theirs).
+  const used = new Set((await db.fileAccessLog.findMany({ where: { pn: { startsWith: "GD9992099969" } }, select: { pn: true }, distinct: ["pn"] })).map((r) => r.pn));
+  const free = Array.from({ length: 100 }, (_, i) => "GD9992099969" + String(i).padStart(2, "0")).filter((x) => !used.has(x));
+  const pn = free[Date.now() % free.length] ?? "GD999209996999";
   await db.fileAccessLog.createMany({ data: [
     { userId: admin.id, entityType: "RECEIPT", entityId: `${run}-1`, pn, branchId: branch.id, fileKey: "k1", fileName: `${run}-receipt.jpg`, action: "VIEW" },
     { userId: admin.id, entityType: "LTO_PROOF", entityId: `${run}-2`, pn, branchId: branch.id, fileKey: "k2", fileName: `${run}-lto.pdf`, action: "DOWNLOAD" },

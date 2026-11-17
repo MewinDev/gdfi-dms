@@ -305,15 +305,6 @@ export function SendPanel(p: SendPanelProps) {
                   </label>
                 );
               })}
-              <label data-dp-choice="Branch DP pool" className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed px-3 py-1.5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${pool ? "border-navy bg-fill-soft" : "border-line hover:border-navy/40"}`}>
-                <input type="radio" name="dpUserId" value="POOL" checked={pool} onChange={() => { setChosen("POOL"); setSecond(false); }} className="sr-only" />
-                <span aria-hidden="true" className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${pool ? "bg-navy text-white" : "bg-fill-strong text-navy"}`}><UsersIcon size={18} /></span>
-                <span className="min-w-0 flex-1 leading-snug">
-                  <span className="block text-[15px] font-semibold">Branch DP pool</span>
-                  <span className="block text-[13px] text-ink-2">Any processor of {branchName} can accept it. The first to accept gets it.</span>
-                </span>
-                <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${pool ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.3)]"}`}>{pool && <CheckIcon size={12} strokeWidth={3} />}</span>
-              </label>
               {dp?.availStatus === "FULL" && (
                 <p className="rounded-lg border border-act-line bg-act-bg px-3 py-2 text-[13px] text-act-fg" data-full-warning>{dp.name} is full ({dp.open} of {dp.capacity} open jobs). You can still send it; it may take longer.</p>
               )}
@@ -322,6 +313,19 @@ export function SendPanel(p: SendPanelProps) {
                   {showAll ? "Show fewer" : `Show all (${dpsHere.length})`}
                 </button>
               )}
+            </div>
+          )}
+          {dpsHere.length > 0 && (
+            <div role="radiogroup" aria-label="Or the branch pool" className="flex flex-col gap-1.5">
+              <label data-dp-choice="Branch DP pool" className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed px-3 py-1.5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${pool ? "border-navy bg-fill-soft" : "border-line hover:border-navy/40"}`}>
+                  <input type="radio" name="dpUserId" value="POOL" checked={pool} onChange={() => { setChosen("POOL"); setSecond(false); }} className="sr-only" />
+                  <span aria-hidden="true" className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${pool ? "bg-navy text-white" : "bg-fill-strong text-navy"}`}><UsersIcon size={18} /></span>
+                  <span className="min-w-0 flex-1 leading-snug">
+                    <span className="block text-[15px] font-semibold">Branch DP pool</span>
+                    <span className="block text-[13px] text-ink-2">Any processor of {branchName} can accept it. The first to accept gets it.</span>
+                  </span>
+                  <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${pool ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.3)]"}`}>{pool && <CheckIcon size={12} strokeWidth={3} />}</span>
+                </label>
             </div>
           )}
           {pool ? null : !second ? (
