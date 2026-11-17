@@ -347,6 +347,7 @@ model Branch {
   dpWork            DpAssignment[]
   receivingPackages DpAssignment[]    @relation("DpReceivingBranch")
   cashAdvances      CashAdvance[]
+  calendarEntries   HolidayBranch[]
   /// Pre-selected in the Send panel for transactions that need LTO processing (optional).
   usualLtoOfficeId  String?
   usualLtoOffice    LtoOffice?        @relation("BranchUsualLto", fields: [usualLtoOfficeId], references: [id])
@@ -626,16 +627,79 @@ model CashAdvanceRule {
   updatedAt DateTime @updatedAt
 }
 
+/// The working-days calendar (D-018, D-041): holidays and office closures. A non-working day for every branch
+/// (allBranches) or for the ticked branches (HolidayBranch). Several rows may share a date (a holiday and a
+/// closure, or closures of different branches).
 model HolidayCalendar {
-  id              String    @id @default(cuid())
-  date            String    @unique // YYYY-MM-DD (business time zone)
+  id              String            @id @default(cuid())
+  date            String // YYYY-MM-DD (business time zone)
   name            String
-  /// Inactive: no longer skipped when counting business days.
-  active          Boolean   @default(true)
+  /// HOLIDAY (Settings, Holidays) or CLOSURE (an office closure: typhoon, sudden declaration; with a reason).
+  kind            CalendarEntryKind @default(HOLIDAY)
+  type            HolidayType       @default(REGULAR)
+  /// All branches, or only the ticked branches (HolidayBranch).
+  allBranches     Boolean           @default(true)
+  branches        HolidayBranch[]
+  /// Required for a closure and for a back-dated entry.
+  reason          String            @default("")
+  /// Seeded sample, not an official date ("Sample. Enter the official list from the government proclamation.").
+  isSample        Boolean           @default(false)
+  createdById     String?
+  /// Inactive: no longer skipped when counting working days.
+  active          Boolean           @default(true)
   /// Inactive instead of delete: when and by whom it was made inactive (null while active).
   deactivatedAt   DateTime?
   deactivatedById String?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime          @default(now())
+
+  @@index([date])
+}
+
+enum CalendarEntryKind {
+  HOLIDAY
+  CLOSURE
+}
+
+enum HolidayType {
+  REGULAR
+  SPECIAL_NON_WORKING
+  LOCAL
+}
+
+/// The branches of a holiday or closure that is not for all branches.
+model HolidayBranch {
+  holidayId String
+  holiday   HolidayCalendar @relation(fields: [holidayId], references: [id], onDelete: Cascade)
+  branchId  String
+  branch    Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([holidayId, branchId])
+  @@index([branchId])
+}
+
+/// A saved due date moved (D-041): a holiday or closure added inside its counting window, a hold that paused
+/// the clock, or an admin correction. Append-only history; the record keeps only its current due date.
+model DueDateChange {
+  id              String   @id @default(cuid())
+  /// "DpAssignment" (a DP job's TAT) or "CashAdvance" (the liquidation due date).
+  subjectType     String
+  subjectId       String
+  loanId          String?
+  pn              String?
+  fromDate        String // YYYY-MM-DD
+  toDate          String
+  /// HOLIDAY, CLOSURE, HOLD_PAUSE or CORRECTION.
+  cause           String
+  calendarEntryId String?
+  /// Was the item overdue before this change (shown in the preview, "M currently overdue").
+  wasOverdue      Boolean  @default(false)
+  note            String   @default("")
+  byId            String?
+  byLabel         String   @default("")
+  at              DateTime @default(now())
+
+  @@index([subjectType, subjectId])
+  @@index([at])
 }
 
 /// Key/value system settings (toggles such as "simulate MyLoans unavailable").
@@ -1007,6 +1071,11 @@ model DpAssignment {
   processing          Json?
   forwardedAt         DateTime?
   receivingLaId       String?
+  /// TAT saved at accept (D-041): the due date (YYYY-MM-DD, Manila), the target and whose calendar counts it
+  /// (the processor's branch). Moved only by a logged DueDateChange.
+  dueDate             String?
+  targetDays          Int?
+  dueBranchId         String?
   receivingLa         User?              @relation("DpReceivingLa", fields: [receivingLaId], references: [id])
   /// The branch the DP chose when forwarding (the loan's branch is only a hint).
   receivingBranchId   String?
@@ -1387,54 +1456,56 @@ enum CarryOverStatus {
 
 /// One cash advance requested by a DP, covering several flagged transactions (and other expenses).
 model CashAdvance {
-  id                String            @id @default(cuid())
+  id                 String            @id @default(cuid())
   /// Move to the new PN: the line whose balance this request moves (the cash is already with the DP).
-  movedFromLineId   String?
-  number            String            @unique // CA-2026-0001 (Cash advance), FT-2026-0001 (Fund transfer): the type's code, the year, its own running number
+  movedFromLineId    String?
+  number             String            @unique // CA-2026-0001 (Cash advance), FT-2026-0001 (Fund transfer): the type's code, the year, its own running number
   /// The numbers it had before (a fund transfer once numbered CA-, or a type change): "Formerly CA-2026-0008"; search finds them.
-  formerNumbers     String[]          @default([])
-  requestedById     String
-  requestedBy       User              @relation("CaRequestedBy", fields: [requestedById], references: [id])
-  branchId          String
-  branch            Branch            @relation(fields: [branchId], references: [id])
-  status            AdvanceStatus     @default(REQUESTED)
-  requestedCents    Int
+  formerNumbers      String[]          @default([])
+  requestedById      String
+  requestedBy        User              @relation("CaRequestedBy", fields: [requestedById], references: [id])
+  branchId           String
+  branch             Branch            @relation(fields: [branchId], references: [id])
+  status             AdvanceStatus     @default(REQUESTED)
+  requestedCents     Int
   /// Notes such as a Pasuyo handover ("₱500.00 handed to Grace Tan, CA-2026-0003").
-  note              String            @default("")
-  approvedCents     Int?
-  releasedCents     Int               @default(0)
-  approvedById      String?
-  approvedAt        DateTime?
-  approvalNote      String            @default("")
-  deniedReason      String            @default("")
-  releasedById      String?
-  releasedAt        DateTime?
-  releaseRef        String            @default("")
+  note               String            @default("")
+  approvedCents      Int?
+  releasedCents      Int               @default(0)
+  approvedById       String?
+  approvedAt         DateTime?
+  approvalNote       String            @default("")
+  deniedReason       String            @default("")
+  releasedById       String?
+  releasedAt         DateTime?
+  releaseRef         String            @default("")
   /// Funds type (Settings > Funds types): the id, and a copy of its code and name at request time
   /// (or when Finance changed it), so a rename never changes old records.
-  fundsTypeId       String            @default("fundstype_ca")
-  fundsType         FundsType         @relation(fields: [fundsTypeId], references: [id])
-  fundsTypeCode     String            @default("CA")
-  fundsTypeName     String            @default("Cash advance")
+  fundsTypeId        String            @default("fundstype_ca")
+  fundsType          FundsType         @relation(fields: [fundsTypeId], references: [id])
+  fundsTypeCode      String            @default("CA")
+  fundsTypeName      String            @default("Cash advance")
   /// Release details for a type that needs them (a fund transfer): the transfer date and the receiving
   /// account. Only the last 4 digits of the account number are ever stored.
-  transferDate      String            @default("")
-  accountProvider   String            @default("")
-  accountName       String            @default("")
-  accountLast4      String            @default("")
+  transferDate       String            @default("")
+  accountProvider    String            @default("")
+  accountName        String            @default("")
+  accountLast4       String            @default("")
   /// Restarts at each carry-over decision.
-  liquidationDueAt  DateTime?
+  liquidationDueAt   DateTime?
+  /// The start of the liquidation count (YYYY-MM-DD): the release or the latest carry-over decision (D-041 window).
+  liquidationDueFrom String?
   /// Overdue notice sent (cleared when the due date restarts).
-  overdueNotifiedAt DateTime?
-  closedById        String?
-  closedAt          DateTime?
+  overdueNotifiedAt  DateTime?
+  closedById         String?
+  closedAt           DateTime?
   /// One-time exception used to submit this request while another advance was overdue.
-  exceptionId       String?           @unique
-  exception         FundsException?   @relation(fields: [exceptionId], references: [id])
-  lines             CashAdvanceLine[]
-  returns           CashReturn[]
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  exceptionId        String?           @unique
+  exception          FundsException?   @relation(fields: [exceptionId], references: [id])
+  lines              CashAdvanceLine[]
+  returns            CashReturn[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([requestedById, status])
 }
@@ -1718,6 +1789,8 @@ model HoldReason {
   active          Boolean   @default(true)
   /// Seeded default not yet confirmed with the team ("Proposed, to be confirmed with the team"). Cleared when Admin saves the row.
   proposed        Boolean   @default(false)
+  /// "Pauses TAT" (D-032 Q-N7, D-041): while a hold with this reason is open, the TAT clock stops.
+  pausesTat       Boolean   @default(false)
   deactivatedAt   DateTime?
   deactivatedById String?
   holds           Hold[]

@@ -1,8 +1,11 @@
 import "server-only";
+import { type Days } from "@/lib/calendar/core";
 import { prisma } from "@/lib/db";
 import { CURRENT_USER_INCLUDE, toCurrentUser } from "@/lib/auth/build-user";
 import { PERMISSIONS, ROLE_DEFAULTS } from "@/lib/auth/permissions";
-import { getHolidaySet, setSetting } from "@/lib/settings";
+import { setSetting } from "@/lib/settings";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { businessDate } from "@/lib/time";
 import type { MyLoansRecord } from "@/lib/myloans/types";
 import { saveRole } from "@/lib/services/roles";
@@ -28,7 +31,7 @@ export const CLEAN_EMPTY_TABLES = [
 ] as const;
 
 /** The pool's records in the sample MyLoans (Setting myloans.mockExtra), released N business days before today. */
-export function poolRecords(today: string, holidays: ReadonlySet<string>): MyLoansRecord[] {
+export function poolRecords(today: string, holidays: Days): MyLoansRecord[] {
   return CLEAN_POOL.map((l) => {
     const n = l.pn.slice(-4);
     return {
@@ -51,7 +54,8 @@ export async function buildClean(log: Log = console.log): Promise<void> {
   const why = kitRefusal();
   if (why) throw new Error(why);
   const today = businessDate(new Date());
-  const holidays = await getHolidaySet();
+  // Sample dates: the company-wide calendar (no branch).
+  const holidays = daysFor(await loadCalendar(), null);
   await importKitBranches(log);
   // Alicia-Inactive is closed (inactive), with no review item: MyLoans already closed it.
   await prisma.branch.update({ where: { code: "718" }, data: { active: false, deactivatedAt: new Date() } });

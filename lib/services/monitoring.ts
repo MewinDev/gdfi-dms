@@ -5,11 +5,13 @@ import { prisma } from "@/lib/db";
 import { branchRowScope, can, hasAllBranches, inScope, scopeIds, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { holdsWhere } from "@/lib/auth/holders";
-import { getHolidaySet, getSetting, getTatMap } from "@/lib/settings";
+import { getSetting, getTatMap } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { businessDate, fmtDate, fmtShort, startOfBusinessDay } from "@/lib/time";
 import { stepClock, targetOf, txnStepKey } from "@/lib/workflow/tat";
 import {
-  AVAILABILITY, availability, avg, bucketOf, phtDate, buckets, businessDayCounter, onLeaveToday, parseRange, ymdAdd, type Availability, type DateRange,
+  AVAILABILITY, availability, avg, bucketOf, phtDate, buckets, branchDayCounters, onLeaveToday, parseRange, ymdAdd, type Availability, type DateRange,
 } from "@/lib/monitoring/rules";
 import { activeAdvisories, advisoryView, type AdvisoryView } from "./lto-advisories";
 
@@ -118,22 +120,22 @@ export type OpenState = "ASSIGNED" | "IN_PROCESS" | "ON_HOLD";
 export const OPEN_STATE_LABEL: Record<OpenState, string> = { ASSIGNED: "Assigned", IN_PROCESS: "In process", ON_HOLD: "On hold" };
 
 interface OpenRow {
-  id: string; owner: string; pn: string; branchId: string; typeCode: string; typeName: string; endorsedAt: Date; state: OpenState; overdue: boolean;
+  id: string; owner: string; pn: string; branchId: string; dpBranchId: string; typeCode: string; typeName: string; endorsedAt: Date; state: OpenState; overdue: boolean;
   /** The current step's start and target (the due date is worked out only for the drill-down rows). */
   stepStart: Date; target: number | null;
 }
 
 async function openJobs(user: CurrentUser, q: MonitorQuery, now: Date): Promise<OpenRow[]> {
-  const rows = await prisma.$queryRaw<{ id: string; dp: string; proc: string; status: string; tstatus: string; statusSince: Date; endorsedAt: Date; code: string; name: string; pn: string; branchId: string; held: boolean }[]>`
+  const rows = await prisma.$queryRaw<{ id: string; dp: string; proc: string; status: string; tstatus: string; statusSince: Date; endorsedAt: Date; code: string; name: string; pn: string; branchId: string; dpBranchId: string; held: boolean }[]>`
     SELECT a."id", a."dpUserId" AS dp, ${PROC} AS proc, a."status"::text AS status, t."status"::text AS tstatus, t."statusSince" AS "statusSince", a."endorsedAt" AS "endorsedAt",
-      ty."code" AS code, ty."name" AS name, l."pn" AS pn, l."branchId" AS "branchId",
+      ty."code" AS code, ty."name" AS name, l."pn" AS pn, l."branchId" AS "branchId", a."dpBranchId" AS "dpBranchId",
       EXISTS (SELECT 1 FROM "Hold" h WHERE h."transactionId" = t."id" AND h."resumedAt" IS NULL) AS held
     FROM "DpAssignment" a ${JOIN}
     WHERE (a."status" = 'PENDING_ACCEPTANCE' OR (a."status" = 'ACCEPTED' AND t."status" = 'IN_PROCESS')) AND ${jobFilter(user, q)}`;
-  const [tats, holidays] = await Promise.all([getTatMap(), getHolidaySet()]);
+  const [tats, cal] = await Promise.all([getTatMap(), getCalendar()]);
   const today = businessDate(now);
   const first = rows.reduce((m, r) => { const d = phtDate(r.statusSince); return d < m ? d : m; }, today);
-  const bd = businessDayCounter(holidays, ymdAdd(first, -1), today);
+  const bdOf = branchDayCounters(cal, ymdAdd(first, -1), today);
   return rows.map((r) => {
     const pending = r.status === "PENDING_ACCEPTANCE";
     // The existing late logic (stepClock in lib/workflow/tat.ts): the current step is late when the
@@ -141,7 +143,7 @@ async function openJobs(user: CurrentUser, q: MonitorQuery, now: Date): Promise<
     const target = targetOf(tats, txnStepKey(r.tstatus, r.code));
     return {
       id: r.id, owner: pending ? r.dp : r.proc, pn: r.pn, branchId: r.branchId, typeCode: r.code, typeName: r.name, endorsedAt: r.endorsedAt,
-      state: r.held ? "ON_HOLD" : pending ? "ASSIGNED" : "IN_PROCESS", overdue: target !== null && bd(r.statusSince, now) > target, stepStart: r.statusSince, target,
+      state: r.held ? "ON_HOLD" : pending ? "ASSIGNED" : "IN_PROCESS", overdue: target !== null && bdOf(r.dpBranchId)(r.statusSince, now) > target, stepStart: r.statusSince, target, dpBranchId: r.dpBranchId,
     };
   });
 }
@@ -275,11 +277,11 @@ export interface DpMonitor {
   rows: DpRow[];
 }
 
-interface Finished { proc: string; endorsedAt: Date; decidedAt: Date | null; finishedAt: Date }
+interface Finished { proc: string; dpBranchId: string; endorsedAt: Date; decidedAt: Date | null; finishedAt: Date }
 
 async function finishedJobs(user: CurrentUser, q: MonitorQuery, b: Bounds): Promise<Finished[]> {
   return prisma.$queryRaw<Finished[]>`
-    SELECT ${PROC} AS proc, a."endorsedAt" AS "endorsedAt", a."decidedAt" AS "decidedAt", v."finishedAt" AS "finishedAt"
+    SELECT ${PROC} AS proc, a."dpBranchId" AS "dpBranchId", a."endorsedAt" AS "endorsedAt", a."decidedAt" AS "decidedAt", v."finishedAt" AS "finishedAt"
     FROM "JobStage" v JOIN "DpAssignment" a ON a."id" = v."assignmentId" ${JOIN}
     WHERE v."kind" = 'VERIFY' AND v."finishedAt" >= ${b.start} AND v."finishedAt" < ${b.end} AND ${jobFilter(user, q)}`;
 }
@@ -298,9 +300,9 @@ const sumKeys = ["assigned", "inProcess", "onHold", "overdue", "declined", "retu
 export async function dpMonitor(user: CurrentUser, q: MonitorQuery, now: Date = new Date()): Promise<DpMonitor> {
   const today = businessDate(now);
   const b = boundsOf(q.range);
-  const [people, open, finished, back, holidays, places] = await Promise.all([processors(today), openJobs(user, q, now), finishedJobs(user, q, b), sentBackCounts(user, q, b), getHolidaySet(), branchPlaces()]);
+  const [people, open, finished, back, holidays, places] = await Promise.all([processors(today), openJobs(user, q, now), finishedJobs(user, q, b), sentBackCounts(user, q, b), getCalendar(), branchPlaces()]);
   const minDay = finished.reduce((m, f) => { const d = phtDate(f.endorsedAt); return d < m ? d : m; }, q.range.from);
-  const bd = businessDayCounter(holidays, ymdAdd(minDay, -1), ymdAdd(q.range.to, 1));
+  const bdOf = branchDayCounters(holidays, ymdAdd(minDay, -1), ymdAdd(q.range.to, 1));
   const seen = new Set([...open.map((o) => o.owner), ...finished.map((f) => f.proc), ...back.map((x) => x.who)]);
   // In the person's branches (and the Area and Branch filters: any of their branches): processors of
   // those branches, plus anyone with work there.
@@ -310,6 +312,7 @@ export async function dpMonitor(user: CurrentUser, q: MonitorQuery, now: Date = 
   const times = new Map<string, { accept: number[]; processing: number[]; total: number[] }>();
   for (const f of finished) {
     const t = times.get(f.proc) ?? { accept: [], processing: [], total: [] };
+    const bd = bdOf(f.dpBranchId);
     if (f.decidedAt) { t.accept.push(bd(f.endorsedAt, f.decidedAt)); t.processing.push(bd(f.decidedAt, f.finishedAt)); }
     t.total.push(bd(f.endorsedAt, f.finishedAt));
     times.set(f.proc, t);
@@ -373,8 +376,8 @@ export async function dpDrill(user: CurrentUser, q: MonitorQuery, dpId: string, 
   const b = boundsOf(q.range);
   const [open, back, holidays] = await Promise.all([
     openJobs(user, q, now),
-    prisma.$queryRaw<{ id: string; pn: string; branchId: string; name: string; status: string; at: Date; note: string | null }[]>`
-      SELECT a."id", l."pn" AS pn, l."branchId" AS "branchId", ty."name" AS name, a."status"::text AS status,
+    prisma.$queryRaw<{ id: string; pn: string; branchId: string; dpBranchId: string; name: string; status: string; at: Date; note: string | null }[]>`
+      SELECT a."id", l."pn" AS pn, l."branchId" AS "branchId", a."dpBranchId" AS "dpBranchId", ty."name" AS name, a."status"::text AS status,
         CASE WHEN a."status" = 'DECLINED' THEN a."decidedAt" ELSE a."returnedAt" END AS at,
         CASE WHEN a."status" = 'DECLINED' THEN a."declineReasons" ELSE a."returnReasons" END AS note
       FROM "DpAssignment" a ${JOIN}
@@ -382,21 +385,21 @@ export async function dpDrill(user: CurrentUser, q: MonitorQuery, dpId: string, 
           OR (a."status" = 'WITHDRAWN' AND ${PROC} = ${dpId} AND a."returnedAt" >= ${b.start} AND a."returnedAt" < ${b.end}))
         AND ${jobFilter(user, q)}
       ORDER BY at DESC`,
-    getHolidaySet(),
+    getCalendar(),
   ]);
-  const bd = businessDayCounter(holidays, ymdAdd(today, -400), today);
+  const bdOf = branchDayCounters(holidays, ymdAdd(today, -400), today);
   const mine = open.filter((o) => o.owner === dpId).sort((x, y) => Number(y.overdue) - Number(x.overdue) || x.endorsedAt.getTime() - y.endorsedAt.getTime());
-  const due = (o: OpenRow) => (o.target === null ? null : stepClock({ targetDays: o.target, start: o.stepStart }, holidays, now).deadline);
-  const ageText = (d: Date) => { const n = bd(d, now); return `${n} business day${n === 1 ? "" : "s"}`; };
+  const due = (o: OpenRow) => (o.target === null ? null : stepClock({ targetDays: o.target, start: o.stepStart }, daysFor(holidays, o.dpBranchId), now).deadline);
+  const ageText = (d: Date, branchId: string) => { const n = bdOf(branchId)(d, now); return `${n} business day${n === 1 ? "" : "s"}`; };
   const openN = mine.length;
   return {
     id: p.id, name: p.name, group: dpGroup(p, places), branches: dpPlace(p, places).chips, avail: availability(p.capacity, openN, p.onLeave), leaveUntil: p.onLeave ? p.leaveUntil : null,
     open: mine.map((o) => ({
       id: o.id, pn: o.pn, href: linkable(user, o.branchId) ? `/loans/${o.pn}` : null, typeName: o.typeName, status: OPEN_STATE_LABEL[o.state],
-      age: ageText(o.endorsedAt), due: (() => { const d = due(o); return d ? fmtDate(d) : "No target"; })(), overdue: o.overdue,
+      age: ageText(o.endorsedAt, o.dpBranchId), due: (() => { const d = due(o); return d ? fmtDate(d) : "No target"; })(), overdue: o.overdue,
     })),
-    declined: back.filter((x) => x.status === "DECLINED").map((x) => sentBackRow(user, x, ageText)),
-    returned: back.filter((x) => x.status === "WITHDRAWN").map((x) => sentBackRow(user, x, ageText)),
+    declined: back.filter((x) => x.status === "DECLINED").map((x) => sentBackRow(user, x, (d) => ageText(d, x.dpBranchId))),
+    returned: back.filter((x) => x.status === "WITHDRAWN").map((x) => sentBackRow(user, x, (d) => ageText(d, x.dpBranchId))),
   };
 }
 function sentBackRow(user: CurrentUser, x: { id: string; pn: string; branchId: string; name: string; status: string; at: Date; note: string | null }, ageText: (d: Date) => string): DrillJob {
@@ -498,11 +501,11 @@ export interface LtoMonitor {
   showAmounts: boolean;
 }
 
-interface LtoJob { id: string; officeId: string; pn: string; branchId: string; typeName: string; dpName: string; drop: Date; pick: Date | null; open: boolean }
+interface LtoJob { id: string; officeId: string; pn: string; branchId: string; dpBranchId: string; typeName: string; dpName: string; drop: Date; pick: Date | null; open: boolean }
 
 async function ltoJobs(user: CurrentUser, q: MonitorQuery, b: Bounds, officeId?: string): Promise<LtoJob[]> {
   return prisma.$queryRaw<LtoJob[]>`
-    SELECT a."id", a."ltoOfficeId" AS "officeId", l."pn" AS pn, l."branchId" AS "branchId", ty."name" AS "typeName", u."name" AS "dpName",
+    SELECT a."id", a."ltoOfficeId" AS "officeId", l."pn" AS pn, l."branchId" AS "branchId", a."dpBranchId" AS "dpBranchId", ty."name" AS "typeName", u."name" AS "dpName",
       d."finishedAt" AS drop, p."finishedAt" AS pick, (a."status" = 'ACCEPTED' AND t."status" = 'IN_PROCESS') AS open
     FROM "DpAssignment" a ${JOIN}
       JOIN "JobStage" d ON d."assignmentId" = a."id" AND d."kind" = 'LTO_DROP'
@@ -525,16 +528,16 @@ export async function ltoMonitor(user: CurrentUser, q: MonitorQuery, now: Date =
     ltoJobs(user, q, b),
     activeAdvisories(user, undefined, now),
     prisma.ltoAdvisory.findMany({ where: { resolvedAt: { gte: b.start, lt: b.end } }, include: { ltoOffice: true }, orderBy: { resolvedAt: "desc" }, take: 50 }),
-    getHolidaySet(),
+    getCalendar(),
     showAmounts ? travelSpent(user, q) : Promise.resolve(new Map<string, number>()),
   ]);
-  const bd = businessDayCounter(holidays, ymdAdd(q.range.from, -120), ymdAdd(q.range.to, 1));
+  const bdOf = branchDayCounters(holidays, ymdAdd(q.range.from, -120), ymdAdd(q.range.to, 1));
   const timesByOffice = new Map<string, number[]>();
   const rows: LtoRow[] = [];
   for (const o of offices) {
     const mine = jobs.filter((j) => j.officeId === o.id);
     const usedJobs = mine.filter((j) => inB(j.drop, b));
-    const times = mine.filter((j) => inB(j.pick, b)).map((j) => bd(j.drop, j.pick!));
+    const times = mine.filter((j) => inB(j.pick, b)).map((j) => bdOf(j.dpBranchId)(j.drop, j.pick!));
     const adv = active.filter((a) => a.officeId === o.id);
     const r: LtoRow = {
       id: o.id, name: o.name, area: o.city || "No area", distanceKm: o.distanceKm, used: usedJobs.length, atNow: mine.filter((j) => !j.pick && j.open).length,
@@ -586,10 +589,10 @@ export async function ltoDrill(user: CurrentUser, q: MonitorQuery, officeId: str
   const o = await prisma.ltoOffice.findUnique({ where: { id: officeId } });
   if (!o) return null;
   const b = boundsOf(q.range);
-  const [jobs, holidays, adv] = await Promise.all([ltoJobs(user, q, b, officeId), getHolidaySet(), activeAdvisories(user, [officeId], now)]);
-  const bd = businessDayCounter(holidays, ymdAdd(businessDate(now), -400), businessDate(now));
+  const [jobs, holidays, adv] = await Promise.all([ltoJobs(user, q, b, officeId), getCalendar(), activeAdvisories(user, [officeId], now)]);
+  const bdOf = branchDayCounters(holidays, ymdAdd(businessDate(now), -400), businessDate(now));
   const row = (j: LtoJob): LtoDrillJob => {
-    const n = bd(j.drop, j.pick ?? now);
+    const n = bdOf(j.dpBranchId)(j.drop, j.pick ?? now);
     return { id: j.id, pn: j.pn, href: linkable(user, j.branchId) ? `/loans/${j.pn}` : null, typeName: j.typeName, dpName: j.dpName, dropText: fmtShort(j.drop), pickText: j.pick ? fmtShort(j.pick) : "Not yet", days: `${n} business day${n === 1 ? "" : "s"}${j.pick ? "" : " so far"}` };
   };
   return {

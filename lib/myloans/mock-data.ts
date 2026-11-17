@@ -1,4 +1,8 @@
-import { businessDaysAgo } from "@/lib/time";
+import { businessDate } from "@/lib/time";
+import { DEFAULT_WORKING_WEEKDAYS, addWorkingDays, daysFor } from "@/lib/calendar/core";
+
+/** The default calendar (Mon to Sat, no holiday): mock data is made without the database. */
+const MOCK_DAYS = daysFor({ workingWeekdays: DEFAULT_WORKING_WEEKDAYS, entries: [] }, null);
 import type { MyLoansRecord } from "./types";
 import { buildPn } from "@/lib/pn/format";
 import { releasedStatus, statusFromId } from "./status";
@@ -8,7 +12,7 @@ import { releasedStatus, statusFromId } from "./status";
  * badges can be demonstrated (On time, Due today, Overdue) on any day the app is run.
  */
 export function mockRecords(now: Date = new Date()): MyLoansRecord[] {
-  const d = (n: number) => businessDaysAgo(n, now);
+  const d = (n: number) => addWorkingDays(businessDate(now), -n, MOCK_DAYS);
   // Real PN format: GD + the branch code + 2026 + 9 + a running number (GD1012026901001 is Antipolo's 1001).
   const base = (i: number, over: Partial<MyLoansRecord>): MyLoansRecord => ({
     pn: buildPn(over.branchCode ?? "101", 2026, 1000 + i),

@@ -1,3 +1,4 @@
+import type { Days } from "@/lib/calendar/core";
 import { storedRuleWording } from "@/lib/rules";
 import { ReclassifyForm } from "@/components/admin/classification-form";
 import { classificationChangedText } from "@/lib/services/classification";
@@ -712,7 +713,7 @@ async function WorkView({ loan, ctx, user, selected, review, correction }: { loa
         edstReference={selected.edstReference}
         send={send}
       />
-      {jobCard && <TxnJobPanel loan={loan} txn={selected} user={user} tats={ctx.tats} holidays={ctx.holidays} statusText={assignmentText} />}
+      {jobCard && <TxnJobPanel loan={loan} txn={selected} user={user} tats={ctx.tats} cal={ctx.cal} statusText={assignmentText} />}
       {!jobCard && <LaHoldStrip txn={selected} user={user} />}
       {laCustom && <div id={`finish-${selected.id}`} className="scroll-mt-28"><MarkDone transactionId={selected.id} name={selected.type.name} ready={checklist.complete} /></div>}
       </div>
@@ -817,7 +818,7 @@ function statusOf(loan: LoanDetail, t: Txn, ctx: Ctx, opens: OpenItem[]): TxnSta
     edstReference: t.edstReference,
     returnedForPapers: t.status === "RETURNED" && !!back?.returnReasonId ? (back.returnReason?.name ?? "Papers needed") : null,
     sentBack: sentBack(t.status, t.dpAssignments)?.kind ?? null,
-    tat: txnTat(t, ctx.tats, ctx.holidays),
+    tat: txnTat(t, ctx.tats, ctx.cal, { loan: loan.branchId, job: back?.dpBranchId }),
     problem: p ? { reason: p.reason.name, days: Math.max(1, problemDays([p], ctx.holidays)) } : null,
     hold: h ? { reason: holdReasonName(h), days: Math.max(1, holdDays([h], ctx.holidays)) } : null,
     missingPapers: opens.filter((o) => o.txnId === t.id && o.kind === "missing").reduce((x, o) => x + Math.max(1, o.papers.length), 0),
@@ -826,7 +827,7 @@ function statusOf(loan: LoanDetail, t: Txn, ctx: Ctx, opens: OpenItem[]): TxnSta
 
 
 /** Open problems, holds and missing-paper requests of every live transaction (from the stored records). */
-function openItemsFor(loan: LoanDetail, holidays: ReadonlySet<string>): OpenItem[] {
+function openItemsFor(loan: LoanDetail, holidays: Days): OpenItem[] {
   return openItemsOf(loan.transactions.filter((t) => t.status !== "CANCELLED").map((t) => {
     const ex = loan.exceptions.find((e) => e.transactionId === t.id && e.type === "LEGAL_DOCS_COMPLETION" && e.status === "OPEN");
     const d = (ex?.details ?? null) as { missing?: unknown; askedFrom?: string | null } | null;

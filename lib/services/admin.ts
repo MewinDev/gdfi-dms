@@ -219,7 +219,7 @@ export const SETTINGS_SCHEMAS = {
   /** Problem reasons (also the result of an attempt that was not processed). */
   problemReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
   /** Hold reasons (waiting on something that is not a fault). */
-  holdReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99) }),
+  holdReason: z.object({ code: codeOf("Code", 2, 20, true), name: text("Name"), sortOrder: int("Order", 0, 99), pausesTat: bool }),
   /** Funds types (Cash advance, Fund transfer): what Finance enters at release, and whether receipts are needed. */
   fundsType: z.object({
     code: codeOf("Short code", 2, 10), name: text("Name"), sortOrder: int("Order", 0, 99),

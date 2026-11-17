@@ -4,8 +4,9 @@
  * screen shows the same words. The clock never pauses; problem time is shown beside it.
  */
 import { fundsStatus, type FundsStatus } from "@/lib/funds/rules";
-import { holdDays, problemDays, stepClock, tatChip, targetOf, txnStepKey, type TatChipData, type TatMap } from "@/lib/workflow/tat";
+import { holdDays, problemDays, stepClock, tatChip, targetOf, txnStepKey, type StepClock, type TatChipData, type TatMap } from "@/lib/workflow/tat";
 import { businessDate } from "@/lib/time";
+import { daysFor, pausedDays, workingDaysBetween, type Days, type WorkCalendar } from "@/lib/calendar/core";
 import { holdReasonName } from "@/lib/ui/holds";
 
 export interface TxnLike {
@@ -16,7 +17,7 @@ export interface TxnLike {
   advanceLines: { denied: boolean; releasedCents: number; advance: { status: string } }[];
   problems: { raisedAt: Date; resolvedAt: Date | null; reason: { name: string } }[];
   /** Holds (waiting, not a fault). Optional so older callers keep working; missing means none. */
-  holds?: { raisedAt: Date; resumedAt: Date | null; reason: { name: string } }[];
+  holds?: { raisedAt: Date; resumedAt: Date | null; reason: { name: string; pausesTat?: boolean } }[];
 }
 
 export const txnFunds = (t: Pick<TxnLike, "fundsNeeded" | "advanceLines">): FundsStatus =>
@@ -32,11 +33,28 @@ export function txnFundsType(t: { advanceLines: { denied: boolean; advance: { st
 export const openProblem = <P extends { resolvedAt: Date | null }>(problems: P[]): P | null => problems.find((p) => !p.resolvedAt) ?? null;
 export const openHold = <H extends { resumedAt: Date | null }>(holds: H[] | undefined): H | null => holds?.find((h) => !h.resumedAt) ?? null;
 
+/**
+ * Whose calendar counts a step (D-041): the processor's branch while the DP has it (sent, in process), else the
+ * loan's branch (LA work). `job` is the job's processor branch (DpAssignment.dpBranchId), when there is a job.
+ */
+export interface StepBranches {
+  loan: string;
+  job?: string | null;
+  /** The DP job's saved TAT (D-041): due date and target saved at accept, moved only by a logged change. */
+  saved?: { dueDate: string | null; targetDays: number | null; acceptedAt: Date | null } | null;
+}
+export const stepBranch = (status: string, b: StepBranches) => (["ASSIGNED", "IN_PROCESS"].includes(status) && b.job ? b.job : b.loan);
+
 /** TAT chip for the transaction's current step (null when the step has no clock: done, cancelled, before the step). */
-export function txnTat(t: TxnLike, tats: TatMap, holidays: ReadonlySet<string>, now: Date = new Date()): TatChipData | null {
+export function txnTat(t: TxnLike, tats: TatMap, cal: WorkCalendar, branches: StepBranches, now: Date = new Date()): TatChipData | null {
   const key = txnStepKey(t.status, t.type.code);
   if (!key) return null;
-  const clock = stepClock({ targetDays: targetOf(tats, key), start: t.statusSince }, holidays, now);
+  const holidays = daysFor(cal, stepBranch(t.status, branches));
+  const today = businessDate(now);
+  const s = branches.saved;
+  const clock = t.status === "IN_PROCESS" && s?.dueDate && s.acceptedAt
+    ? savedClock(s.dueDate, s.targetDays, businessDate(s.acceptedAt), t.holds ?? [], holidays, today)
+    : stepClock({ targetDays: targetOf(tats, key), start: t.statusSince }, holidays, now);
   // Problem time on this step: problems raised since the step began (sum of business days, still counting).
   const onStep = t.problems.filter((p) => p.raisedAt >= t.statusSince || !p.resolvedAt);
   const open = openProblem(t.problems);
@@ -44,12 +62,25 @@ export function txnTat(t: TxnLike, tats: TatMap, holidays: ReadonlySet<string>, 
   return tatChip(
     clock, businessDate(now),
     open ? { open: true, days: problemDays(onStep.filter((p) => !p.resolvedAt), holidays, now), reason: open.reason.name } : null,
-    hold ? { open: true, days: holdDays([hold], holidays, now), reason: holdReasonName(hold) } : null,
+    hold ? { open: true, days: holdDays([hold], holidays, now), reason: holdReasonName(hold), pauses: !!hold.reason.pausesTat } : null,
+    { days: holidays, amberWithin: cal.amberWithinDays ?? 1 },
   );
 }
 
+/**
+ * The clock of a saved due date (D-041): days used = working days since the accept day, less the days paused by
+ * holds whose reason "Pauses TAT" (a finished pause already moved the due date; an open one is shown as Paused).
+ */
+export function savedClock(dueDate: string, targetDays: number | null, acceptDay: string, holds: { raisedAt: Date; resumedAt: Date | null; reason: { pausesTat?: boolean } }[], days: Days, today: string): StepClock {
+  const paused = pausedDays(holds.filter((h) => businessDate(h.raisedAt) >= acceptDay).map((h) => ({ from: businessDate(h.raisedAt), to: h.resumedAt ? businessDate(h.resumedAt) : null, pauses: !!h.reason.pausesTat })), today, days);
+  const used = Math.max(0, workingDaysBetween(acceptDay, today, days) - paused);
+  const late = today > dueDate ? workingDaysBetween(dueDate, today, days) : 0;
+  return { used, target: targetDays, deadline: dueDate, late, done: false };
+}
+
 /** Done chip for a finished job: from acceptance to completion against the processing target. */
-export function doneTat(code: string, start: Date, end: Date, tats: TatMap, holidays: ReadonlySet<string>): TatChipData {
+export function doneTat(code: string, start: Date, end: Date, tats: TatMap, cal: WorkCalendar, jobBranchId: string): TatChipData {
+  const holidays = daysFor(cal, jobBranchId);
   const key = ({ NOTARY: "P4_NOTARY", PPSR: "P4_PPSR", MORTGAGE: "P4_MORTGAGE" } as Record<string, string>)[code] ?? null;
   return tatChip(stepClock({ targetDays: targetOf(tats, key), start, end }, holidays, end), businessDate(end));
 }

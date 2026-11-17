@@ -1,3 +1,4 @@
+import { daysFor, type Days, type WorkCalendar } from "@/lib/calendar/core";
 /**
  * Monitoring rules in one place (pure: the server, the browser and the unit tests use the same code).
  *  - Availability of a processor: capacity, open jobs, On leave, and the status chip thresholds.
@@ -5,7 +6,6 @@
  *    heading "9 Nov to 9 Nov 2026", and the By day / By week buckets.
  *  - A fast business-day counter over a date range (the TAT calendar: weekends and holidays skipped).
  */
-import { isBusinessDay } from "@/lib/time";
 
 /** The Philippine calendar day of an instant (fixed UTC+8, no daylight saving): fast, no formatter. */
 export const phtDate = (d: Date) => new Date(d.getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
@@ -186,11 +186,11 @@ export const bucketOf = (ymd: string, unit: "day" | "week") => (unit === "day" ?
  * up to and including the second; the same day is 0). Precomputes a running count for a date range
  * so thousands of jobs cost one lookup each.
  */
-export function businessDayCounter(holidays: ReadonlySet<string>, from: string, to: string) {
+export function businessDayCounter(holidays: Days, from: string, to: string) {
   const index = new Map<string, number>();
   let n = 0;
   for (let d = from; d <= to; d = ymdAdd(d, 1)) {
-    if (isBusinessDay(d, holidays)) n++;
+    if (holidays.isWorkingDay(d)) n++;
     index.set(d, n);
   }
   const at = (ymd: string): number => {
@@ -206,9 +206,23 @@ export function businessDayCounter(holidays: ReadonlySet<string>, from: string, 
   };
 }
 
-function countBetween(a: string, b: string, holidays: ReadonlySet<string>): number {
+/**
+ * One counter per branch (D-041: a DP job counts on its processor's branch calendar), built when first asked.
+ * Same counting as businessDayCounter.
+ */
+export function branchDayCounters(cal: WorkCalendar, from: string, to: string) {
+  const made = new Map<string, (a: Date, b: Date) => number>();
+  return (branchId: string | null | undefined) => {
+    const k = branchId ?? "";
+    let c = made.get(k);
+    if (!c) { c = businessDayCounter(daysFor(cal, branchId), from, to); made.set(k, c); }
+    return c;
+  };
+}
+
+function countBetween(a: string, b: string, holidays: Days): number {
   let c = 0;
-  for (let d = ymdAdd(a, 1); d <= b; d = ymdAdd(d, 1)) if (isBusinessDay(d, holidays)) c++;
+  for (let d = ymdAdd(a, 1); d <= b; d = ymdAdd(d, 1)) if (holidays.isWorkingDay(d)) c++;
   return c;
 }
 
@@ -223,10 +237,10 @@ export const daysText = (n: number | null) => (n === null ? "-" : `${Number.isIn
 // ---------------------------------------------------------------------------
 
 /** "30 days, 22 business days" (both days included; weekends and holidays are not business days). */
-export function rangeSummary(from: string, to: string, holidays: ReadonlySet<string>): string {
+export function rangeSummary(from: string, to: string, holidays: Days): string {
   const days = ymdDiff(from, to) + 1;
   let biz = 0;
-  for (let d = from; d <= to; d = ymdAdd(d, 1)) if (isBusinessDay(d, holidays)) biz++;
+  for (let d = from; d <= to; d = ymdAdd(d, 1)) if (holidays.isWorkingDay(d)) biz++;
   return `${days} day${days === 1 ? "" : "s"}, ${biz} business day${biz === 1 ? "" : "s"}`;
 }
 

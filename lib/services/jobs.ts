@@ -8,9 +8,13 @@ import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { andWhere, holdsWhere } from "@/lib/auth/holders";
-import { getHolidaySet, getSetting } from "@/lib/settings";
+import { getSetting, getTatMap } from "@/lib/settings";
+import { targetOf, txnStepKey } from "@/lib/workflow/tat";
+import { loadCalendar } from "@/lib/calendar/load";
+import { addWorkingDays, daysFor } from "@/lib/calendar/core";
+import { liquidationDueFields } from "./funds";
 import { businessDate } from "@/lib/time";
-import { carryOverDecision, fundsStatus, lineBalance, liquidationDue } from "@/lib/funds/rules";
+import { carryOverDecision, fundsStatus, lineBalance } from "@/lib/funds/rules";
 import type { TypeRef } from "@/lib/funds/access";
 import { typeBandApprovers } from "./funds-handlers";
 import { recomputeStage } from "./stage";
@@ -38,7 +42,7 @@ export const whoOf = (u: CurrentUser): Who => ({ actor: { id: u.id, label: u.nam
 
 const assignmentInclude = {
   transaction: { include: { type: true, documents: true, advanceLines: { include: { advance: true } }, attempts: true, problems: true, holds: true } },
-  dpUser: true, secondaryDpUser: true, ltoOffice: true, loan: { include: { branch: true } }, assignedBy: { select: { name: true, active: true } }, receivingBranch: true, receivingLa: { select: { name: true } },
+  dpUser: true, secondaryDpUser: true, ltoOffice: true, dpBranch: { select: { name: true } }, loan: { include: { branch: true } }, assignedBy: { select: { name: true, active: true } }, receivingBranch: true, receivingLa: { select: { name: true } },
 } satisfies Prisma.DpAssignmentInclude;
 export type AssignmentFull = Prisma.DpAssignmentGetPayload<{ include: typeof assignmentInclude }>;
 
@@ -97,7 +101,11 @@ export async function inScopeOrOwnJob(u: CurrentUser, branchId: string, transact
 export async function acceptCore(tx: Tx, a: AssignmentFull, who: Who) {
   if (a.status !== "PENDING_ACCEPTANCE") throw new UserError("This job is not waiting for acceptance.");
   const now = new Date();
-  await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "ACCEPTED", decidedAt: now } });
+  // The TAT is saved at accept (D-041): the target of the type's processing step, counted on the processor's
+  // branch calendar from the accept day. Moved later only by a logged change (holiday, closure, pause, correction).
+  const target = targetOf(await getTatMap(tx), txnStepKey("IN_PROCESS", a.transaction.type.code));
+  const due = target === null ? null : addWorkingDays(businessDate(now), target, daysFor(await loadCalendar(tx), a.dpBranchId));
+  await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "ACCEPTED", decidedAt: now, dueDate: due, targetDays: target, dueBranchId: due ? a.dpBranchId : null } });
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "IN_PROCESS", statusSince: now } });
   // Custody moves only for papers in transit to the processor, and never for a paper marked Missing
   // (it keeps any Document ID from an earlier tick, which is not proof that it was handed over).
@@ -241,9 +249,8 @@ export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: At
 
   // The rest of the money: carry over (auto within the limit, else Finance approves) or return.
   if (input.rest !== "NONE") {
-    const holidays = await getHolidaySet(tx);
+    const cal = await loadCalendar(tx);
     const limit = await getSetting("funds.carryOverLimitDays", tx);
-    const dueDays = await getSetting("funds.liquidationDueDays", tx);
     for (const l of lines) {
       const { balance } = await lineTotals(tx, l.id);
       if (balance <= 0) continue;
@@ -252,11 +259,12 @@ export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: At
         continue;
       }
       const first = await tx.carryOver.findFirst({ where: { lineId: l.id }, orderBy: { createdAt: "asc" } });
-      const d = carryOverDecision({ balanceCents: balance, firstCarryOver: first?.createdAt ?? null, now, limitDays: limit, holidays });
+      // Counted on the requesting processor's branch calendar (D-041).
+      const d = carryOverDecision({ balanceCents: balance, firstCarryOver: first?.createdAt ?? null, now, limitDays: limit, holidays: daysFor(cal, l.advance.branchId) });
       await tx.carryOver.create({ data: { lineId: l.id, attemptId: attempt.id, cents: balance, status: d.status, businessDays: d.businessDays, ...(d.status === "AUTO" ? { decidedAt: now } : {}) } });
       if (d.status === "AUTO") {
         // Each carry-over decision restarts the liquidation due date.
-        await tx.cashAdvance.update({ where: { id: l.advanceId }, data: { overdueNotifiedAt: null, liquidationDueAt: liquidationDue(now, dueDays, holidays) } });
+        await tx.cashAdvance.update({ where: { id: l.advanceId }, data: { overdueNotifiedAt: null, ...(await liquidationDueFields(tx, l.advance.branchId, now)) } });
       } else {
         const approvers = await bandApprovers(tx, balance, l.advance);
         await notify(tx, { email: { event: "advance_requested", to: approvers, amountCents: balance, vars: { number: l.advance.number, kind: l.advance.fundsTypeName, who: a.dpUser.name, reason: `Carry-over: keep the balance for ${a.transaction.type.name} beyond the carry-over limit.` } }, userIds: approvers, loanId: a.loanId, title: `${l.advance.number}: carry-over needs approval`, body: `${a.dpUser.name} wants to keep ${(balance / 100).toFixed(2)} for ${a.transaction.type.name} beyond the carry-over limit.`, link: "/funds?tab=approve" });

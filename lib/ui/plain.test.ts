@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MON_FRI, testDays } from "@/lib/calendar/testing";
 import { deadlineChip, historySentence, initials, plainMessage, stepState, txnChip } from "./plain";
 
 describe("plain words", () => {
@@ -7,9 +8,9 @@ describe("plain words", () => {
   });
   it("deadline chips", () => {
     const now = new Date("2026-11-06T03:00:00Z"); // Friday
-    expect(deadlineChip({ badge: "DUE_TODAY", deadline: "2026-11-06" }, new Set(), now)?.text).toBe("Due today");
-    expect(deadlineChip({ badge: "ON_TIME", deadline: "2026-11-10" }, new Set(), now)?.text).toBe("2 days left");
-    expect(deadlineChip({ badge: "OVERDUE", deadline: "2026-11-05" }, new Set(), now)?.text).toBe("Late by 1 day");
+    expect(deadlineChip({ badge: "DUE_TODAY", deadline: "2026-11-06" }, testDays([], MON_FRI), now)?.text).toBe("Due today");
+    expect(deadlineChip({ badge: "ON_TIME", deadline: "2026-11-10" }, testDays([], MON_FRI), now)?.text).toBe("2 days left");
+    expect(deadlineChip({ badge: "OVERDUE", deadline: "2026-11-05" }, testDays([], MON_FRI), now)?.text).toBe("Late by 1 day");
   });
   it("step state", () => {
     expect([stepState(2, 3), stepState(3, 3), stepState(4, 3)]).toEqual(["Done", "Now", "Later"]);

@@ -8,7 +8,9 @@ import { notify, branchLaUserIds } from "@/lib/notify";
 import { allInScope, can, worksInScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PRINTABLE_STATUSES } from "@/lib/funds/list-view";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getHolidaySet, getSetting } from "@/lib/settings";
+import { getSetting } from "@/lib/settings";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { businessDate } from "@/lib/time";
 import {
   advanceBalance, bandRolesFor, decimalToCents, isOverdue, liquidationDue, liquidationStatus, peso,
@@ -411,8 +413,6 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
     const ref = r.ref;
     const sent = isTransfer(a.fundsType);
     await assertFundsNotHeld(tx, a.lines.map((l) => l.transactionId));
-    const holidays = await getHolidaySet(tx);
-    const dueDays = await getSetting("funds.liquidationDueDays", tx);
     let total = 0;
     for (const l of a.lines) {
       if (l.denied || !l.approvedCents) continue;
@@ -421,10 +421,11 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
     }
     // A type that need not be liquidated with receipts is settled when it is released (no due date).
     const settle = !a.fundsType.mustLiquidate;
+    const due = settle ? { liquidationDueAt: null } : await liquidationDueFields(tx, a.branchId, now);
     await tx.cashAdvance.update({
       where: { id: a.id },
       data: {
-        status: settle ? "LIQUIDATED" : "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, liquidationDueAt: settle ? null : liquidationDue(now, dueDays, holidays),
+        status: settle ? "LIQUIDATED" : "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, ...due,
         transferDate: r.transferDate, accountProvider: r.accountProvider, accountName: r.accountName, accountLast4: r.accountLast4,
       },
     });
@@ -586,8 +587,7 @@ export async function decideCarryOver(u: CurrentUser, carryId: string, approve: 
     if (approve) await assertFundsNotHeld(tx, [c.line.transactionId]); // approving puts cash back to work
     await tx.carryOver.update({ where: { id: c.id }, data: { status: approve ? "APPROVED" : "DENIED", decidedById: u.id, decidedAt: now } });
     if (approve) {
-      const holidays = await getHolidaySet(tx);
-      await tx.cashAdvance.update({ where: { id: c.line.advanceId }, data: { overdueNotifiedAt: null, liquidationDueAt: liquidationDue(now, await getSetting("funds.liquidationDueDays", tx), holidays) } });
+      await tx.cashAdvance.update({ where: { id: c.line.advanceId }, data: { overdueNotifiedAt: null, ...(await liquidationDueFields(tx, c.line.advance.branchId, now)) } });
     }
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: approve ? "carryover_approved" : "carryover_denied", entityType: "CashAdvance", entityId: c.line.advanceId, summary: `${c.line.advance.number}: carry-over of ${peso(c.cents)} ${approve ? "approved" : "denied (return the cash)"} by ${u.name}` });
     await notify(tx, { email: { event: "advance_decided", vars: { number: c.line.advance.number, kind: c.line.advance.fundsTypeName, status: approve ? "carry-over approved" : "carry-over denied", who: u.name, reason: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance." } }, userIds: [c.line.advance.requestedById], title: `${c.line.advance.number}: carry-over ${approve ? "approved" : "denied"}`, body: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance.", link: "/my-funds?tab=advances" });
@@ -691,6 +691,15 @@ export async function exceptionTargets(u: CurrentUser, dpUserIds: string[]): Pro
   if (!can(u, PERMISSIONS.FUNDS_EXCEPTION) || !dpUserIds.length) return new Set();
   const rows = await prisma.user.findMany({ where: { id: { in: dpUserIds } }, select: { id: true, allBranches: true, branches: { select: { branchId: true } } } });
   return new Set(rows.filter((r) => r.id !== u.id && worksInScope(u, r)).map((r) => r.id));
+}
+
+/**
+ * The liquidation due date and the start of its count (D-041): on the requesting processor's branch calendar,
+ * from the release or the latest carry-over decision. Piece 5 changes the start to the last LTO completion.
+ */
+export async function liquidationDueFields(tx: Tx, branchId: string, from: Date) {
+  const days = daysFor(await loadCalendar(tx), branchId);
+  return { liquidationDueAt: liquidationDue(from, await getSetting("funds.liquidationDueDays", tx), days), liquidationDueFrom: businessDate(from) };
 }
 
 /** Finance lets an overdue DP submit one more request (one-time), only a processor in their branches (D-039). */

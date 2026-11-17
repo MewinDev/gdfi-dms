@@ -1,5 +1,6 @@
 "use client";
 
+import { daysFor, type WorkCalendar } from "@/lib/calendar/core";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarIcon, ChevronRightIcon } from "@/components/ui/icons";
@@ -33,7 +34,8 @@ export function DateRangeButton(p: {
   to: string;
   today: string;
   /** Holidays (YYYY-MM-DD) for the "22 business days" line. */
-  holidays: string[];
+  /** The company-wide calendar (D-041): working weekdays and all-branch holidays of the recent months. */
+  cal: WorkCalendar;
   /** The other filters to keep in the URL when applying (no range, from or to). */
   keep: Record<string, string>;
 }) {
@@ -49,7 +51,7 @@ export function DateRangeButton(p: {
   const [focusDay, setFocusDay] = useState(p.to);
   /** Move focus to the focused day on the next render (on open, and after an arrow key). */
   const wantFocus = useRef(false);
-  const holidays = useMemo(() => new Set(p.holidays), [p.holidays]);
+  const holidays = useMemo(() => daysFor(p.cal, null), [p.cal]);
 
   const wide = () => typeof window !== "undefined" && window.matchMedia("(min-width: 640px)").matches;
   const show = (ymd: string) => setLeft(addMonths(monthOf(ymd), wide() ? -1 : 0));

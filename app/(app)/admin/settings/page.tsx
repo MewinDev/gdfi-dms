@@ -1,3 +1,4 @@
+import { PAUSE_RULE_TEXT } from "@/lib/calendar/core";
 import { ensureTypeStages } from "@/lib/services/job-stages";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -619,11 +620,13 @@ async function loadListArea(key: AreaKey, opts: { btype?: TypeKey } = {}): Promi
         { name: "code", label: "Code", type: "text", value: r?.code, width: "sm" },
         { name: "name", label: "Reason", type: "text", value: r?.name, width: "lg" },
         { name: "sortOrder", label: "Order", type: "number", value: r?.sortOrder ?? rows.length + 1, width: "sm" },
+        // D-032 Q-N7, D-041: tick it for reasons outside the person's control (the client, another department).
+        { name: "pausesTat", label: "Pauses TAT", type: "checkbox", value: r?.pausesTat ?? false, help: `While a transaction is on hold for this reason, its turnaround time is paused and the lists show Paused. ${PAUSE_RULE_TEXT}` },
       ];
       return {
         kind: "holdReason", statusKind: "holdReason", noun: "hold reason", addLabel: "Add reason", filterLabel: "Find a reason",
         // Seeded defaults: "Proposed, to be confirmed with the team" until Admin saves the row.
-        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: r.proposed ? `${r.code} · Proposed, to be confirmed with the team` : r.code, inactive: !r.active, href: editHref(key, r.id) })),
+        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: `${r.code}${r.pausesTat ? " · Pauses TAT" : ""}${r.proposed ? " · Proposed, to be confirmed with the team" : ""}`, inactive: !r.active, href: editHref(key, r.id) })),
         fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
       };
     }

@@ -10,7 +10,10 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { canSeeJob, LTO_BLOCK_MESSAGE, lineTotals, loadAssignment, ltoBlocked } from "@/lib/services/jobs";
 import { heldFor } from "@/lib/services/pasuyo";
-import { getHolidaySet, getTatMap } from "@/lib/settings";
+import { getTatMap } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
+import { PAUSE_RULE_TEXT, daysFor } from "@/lib/calendar/core";
+import { dueChanges } from "@/lib/services/calendar";
 import { businessDate, fmtDateTime, fmtShort } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
 import { flagKindChoices, kindNames, lineKindText } from "@/lib/services/expense-kinds";
@@ -67,7 +70,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       </div>
     );
   }
-  const [t, tats, holidays] = await Promise.all([
+  const [t, tats, cal] = await Promise.all([
     prisma.loanTransaction.findUniqueOrThrow({
       where: { id: a.transactionId },
       include: {
@@ -81,8 +84,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       },
     }),
     getTatMap(),
-    getHolidaySet(),
+    getCalendar(),
   ]);
+  // A DP job counts on the processor's branch calendar (D-041).
+  const holidays = daysFor(cal, a.dpBranchId);
   const now = new Date();
   const today = businessDate(now);
   // The processor it was sent to, or the second processor (Pasuyo) working it for them.
@@ -103,7 +108,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const mayMarkOutside = reachable && can(user, PERMISSIONS.PROBLEMS_OUTSIDE);
   const holdReasons = mayHold && !hold ? await prisma.holdReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, code: true } }) : [];
   const funds = txnFunds(t);
-  const tat = a.status === "CLOSED" && a.decidedAt ? doneTat(t.type.code, a.decidedAt, a.forwardedAt ?? a.closedAt ?? now, tats, holidays) : txnTat(t, tats, holidays, now);
+  const tat = a.status === "CLOSED" && a.decidedAt ? doneTat(t.type.code, a.decidedAt, a.forwardedAt ?? a.closedAt ?? now, tats, cal, a.dpBranchId) : txnTat(t, tats, cal, { loan: a.loan.branchId, job: a.dpBranchId, saved: { dueDate: a.dueDate, targetDays: a.targetDays, acceptedAt: a.decidedAt } }, now);
+  // The saved due date and how it moved (holidays, closures, pauses), in plain words (D-041).
+  const dueMoves = a.dueDate ? await dueChanges("DpAssignment", a.id) : [];
+  const pausing = !!hold?.reason.pausesTat;
   const blocked = working && (await ltoBlocked(prisma, a)) ? LTO_BLOCK_MESSAGE : undefined;
   const reasons = await prisma.problemReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } });
   const lines = working
@@ -233,6 +241,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         subtitle={`${a.loan.borrowerName} · ${a.loan.pn} · ${a.loan.branch.name}${a.ltoOffice ? ` · ${a.ltoOffice.name}` : ""}`}
         right={<span className="hidden md:block"><TatChip data={tat} /></span>}
       />
+
+      {a.dueDate && a.status === "ACCEPTED" && t.status === "IN_PROCESS" && (
+        <section aria-label="Due date" className="-mb-1 flex flex-col gap-0.5 text-[14px]" data-job-due={a.dueDate}>
+          <p><span className="font-semibold text-navy">Due {dayText(a.dueDate)}</span>{a.targetDays !== null ? <span className="text-ink-2"> · {a.targetDays} working day{a.targetDays === 1 ? "" : "s"} from the day you accepted, on {a.dpBranch?.name ?? "your branch"}&apos;s calendar</span> : null}</p>
+          {dueMoves.map((m) => <p key={m.id} className="text-[13px] text-ink-2" data-due-change={m.cause}>Moved from {dayText(m.fromDate)} to {dayText(m.toDate)}: {m.note}</p>)}
+          {pausing && <p className="text-[13px] text-ink-2" data-pause-rule>Paused while on hold. {PAUSE_RULE_TEXT}</p>}
+        </section>
+      )}
 
       <section aria-label="Status" className="flex flex-wrap items-center gap-2">
         <span className="md:hidden"><TatChip data={tat} /></span>

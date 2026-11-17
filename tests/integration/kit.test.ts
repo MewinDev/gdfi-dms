@@ -6,11 +6,14 @@
  * The test database is saved first and put back at the end, so the other tests keep their data.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
-import { businessDate, businessDaysBetween } from "@/lib/time";
+import { businessDate } from "@/lib/time";
+import { workingDaysBetween } from "@/lib/calendar/core";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { setKitConfigForTests, kitConfig, KIT_DATABASES, OUT_OF_DATE } from "@/lib/kit/guard";
 import { autoBackup, baselineStatus, buildBaseline, FIRST_CLEAN_BACKUP, listSaves, loadedKit, readManifest, restoreSave, saveDump } from "@/lib/kit/core";
@@ -254,7 +257,7 @@ describe("Manual Test Kit on the test database", () => {
     expect(advisories.filter((a) => a.resolvedAt)).toHaveLength(1);
     expect(advisories.filter((a) => !a.resolvedAt && Date.now() - a.startedAt.getTime() > 24 * 3_600_000).map((a) => a.ltoOffice.code)).toEqual(["LTO-CEB"]);
     // Release dates: N business days before today (TAT cases).
-    const holidays = new Set((await prisma.holidayCalendar.findMany()).map((h) => h.date));
+    const holidays = daysFor(await loadCalendar(), null);
     const late = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026902040" } });
     expect(businessDate(late.releasedAt)).toBe(shiftBusinessDays(businessDate(new Date()), -4, holidays));
   }, 600_000);
@@ -331,12 +334,12 @@ describe("Manual Test Kit on the test database", () => {
     const file = path.join(DIR, "baseline.json");
     const saved = readFileSync(file, "utf8");
     const m = JSON.parse(saved);
-    const holidays = new Set((await prisma.holidayCalendar.findMany()).map((h) => h.date));
+    const holidays = daysFor(await loadCalendar(), null);
     const today = businessDate(new Date());
     try {
       // As if the baseline was saved 3 business days ago: every date moves by the business days from then to today.
       const savedOn = shiftBusinessDays(today, -3, holidays);
-      const shift = businessDaysBetween(savedOn, today, holidays);
+      const shift = workingDaysBetween(savedOn, today, holidays);
       writeFileSync(file, JSON.stringify({ ...m, savedOn }));
       const holidayCount = await prisma.holidayCalendar.count();
       await fresh();

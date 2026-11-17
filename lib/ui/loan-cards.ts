@@ -1,3 +1,4 @@
+import { daysFor, type WorkCalendar } from "@/lib/calendar/core";
 import type { LoanRow } from "@/lib/services/queries";
 import type { LoanCardData } from "@/components/ui/loan-card";
 import { BORROWER_CHIP } from "./borrower-chip";
@@ -21,9 +22,10 @@ export interface LoanListCard extends LoanCardData {
   nextTip?: string;
 }
 
-export function cardFor(r: LoanRow, holidays: ReadonlySet<string>): LoanListCard {
+/** The card of a loan row; its deadline counts on the loan's branch calendar (D-041). */
+export function cardFor(r: LoanRow, cal: WorkCalendar): LoanListCard {
   const problem = r.openExceptions > 0;
-  const dl = deadlineChip(r.tat, holidays);
+  const dl = deadlineChip(r.tat, daysFor(cal, r.branchId));
   const needsYou = problem || LA_STAGES.includes(r.stage);
   const flags: { text: string; tone: Tone }[] = [
     ...(r.sourceChanged ? [{ text: "MyLoans changed", tone: "bad" as Tone }] : []),

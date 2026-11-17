@@ -13,7 +13,7 @@ Last updated: 17 November 2026 (PHT)
 | 3 ORCR | Financing + Untransferred | Notary + EDST |
 | 4 Mortgage | New and amount at or below PHP 500,000; Renewal and amount at or below PHP 1,000,000 | Mortgage: Notary, EDST, Entry of PPSR, Mortgage. Otherwise Notary and EDST |
 
-### Turnaround targets (business days, all editable in Settings)
+### Turnaround targets (working days, all editable in Settings)
 
 | Clock | Default |
 |---|---|
@@ -26,7 +26,17 @@ Last updated: 17 November 2026 (PHT)
 | Receiving LA acceptance | 2 |
 | Transmittal to the vault | 3 |
 
-The clock never pauses. Holds and problems only change the colour and add their own timers. All times are shown in Philippine time (PHT).
+### Working days and due dates (D-018, D-041)
+
+- **One calendar** (Settings, Holidays and working days) counts every working day in the app: turnaround times, liquidation, carry-over, reminders, reports and the job lists. Working days are Monday to Sunday tickboxes, **Monday to Saturday** by default. Holidays (date, name, type: regular, special non-working or local; for all branches or ticked branches) and **office closures** (a quick action: one date, the branches closed and a reason, for a typhoon or a sudden declaration) are non-working days. Only **sample** holidays are seeded ("Sample. Enter the official list from the government proclamation."); the official list is entered from the proclamation. Changes need "Change holidays" (Admin and Superadmin by default) and are audited.
+- **Counting**, by Manila date: the working days after the start date, up to and including the end date; accept and forward on the same day is 0. Friday to Monday is 2 (Saturday counts); Saturday to Monday is 1. A due date is due until the end of that day.
+- **Whose calendar:** LA work counts on the loan's branch; a DP job and the liquidation on the processor's branch; Finance on the requesting processor's branch. A closure of Angono does not move a Pasig item.
+- **Saved due dates:** a DP job's due date is saved when the processor accepts (the target of its processing step, on the processor's branch calendar); the liquidation due date is saved at release (piece 5 moves its start to the last LTO completion). A saved date moves only through the logged rules below or an explicit, logged admin correction. LA steps without an accept are still counted from the calendar each time (until the inbox, piece 9).
+- **A holiday or closure added late** extends an open item when the new non-working day falls **inside its counting window** (after its start, up to and including its due date), **even if it is already overdue** (the closure may be what made it late); an item whose window does not hold the date is unchanged. Before saving, Check shows "This will extend N items (M currently overdue)"; each change is logged on the item and its owner is told. A date in the past needs a reason and may be at most 7 days back (setting). Taking a working weekday away follows the same rule. Making a holiday inactive does not move a saved date back.
+- **Holds that pause TAT:** each hold reason has a "Pauses TAT" tick (on by default for waiting on the client, another department or MyLoans; off for "No available DP" and "Other"). While such a hold is open the chip says **Paused** instead of a countdown; when it ends, the saved due date moves by the paused days. In plain words, shown wherever pauses appear: "The day you put it on hold counts; the day you resume doesn't." A hold for another reason does not stop the clock. Problems never pause it. Hold time is always shown separately.
+- **Colours:** green with 2 or more working days left, amber with 1 day left or due today (the amber point is a setting), red when late, grey when Paused. The Jobs lists are sorted by due date, overdue and soonest first.
+
+All times are shown in Philippine time (PHT).
 
 On hold: the reason category (from Settings, Hold reasons) and the remarks are both required, for every reason, "Other" included. The system records who put it on hold and when; there is no expected resume date. While it is on hold the transaction is locked: it stays readable but nobody can change it, on the screen or on the server, until it is resumed. Only the hold owner can resume it or add details to an older hold without remarks; nobody else can, Admin included. A person whose role has "Move a hold to another person" (`holds:transfer`; the Branch Supervisor and Admin by default, no longer Finance) can give the hold to another active person with the same work role, only in the branches of their own access and only to someone who also has access to that branch (Admin has All branches), with remarks; they can never resume it. Settings, Roles shows "N active branches have nobody who can move a hold." (with Show branches) when that happens. A hold saved without an owner can be transferred too. Remarks for Put on hold, Resume, Add details, Decline and Return to LA: 5 to 500 characters (trimmed). Finance on a held transaction: request, approve, release, top-up and carry-over approval are refused; denying, receipts, recording and confirming cash returns, liquidation, close and exceptions stay allowed, so money already out can be settled.
 

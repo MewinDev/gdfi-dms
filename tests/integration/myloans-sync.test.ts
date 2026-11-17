@@ -3,9 +3,11 @@
  * replacement PNs, reusable papers, moving cash, Find loan at scale. LOCAL database, mock MyLoans.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { getSetting, setSetting, getHolidaySet } from "@/lib/settings";
+import { getSetting, setSetting } from "@/lib/settings";
 import { lookupPn, openLoanFile } from "@/lib/services/loan-file";
 import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob } from "@/lib/services/jobs";
@@ -96,13 +98,14 @@ describe("Refresh rules", () => {
   });
 
   it("background: business hours (Manila, holidays), active loans only, a cap per run with a pause; Run now is audited", async () => {
-    const holidays = await getHolidaySet();
+    const cal = await loadCalendar();
+    const holidays = daysFor(cal, null);
     expect(isBusinessHours(new Date("2026-11-08T10:00:00+08:00"), holidays)).toBe(false); // Sunday
     expect(isBusinessHours(new Date("2026-11-07T08:00:00+08:00"), holidays)).toBe(true); // Saturday
     expect(isBusinessHours(new Date("2026-11-09T06:59:00+08:00"), holidays)).toBe(false);
     expect(isBusinessHours(new Date("2026-11-09T07:00:00+08:00"), holidays)).toBe(true);
     expect(isBusinessHours(new Date("2026-11-09T19:00:00+08:00"), holidays)).toBe(false);
-    const holiday = [...holidays].find((d) => new Date(`${d}T00:00:00+08:00`).getUTCDay() !== 0);
+    const holiday = cal.entries.find((e) => e.allBranches && holidays.isWorkingDay(e.date) === false && new Date(`${e.date}T00:00:00+08:00`).getUTCDay() !== 0)?.date;
     if (holiday) expect(isBusinessHours(new Date(`${holiday}T10:00:00+08:00`), holidays)).toBe(false);
     await open();
     await open("GD1012026901001");

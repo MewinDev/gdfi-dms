@@ -54,6 +54,12 @@ export const SETTING_DEFAULTS = {
   "funds.approvalBandsOn": false as boolean,
   /** Product classification (D-031): Refinancing keywords first, then Financing, else the default. */
   "classification.rules": DEFAULT_CLASSIFICATION_RULES as { refinancing: (Keyword | string)[]; financing: (Keyword | string)[]; fallback: "FINANCING" | "REFINANCING" },
+  /** Working days (D-018, D-041): Sunday (0) to Saturday (6); default Monday to Saturday. At least one must be on. */
+  "calendar.workingDays": [false, true, true, true, true, true, true] as boolean[],
+  /** A holiday or closure dated before today may be added this many days back at most (D-041), with a reason. */
+  "calendar.backdateMaxDays": 7 as number,
+  /** Due-date colour (D-041): amber when this many working days are left or fewer (0 = only on the due day). */
+  "tat.amberWithinDays": 1 as number,
   /** Monitoring: the default capacity of a processor, in open jobs (Settings, Processor capacity). */
   "dp.defaultCapacity": 10 as number,
   /** Email notifications: the master switch. Not active until the system goes live. */
@@ -85,12 +91,6 @@ export async function getSetting<K extends SettingKey>(key: K, db: Tx | typeof p
 export async function setSetting<K extends SettingKey>(key: K, value: SettingValue<K>, db: Tx | typeof prisma = prisma) {
   const json = value as unknown as Prisma.InputJsonValue;
   await db.setting.upsert({ where: { key }, create: { key, value: json }, update: { value: json } });
-}
-
-export async function getHolidaySet(db: Tx | typeof prisma = prisma): Promise<Set<string>> {
-  // Inactive holidays are no longer skipped when counting business days.
-  const rows = await db.holidayCalendar.findMany({ where: { active: true }, select: { date: true } });
-  return new Set(rows.map((r) => r.date));
 }
 
 export async function getTatMap(db: Tx | typeof prisma = prisma): Promise<Map<string, { businessDays: number; note: string; label: string }>> {

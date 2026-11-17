@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MON_FRI, testCal } from "@/lib/calendar/testing";
 import { buildJourney, withRole, undoubleRole, type AssignmentRec, type EventRec, type HoldRec, type JourneyInput, type ProblemRec, type TxnRec } from "./build-journey";
 import { buildJourneyStory, dayHeading, dayLabel, listWords, spanText, storyDays, storyLines, timeText } from "./journey-story";
 
@@ -7,7 +8,7 @@ const at = (s: string) => new Date(`${s.replace(" ", "T")}:00+08:00`);
 const tats = new Map([
   ["P3_CHECKLIST", 1], ["P3_ASSIGN", 2], ["P3_EDST", 1], ["P4_ACCEPT", 0], ["P4_NOTARY", 3], ["P4_PPSR", 3], ["P4_MORTGAGE", 5], ["P4_FORWARD", 1], ["P5_ACCEPT", 2],
 ].map(([k, d]) => [k as string, { businessDays: d as number, note: "", label: k as string }]));
-const none = new Set<string>();
+const noneCal = testCal([], MON_FRI);
 const LA1 = { id: "u-la", name: "LA 1" };
 const DP1 = { id: "u-dp", name: "DP 1" };
 
@@ -40,13 +41,13 @@ function input(transactions: TxnRec[], events: EventRec[] = []): JourneyInput {
   return {
     loan: {
       pn: "GD1012026900001", stage: "Checklist", stageSince: at("2026-11-09 23:54"), classification: "FINANCING", mortgageResult: "MORTGAGE", overridden: false,
-      openedAt: at("2026-11-09 23:54"), openedBy: LA1, branchName: "Antipolo", openSourceChange: false, transmittalDispatched: false, transmittalReceived: false,
+      openedAt: at("2026-11-09 23:54"), openedBy: LA1, branchName: "Antipolo", branchId: "b-antipolo", openSourceChange: false, transmittalDispatched: false, transmittalReceived: false,
     },
     transactions, documents: [], advances: [], events,
   };
 }
 const ALL4 = () => ["NOTARY", "EDST", "PPSR", "MORTGAGE"].map((c) => txn(c));
-const story = (i: JourneyInput, now = at("2026-11-10 07:24")) => buildJourneyStory(i, buildJourney(i, tats, none, now));
+const story = (i: JourneyInput, now = at("2026-11-10 07:24")) => buildJourneyStory(i, buildJourney(i, tats, noneCal, now));
 
 describe("Words", () => {
   it("lists, spans and times", () => {

@@ -3,7 +3,9 @@ import { borrowerChangedLoanIds } from "./borrower-review";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { inScope, loanRelationScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
-import { getHolidaySet, getTatMap } from "@/lib/settings";
+import { getTatMap } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
+import { daysFor, type WorkCalendar } from "@/lib/calendar/core";
 import { loanTat, assignDeadline, type TatMap } from "@/lib/workflow/tat";
 import { nextStepFor, type NextStepText } from "@/lib/workflow/stage-map";
 import { businessDate } from "@/lib/time";
@@ -46,7 +48,9 @@ export async function getLoanForUser(user: CurrentUser, pn: string): Promise<Loa
 }
 
 export async function getLoanContext(loan: LoanDetail) {
-  const [tats, holidays] = await Promise.all([getTatMap(), getHolidaySet()]);
+  const [tats, cal] = await Promise.all([getTatMap(), getCalendar()]);
+  // LA work counts on the loan's branch calendar (D-041); a DP step picks the job's branch (txnTat).
+  const holidays = daysFor(cal, loan.branchId);
 
   const tat = loanTat(
     {
@@ -58,7 +62,7 @@ export async function getLoanContext(loan: LoanDetail) {
   const deadline = assignDeadline(loan.releasedAt, tats, holidays);
   const pastDay2 = businessDate(new Date()) > deadline;
 
-  return { tats, holidays, tat, deadline, pastDay2 };
+  return { tats, cal, holidays, tat, deadline, pastDay2 };
 }
 
 export interface TodoItem {
@@ -149,8 +153,8 @@ export interface LoanRow {
   borrowerChanged?: boolean;
 }
 
-export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: TatMap, holidays?: Set<string>): Promise<LoanRow[]> {
-  const [t, h] = await Promise.all([tats ?? getTatMap(), holidays ?? getHolidaySet()]);
+export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: TatMap, calendar?: WorkCalendar): Promise<LoanRow[]> {
+  const [t, cal] = await Promise.all([tats ?? getTatMap(), calendar ?? getCalendar()]);
   const where: Prisma.LoanWhereInput = { ...loanScope(user) };
   if (f.tab === "archived") where.archivedAt = { not: null };
   else where.archivedAt = null;
@@ -188,7 +192,7 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
   });
   const corrected = await borrowerChangedLoanIds(loans.map((l) => l.id));
   let rows: LoanRow[] = loans.map((l) => {
-    const tat = loanTat({ stage: l.stage, stageSince: l.stageSince, releasedAt: l.releasedAt, inProcessCodes: l.transactions.map((x) => x.type.code) }, t, h);
+    const tat = loanTat({ stage: l.stage, stageSince: l.stageSince, releasedAt: l.releasedAt, inProcessCodes: l.transactions.map((x) => x.type.code) }, t, daysFor(cal, l.branch.id));
     const next = nextStepFor(l.stage, { hasOpenException: l._count.exceptions > 0 });
     const needsAction = LA_STAGES.includes(l.stage) || l._count.exceptions > 0;
     return {

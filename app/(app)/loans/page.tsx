@@ -4,7 +4,8 @@ import { requirePagePermission, can, branchRowScope, loanScope, type CurrentUser
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 import { listLoans, type LoanListFilters, type LoanRow } from "@/lib/services/queries";
-import { getHolidaySet } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
+import type { WorkCalendar } from "@/lib/calendar/core";
 import { STAGES } from "@/lib/workflow/stage";
 import { stageLabel } from "@/lib/workflow/stage-map";
 import { cardFor, sortByUrgency } from "@/lib/ui/loan-cards";
@@ -67,7 +68,7 @@ export default async function LoansPage({ searchParams }: { searchParams: Promis
   return la
     ? <LaList user={user} f={f} sp={sp} rows={rows} branches={branches} counts={counts} />
     : <AdminList f={f} rows={rows} page={pageParam(sp.page)} branches={branches} areas={areas} byArea={sp.by === "area"} tabs={tabs} counts={counts} holds={await holdReasonCounts(user)}
-        unfiltered={isFiltered(f) ? (await listLoans(user, { tab: f.tab })).length : null} holidays={await getHolidaySet()} />;
+        unfiltered={isFiltered(f) ? (await listLoans(user, { tab: f.tab })).length : null} cal={await getCalendar()} />;
 }
 
 /** A filter or a search narrows the tab (then "Showing X of Y"). */
@@ -90,8 +91,8 @@ function Tabs({ tabs, current, counts, params, showing }: { tabs: { key: string;
 // ---------------------------------------------------------------------------
 
 async function LaList({ user, f, sp, rows, branches, counts }: { user: CurrentUser; f: LoanListFilters; sp: SP; rows: LoanRow[]; branches: { id: string; name: string }[]; counts: Record<string, number> }) {
-  const [holidays, samples] = await Promise.all([getHolidaySet(), loadSampleCards(user)]);
-  let cards = rows.map((r) => cardFor(r, holidays));
+  const [cal, samples] = await Promise.all([getCalendar(), loadSampleCards(user)]);
+  let cards = rows.map((r) => cardFor(r, cal));
   if (sp.group === "waiting") cards = cards.filter((c) => c.group === "wait");
   cards = sortByUrgency(cards);
   // Paging: the whole list is filtered and ordered first; then one page of 50. Counts stay the total.
@@ -165,7 +166,7 @@ async function holdReasonCounts(user: CurrentUser) {
   };
 }
 
-function AdminList({ f, rows, page, branches, areas, byArea, tabs, counts, holds, unfiltered, holidays }: { f: LoanListFilters; rows: LoanRow[]; page: number; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>>; unfiltered: number | null; holidays: ReadonlySet<string> }) {
+function AdminList({ f, rows, page, branches, areas, byArea, tabs, counts, holds, unfiltered, cal }: { f: LoanListFilters; rows: LoanRow[]; page: number; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>>; unfiltered: number | null; cal: WorkCalendar }) {
   const fields: FilterField[] = [
     { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, stageLabel(s)]) },
     { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"], ["BY_DEFAULT", "Classified by default"], ["CHANGED", "Classification changed since accepted"]] },
@@ -217,7 +218,7 @@ function AdminList({ f, rows, page, branches, areas, byArea, tabs, counts, holds
         ? <EmptyLine text={filtersOn ? (f.q ? `No loans match "${f.q}".` : "No loans match.") : "No loan files here yet."} clearHref={filtersOn ? listHref({ tab: f.tab }) : undefined}
             note={!filtersOn && isTestMode() ? "Sample loans are opened from My loans by a Loan Associate." : undefined} />
         : <>
-            <LoanTable rows={paged.rows} grouped={byArea} totals={totals} holidays={holidays} />
+            <LoanTable rows={paged.rows} grouped={byArea} totals={totals} cal={cal} />
             <Pager info={paged.info} href={listHref(params)} label="loan files" />
           </>}
     </div>

@@ -5,7 +5,8 @@ import { prisma } from "@/lib/db";
 import { inScope, requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { loadAssignment, mayReceive } from "@/lib/services/jobs";
-import { getHolidaySet, getTatMap } from "@/lib/settings";
+import { getTatMap } from "@/lib/settings";
+import { getCalendar } from "@/lib/calendar/load";
 import { txnTat } from "@/lib/jobs/view";
 import { dayText, txnName } from "@/lib/ui/plain";
 import { PageTop } from "@/components/loan/page-top";
@@ -28,7 +29,7 @@ export default async function ReceivePage({ params }: { params: Promise<{ id: st
   const [t, tats, holidays] = await Promise.all([
     prisma.loanTransaction.findUniqueOrThrow({ where: { id: a.transactionId }, include: { type: true, problems: { include: { reason: true } }, holds: { include: { reason: true } }, advanceLines: { include: { advance: true } }, documents: { where: { documentId: { not: null } }, orderBy: { createdAt: "asc" } } } }),
     getTatMap(),
-    getHolidaySet(),
+    getCalendar(),
   ]);
   const waiting = t.status === "FORWARDED" && mayReceive(user, a);
   const papers = t.documents.filter((d) => d.stage === "IN_TRANSIT");
@@ -39,7 +40,7 @@ export default async function ReceivePage({ params }: { params: Promise<{ id: st
         back={{ label: "Home", href: "/dashboard" }}
         title={`Receive: ${txnName(t.type.code, t.type.name)}`}
         subtitle={`${a.loan.borrowerName} · ${a.loan.pn} · to ${a.receivingBranch?.name ?? a.loan.branch.name}`}
-        right={waiting ? <TatChip data={txnTat(t, tats, holidays)} /> : null}
+        right={waiting ? <TatChip data={txnTat(t, tats, holidays, { loan: a.loan.branchId, job: a.dpBranchId })} /> : null}
       />
       {waiting ? (
         <section aria-labelledby="pkg-h" className="card flex flex-col gap-3 p-4 sm:p-5" data-receive-page>

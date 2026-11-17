@@ -3,10 +3,11 @@
  * LOCAL database only; a mocked sender (no network).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { loadCalendar } from "@/lib/calendar/load";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { notify } from "@/lib/notify";
-import { setSetting, getSetting, getHolidaySet } from "@/lib/settings";
+import { setSetting, getSetting } from "@/lib/settings";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob } from "@/lib/services/jobs";
@@ -260,9 +261,10 @@ describe("Reminders", () => {
     const adv = await requestAdvance(dp, { lines: [{ transactionId: notary.id, kind: "TRANSPORT", cents: 50000 }] });
     // Asked on Friday Nov 6, 2026 (PHT).
     await prisma.cashAdvance.update({ where: { id: adv.id }, data: { createdAt: new Date("2026-11-06T09:00:00+08:00") } });
-    const holidays = await getHolidaySet();
-    const saturday = new Date("2026-11-07T10:00:00+08:00");
-    expect(await runEmailReminders(saturday)).toMatchObject({ businessDay: false, approvalWaiting: 0 });
+    const holidays = await loadCalendar();
+    // Sunday is not a working day (D-041: Monday to Saturday by default); Saturday now is.
+    const sunday = new Date("2026-11-08T10:00:00+08:00");
+    expect(await runEmailReminders(sunday)).toMatchObject({ businessDay: false, approvalWaiting: 0 });
     const monday = new Date("2026-11-09T10:00:00+08:00");
     expect(await approvalWaiting(monday, holidays)).toBe(1);
     expect(await approvalWaiting(monday, holidays)).toBe(0); // once a day

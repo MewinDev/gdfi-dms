@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { MON_FRI, testDays } from "@/lib/calendar/testing";
 import { dateMap, rebaseSql, shiftBusinessDays, YMD_COLUMNS } from "./rebase";
 
-const H = new Set(["2026-11-30"]); // Bonifacio Day (a Monday)
+const H = testDays(["2026-11-30"], MON_FRI); // a sample holiday on a Monday
 
 describe("Re-basing the sample dates on restore", () => {
   it("moves by business days, both ways, skipping weekends and holidays", () => {

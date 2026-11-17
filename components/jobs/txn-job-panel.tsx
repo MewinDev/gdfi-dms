@@ -1,3 +1,4 @@
+import type { WorkCalendar } from "@/lib/calendar/core";
 import { mayReceive } from "@/lib/services/jobs";
 import { advisoryWarnings } from "@/lib/services/lto-advisories";
 import { prisma } from "@/lib/db";
@@ -30,11 +31,11 @@ const DP_STATUS: Record<string, string> = {
  * The LA may change the funds flag until the processor accepts, raise and resolve problems on
  * transactions it owns, and receive the package (Phase 5).
  */
-export async function TxnJobPanel({ loan, txn, user, tats, holidays, statusText }: { loan: LoanDetail; txn: Txn; user: CurrentUser; tats: TatMap; holidays: ReadonlySet<string>; /** "Sent to Grace Tan on Nov 7. Waiting for them to accept." */ statusText?: string | null }) {
+export async function TxnJobPanel({ loan, txn, user, tats, cal, statusText }: { loan: LoanDetail; txn: Txn; user: CurrentUser; tats: TatMap; cal: WorkCalendar; /** "Sent to Grace Tan on Nov 7. Waiting for them to accept." */ statusText?: string | null }) {
   const now = new Date();
   const a = txn.dpAssignments.find((x) => liveAssignment(x.status)) ?? null;
   const funds = txnFunds(txn);
-  const tat = txnTat(txn, tats, holidays, now);
+  const tat = txnTat(txn, tats, cal, { loan: loan.branchId, job: a?.dpBranchId }, now);
   const problem = openProblem(txn.problems);
   const hold = openHold(txn.holds);
   const la = can(user, PERMISSIONS.CHECKLIST_TICK) && inScope(user, loan.branchId);

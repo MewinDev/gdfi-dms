@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
+import { type Days } from "@/lib/calendar/core";
 import Link from "next/link";
 import { Fragment, Suspense } from "react";
 import { notFound } from "next/navigation";
 import { can, requireUser, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { businessDate, fmtDate, isBusinessDay } from "@/lib/time";
-import { getHolidaySet } from "@/lib/settings";
+import { businessDate, fmtDate } from "@/lib/time";
+import { getCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { peso } from "@/lib/funds/rules";
 import {
   dpByDay, dpDrill, dpMonitor, filterOptions, measured, missingPapersCount, missingPapersMonitor, ltoByDay, ltoDrill, ltoMonitor, monitorHref, parseMonitorQuery,
@@ -43,7 +45,9 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
   const q = parseMonitorQuery(sp, user, today);
   // The checks above run before anything is sent (a refused tab is a real 404); the numbers then stream in
   // behind a skeleton (keyed by the query, so a new range or filter shows the skeleton again).
-  const [opts, holidays, missingCount] = await Promise.all([filterOptions(user), getHolidaySet(), missingPapersCount(user, q)]);
+  const [opts, cal, missingCount] = await Promise.all([filterOptions(user), getCalendar(), missingPapersCount(user, q)]);
+  // Day rows and the date picker: the company-wide calendar (weekends and all-branch holidays dimmed).
+  const holidays = daysFor(cal, null);
   const day = q.view === "day";
   // The date range keeps every other filter (and drops an open drill-down).
   const keep = Object.fromEntries(new URLSearchParams(monitorHref(q, { range: null, from: null, to: null, open: null, ...(day ? {} : { dp: null, office: null }) }).split("?")[1] ?? ""));
@@ -79,7 +83,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
       </div>
       <FilterBar
         tab={q.tab} view={q.view} preset={q.range.preset} from={q.range.from} to={q.range.to} today={today} area={q.areaId ?? ""} branch={q.branchId ?? ""} type={q.typeCode ?? ""}
-        holidays={[...holidays].filter((h) => h >= recent && h <= today)} keep={keep} resetHref={resetHref}
+        cal={{ workingWeekdays: cal.workingWeekdays, entries: cal.entries.filter((e) => e.allBranches && e.date >= recent && e.date <= today).map((e) => ({ date: e.date, allBranches: true, branchIds: [] })) }} keep={keep} resetHref={resetHref}
         areas={opts.areas} branches={opts.branches} types={opts.types}
         who={day ? (q.tab === "dp" ? { name: "dp", label: "Processor", value: q.dpId ?? "", options: opts.dps } : { name: "office", label: "LTO office", value: q.officeId ?? "", options: opts.offices }) : null}
       />
@@ -93,7 +97,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams: P
 }
 
 /** The tiles and tables of the tab, with the page time (the data work of the page) under them. */
-async function Body({ user, q, now, holidays, offices }: { user: CurrentUser; q: MonitorQuery; now: Date; holidays: ReadonlySet<string>; offices: { id: string; name: string }[] }) {
+async function Body({ user, q, now, holidays, offices }: { user: CurrentUser; q: MonitorQuery; now: Date; holidays: Days; offices: { id: string; name: string }[] }) {
   const { value, ms } = await measured(() => (q.missing ? MissingTab({ user, q, now }) : q.tab === "dp" ? DpTab({ user, q, now, holidays }) : LtoTab({ user, q, now, holidays, offices })));
   return (
     <>
@@ -264,7 +268,7 @@ function Empty({ q, text = "No jobs in this period. Try a wider date range." }: 
 // DP monitor
 // ---------------------------------------------------------------------------
 
-async function DpTab({ user, q, now, holidays }: { user: CurrentUser; q: MonitorQuery; now: Date; holidays: ReadonlySet<string> }) {
+async function DpTab({ user, q, now, holidays }: { user: CurrentUser; q: MonitorQuery; now: Date; holidays: Days }) {
   if (q.view === "day") return <ByDayTable d={await dpByDay(user, q)} q={q} what="processor" holidays={holidays} />;
   const [m, drill] = await Promise.all([dpMonitor(user, q, now), q.open && q.dpId ? dpDrill(user, q, q.dpId, now) : Promise.resolve(null)]);
   // Nothing happened in the dates chosen (open jobs are "as of now", so they do not count here).
@@ -529,7 +533,7 @@ function LtoDrillList({ title, rows, empty }: { title: string; rows: LtoDrillJob
 // LTO monitor
 // ---------------------------------------------------------------------------
 
-async function LtoTab({ user, q, now, holidays, offices }: { user: CurrentUser; q: MonitorQuery; now: Date; holidays: ReadonlySet<string>; offices: { id: string; name: string }[] }) {
+async function LtoTab({ user, q, now, holidays, offices }: { user: CurrentUser; q: MonitorQuery; now: Date; holidays: Days; offices: { id: string; name: string }[] }) {
   const manage = can(user, PERMISSIONS.LTO_REPORTS_MANAGE);
   if (q.view === "day") return <ByDayTable d={await ltoByDay(user, q)} q={q} what="office" holidays={holidays} />;
   const [m, drill] = await Promise.all([ltoMonitor(user, q, now), q.open && q.officeId ? ltoDrill(user, q, q.officeId, now) : Promise.resolve(null)]);
@@ -728,11 +732,11 @@ function Advisories({ m, manage, offices, q }: { m: LtoMonitor; manage: boolean;
 // ---------------------------------------------------------------------------
 
 /** A weekend or holiday row (day rows only): muted, with words, never colour alone. Its counts still show. */
-const offDay = (unit: "day" | "week", key: string, holidays: ReadonlySet<string>) => unit === "day" && !isBusinessDay(key, holidays);
+const offDay = (unit: "day" | "week", key: string, holidays: Days) => unit === "day" && !holidays.isWorkingDay(key);
 /** 820: the first three measures stay; the rest go behind Details. */
 const DAY_MAIN = 3;
 
-function ByDayTable({ d, q, what, holidays }: { d: ByDay; q: MonitorQuery; what: "processor" | "office"; holidays: ReadonlySet<string> }) {
+function ByDayTable({ d, q, what, holidays }: { d: ByDay; q: MonitorQuery; what: "processor" | "office"; holidays: Days }) {
   const unit = d.unit === "day" ? "Day" : "Week";
   const main = d.columns.slice(0, DAY_MAIN), rest = d.columns.slice(DAY_MAIN);
   const empty = d.groups.length === 0 || d.columns.every((c) => !d.total[c.key]);
@@ -826,7 +830,7 @@ function HowCounted({ tab }: { tab: "dp" | "lto" }) {
     <details id="how-counted" className="card scroll-mt-24 p-4 sm:p-5" data-how-counted>
       <summary className="flex min-h-11 cursor-pointer items-center text-[15px] font-bold text-navy">How is this counted?</summary>
       <div className="mt-2 flex flex-col gap-2 text-[14px]">
-        <p>The TAT clock never pauses: every time includes time on hold. Days are business days (weekends and the holidays in Settings skipped); the same day counts as 0. Times are Philippine time. Open counts (assigned, in process, on hold, overdue, at the LTO now) are today&rsquo;s state; everything else uses the dates chosen above, both days included.</p>
+        <p>Every time here includes time on hold. Days are working days of the processor&apos;s branch (the working days, holidays and office closures in Settings); the same day counts as 0. Times are Philippine time. Open counts (assigned, in process, on hold, overdue, at the LTO now) are today&rsquo;s state; everything else uses the dates chosen above, both days included.</p>
         {tab === "dp" ? (
           <ul className="list-disc pl-5">
             <li><strong>Assigned:</strong> sent to the processor and not yet accepted. <strong>In process:</strong> accepted, not completed or forwarded. <strong>On hold:</strong> their open jobs with an active hold (not counted again as assigned or in process). <strong>Open jobs</strong> = assigned + in process + on hold.</li>

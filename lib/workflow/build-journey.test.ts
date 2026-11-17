@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MON_FRI, testCal, testDays } from "@/lib/calendar/testing";
 import {
   buildJourney, currentOwner, custodyOf, dayCells, splitSegments, stateTotals,
   type AssignmentRec, type DocRec, type EventRec, type HoldRec, type JourneyInput, type ProblemRec, type TxnRec,
@@ -13,7 +14,8 @@ const tats = new Map([
   ["P3_CHECKLIST", 1], ["P3_ASSIGN", 2], ["P3_EDST", 1], ["P4_ACCEPT", 0], ["P4_NOTARY", 3], ["P4_PPSR", 3], ["P4_MORTGAGE", 5],
   ["P4_FORWARD", 1], ["P5_ACCEPT", 2], ["P6_VAULTED", 3], ["P7_DIGICUR", 5],
 ].map(([k, d]) => [k as string, { businessDays: d as number, note: "", label: k as string }]));
-const none = new Set<string>();
+const none = testDays([], MON_FRI);
+const noneCal = testCal([], MON_FRI);
 const LA = { id: "u-la", name: "Ana Cruz" };
 const JOY = { id: "u-joy", name: "Joy Navarro" };
 const GRACE = { id: "u-grace", name: "Grace Tan" };
@@ -43,7 +45,7 @@ function input(transactions: TxnRec[], p: Partial<JourneyInput> = {}): JourneyIn
   return {
     loan: {
       pn: "PN-1", stage: "In process", stageSince: at("2026-11-03 09:00"), classification: "FINANCING", mortgageResult: "NOT_MORTGAGE", overridden: false,
-      openedAt: at("2026-11-02 09:00"), openedBy: LA, branchName: "Antipolo", openSourceChange: false, transmittalDispatched: false, transmittalReceived: false,
+      openedAt: at("2026-11-02 09:00"), openedBy: LA, branchName: "Antipolo", branchId: "b-antipolo", openSourceChange: false, transmittalDispatched: false, transmittalReceived: false,
     },
     transactions, documents: [], advances: [], events: [], ...p,
   };
@@ -58,7 +60,7 @@ describe("buildJourney: transaction steps", () => {
       status: "COMPLETED", statusSince: at("2026-11-05 09:00"), completedAt: at("2026-11-05 09:00"),
       assignments: [assignment({ status: "CLOSED", processedAt: at("2026-11-04 09:00"), forwardedAt: at("2026-11-04 10:00"), closedAt: at("2026-11-05 09:00"), receivingLa: LA })],
     });
-    const j = buildJourney(input([t]), tats, none, at("2026-11-06 09:00"));
+    const j = buildJourney(input([t]), tats, noneCal, at("2026-11-06 09:00"));
     expect(steps(j).map((s) => s.stepId)).toEqual(["3.1", "3.6", "4.1", "4.2", "4.6", "5.1"]);
     expect(steps(j).every((s) => s.state === "done")).toBe(true);
     const p = step(j, "4.2");
@@ -72,7 +74,7 @@ describe("buildJourney: transaction steps", () => {
 
   it("hold only: the step is On hold, the open segment is the hold, and the time in each state adds up", () => {
     const now = at("2026-11-04 15:00");
-    const j = buildJourney(input([txn({ holds: [hold()] })]), tats, none, now);
+    const j = buildJourney(input([txn({ holds: [hold()] })]), tats, noneCal, now);
     const p = step(j, "4.2");
     expect(p.state).toBe("hold");
     expect(p.segments.map((s) => s.state)).toEqual(["processing", "hold"]);
@@ -85,7 +87,7 @@ describe("buildJourney: transaction steps", () => {
   });
 
   it("problem only: red state and nested problem", () => {
-    const j = buildJourney(input([txn({ problems: [problem()] })]), tats, none, at("2026-11-04 15:00"));
+    const j = buildJourney(input([txn({ problems: [problem()] })]), tats, noneCal, at("2026-11-04 15:00"));
     expect(step(j, "4.2").state).toBe("problem");
     expect(step(j, "4.2").problems[0].reason).toBe("LTO system down");
     expect(j.txns[0].tat?.state).toBe("problem");
@@ -97,7 +99,7 @@ describe("buildJourney: transaction steps", () => {
       problems: [problem({ raisedAt: at("2026-11-04 10:00"), resolvedAt: at("2026-11-04 12:00") })],
     });
     const now = at("2026-11-04 15:00");
-    const p = step(buildJourney(input([t]), tats, none, now), "4.2");
+    const p = step(buildJourney(input([t]), tats, noneCal, now), "4.2");
     expect(p.segments.map((s) => s.state)).toEqual(["processing", "hold", "processing", "problem", "processing"]);
     expect(p.stateMs.hold).toBe(3 * H);
     expect(p.stateMs.problem).toBe(2 * H);
@@ -107,11 +109,11 @@ describe("buildJourney: transaction steps", () => {
 
   it("overlapping hold and problem: the problem wins the colour while both are open", () => {
     const t = txn({ holds: [hold({ raisedAt: at("2026-11-03 13:00"), resumedAt: at("2026-11-04 17:00") })], problems: [problem({ raisedAt: at("2026-11-04 10:00"), resolvedAt: at("2026-11-04 12:00") })] });
-    const p = step(buildJourney(input([t]), tats, none, at("2026-11-05 09:00")), "4.2");
+    const p = step(buildJourney(input([t]), tats, noneCal, at("2026-11-05 09:00")), "4.2");
     expect(p.segments.map((s) => s.state)).toEqual(["processing", "hold", "problem", "hold", "processing"]);
     // Both open now: the problem wins.
     const both = txn({ holds: [hold()], problems: [problem()] });
-    const j2 = buildJourney(input([both]), tats, none, at("2026-11-04 15:00"));
+    const j2 = buildJourney(input([both]), tats, noneCal, at("2026-11-04 15:00"));
     expect(step(j2, "4.2").state).toBe("problem");
     expect(j2.txns[0].tat?.state).toBe("problem");
   });
@@ -122,7 +124,7 @@ describe("buildJourney: transaction steps", () => {
       problems: [problem({ id: "p1", resolvedAt: at("2026-11-04 11:00") }), problem({ id: "p2", raisedAt: at("2026-11-04 13:00"), resolvedAt: at("2026-11-04 14:00") })],
     });
     const now = at("2026-11-05 11:00");
-    const p = step(buildJourney(input([t]), tats, none, now), "4.2");
+    const p = step(buildJourney(input([t]), tats, noneCal, now), "4.2");
     expect(p.holds.map((h) => h.id)).toEqual(["h1", "h2"]);
     expect(p.problems.map((x) => x.id)).toEqual(["p1", "p2"]);
     expect(p.holds.find((h) => h.id === "h2")!.resumedAt).toBeNull();
@@ -133,7 +135,7 @@ describe("buildJourney: transaction steps", () => {
 
   it("Pasuyo: the second processor is an owner of the processor steps", () => {
     const t = txn({ assignments: [assignment({ second: GRACE })] });
-    const j = buildJourney(input([t]), tats, none, at("2026-11-04 09:00"));
+    const j = buildJourney(input([t]), tats, noneCal, at("2026-11-04 09:00"));
     expect(step(j, "4.2").ownerName).toBe("Joy Navarro and Grace Tan");
     expect(step(j, "4.2").ownerIds).toEqual(["u-joy", "u-grace"]);
   });
@@ -143,21 +145,21 @@ describe("buildJourney: transaction steps", () => {
       { id: "x1", date: "2026-11-03", result: "NOT_PROCESSED", reason: "Long queue", note: "", by: "Joy Navarro", createdAt: at("2026-11-03 16:00"), simulated: false },
       { id: "x2", date: "2026-11-04", result: "DONE", reason: null, note: "", by: "Joy Navarro", createdAt: at("2026-11-04 16:00"), simulated: false },
     ] });
-    const p = step(buildJourney(input([t]), tats, none, at("2026-11-05 09:00")), "4.2");
+    const p = step(buildJourney(input([t]), tats, noneCal, at("2026-11-05 09:00")), "4.2");
     expect(p.attempts.map((a) => a.id)).toEqual(["x2", "x1"]);
   });
 
   it("system events are the details of their step (newest first) and keep the Simulated label", () => {
     const ev = (id: string, action: string, when: string, simulated = false): EventRec => ({ id, at: at(when), action, by: simulated ? "Joy Navarro (Simulated)" : "Joy Navarro", text: `${action} text`, simulated, journeyStep: null, txnId: "t1", phase: 4 });
     const events = [ev("e1", "assigned_to_dp", "2026-11-02 11:00"), ev("e2", "dp_assignment_accepted", "2026-11-03 09:00", true), ev("e3", "attempt_logged", "2026-11-03 16:00"), ev("e4", "attempt_logged", "2026-11-04 16:00")];
-    const j = buildJourney(input([txn()], { events }), tats, none, at("2026-11-05 09:00"));
+    const j = buildJourney(input([txn()], { events }), tats, noneCal, at("2026-11-05 09:00"));
     expect(step(j, "3.6").events.map((e) => e.text)).toEqual(["assigned_to_dp text"]);
     expect(step(j, "4.1").simulated).toBe(true);
     expect(step(j, "4.2").events.map((e) => e.at)).toEqual([at("2026-11-04 16:00"), at("2026-11-03 16:00")]);
   });
 
   it("later steps show owner and target only; phases 7 to 10 are later", () => {
-    const j = buildJourney(input([txn()]), tats, none, at("2026-11-04 09:00"));
+    const j = buildJourney(input([txn()]), tats, noneCal, at("2026-11-04 09:00"));
     const f = step(j, "4.6");
     expect(f.state).toBe("later");
     expect(f.start).toBeNull();
@@ -171,7 +173,7 @@ describe("buildJourney: transaction steps", () => {
   it("not applicable steps: Refinancing skips the financing questions; a cancelled transaction has no rows", () => {
     const inp = input([txn(), txn({ id: "t2", code: "PPSR", name: "Entry of PPSR", status: "CANCELLED", cancelledAt: at("2026-11-02 12:00") })]);
     inp.loan.classification = "REFINANCING";
-    const j = buildJourney(inp, tats, none, at("2026-11-04 09:00"));
+    const j = buildJourney(inp, tats, noneCal, at("2026-11-04 09:00"));
     expect(j.phases[1].steps.find((s) => s.stepId === "2.2")!.state).toBe("na");
     expect(steps(j, "PPSR")).toEqual([]);
     expect(j.txns.find((t) => t.code === "PPSR")!.state).toBe("na");
@@ -180,7 +182,7 @@ describe("buildJourney: transaction steps", () => {
   it("custom transaction types: an LA type gets its own work step, a DP type a processing row", () => {
     const la = txn({ id: "c1", code: "INSURE", name: "Insurance check", requiresDp: false, ownerRole: "LA", status: "READY", statusSince: at("2026-11-02 10:00"), assignments: [] });
     const dp = txn({ id: "c2", code: "COURIER", name: "Courier pickup" });
-    const j = buildJourney(input([la, dp]), tats, none, at("2026-11-04 09:00"));
+    const j = buildJourney(input([la, dp]), tats, noneCal, at("2026-11-04 09:00"));
     expect(steps(j, "INSURE").map((s) => [s.stepId, s.title, s.state])).toEqual([["3.1", "Check the papers", "done"], ["3.3", "Do the Insurance check work", "now"]]);
     expect(step(j, "4.4", "COURIER").title).toBe("Courier pickup: processing");
     expect(step(j, "4.4", "COURIER").state).toBe("now");
@@ -188,7 +190,7 @@ describe("buildJourney: transaction steps", () => {
 
   it("EDST: the LA enters it; no processor steps", () => {
     const e = txn({ id: "e1", code: "EDST", name: "For EDST", requiresDp: false, ownerRole: "LA", status: "READY", statusSince: at("2026-11-02 10:00"), assignments: [] });
-    const j = buildJourney(input([e]), tats, none, at("2026-11-03 09:00"));
+    const j = buildJourney(input([e]), tats, noneCal, at("2026-11-03 09:00"));
     expect(steps(j, "EDST").map((s) => s.stepId)).toEqual(["3.1", "3.3"]);
     expect(step(j, "3.3", "EDST").title).toBe("Enter in EDST and record the reference");
   });
@@ -206,8 +208,8 @@ describe("Segments and time", () => {
 
   it("the TAT clock is identical with and without holds", () => {
     const now = at("2026-11-06 10:00");
-    const a = buildJourney(input([txn()]), tats, none, now);
-    const b = buildJourney(input([txn({ holds: [hold({ resumedAt: at("2026-11-05 09:00") }), hold({ id: "h2", raisedAt: at("2026-11-05 10:00") })] })]), tats, none, now);
+    const a = buildJourney(input([txn()]), tats, noneCal, now);
+    const b = buildJourney(input([txn({ holds: [hold({ resumedAt: at("2026-11-05 09:00") }), hold({ id: "h2", raisedAt: at("2026-11-05 10:00") })] })]), tats, noneCal, now);
     expect(step(b, "4.2").tat.deadline).toBe(step(a, "4.2").tat.deadline);
     expect(step(b, "4.2").tat.actualText).toBe(step(a, "4.2").tat.actualText);
     expect(b.txns[0].tat!.text.match(/Day \d+ of \d+/)![0]).toBe(a.txns[0].tat!.text.match(/Day \d+ of \d+/)![0]);
@@ -216,7 +218,7 @@ describe("Segments and time", () => {
 
   it("hold days count business days: weekends and holidays are skipped", () => {
     // Friday Nov 6 to Tuesday Nov 10, with Monday Nov 9 a holiday: 1 business day.
-    expect(holdDays([{ raisedAt: at("2026-11-06 09:00"), resumedAt: at("2026-11-10 09:00") }], new Set(["2026-11-09"]))).toBe(1);
+    expect(holdDays([{ raisedAt: at("2026-11-06 09:00"), resumedAt: at("2026-11-10 09:00") }], testDays(["2026-11-09"], MON_FRI))).toBe(1);
     expect(holdDays([{ raisedAt: at("2026-11-06 09:00"), resumedAt: at("2026-11-10 09:00") }], none)).toBe(2);
   });
 
@@ -249,7 +251,7 @@ describe("Segments and time", () => {
         { state: "problem", start: at("2026-11-09 09:00"), end: null },
       ],
       start: at("2026-11-05 09:00"), end: null, deadline: "2026-11-10", done: false,
-    }, new Set(["2026-11-09"]), now);
+    }, testDays(["2026-11-09"], MON_FRI), now);
     expect(cells.map((c) => `${c.date.slice(8)}:${c.state}${c.offDay ? "*" : ""}${c.deadline ? "|" : ""}`)).toEqual([
       "05:processing", "06:hold", "07:hold*", "08:hold*", "09:problem*", "10:problem|",
     ]);
@@ -293,8 +295,8 @@ describe("currentOwner: who holds the ball", () => {
 
 describe("The open segment closes on the same record", () => {
   it("when the hold ends, the hold segment gets an end and no new hold appears", () => {
-    const open = buildJourney(input([txn({ holds: [hold()] })]), tats, none, at("2026-11-04 09:00"));
-    const ended = buildJourney(input([txn({ holds: [hold({ resumedAt: at("2026-11-04 09:30") })] })]), tats, none, at("2026-11-04 10:00"));
+    const open = buildJourney(input([txn({ holds: [hold()] })]), tats, noneCal, at("2026-11-04 09:00"));
+    const ended = buildJourney(input([txn({ holds: [hold({ resumedAt: at("2026-11-04 09:30") })] })]), tats, noneCal, at("2026-11-04 10:00"));
     expect(open.txns[0].openSegment?.state).toBe("hold");
     const segs = step(ended, "4.2").segments;
     expect(segs.map((s) => s.state)).toEqual(["processing", "hold", "processing"]);
@@ -303,7 +305,7 @@ describe("The open segment closes on the same record", () => {
     expect(ended.txns[0].openSegment?.state).toBe("processing");
   });
   it("when the next step starts, the step closes and the next one is open", () => {
-    const j = buildJourney(input([txn({ assignments: [assignment({ processedAt: at("2026-11-04 09:00") })] })]), tats, none, at("2026-11-04 10:00"));
+    const j = buildJourney(input([txn({ assignments: [assignment({ processedAt: at("2026-11-04 09:00") })] })]), tats, noneCal, at("2026-11-04 10:00"));
     expect(step(j, "4.2")).toMatchObject({ state: "done", end: at("2026-11-04 09:00") });
     expect(step(j, "4.6").state).toBe("now");
     expect(j.txns[0].openSegment?.start).toEqual(at("2026-11-04 09:00"));

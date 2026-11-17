@@ -2,7 +2,9 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { CURRENT_USER_INCLUDE, toCurrentUser } from "@/lib/auth/build-user";
-import { getHolidaySet, getSetting, setSetting } from "@/lib/settings";
+import { getSetting, setSetting } from "@/lib/settings";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor } from "@/lib/calendar/core";
 import { businessDate } from "@/lib/time";
 import { buildPn } from "@/lib/pn/format";
 import type { MyLoansRecord } from "@/lib/myloans/types";
@@ -63,7 +65,8 @@ async function asUser(email: string): Promise<CurrentUser> {
 
 export async function applyStageSpread(log: Log = console.log): Promise<void> {
   const today = businessDate(new Date());
-  const holidays = await getHolidaySet();
+  // Sample dates: the company-wide calendar (no branch).
+  const holidays = daysFor(await loadCalendar(), null);
   const daysAgo = (n: number, hhmm = "09:00") => new Date(`${shiftBusinessDays(today, -n, holidays)}T${hhmm}:00+08:00`);
   const la = await asUser(`kit.la1${KIT_EMAIL_DOMAIN}`);
   const dp = await asUser(`kit.dp1${KIT_EMAIL_DOMAIN}`);

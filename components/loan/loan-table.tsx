@@ -1,3 +1,4 @@
+import type { WorkCalendar } from "@/lib/calendar/core";
 import Link from "next/link";
 import type { LoanRow } from "@/lib/services/queries";
 import { dayText, peso } from "@/lib/ui/plain";
@@ -15,7 +16,7 @@ import { Flags } from "./my-loans-list";
  */
 const COLS = 8;
 
-export function LoanTable({ rows, grouped = false, totals, holidays }: { rows: LoanRow[]; grouped?: boolean; totals?: GroupTotals; holidays: ReadonlySet<string> }) {
+export function LoanTable({ rows, grouped = false, totals, cal }: { rows: LoanRow[]; grouped?: boolean; totals?: GroupTotals; cal: WorkCalendar }) {
   const groups = grouped ? groupByAreaBranch(rows) : null;
   // With paging: the counts of the whole result, and "continued" for a group begun on an earlier page.
   const areaCount = (a: string, n: number) => totals?.areas[a] ?? n;
@@ -43,27 +44,27 @@ export function LoanTable({ rows, grouped = false, totals, holidays }: { rows: L
               <tr className="bg-fill"><th scope="rowgroup" colSpan={COLS} className="px-4 py-2 text-left text-[13px] font-semibold text-navy">{g.area}{cont(g.area)} <span className="font-normal text-ink-2">· {areaCount(g.area, g.count)} loan file{areaCount(g.area, g.count) === 1 ? "" : "s"}</span></th></tr>
               {g.branches.map((b) => [
                 <tr key={`h-${b.branch}`} data-loan-branch={b.branch} className="border-b border-line"><th scope="rowgroup" colSpan={COLS} className="px-6 py-1.5 text-left text-[12px] font-semibold text-ink-2">{b.branch}{cont(branchKey(g.area, b.branch))} · {branchCount(g.area, b.branch, b.rows.length)}</th></tr>,
-                ...b.rows.map((r) => <Row key={r.id} r={r} holidays={holidays} />),
+                ...b.rows.map((r) => <Row key={r.id} r={r} cal={cal} />),
               ])}
             </tbody>
           )) : (
             <tbody>
-              {rows.map((r) => <Row key={r.id} r={r} holidays={holidays} />)}
+              {rows.map((r) => <Row key={r.id} r={r} cal={cal} />)}
             </tbody>
           )}
         </table>
       </div>
       {/* Phone: one block, a hairline between loans; each loan a few short lines, the whole block opens it. */}
       <ul className="overflow-hidden rounded-lg border border-line bg-white sm:hidden" aria-label="Loan files">
-        {(groups ? groups.flatMap((g) => g.branches.flatMap((b) => b.rows)) : rows).map((r) => <PhoneRow key={r.id} r={r} holidays={holidays} />)}
+        {(groups ? groups.flatMap((g) => g.branches.flatMap((b) => b.rows)) : rows).map((r) => <PhoneRow key={r.id} r={r} cal={cal} />)}
       </ul>
     </>
   );
 }
 
 /** The shared facts of one row. */
-function facts(r: LoanRow, holidays: ReadonlySet<string>) {
-  const c = cardFor(r, holidays);
+function facts(r: LoanRow, cal: WorkCalendar) {
+  const c = cardFor(r, cal);
   return {
     c,
     product: r.productName?.trim() || "No product name",
@@ -96,8 +97,8 @@ export function StageMark({ stage }: { stage: ReturnType<typeof listStage> }) {
   return <span className="text-[13px] font-semibold text-ink" data-stage-step={stage.step ?? undefined} data-stage-name>{stage.label}</span>;
 }
 
-function Row({ r, holidays }: { r: LoanRow; holidays: ReadonlySet<string> }) {
-  const f = facts(r, holidays);
+function Row({ r, cal }: { r: LoanRow; cal: WorkCalendar }) {
+  const f = facts(r, cal);
   const td = "px-3 py-2 align-middle first:pl-4 last:pr-4";
   return (
     <tr className="relative border-b border-line last:border-0 hover:bg-fill has-[a:focus-visible]:outline-2 has-[a:focus-visible]:-outline-offset-2 has-[a:focus-visible]:outline-navy" data-loan-row={r.pn}>
@@ -127,8 +128,8 @@ function Row({ r, holidays }: { r: LoanRow; holidays: ReadonlySet<string> }) {
   );
 }
 
-function PhoneRow({ r, holidays }: { r: LoanRow; holidays: ReadonlySet<string> }) {
-  const f = facts(r, holidays);
+function PhoneRow({ r, cal }: { r: LoanRow; cal: WorkCalendar }) {
+  const f = facts(r, cal);
   return (
     <li className="border-b border-line last:border-0">
       <Link href={`/loans/${r.pn}`} className="flex min-h-11 flex-col gap-0.5 px-3 py-2.5 text-inherit no-underline hover:bg-fill" data-loan-row={r.pn}>

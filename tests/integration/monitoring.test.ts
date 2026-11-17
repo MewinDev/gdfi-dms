@@ -5,6 +5,8 @@
  * LOCAL test database only; removes all loan files first.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor, type Days } from "@/lib/calendar/core";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
@@ -22,7 +24,7 @@ import { shiftBusinessDays } from "@/lib/kit/rebase";
 import { asUser, cleanLoans, workStages, allPapers } from "./helpers";
 
 let la: CurrentUser, dp: CurrentUser, paolo: CurrentUser, admin: CurrentUser, monitor: CurrentUser, fin: CurrentUser;
-let holidays: Set<string>;
+let holidays: Days;
 const today = businessDate(new Date());
 const ago = (n: number, hhmm = "10:00") => (n === 0 ? new Date(Date.now() - 5 * 60_000) : new Date(`${shiftBusinessDays(today, -n, holidays)}T${hhmm}:00+08:00`));
 const at = (ymd: string, hhmm: string) => new Date(`${ymd}T${hhmm}:00+08:00`);
@@ -65,7 +67,10 @@ beforeAll(async () => {
   admin = await asUser("test.admin@gdfi.ph");
   monitor = await asUser("test.monitor@gdfi.ph");
   fin = await asUser("test.finance@gdfi.ph");
-  holidays = new Set((await prisma.holidayCalendar.findMany({ where: { active: true } })).map((h) => h.date));
+  // A sample holiday on Friday 12 June 2026 (D-041: no real dates are seeded; the test makes its own).
+  await prisma.holidayCalendar.deleteMany({ where: { name: "Zz sample holiday (monitoring test)" } });
+  await prisma.holidayCalendar.create({ data: { date: "2026-06-12", name: "Zz sample holiday (monitoring test)", isSample: true } });
+  holidays = daysFor(await loadCalendar(), null);
   await cleanLoans();
   await prisma.ltoAdvisory.deleteMany();
   await prisma.user.updateMany({ data: { dpCapacity: null, dpOnLeave: false, dpLeaveUntil: null } });
@@ -131,6 +136,7 @@ async function workStagesUpTo(jobId: string, u: CurrentUser, count: number) {
 }
 
 afterAll(async () => {
+  await prisma.holidayCalendar.deleteMany({ where: { name: "Zz sample holiday (monitoring test)" } });
   await cleanLoans();
   await prisma.ltoAdvisory.deleteMany();
   await prisma.user.updateMany({ data: { dpCapacity: null, dpOnLeave: false, dpLeaveUntil: null } });
@@ -157,12 +163,12 @@ describe("DP monitor", () => {
     expect(me.total).toEqual({ days: 4, n: 2 });
   });
 
-  it("skips weekends and holidays (June: Thursday to Monday over Independence Day is 1 day)", async () => {
+  it("skips Sundays and holidays (June: Thursday to Monday over a Friday holiday is 2 days: Saturday counts)", async () => {
     const q = parseMonitorQuery({ tab: "dp", range: "custom", from: "2026-06-08", to: "2026-06-19" }, monitor, today);
     const me = (await dpMonitor(monitor, q)).rows.find((r) => r.id === dp.id)!;
-    expect(me.accept).toEqual({ days: 1, n: 1 });
+    expect(me.accept).toEqual({ days: 2, n: 1 }); // Sat 13 and Mon 15 (Fri 12 holiday, Sun 14 off)
     expect(me.processing).toEqual({ days: 2, n: 1 });
-    expect(me.total).toEqual({ days: 3, n: 1 });
+    expect(me.total).toEqual({ days: 4, n: 1 });
     expect(me.declined).toBe(0);
     // A period with nothing finished: no average, "0 jobs".
     const empty = (await dpMonitor(monitor, parseMonitorQuery({ tab: "dp", range: "custom", from: "2026-05-04", to: "2026-05-08" }, monitor, today))).rows.find((r) => r.id === dp.id)!;

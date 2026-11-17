@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { MON_FRI, testCal, testDays } from "@/lib/calendar/testing";
 import { problemDays, stepClock, tatChip, txnStepKey } from "@/lib/workflow/tat";
 import { txnTat } from "./view";
 
 const at = (d: string) => new Date(`${d}T10:00:00+08:00`);
-const none = new Set<string>();
+const none = testDays([], MON_FRI);
+const noneCal = testCal([], MON_FRI);
+const BR = { loan: "b1", job: "b1" };
 const tats = new Map([["P4_MORTGAGE", { businessDays: 5, note: "", label: "" }], ["P4_ACCEPT", { businessDays: 0, note: "", label: "" }]]);
 
 describe("The TAT clock never pauses", () => {
   it("is the same with and without a problem", () => {
     const now = at("2026-11-06");
     const base = { status: "IN_PROCESS", statusSince: at("2026-11-02"), fundsNeeded: "NO" as const, type: { code: "MORTGAGE" }, advanceLines: [] };
-    const clean = txnTat({ ...base, problems: [] }, tats, none, now)!;
-    const withProblem = txnTat({ ...base, problems: [{ raisedAt: at("2026-11-03"), resolvedAt: null, reason: { name: "LTO offline" } }] }, tats, none, now)!;
-    expect(clean.text).toBe("Processing · Day 4 of 5");
+    const clean = txnTat({ ...base, problems: [] }, tats, noneCal, BR, now)!;
+    const withProblem = txnTat({ ...base, problems: [{ raisedAt: at("2026-11-03"), resolvedAt: null, reason: { name: "LTO offline" } }] }, tats, noneCal, BR, now)!;
+    expect(clean).toMatchObject({ state: "soon", text: "1 day left · Day 4 of 5" }); // amber: 1 working day left (D-041)
     expect(withProblem.state).toBe("problem");
     expect(withProblem.text).toContain("Day 4 of 5"); // same day count: no pausing
     expect(stepClock({ targetDays: 5, start: at("2026-11-02") }, none, now)).toEqual(stepClock({ targetDays: 5, start: at("2026-11-02") }, none, now));
@@ -21,7 +24,7 @@ describe("The TAT clock never pauses", () => {
 
 describe("Problem time", () => {
   it("is the sum of each problem's business days, holidays skipped, open ones still counting", () => {
-    const holidays = new Set(["2026-11-04"]);
+    const holidays = testDays(["2026-11-04"], MON_FRI);
     const ps = [
       { raisedAt: at("2026-11-02"), resolvedAt: at("2026-11-03") }, // 1
       { raisedAt: at("2026-11-03"), resolvedAt: at("2026-11-05") }, // 2 days, minus the Wed holiday = 1

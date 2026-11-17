@@ -9,7 +9,8 @@ import { writeAudit, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { getHolidaySet, getSetting } from "@/lib/settings";
+import { getSetting } from "@/lib/settings";
+import { liquidationDueFields } from "./funds";
 import { recomputeStage } from "./stage";
 import { UserError } from "./errors";
 import { evaluateChecklist, refuseMissingPapers } from "./workflow";
@@ -18,7 +19,7 @@ import { acceptCore, completeCore, declineCore, forwardCore, loadAssignment, rec
 import { finishStageCore, materialize, startStageCore, verifiablePapers, verifyPaperCore } from "./job-stages";
 import type { EvidenceField } from "@/lib/stages/rules";
 import { nextNumber, refreshAdvance } from "./funds";
-import { decimalToCents, liquidationDue, peso } from "@/lib/funds/rules";
+import { decimalToCents, peso } from "@/lib/funds/rules";
 import { businessDate } from "@/lib/time";
 
 /**
@@ -110,10 +111,9 @@ async function simulateInner(user: CurrentUser, input: { loanId: string; action:
         // Approve in full and release (Finance).
         const ca = await getCa();
         if (ca.status !== "REQUESTED" && ca.status !== "APPROVED") throw new UserError("Only a requested or approved advance can be released.");
-        const holidays = await getHolidaySet(tx);
         for (const l of ca.lines) await tx.cashAdvanceLine.update({ where: { id: l.id }, data: { approvedCents: l.approvedCents ?? l.requestedCents, releasedCents: l.approvedCents ?? l.requestedCents } });
         const total = ca.lines.reduce((x, l) => x + (l.approvedCents ?? l.requestedCents), 0);
-        await tx.cashAdvance.update({ where: { id: ca.id }, data: { status: "RELEASED", approvedCents: total, approvedAt: now, releasedCents: total, releasedAt: now, releaseRef: "SIM-RELEASE", liquidationDueAt: liquidationDue(now, await getSetting("funds.liquidationDueDays", tx), holidays) } });
+        await tx.cashAdvance.update({ where: { id: ca.id }, data: { status: "RELEASED", approvedCents: total, approvedAt: now, releasedCents: total, releasedAt: now, releaseRef: "SIM-RELEASE", ...(await liquidationDueFields(tx, ca.branchId, now)) } });
         await audit(sim("Finance"), "advance_released", "CashAdvance", ca.id, "3.5", `${ca.number} approved and released: ${peso(total)}; jobs Funded`);
         break;
       }

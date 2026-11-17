@@ -36,50 +36,7 @@ export function businessDate(d: Date, tz: string = APP_TIMEZONE): string {
   return f.format(d); // en-CA formats as YYYY-MM-DD
 }
 
-function parseYmd(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
-}
-
-function formatYmd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-export function isWeekend(ymd: string): boolean {
-  const day = parseYmd(ymd).getUTCDay();
-  return day === 0 || day === 6;
-}
-
-export function isBusinessDay(ymd: string, holidays: ReadonlySet<string>): boolean {
-  return !isWeekend(ymd) && !holidays.has(ymd);
-}
-
-/** Adds n business days (skipping weekends and holidays). n = 0 returns the same date. */
-export function addBusinessDays(ymd: string, n: number, holidays: ReadonlySet<string> = new Set()): string {
-  let d = parseYmd(ymd);
-  let left = n;
-  while (left > 0) {
-    d = new Date(d.getTime() + 86_400_000);
-    if (isBusinessDay(formatYmd(d), holidays)) left--;
-  }
-  return formatYmd(d);
-}
-
-/** Business days from a to b (positive when b is after a). Counts days after a up to and including b. */
-export function businessDaysBetween(a: string, b: string, holidays: ReadonlySet<string> = new Set()): number {
-  if (a === b) return 0;
-  const sign = a < b ? 1 : -1;
-  let [from, to] = sign > 0 ? [a, b] : [b, a];
-  let count = 0;
-  let d = parseYmd(from);
-  const end = parseYmd(to);
-  while (d < end) {
-    d = new Date(d.getTime() + 86_400_000);
-    if (isBusinessDay(formatYmd(d), holidays)) count++;
-  }
-  from = to = "";
-  return sign * count;
-}
+// Day counting (working days, holidays, closures) lives ONLY in lib/calendar (D-018, D-041).
 
 export type TatBadge = "ON_TIME" | "DUE_TODAY" | "OVERDUE";
 
@@ -95,17 +52,6 @@ export const TAT_LABEL: Record<TatBadge, string> = {
   DUE_TODAY: "Due today",
   OVERDUE: "Overdue",
 };
-
-/** Calendar-day offset helper used by the mock data (relative release dates). */
-export function businessDaysAgo(n: number, from: Date = new Date(), holidays: ReadonlySet<string> = new Set()): string {
-  let d = parseYmd(businessDate(from));
-  let left = n;
-  while (left > 0) {
-    d = new Date(d.getTime() - 86_400_000);
-    if (isBusinessDay(formatYmd(d), holidays)) left--;
-  }
-  return formatYmd(d);
-}
 
 // The one shared formatter: "Nov 7, 2026, 9:12 AM PHT" (long) and "Nov 7, 9:12 AM" (short), always in PHT.
 const longFmt = new Intl.DateTimeFormat("en-US", { timeZone: APP_TIMEZONE, year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });

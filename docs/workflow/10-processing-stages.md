@@ -2,7 +2,7 @@
 
 The default stages a DP job runs for each transaction type, with their evidence and targets.
 
-Last updated: 8 November 2026 (PHT)
+Last updated: 17 November 2026 (PHT)
 
 **Proposed, to be confirmed with Collateral and Mortgage.** All of it can be changed by Admin in Settings, Processing stages (`stages:manage`). Changes apply to jobs not yet started; a job that already started keeps its stages.
 
@@ -24,6 +24,6 @@ Mortgage has no stage of its own: its work is LTO drop off and LTO pickup. EDST 
 - A stage cannot finish while a required field is empty (checked on screen and on the server).
 - Attempts, holds and problems belong to the stage that is current.
 - A stage target, when set, shows its own small chip. It is for information and adds no alerts.
-- The transaction's own turnaround time (Notary 3, Entry of PPSR 5, Mortgage 10 business days) does not change and never pauses.
+- The transaction's own turnaround time (Notary 3, Entry of PPSR 5, Mortgage 10 business days) does not change; it pauses only for a hold whose reason is ticked "Pauses TAT" (D-041).
 
 [Back to the workflow index](README.md)

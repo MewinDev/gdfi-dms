@@ -19,8 +19,10 @@ import {
   type ChangeCategory, type FieldChange, type Proposed, type Tracked, type TxnNow,
 } from "@/lib/myloans/changes";
 import { isTestMode } from "@/lib/test-mode";
-import { getClassificationRules, getHolidaySet, getSetting, setSetting } from "@/lib/settings";
-import { businessDate, isBusinessDay, startOfBusinessDay } from "@/lib/time";
+import { getClassificationRules, getSetting, setSetting } from "@/lib/settings";
+import { loadCalendar } from "@/lib/calendar/load";
+import { daysFor, type Days } from "@/lib/calendar/core";
+import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { advanceBalance, peso } from "@/lib/funds/rules";
 import { MORTGAGE_THRESHOLDS, classifyProductName, type FinancingType, type OrcrStatus } from "@/lib/rules";
 import { recomputeStage } from "./stage";
@@ -788,14 +790,13 @@ function skippedOnOpen(loanId: string, why: string): null {
   return null;
 }
 
-/** Mon to Sat, 7:00 AM to 7:00 PM, Philippine time; holidays skipped. */
-export function isBusinessHours(now: Date, holidays: ReadonlySet<string>): boolean {
-  const ymd = businessDate(now);
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", weekday: "short", hour: "numeric", hour12: false }).formatToParts(now);
-  const wd = parts.find((p) => p.type === "weekday")?.value;
-  const hour = Number(parts.find((p) => p.type === "hour")?.value) % 24;
-  if (wd === "Sun" || holidays.has(ymd)) return false;
-  if (wd !== "Sat" && !isBusinessDay(ymd, holidays)) return false;
+/**
+ * 7:00 AM to 7:00 PM Philippine time on a working day of the one calendar (D-018, D-041: its own Mon-Sat rule
+ * is gone). Whether the sync keeps an office-hours window at all is piece 7 (Q-N8: 24/7).
+ */
+export function isBusinessHours(now: Date, days: Days): boolean {
+  if (!days.isWorkingDay(businessDate(now))) return false;
+  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "numeric", hour12: false }).formatToParts(now).find((p) => p.type === "hour")?.value) % 24;
   return hour >= 7 && hour < 19;
 }
 
@@ -880,8 +881,7 @@ export async function runMyLoansSync(o: SyncOptions) {
     return { ran: false as const, reason: PAUSED_BY_ADMIN };
   }
   if (!o.force) {
-    const holidays = await getHolidaySet();
-    if (s.hoursOnly && !isBusinessHours(now, holidays)) return { ran: false as const, reason: "Outside business hours." };
+    if (s.hoursOnly && !isBusinessHours(now, daysFor(await loadCalendar(), null))) return { ran: false as const, reason: "Outside business hours." };
     if (s.last && now.getTime() - new Date(s.last.at).getTime() < s.every * 60_000 - 30_000) return { ran: false as const, reason: `Ran less than ${s.every} minutes ago.` };
   }
   const result = await prisma.$transaction(async (lockTx) => {
