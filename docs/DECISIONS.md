@@ -566,3 +566,22 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   5. Still to verify by myloans: that cancel and deactivate always update `updated_at` (`docs/myloans/myloans_round3_checks.sql`), and that no other code path changes status or `is_active` without it.
 - **Built now:** `lib/myloans/r2/` (`redoSuffixAt`, `sourceUpdatedAtOf`, the planner's "superseded" decision) with the scenarios "redo without cancellation, seen only through the suffix time" and "redo chain of 3 whose oldest copy is re-sent". Plan §7.3.
 - **Reason:** myloans' finding that 22 of 29 superseded copies have an `updated_at` earlier than their suffix time.
+
+## D-041 Piece 4: one working-days calendar, closures, saved due dates (builds D-018; Q-N7 of D-032)
+
+- **Date:** 17 November 2026
+- **Decision (the user's, after checking nine worked examples):**
+  - **One calendar service**, Manila dates, used by TAT, liquidation, the sync, reports and the job lists (the inbox in piece 9). All other day-counting code is removed.
+  - **Working days:** Mon to Sun tickboxes, default **Mon to Sat** (Saturday on).
+  - **Holidays:** date, name, type (regular / special non-working / local), for all branches or ticked branches. Admin and Superadmin edit; audited. Only **sample** dates are seeded, labelled "Sample. Enter the official list from the government proclamation."; no real holiday dates are guessed.
+  - **Office closure:** a quick action for one date and selected branches (typhoon, sudden declaration) with a reason; a non-working day for those branches.
+  - **Counting:** by Manila date; the working days after the start date up to and including the end date. Accept and forward on the same day = 0. Due = the end of the due date (23:59 Manila).
+  - **Whose calendar:** LA work, the loan's branch; a DP job and liquidation, the processor's branch; Finance, the requesting processor's branch.
+  - **Holds:** a hold reason ticked "Pauses TAT" stops the clock. Paused days = the working days after the hold day up to and including the resume day; in plain words wherever pauses appear: "The day you put it on hold counts; the day you resume doesn't." While paused the lists show "Paused" instead of a countdown. Hold time is always shown separately.
+  - **Saved due dates:** saved at accept; recalculated only through the logged extension rule below or an explicit, logged admin correction.
+  - **Late-added holiday or closure:** an open item is extended when the new non-working day falls **inside its counting window** (after its start date, up to and including its due date), **even if it is already overdue** (the closure may be what made it late). Items whose window does not contain the date are unchanged. A back-dated entry (date before today) needs a reason, is allowed up to N days back (setting, default 7) and only for Admin and Superadmin. The preview says "This will extend N items (M currently overdue)". Each change is logged and each owner notified. Saved due dates such as liquidation follow the same rule.
+  - **Colours:** green with 2 or more working days left, amber with 1 day left or due today (the amber point is a setting, default 1), red when late, grey "Paused".
+  - **Lists:** the current Jobs lists are sorted by due date, overdue and soonest first. Waiting time and the full inbox stay in piece 9.
+  - **Liquidation:** the new calendar now; piece 5 changes the start point to the last LTO completion (D-017, Q-N3).
+  - **Mon-Sat default:** due dates move from Mon-Fri to Mon-Sat (test data only so far).
+- **Reason:** D-018; one calendar for everyone; a closure must never make work look late.
