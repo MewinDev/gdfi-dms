@@ -78,7 +78,7 @@ async function createAccounts(log: Log): Promise<Users> {
   const superAcc = KIT_ACCOUNTS.find((a) => a.key === "superadmin")!;
   await create(superAcc, await roleId("SUPERADMIN"));
   const admin = await asUser(superAcc.email);
-  // The Branch Supervisors use the built-in Branch Supervisor role (or one of that name made by hand before).
+  // The LA Supervisor/Heads use the built-in LA Supervisor/Head role (or one of that name made by hand before).
   const supId = (await prisma.role.findUnique({ where: { key: SUPERVISOR_ROLE_KEY } }))?.id ?? (await prisma.role.findFirstOrThrow({ where: { name: SUPERVISOR_ROLE_NAME } })).id;
   // "LA (no refresh)": every Loan Associate tick except Refresh, so Admin can tick it and see the button appear.
   const noRefreshId = await saveRole(admin, null, {

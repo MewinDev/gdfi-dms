@@ -36,9 +36,9 @@ export const KIT_ACCOUNTS: KitAccount[] = [
   // Funds handled by different people: Finance and an approver for each type (only that type's ticks).
   { key: "financeCash", email: `kit.finance.cash${KIT_EMAIL_DOMAIN}`, name: "Finance Cash", role: "FIN_CA", branches: "ALL" },
   { key: "financeTransfer", email: `kit.finance.transfer${KIT_EMAIL_DOMAIN}`, name: "Finance Transfer", role: "FIN_FT", branches: "ALL" },
-  { key: "approverCash", email: `kit.approver.cash${KIT_EMAIL_DOMAIN}`, name: "Approver Cash", role: "APPR_CA", branches: "ALL" },
-  { key: "approverTransfer", email: `kit.approver.transfer${KIT_EMAIL_DOMAIN}`, name: "Approver Transfer", role: "APPR_FT", branches: "ALL" },
-  { key: "supervisor", email: `kit.supervisor${KIT_EMAIL_DOMAIN}`, name: "Branch Supervisor", role: "SUPERVISOR", branches: ["101", "165"] },
+  { key: "approverCash", email: `kit.approver.cash${KIT_EMAIL_DOMAIN}`, name: "Approver (cash advances)", role: "APPR_CA", branches: "ALL" },
+  { key: "approverTransfer", email: `kit.approver.transfer${KIT_EMAIL_DOMAIN}`, name: "Approver (fund transfers)", role: "APPR_FT", branches: "ALL" },
+  { key: "supervisor", email: `kit.supervisor${KIT_EMAIL_DOMAIN}`, name: "LA Supervisor/Head", role: "SUPERVISOR", branches: ["101", "165"] },
   { key: "la1", email: `kit.la1${KIT_EMAIL_DOMAIN}`, name: "LA 1", role: "LA", branches: ["101", "165"] },
   { key: "la2", email: `kit.la2${KIT_EMAIL_DOMAIN}`, name: "LA 2", role: "LA", branches: ["101", "165"] },
   { key: "laAlaminos", email: `kit.la.alaminos${KIT_EMAIL_DOMAIN}`, name: "LA Alaminos", role: "LA", branches: ["390"] },
@@ -52,7 +52,7 @@ export const KIT_ACCOUNTS: KitAccount[] = [
   { key: "monitor", email: `kit.monitor${KIT_EMAIL_DOMAIN}`, name: "Operations Monitor", role: "MONITOR", branches: "ALL" },
   // Branch access samples (Users, Edit, Branch access): a whole Area plus one extra branch, an Area with an
   // exception, All branches, and a user of a branch that MyLoans closed (with an open loan there).
-  { key: "areaSupervisor", email: `kit.area.supervisor${KIT_EMAIL_DOMAIN}`, name: "Area Supervisor Luzon 1", role: "SUPERVISOR", branches: ["390"], access: { areas: [KIT_L1], home: "101" } },
+  { key: "areaSupervisor", email: `kit.area.supervisor${KIT_EMAIL_DOMAIN}`, name: "LA Supervisor/Head Luzon 1", role: "SUPERVISOR", branches: ["390"], access: { areas: [KIT_L1], home: "101" } },
   { key: "laAreaExcept", email: `kit.la.luzon1${KIT_EMAIL_DOMAIN}`, name: "LA Luzon 1 (not Amang Rodriguez)", role: "LA", branches: [], access: { areas: [KIT_L1], except: ["174"], home: "165" } },
   { key: "laRoving", email: `kit.la.roving${KIT_EMAIL_DOMAIN}`, name: "Roving LA", role: "LA", branches: "ALL" },
   { key: "laAlicia", email: `kit.la.alicia${KIT_EMAIL_DOMAIN}`, name: "LA Alicia", role: "LA", branches: ["709", "718"] },
@@ -61,7 +61,7 @@ export const KIT_ACCOUNTS: KitAccount[] = [
 ];
 
 /**
- * The Branch Supervisor accounts use the built-in Branch Supervisor role (key SUP, made by migration
+ * The LA Supervisor/Head accounts use the built-in LA Supervisor/Head role (key SUP, made by migration
  * 20261119090006_decisions_batch). Where a role of that name was made by hand before, that one is used.
  */
 /** The built-in LA Supervisor/Head role (key SUP; the former Branch Supervisor, D-010). */

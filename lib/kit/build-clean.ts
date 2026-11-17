@@ -80,7 +80,7 @@ export async function buildClean(log: Log = console.log): Promise<void> {
     return roleIdOf(name);
   };
   const ids: Partial<Record<CleanRole, string>> = {
-    // The built-in Branch Supervisor role (or one of that name made by hand before).
+    // The built-in LA Supervisor/Head role (or one of that name made by hand before).
     SUPERVISOR: (await prisma.role.findUnique({ where: { key: SUPERVISOR_ROLE_KEY } }))?.id ?? await roleIdOf(SUPERVISOR_ROLE_NAME),
     LA_NO_REFRESH: await kitRole(NO_REFRESH_ROLE_NAME, "Sample role (Manual Test Kit): a Loan Associate without \"Refresh a loan from MyLoans\". Tick it in Settings, Roles to try it.",
       ROLE_DEFAULTS.LA.permissions.filter((k) => k !== PERMISSIONS.LOANS_REFRESH)),
@@ -93,8 +93,8 @@ export async function buildClean(log: Log = console.log): Promise<void> {
     if (a.key === "superadmin") continue;
     await create(a, ids[a.role] ?? (await builtIn(a.role)));
   }
-  // Approval bands, the same amounts for both types: the lowest band to Approver Small, ₱5,000.00 and up to
-  // Approver Large; each type's own approver shares both bands of its type, so it approves without a manual step.
+  // Approval bands, the same amounts for both types: the lowest band to Approver (small amounts), ₱5,000.00 and up to
+  // Approver (large amounts); each type's own approver shares both bands of its type, so it approves without a manual step.
   await prisma.approvalBand.deleteMany({});
   for (const [fundsTypeId, own] of [[TYPE_ID.CA, ids.APPR_CA!], [TYPE_ID.FT, ids.APPR_FT!]] as const) {
     for (const [fromCents, roleId] of [[APPROVER_ROLES.small.fromCents, ids.APPROVER_SMALL!], [APPROVER_ROLES.small.fromCents, own], [APPROVER_ROLES.large.fromCents, ids.APPROVER_LARGE!], [APPROVER_ROLES.large.fromCents, own]] as const) {

@@ -26,5 +26,7 @@ export async function acceptWork(u: CurrentUser, itemId: string): Promise<string
   if (it.kind === "FUND_REQUEST" || it.kind === "PACKAGE") throw new UserError(it.kind === "PACKAGE" ? "Open it and Receive it: that counts as accepting it." : "Open it and Approve or Release it: that counts as accepting it.");
   if (!can(u, PERMISSIONS.CHECKLIST_TICK) || !inScope(u, it.branchId)) throw new UserError("This item is for the branch's Loan Associates.");
   await prisma.$transaction((tx) => acceptItemTx(tx, it.id, u));
+  // A released loan not yet in the DMS: Find loan with its PN filled in (opening it closes the item).
+  if (it.kind === "LOAN_CANDIDATE") return `/loans?fill=${encodeURIComponent(it.subjectId)}`;
   return it.pn ? `/loans/${it.pn}` : "/inbox";
 }

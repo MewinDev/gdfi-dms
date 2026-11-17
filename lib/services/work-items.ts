@@ -259,6 +259,7 @@ function linkOf(it: { kind: string; subjectId: string; pn: string | null }, jobI
   if (it.kind === "DP_JOB") return jobId ? `/jobs/${jobId}` : "/inbox";
   if (it.kind === "FUND_REQUEST") return "/funds";
   if (it.kind === "PACKAGE") return `/receive/${it.subjectId}`;
+  if (it.kind === "LOAN_CANDIDATE") return `/loans?fill=${encodeURIComponent(it.subjectId)}`; // Find loan, PN filled in
   return it.pn ? `/loans/${it.pn}` : "/inbox";
 }
 

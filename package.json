@@ -34,6 +34,7 @@
     "kit:list": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts list",
     "kit:restore": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts restore",
     "kit:rebuild": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts rebuild",
+    "kit:demo": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts demo",
     "email:reminders": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/email.ts reminders",
     "myloans:sync": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/myloans-sync.ts",
     "work:backfill": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/work-backfill.ts",

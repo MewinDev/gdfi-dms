@@ -29,7 +29,7 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | Finance | Finance | All branches |
 | Superadmin | Superadmin (the permission matrix, per-user overrides, All branches; makes the kit's sample roles) | All branches |
 | Superadmin Two | Superadmin (the second one, D-028) | All branches |
-| Branch Supervisor | LA Supervisor/Head (the built-in role: every LA tick, approving myloans changes and moving a hold to another person, D-029) | Antipolo (101), Angono (165) |
+| LA Supervisor/Head | LA Supervisor/Head (the built-in role: every LA tick, approving myloans changes and moving a hold to another person, D-029) | Antipolo (101), Angono (165) |
 | LA 1 | Loan Associate | Antipolo (101), Angono (165) |
 | LA 2 | Loan Associate | Antipolo (101), Angono (165) |
 | LA Alaminos (was "LA Davao") | Loan Associate | Alaminos (390) |
@@ -40,7 +40,7 @@ Sign in at `/login`, under **Test sign-in**. Each button shows the role and bran
 | DP 3 | Document Processor, on leave for a week | Alaminos (390) |
 | DP 4 | Document Processor, own capacity 5 | A. Mabini (168) |
 | Operations Monitor | Monitoring (read-only: Monitoring and LTO advisories) | All branches |
-| Area Supervisor Luzon 1 | LA Supervisor/Head | The whole Area LUZON 1 (NGMA + RIZAL) in Branch Division, plus Alaminos (390); home Antipolo |
+| LA Supervisor/Head Luzon 1 | LA Supervisor/Head | The whole Area LUZON 1 (NGMA + RIZAL) in Branch Division, plus Alaminos (390); home Antipolo |
 | LA Luzon 1 (not Amang Rodriguez) | Loan Associate | The whole Area LUZON 1 (NGMA + RIZAL) except Amang Rodriguez (174); home Angono |
 | Roving LA | Loan Associate | All branches |
 | LA Alicia | Loan Associate | Alicia (709), Alicia-Inactive (718) |
@@ -120,7 +120,7 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 
 | PN | Case | Who signs in | What to do | What should happen |
 |---|---|---|---|---|
-| GD1012026902041 | MyLoans change: borrower details | Branch Supervisor | Open the loan file, To do, MyLoans corrections. | MyLoans now spells the name with "Jr." and has a new address and contact number. The loan keeps the old details with the chip "MyLoans changed borrower details, waiting for review"; old and new side by side, the differing characters marked. Accept the correction or Keep current (a note is required). Nothing is blocked. |
+| GD1012026902041 | MyLoans change: borrower details | LA Supervisor/Head | Open the loan file, To do, MyLoans corrections. | MyLoans now spells the name with "Jr." and has a new address and contact number. The loan keeps the old details with the chip "MyLoans changed borrower details, waiting for review"; old and new side by side, the differing characters marked. Accept the correction or Keep current (a note is required). Nothing is blocked. |
 | GD1012026902042 | MyLoans change: material | Admin | MyLoans review: the amount is now 520,000. Apply or Keep current. | Material: the transactions would change (no longer Mortgage). Nothing changes until Admin decides. |
 | GD1012026902043 | MyLoans change: status | Admin | MyLoans review: MyLoans says cancelled. Close as cancelled. | The loan file closes as cancelled, with the reason. |
 | GD1012026902044 | MyLoans: replaced by a new PN | Admin, then LA 1 | Review shows GD1012026909100 replacing it. LA 1: Find GD1012026909100 and open it. | GD1012026909100 opens; it is not linked by itself. The review of GD1012026902044 lists it as a possible replacement; Admin presses **Link as replacement** (a note is required) to link them as "Replaces / Replaced by". |
@@ -142,7 +142,7 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 | GD7182026902073 | Open loan at a branch MyLoans closed | Admin, then LA Alicia | Admin: Settings > Branches: Alicia-Inactive. LA Alicia: open the loan file, then Find a loan for a new Alicia-Inactive PN. | Alicia-Inactive is Inactive with "1 active user and 1 open loan file". LA Alicia still sees and works the open loan; no new loan file can be opened there; the branch is greyed in pickers. |
 | (none) | A rename and a code change waiting in the Branch review | Admin | Settings > Branches > Branch review: Amang Rodriguez → Amang Rodriguez - Pasig (Renamed), Alicia 709 → 710 (Code changed). Accept one, ignore the other. | Accept shows who gains or loses access first, then applies it; the branch keeps its id, users and loans. Ignore leaves it as it is. Both stay in the decided list. |
 | (none) | Import from MyLoans (the real file) | Admin | Settings > Branches > Import from MyLoans: pick `storage/kit/myloans-branches.csv`. | The preview: counts per Division and Area; the four test-looking rows first ("Looks like a test or unused branch", Inactive, Hide from DMS suggested, not ticked); the rest Unchanged; Alicia-Inactive "Not in this file". Confirm adds the four as inactive. |
-| (none) | Branch access tree | Admin | Users > Edit "LA Luzon 1 (not Amang Rodriguez)", Branch access. Then "Area Supervisor Luzon 1" and "Roving LA". | Selected: LUZON 1 (NGMA + RIZAL) ticked with "Everything in this area except 1 branch"; the summary and the home branch Angono. The supervisor has the whole area plus Alaminos; Roving LA has All branches. |
+| (none) | Branch access tree | Admin | Users > Edit "LA Luzon 1 (not Amang Rodriguez)", Branch access. Then "LA Supervisor/Head Luzon 1" and "Roving LA". | Selected: LUZON 1 (NGMA + RIZAL) ticked with "Everything in this area except 1 branch"; the summary and the home branch Angono. The supervisor has the whole area plus Alaminos; Roving LA has All branches. |
 
 ### Old PN to new PN
 
@@ -243,7 +243,7 @@ Dates on the Monitoring page are Philippine dates; the default is Last 30 days. 
 | PN | Case | Who signs in | What to do | What should happen |
 |---|---|---|---|---|
 | GD1012026902013 | On hold (LA 1 and LA 2) | LA 1, then LA 2 | Notary is on hold by LA 1 (client's papers); For Entry PPSR by LA 2 (branch head). LA 1: try to resume PPSR. LA 2: Resume PPSR with remarks. | The held work is locked. Only the person who put it on hold resumes it. The hold shows the reason, the remarks as typed, who and when. |
-| GD1012026902025 | Hold a supervisor can transfer | Branch Supervisor, then DP 2 | Notary is on hold by DP 1. Supervisor: Transfer hold to DP 2 with a note. DP 2: Resume. | The supervisor can transfer but not resume. After the transfer only DP 2 can resume. |
+| GD1012026902025 | Hold a supervisor can transfer | LA Supervisor/Head, then DP 2 | Notary is on hold by DP 1. Supervisor: Transfer hold to DP 2 with a note. DP 2: Resume. | The supervisor can transfer but not resume. After the transfer only DP 2 can resume. |
 | GD1012026902026 | Problem at the LTO | DP 1, Admin | DP 1: resolve the problem with a note. Admin: mark it outside our control (before resolving). | The problem shows red until resolved; the history keeps both steps. |
 | GD1012026902014 | Pull back before accept | LA 1 | Notary was sent to DP 1, not accepted. Pull it back with a reason. | Back to Ready to send; the papers stay at the branch; gone from DP 1's list; DP 1 is told. |
 | GD1012026902017 | Returned to the LA with findings and papers | LA 1 | Notary returned by DP 1 (missing paper: the ID copy). Confirm the papers came back, tick the ID, Send again. | Sending waits until the papers are confirmed back. Sent again, it is Round 2 for the processor. |

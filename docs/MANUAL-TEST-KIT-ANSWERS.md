@@ -8,7 +8,7 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 
 **MyLoans changes.** Nothing changes by itself. For the cases that need MyLoans to change (a Refresh change, a branch move, a unit change), open the loan first, then sign in as **Admin**, open the loan file and use **Simulate a MyLoans change** (amount, name, product, cancel, replace or branch). The change shows after **Refresh** or the next sync, and a material change waits for review.
 
-**Approvals.** Cash advances under ₱5,000.00 go to **Approver Small**; ₱5,000.00 and up to **Approver Large** (Settings, Approval bands). Finance releases.
+**Approvals.** Approval bands are **off** in the kit (Settings, Cash-advance rules, "Use approval bands by amount"): anyone who can approve the funds type approves any amount (Finance, and the approver accounts). With bands **on**, cash advances under ₱5,000.00 go to **Approver (small amounts)** and ₱5,000.00 and up to **Approver (large amounts)** (Settings, Approval bands); each type's own approver shares both bands of its type. Finance releases.
 
 ### Antipolo (101)
 
@@ -63,14 +63,14 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 | GD3902026903028 | Auto Financing at Alaminos. |
 | GD3902026903029 | Renewal at Alaminos, ₱1,000,000: Mortgage needed. |
 | GD3902026903030 | Released 4 business days ago at Alaminos: late (TAT). |
-| GD3902026903031 | Alaminos is outside Luzon 1: LA Luzon 1 is refused (Outside your branch access). LA Alaminos, Roving LA or Area Supervisor Luzon 1 can open it (the supervisor is an LA Supervisor/Head since D-002: every LA tick; Alaminos is in their access). |
+| GD3902026903031 | Alaminos is outside Luzon 1: LA Luzon 1 is refused (Outside your branch access). LA Alaminos, Roving LA or LA Supervisor/Head Luzon 1 can open it (the supervisor is an LA Supervisor/Head since D-002: every LA tick; Alaminos is in their access). |
 
 ### Amang Rodriguez (174)
 
 | PN | What it is and what it is good for |
 |---|---|
 | GD1742026903032 | Amang Rodriguez: LA Luzon 1 is excluded from this branch, so it is refused for them; Roving LA can open it. |
-| GD1742026903033 | Amang Rodriguez, second loan: once Roving LA opens it, Area Supervisor Luzon 1 sees it and LA Luzon 1 does not. |
+| GD1742026903033 | Amang Rodriguez, second loan: once Roving LA opens it, LA Supervisor/Head Luzon 1 sees it and LA Luzon 1 does not. |
 
 ### Cainta (102)
 
@@ -119,7 +119,7 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 1. **Approve asks first.** Approve opens "Approve this request?" with the amount in bold and one grey line (number · processor · kind · borrower). Focus is on Cancel; Cancel and Esc change nothing. Approve (gold) says "Approving..." and approves once, even on a double tap: one history line and one notice. After a lowered amount, the window shows the changed total. On a phone it is a bottom sheet.
 2. **Request numbers.** The cash advance is CA-2026-0001 (or the next CA number) and the fund transfer FT-2026-0001 (its own series). After Change type the request has the next number of the new type and "Formerly CA-..." under it and in its history; searching the old number finds it.
 3. **Print liquidation report.** Without the tick there is no Print button, and the report link says "Ask a Superadmin to turn on 'Print liquidation report' for your role." Finance and Admin print as before.
-4. **Moving a hold.** Finance has no Transfer hold any more. The Branch Supervisor (Antipolo and Angono) and the Area Supervisor (Luzon 1 plus Alaminos) are on the LA Supervisor/Head role (D-010) and keep Transfer hold as a per-person grant: they have Transfer hold on loans of their branches and can give the hold only to someone who also has access to that branch. Neither can resume it.
+4. **Moving a hold.** Finance has no Transfer hold any more. The LA Supervisor/Head (Antipolo and Angono) and the Area Supervisor (Luzon 1 plus Alaminos) are on the LA Supervisor/Head role (D-010) and keep Transfer hold as a per-person grant: they have Transfer hold on loans of their branches and can give the hold only to someone who also has access to that branch. Neither can resume it.
 5. **Who can move holds.** With Admin's tick on, no line shows (Admin has All branches). With it off, "N active branches have nobody who can move a hold." shows with **Show branches**; the supervisors' branches are not in the list.
 6. **Journey filters.** All · Needs attention and the transaction pills. There is no "Mine".
 
@@ -127,7 +127,7 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 
 7. **Finance Cash** sees only cash advances: no fund transfer in any tab, count, total, search result or CSV, no Type filter, and "Cash advances" under the Funds title. A fund transfer's report link says it is not found.
 8. **Finance Transfer** sees only fund transfers, with "Fund transfers" under the title.
-9. **Approver Cash** sees cash advances only and has Approve on them (its role shares both Cash advance bands); **Approver Transfer** the same for fund transfers. Neither sees the other type. Settings, Approval bands lists the shared bands per type (two roles on each amount).
+9. **Approver (cash advances)** sees cash advances only and has Approve on them (its role shares both Cash advance bands); **Approver (fund transfers)** the same for fund transfers. Neither sees the other type. Settings, Approval bands lists the shared bands per type (two roles on each amount).
 10. With **Release fund transfers** on no role, Settings, Funds types shows "Nobody can release fund transfers." in soft amber under Fund transfer (and Release: Nobody); Settings, Roles and the top of Funds (Admin) show the same line. Fund transfers wait at To release and the Admin is told. Tick it again and the line goes.
 
 ### Missing papers
@@ -169,7 +169,7 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 
 ### MyLoans sync check (12 November 2026)
 
-30. **Borrower details.** No silent update: the loan keeps the old name with the chip "MyLoans changed borrower details, waiting for review" (loan file, My loans, Home, the "Already in the DMS" card) and a "MyLoans corrections" row in Open items. LA Angono sees old and new side by side (the differing characters marked), "Waiting for review by your supervisor", and no buttons. Send, Accept and funds still work. The Branch Supervisor has it on Home ("MyLoans corrections to review"); **Accept the correction** needs a note of 5 to 500 characters, updates the name, address and contact number, and adds one Journey line "Borrower details corrected: Name: old → new; ...". **Keep current** keeps the DMS details; Refresh from MyLoans then finds no change (the same value does not alert again). The notification and email name the fields only, never the values.
+30. **Borrower details.** No silent update: the loan keeps the old name with the chip "MyLoans changed borrower details, waiting for review" (loan file, My loans, Home, the "Already in the DMS" card) and a "MyLoans corrections" row in Open items. LA Angono sees old and new side by side (the differing characters marked), "Waiting for review by your supervisor", and no buttons. Send, Accept and funds still work. The LA Supervisor/Head has it on Home ("MyLoans corrections to review"); **Accept the correction** needs a note of 5 to 500 characters, updates the name, address and contact number, and adds one Journey line "Borrower details corrected: Name: old → new; ...". **Keep current** keeps the DMS details; Refresh from MyLoans then finds no change (the same value does not alert again). The notification and email name the fields only, never the values.
 31. **Amount and branch.** Mortgage shows "MyLoans changed this loan. An approver is reviewing it." on Send; Notary is not held. LA Angono sees "Waiting for an approver to review." and "Amount changed" with no amounts. Keep current without a note says to write a short note. The branch review shows "Branch: Antipolo → Angono" with who gains and loses access; until Admin applies, LA Antipolo still has the loan and LA Angono does not; after Apply it is the other way round.
 32. **Pause MyLoans calls.** The card says "Paused by Admin: MyLoans calls are paused", the switch is red, Run now is refused with "MyLoans calls are paused by Admin.", and the run history shows Paused. The loan file shows "MyLoans calls are paused by Admin"; Refresh from MyLoans still works. Finance cannot change the switch. Every change is in the audit log.
 33. **Area name.** The area name changes on the loan (More loan details) by itself, one Journey line "MyLoans updated the loan's area", no review, no notification, no email.

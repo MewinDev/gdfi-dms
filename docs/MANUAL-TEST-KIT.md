@@ -1,6 +1,6 @@
 # Manual Test Kit
 
-Last updated: 12 November 2026 (PHT)
+Last updated: 18 November 2026 (PHT)
 
 Test GDFI DMS by hand from zero. The kit puts your own database (`gdfi_dms`) in a clean state: the settings, the branches and the sign-in accounts below, and a list of PNs that exist only in the sample MyLoans. Nothing is opened yet: you search each PN and open it yourself. The automated tests use another database (`gdfi_dms_test`).
 
@@ -16,6 +16,7 @@ Run these in PowerShell, in the project folder. Each one says what it will do, a
 | `npm run kit:backup -- my-name` | Saves what is there now as `my-name`. |
 | `npm run kit:restore -- my-name` | Puts a backup back. |
 | `npm run kit:list` | Which kit is loaded, the saved kits and the backups. |
+| `npm run kit:demo` | Adds a few aged Inbox items to the clean kit (red, amber, Paused, and two loans waiting in the Angono pool) for the [demo script](DEMO_SCRIPT.md). |
 
 Add `-- --with-scenarios` to `kit:start`, `kit:reset` or `kit:rebuild` to load the old scenario data instead (see [Manual Test Kit: scenarios](MANUAL-TEST-KIT-SCENARIOS.md)). The first time the clean kit replaces your data, the backup is called `before-clean-kit`.
 
@@ -31,15 +32,15 @@ Sign in at `/login`, under **Test sign-in**. The accounts are grouped by role, w
 | Superadmin Two | Superadmin | All branches |
 | Admin | Admin | All branches |
 | Finance | Finance | All branches |
-| Approver Small | Approver (lowest band) | All branches |
-| Approver Large | Approver (higher band) | All branches |
+| Approver (small amounts) | Approver (lowest band) | All branches |
+| Approver (large amounts) | Approver (higher band) | All branches |
 | Finance Cash | Finance (cash advance) | All branches |
 | Finance Transfer | Finance (fund transfer) | All branches |
-| Approver Cash | Approver (cash advance) | All branches |
-| Approver Transfer | Approver (fund transfer) | All branches |
+| Approver (cash advances) | Approver (cash advance) | All branches |
+| Approver (fund transfers) | Approver (fund transfer) | All branches |
 | Operations Monitor | Monitoring (read-only) | All branches |
-| Branch Supervisor | LA Supervisor/Head | Antipolo and Angono |
-| Area Supervisor Luzon 1 | Supervisor (LA Supervisor/Head role) | Whole Luzon 1 area plus Alaminos |
+| LA Supervisor/Head | LA Supervisor/Head | Antipolo and Angono |
+| LA Supervisor/Head Luzon 1 | Supervisor (LA Supervisor/Head role) | Whole Luzon 1 area plus Alaminos |
 | LA Antipolo | Loan Associate | Antipolo (101) |
 | LA Angono | Loan Associate | Angono (165) |
 | LA A. Mabini | Loan Associate | A. Mabini (168) |
@@ -148,8 +149,8 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 
 1. **Approve asks first.** As a processor, request a cash advance; as the approver, press **Approve** on Funds, To approve. Try **Cancel**, **Esc**, then **Approve** (also a quick double tap). Then open **Change amounts** on another request, lower an amount and press Approve.
 2. **Request numbers.** Request one **Cash advance** and one **Fund transfer**. As Finance, **Change type** on one of them before release, then search Funds for its old number.
-3. **Print liquidation report.** As Admin, untick **Print liquidation report** on the Approver Small role. Sign in as Approver Small and look for Print on Outstanding and History, then open a liquidation report link. Tick it back afterwards.
-4. **Moving a hold.** Put a transaction of an Angono or Antipolo loan on hold as its LA. Sign in as **Finance**, then as **Branch Supervisor**, then as **Area Supervisor Luzon 1**, and look for **Transfer hold**.
+3. **Print liquidation report.** As Admin, untick **Print liquidation report** on the Approver (small amounts) role. Sign in as Approver (small amounts) and look for Print on Outstanding and History, then open a liquidation report link. Tick it back afterwards.
+4. **Moving a hold.** Put a transaction of an Angono or Antipolo loan on hold as its LA. Sign in as **Finance**, then as **LA Supervisor/Head**, then as **LA Supervisor/Head Luzon 1**, and look for **Transfer hold**.
 5. **Who can move holds.** As Admin, open Settings, Roles and read the top of the list. Untick **Move a hold to another person** on Admin and look again; tick it back afterwards.
 6. **Journey filters.** On any loan's Journey, Story, look at the filter row.
 
@@ -157,7 +158,7 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 
 7. **Finance Cash.** Sign in as Finance Cash (after a processor has asked for one cash advance and one fund transfer): look through Funds (every tab, the counts, the search, Download CSV) and Home.
 8. **Finance Transfer.** Do the same as Finance Transfer.
-9. **Approver Cash and Approver Transfer.** Sign in as each one and open Funds, To approve. Each role shares its own type's approval bands (with Approver Small and Approver Large), so nothing needs setting up.
+9. **Approver (cash advances) and Approver (fund transfers).** Sign in as each one and open Funds, To approve. Each role shares its own type's approval bands (with Approver (small amounts) and Approver (large amounts)), so nothing needs setting up.
 10. **Nobody can release fund transfers.** As Admin, untick **Release fund transfers** on every role that has it (Settings, Roles). Look at Settings, Funds types, at Settings, Roles and at Funds. Tick it again on Finance and look once more.
 
 ### Missing papers
@@ -206,7 +207,7 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 
 Before these, as **Admin**, turn on the test simulator in Settings, System. "Simulate a MyLoans change" is on the Journey tab of a loan file (Admin).
 
-30. **Borrower details.** As **LA Angono**, open an Angono PN from the list, tick the Notary papers and send one transaction to a processor. As **Admin**, on its Journey tab, simulate "Change the borrower name, address and contact number". As **LA Angono**, open the loan file, its To do tab and **See the change**. As **Branch Supervisor**, open it from Home and decide it. Then, as Admin, simulate "Change the borrower's CIF" and, as Branch Supervisor, press **Keep current**. Press **Refresh from MyLoans** afterwards.
+30. **Borrower details.** As **LA Angono**, open an Angono PN from the list, tick the Notary papers and send one transaction to a processor. As **Admin**, on its Journey tab, simulate "Change the borrower name, address and contact number". As **LA Angono**, open the loan file, its To do tab and **See the change**. As **LA Supervisor/Head**, open it from Home and decide it. Then, as Admin, simulate "Change the borrower's CIF" and, as LA Supervisor/Head, press **Keep current**. Press **Refresh from MyLoans** afterwards.
 31. **Amount and branch.** On another Angono loan, as Admin, simulate "Change the amount". As LA Angono, open Check documents for Mortgage and Notary. As Admin, open the review and press **Keep current** without a note, then with one. On an Antipolo loan (LA Antipolo opens it), simulate "Move the loan to another branch" and apply it as Admin; then look for the loan as LA Antipolo and as LA Angono.
 32. **Pause MyLoans calls.** As **Admin**, Settings, MyLoans sync: press **Pause MyLoans calls**, then **Run now**. Open a loan file. Then turn MyLoans calls back on. As **Finance**, look for the same switch.
 33. **Area name.** As Admin, simulate "Correct the area name (minor)" on any loan and open its Journey tab.

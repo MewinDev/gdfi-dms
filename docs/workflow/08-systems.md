@@ -23,7 +23,7 @@ Last updated: 12 November 2026 (PHT)
 4. **The 8-digit column** in the branch export: still **unknown**; it is ignored and never stored.
 5. **PN prefix.** The company uses only **GD**, which stands for the company name. The PN format setting stays, with GD as the value.
 6. **Finance rules.** Kept as they are for now. The approval bands (the ₱5,000 split between the small and the large approver is a **placeholder**), the carry-over days, the fund-transfer limit, who may change a type and the cash-advance voucher reference are **"Not confirmed. Current values are placeholders."**
-7. **Hold transfer.** "Move a hold to another person" is a tick on a role (`holds:transfer`) plus the branch rule: a person with the tick moves a hold only in the branches of their own access, and only to someone who also has access to that branch. **Finance no longer has it**; the built-in **Branch Supervisor** role and Admin have it. Settings, Roles warns when an active branch has nobody with the tick.
+7. **Hold transfer.** "Move a hold to another person" is a tick on a role (`holds:transfer`) plus the branch rule: a person with the tick moves a hold only in the branches of their own access, and only to someone who also has access to that branch. **Finance no longer has it**; the built-in **LA Supervisor/Head** role and Admin have it. Settings, Roles warns when an active branch has nobody with the tick.
 
 ## Open questions for the DB admin (MyLoans)
 
