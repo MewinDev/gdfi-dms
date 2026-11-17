@@ -37,7 +37,7 @@ export default async function FileAccessLogPage({ searchParams }: { searchParams
         <div>
           <label htmlFor="f-branch" className="label">Branch</label>
           <select id="f-branch" name="branchId" defaultValue={f.branchId ?? ""} className="input">
-            <option value="">All your branches</option>
+            <option value="">All</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
