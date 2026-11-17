@@ -2,7 +2,7 @@
 
 What is built today, what is planned, and the questions still open for the business.
 
-Last updated: 13 November 2026 (PHT)
+Last updated: 17 November 2026 (PHT)
 
 ## Status
 
@@ -97,7 +97,7 @@ The automatic rules are never shown by number. Each has a stable key (code, stor
 
 | Key | Title | Sentence (example) | Formerly |
 |---|---|---|---|
-| `PRODUCT_CLASSIFICATION` | Loan classification (no title on screen) | This is a Refinancing loan: the product name has the word Refinancing. / This is a Financing loan: the product name has the word Financing. (blank or neither word: counts as Refinancing) | Rule 1 |
+| `PRODUCT_CLASSIFICATION` | Loan classification (no title on screen) | This is a Refinancing loan: the product name contains "refinanc". / This is a Financing loan: the product name contains "financ". / This is a Refinancing loan: the product name has no Financing or Refinancing keyword, so it is classified by default. (D-031) | Rule 1 |
 | `UNDERTAKING_CHOICE` | Undertaking answer required | Undertaking answer is required: this is a Financing loan, answered Non-Undertaking. | Rule 2 |
 | `ORCR_CHECK` | OR/CR transfer check (the same name for every outcome; was "Mortgage check needed / not needed", too close to rule 4) | OR/CR transfer check: the OR/CR is transferred, so the amount is checked for a Mortgage. / OR/CR transfer check: the OR/CR is untransferred, so the amount is not checked for a Mortgage. / OR/CR transfer check: a Refinancing loan skips the OR/CR question, so the amount is checked for a Mortgage. | Rule 3 |
 | `MORTGAGE_THRESHOLD` | Mortgage needed / not needed | Mortgage is needed: this is a New loan of ₱500,000 or below. / Mortgage is not needed: this is a New loan above ₱500,000. | Rule 4 |

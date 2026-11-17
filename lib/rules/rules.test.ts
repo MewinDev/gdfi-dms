@@ -15,8 +15,11 @@ describe("Financing questions needed (PRODUCT_CLASSIFICATION): classification fr
     ["  auto REFINANCING", "REFINANCING"],
     ["Financing", "FINANCING"],
     ["Refinancing - Auto", "REFINANCING"],
-    ["Auto Finance", "REFINANCING"], // O-4: partial word is not a match
-    ["Autofinancing", "REFINANCING"], // not a whole word
+    // D-031: keywords match anywhere ("financ"), so these are Financing now.
+    ["Auto Finance", "FINANCING"],
+    ["Autofinancing", "FINANCING"],
+    ["Auto Re-Financing", "REFINANCING"], // hyphens ignored
+    ["REFI Loan", "REFINANCING"],
     ["Car Loan", "REFINANCING"],
     ["", "REFINANCING"],
     [null, "REFINANCING"],
@@ -26,9 +29,11 @@ describe("Financing questions needed (PRODUCT_CLASSIFICATION): classification fr
     expect(classifyProductName(name as string | null).classification).toBe(expected);
   });
 
-  it("explains blank and default", () => {
-    expect(classifyProductName("").rule).toBe("PRODUCT_CLASSIFICATION:BLANK");
-    expect(classifyProductName("Auto Finance").rule).toBe("PRODUCT_CLASSIFICATION:NEITHER_WORD");
+  it("explains the keyword and the default (D-031)", () => {
+    expect(classifyProductName("").rule).toBe("PRODUCT_CLASSIFICATION:DEFAULT:REFINANCING");
+    expect(classifyProductName("Car Loan")).toMatchObject({ rule: "PRODUCT_CLASSIFICATION:DEFAULT:REFINANCING", byDefault: true });
+    expect(classifyProductName("Auto Finance")).toMatchObject({ rule: "PRODUCT_CLASSIFICATION:FINANCING_KEYWORD:financ", byDefault: false });
+    expect(classifyProductName("Car Loan", { refinancing: ["refi"], financing: ["financ"], fallback: "FINANCING" }).classification).toBe("FINANCING");
   });
 });
 
@@ -119,7 +124,7 @@ describe("Outcome table", () => {
   });
 
   it("Refinancing + Not Mortgage -> Notary, For EDST", () => {
-    const r = evaluateLoanRules({ productName: "Auto Finance", loanType: "New", totalReleasedAmount: 600_000 });
+    const r = evaluateLoanRules({ productName: "Car Loan", loanType: "New", totalReleasedAmount: 600_000 }); // no keyword: Refinancing by default (D-031)
     expect(r.classification).toBe("REFINANCING");
     expect(r.mortgage).toBe("NOT_MORTGAGE");
     expect(r.transactions).toEqual(["NOTARY", "EDST"]);
@@ -157,7 +162,7 @@ describe("Outcome table", () => {
       orcrStatus: "TRANSFERRED",
     });
     expect(r.rulesFired).toHaveLength(4);
-    expect(r.rulesFired).toEqual(["PRODUCT_CLASSIFICATION:FINANCING_WORD", "UNDERTAKING_CHOICE:UNDERTAKING", "ORCR_CHECK:TRANSFERRED", "MORTGAGE_THRESHOLD:Renewal:MET"]);
+    expect(r.rulesFired).toEqual(["PRODUCT_CLASSIFICATION:FINANCING_KEYWORD:financ", "UNDERTAKING_CHOICE:UNDERTAKING", "ORCR_CHECK:TRANSFERRED", "MORTGAGE_THRESHOLD:Renewal:MET"]);
     expect(r.summary).toBe(r.rulesFired[3]);
   });
 });

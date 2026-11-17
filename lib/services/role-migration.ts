@@ -2,7 +2,7 @@ import "server-only";
 import { prisma, type Tx } from "@/lib/db";
 import { effectivePermissions } from "@/lib/auth/access";
 import { CA_KEYS, FT_KEYS, ticksFromRole } from "@/lib/auth/effective";
-import { ALL_PERMISSIONS, PERMISSIONS as P, ROLE_DEFAULTS, SUPERADMIN_DEFAULT_BEFORE_D028, SUP_DEFAULT_BEFORE_D029, WORKFLOW_PERMISSIONS, permissionLabel, type Permission } from "@/lib/auth/permissions";
+import { ALL_PERMISSIONS, KEYS_ADDED_D031, PERMISSIONS as P, ROLE_DEFAULTS, SUPERADMIN_DEFAULT_BEFORE_D028, SUP_DEFAULT_BEFORE_D029, WORKFLOW_PERMISSIONS, permissionLabel, type Permission } from "@/lib/auth/permissions";
 import { writeAudit, type Actor } from "@/lib/audit";
 
 /**
@@ -48,6 +48,12 @@ type RoleRow = { id: string; key: string; name: string; builtIn: boolean; active
 type UserRow = { id: string; name: string; email: string; active: boolean; roleId: string; handlesCa: boolean; handlesFt: boolean; allBranches?: boolean; permissionOverrides: { key: string; effect: string; note?: string }[] };
 
 const set = (keys: Iterable<string>) => new Set<string>(keys);
+/** Compares two tick lists ignoring the keys a later SQL migration added to the built-in roles (D-031). */
+function sameTicks(has: Set<string>, keys: string[]): boolean {
+  const a = [...has].filter((k) => !KEYS_ADDED_D031.includes(k as Permission));
+  const b = [...new Set(keys)].filter((k) => !KEYS_ADDED_D031.includes(k as Permission));
+  return a.length === b.length && b.every((k) => has.has(k));
+}
 const minus = (a: Set<string>, b: Set<string>) => [...a].filter((k) => !b.has(k)) as Permission[];
 
 /** Is this a custom funds role (an approver or per-type Finance role made on the Roles screen)? */
@@ -68,7 +74,7 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
   const sup = byKey.get(SUPERVISOR_KEY);
   if (sup) {
     const has = effectivePermissions(sup) as Set<string>;
-    const same = (keys: string[]) => has.size === new Set(keys).size && keys.every((k) => has.has(k));
+    const same = (keys: string[]) => sameTicks(has, keys);
     const oldName = sup.name !== ROLE_DEFAULTS.SUP.name;
     const update = !same(ROLE_DEFAULTS.SUP.permissions) && (oldName || same(SUP_DEFAULT_BEFORE_D029));
     if (update || oldName) plan.roleUpdates.push({ key: SUPERVISOR_KEY, name: ROLE_DEFAULTS.SUP.name, permissions: update ? [...ROLE_DEFAULTS.SUP.permissions] : undefined });
@@ -105,7 +111,7 @@ export function planRoleMigration(roles: RoleRow[], users: UserRow[]): RolePlan 
   const sa = byKey.get("SUPERADMIN");
   if (sa) {
     const has = effectivePermissions(sa) as Set<string>;
-    const same = (keys: string[]) => has.size === keys.length && keys.every((k) => has.has(k));
+    const same = (keys: string[]) => sameTicks(has, keys);
     const earlier = [ALL_PERMISSIONS, ALL_PERMISSIONS.filter((k) => !WORKFLOW_PERMISSIONS.includes(k) && k !== P.LTO_REPORTS_NOTIFY), SUPERADMIN_DEFAULT_BEFORE_D028];
     if (!same(ROLE_DEFAULTS.SUPERADMIN.permissions) && earlier.some(same)) plan.roleUpdates.push({ key: sa.key, name: sa.name, permissions: [...ROLE_DEFAULTS.SUPERADMIN.permissions] });
   }

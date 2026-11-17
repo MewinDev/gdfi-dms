@@ -8,7 +8,7 @@ Last updated: 17 November 2026 (PHT)
 
 | Rule | Input | Result |
 |---|---|---|
-| 1 Classification | Product Name contains the whole word "Refinancing", else "Financing", else (or blank) | Refinancing, Financing, or Refinancing by default |
+| 1 Classification | Product name (case, hyphens and extra spaces ignored) contains a Refinancing keyword, else a Financing keyword, else the default (D-031; keywords and default in Settings, Product classification) | Refinancing, Financing, or the default (Refinancing to start), labelled "Classified by default" |
 | 2 Undertaking | Financing only, picked by the LA | Undertaking or Non-Undertaking |
 | 3 ORCR | Financing + Untransferred | Notary + EDST |
 | 4 Mortgage | New and amount at or below PHP 500,000; Renewal and amount at or below PHP 1,000,000 | Mortgage: Notary, EDST, Entry of PPSR, Mortgage. Otherwise Notary and EDST |

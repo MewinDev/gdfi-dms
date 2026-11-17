@@ -116,7 +116,7 @@ export const CLEAN_POOL: PoolLoan[] = [
   P(13, "165", "Leandro Pascual", "Renewal at ₱1,000,001: no Mortgage.", { loanType: "Renewal", amount: 1_000_001 }),
   P(14, "165", "Marivic Santos", "Truck Financing, ₱450,000: pick Non-Undertaking when opening.", { product: "Truck Financing", amount: 450_000 }),
   P(15, "165", "Nicanor Aquino", "Auto Financing, ₱300,000: pick Untransferred to get Notary and EDST.", { product: "Auto Financing", amount: 300_000 }),
-  P(16, "165", "Ofelia Garcia", "Product \"Auto Finance\" (not the word Financing): treated as Refinancing.", { product: "Auto Finance", amount: 600_000 }),
+  P(16, "165", "Ofelia Garcia", "Product \"Car Loan\" (no Financing or Refinancing keyword): Refinancing by default, with the \"Classified by default\" label.", { product: "Car Loan", amount: 600_000 }),
   P(17, "165", "Porfirio Diaz", "Branch moved by MyLoans later: open it, then as Admin Simulate a MyLoans change, Branch; it waits for review until applied.", { amount: 420_000 }),
   P(18, "165", "Remedios Flores", "Unit change (replacement): open it, then as Admin Simulate a MyLoans change, Replace; MyLoans gives a new PN and the old one waits for review.", { amount: 410_000 }),
   P(19, "165", "Salvador Castillo", "Plain Mortgage loan: good for a full Send to DP, Pasuyo between DP 1 and DP 2, and a cash advance for the LTO fee.", { amount: 390_000 }),

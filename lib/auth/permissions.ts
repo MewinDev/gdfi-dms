@@ -84,6 +84,8 @@ export const PERMISSIONS = {
   SETTINGS_LTO: "settings:lto",
   SETTINGS_SYSTEM: "settings:system", // MyLoans test switches, simulator switch, mock source changes
   SETTINGS_PN_FORMAT: "settings:pn_format", // Settings, System, PN format
+  SETTINGS_CLASSIFICATION: "settings:classification", // Settings, Product classification (D-031)
+  LOANS_RECLASSIFY: "loans:reclassify", // Loan File: apply a changed classification (D-031)
   SETTINGS_PROBLEM_REASONS: "settings:problem_reasons",
   HOLDS_MANAGE: "holds:manage", // Settings > Hold reasons (Admin only by default; was settings:hold_reasons)
   SETTINGS_RETURN_REASONS: "settings:return_reasons",
@@ -262,6 +264,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     key: "myloans", label: "MyLoans and sync", items: [
       { key: P.MYLOANS_VIEW, label: "See when MyLoans was last checked", help: "Show \"MyLoans · Last checked\" on a loan file.", requires: [P.LOANS_VIEW], can: "see when MyLoans was last checked", where: "Loan File, top strip", was: "loans:view" },
+      { key: P.LOANS_RECLASSIFY, label: "Reclassify a loan", help: "When the keyword rules changed after a loan file was opened (\"Classification changed since accepted\"): apply the new Financing or Refinancing result, with remarks. Sent work never changes.", requires: [P.LOANS_VIEW], can: "reclassify a loan file", where: "Loan File, Classification changed since accepted", was: "new on 17 November 2026" },
       { key: P.LOANS_REFRESH, label: "Refresh a loan from MyLoans", help: "The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now.", requires: [P.MYLOANS_VIEW], view: P.MYLOANS_VIEW, can: "refresh a loan from MyLoans", where: "Loan File, Refresh from MyLoans", was: "none (shown to everyone who sees the loan file)" },
       { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
       { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
@@ -299,6 +302,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.FUNDS_TYPES_MANAGE, label: "Change funds types", help: "Rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off.", can: "change funds types", where: "Settings, Funds types", was: "fundtypes:manage" },
       { key: P.STAGES_MANAGE, label: "Change processing stages", help: "The stages of each transaction type, their evidence and targets.", can: "change processing stages", where: "Settings, Processing stages", was: "stages:manage" },
       { key: P.SETTINGS_SYSTEM, label: "Change system switches", help: "MyLoans test switches, the simulator switch, sample MyLoans changes.", can: "change system switches", where: "Settings, System", was: "settings:system" },
+      { key: P.SETTINGS_CLASSIFICATION, label: "Change product classification keywords", help: "The Refinancing and Financing keyword lists and the default for a product name with no keyword (D-031). Saving re-checks open loan files.", can: "change the product classification keywords", where: "Settings, Product classification", was: "new on 17 November 2026" },
       { key: P.SETTINGS_PN_FORMAT, label: "Change the PN format", help: "The parts of a PN (prefix, branch code, year, system digit, running number) and the PN check.", can: "change the PN format", where: "Settings, System, PN format", was: "settings:system" },
       { key: P.SETTINGS_IMPORT, label: "Import data", help: "Import / Export files, for the lists this role may change.", can: "import data", where: "Settings, Import / Export", was: "settings:import" },
       { key: P.SIMULATOR_USE, label: "Use the test simulator", help: "Move sample loans through the processor and vault steps, and simulate MyLoans changes. Only in test mode.", requires: [P.LOANS_VIEW], can: "use the test simulator", where: "Loan File, Simulator (test mode)", was: "simulator:use (the MyLoans change simulator: checked in the service only)" },
@@ -423,8 +427,10 @@ export const OPEN_ITEM_APPROVER_KEYS: Permission[] = [P.SOURCE_REVIEW, P.SOURCE_
  * configuration only); the Superadmin can still tick them on a role or a person.
  */
 export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
-  ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY,
+  ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY,
 ];
+/** Keys added on 17 November 2026 (D-031): the role migration ignores them when it compares a role with an earlier default. */
+export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY];
 
 /**
  * Seeded built-in roles: the defaults that "Reset to default" restores. The ten decided roles (D-002) plus
@@ -461,13 +467,14 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
    * moving holds, for the branches in the person's access. The key SUP is the former Branch Supervisor
    * (also the Area Supervisor: the same role with Area access on the person). No per-user legacy grants.
    */
-  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission, approving or rejecting myloans changes (Open Items) and moving holds, for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER] },
+  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission, approving or rejecting myloans changes (Open Items) and moving holds, for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.LOANS_RECLASSIFY] },
 };
 /** The plain ticks of the LA Supervisor/Head role (key SUP) and their keys (the report and the role's docs). */
 export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
   { plain: "Everything a Loan Associate can do (within their branches)", keys: LA_PERMISSIONS },
   { plain: "Approve or reject myloans changes (Open Items) for their branches", keys: OPEN_ITEM_APPROVER_KEYS },
   { plain: "Move a hold to another person (within their branches)", keys: [P.HOLDS_TRANSFER] },
+  { plain: "Reclassify a loan when the keyword rules changed (within their branches)", keys: [P.LOANS_RECLASSIFY] },
 ];
 /** The SUP role's default before D-029 (17 Nov 2026), so the migration can bring an unchanged role up to date. */
 export const SUP_DEFAULT_BEFORE_D029: Permission[] = [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS];
@@ -528,6 +535,7 @@ export const AREA_PERMISSIONS: Record<string, Permission[]> = {
   ...Object.fromEntries(Object.entries(LIST_PERMISSION).map(([k, v]) => [k, [v]])),
   branches: [P.BRANCHES_VIEW],
   system: [P.SETTINGS_SYSTEM, P.SETTINGS_PN_FORMAT],
+  classification: [P.SETTINGS_CLASSIFICATION],
   email: [P.EMAIL_VIEW],
   "expense-kinds": [P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE],
   "myloans-sync": [P.SOURCE_MANAGE, P.MYLOANS_SYNC],

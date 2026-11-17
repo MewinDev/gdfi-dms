@@ -115,7 +115,7 @@ export const KIT_LOANS: KitLoan[] = [
   L(2007, "New at 500,001 (no Mortgage)", "Rules", { amount: 500_001, borrower: "Gilbert Ramos" }),
   L(2008, "Renewal at 1,000,000 (Mortgage)", "Rules", { branch: "165", loanType: "Renewal", amount: 1_000_000, borrower: "Hilda Aquino" }),
   L(2009, "Renewal at 1,000,001 (no Mortgage)", "Rules", { branch: "165", loanType: "Renewal", amount: 1_000_001, borrower: "Ignacio Torres" }),
-  L(2010, "Auto Finance is not the word Financing (Refinancing)", "Rules", { product: "Auto Finance", amount: 600_000, borrower: "Josefa Lim" }),
+  L(2010, "Car Loan has no keyword (Refinancing by default)", "Rules", { product: "Car Loan", amount: 600_000, borrower: "Josefa Lim" }),
 
   // Loan Associate journey.
   L(2011, "Needs LTO: office and cash estimate", "Loan Associate", { borrower: "Karen Dizon" }),

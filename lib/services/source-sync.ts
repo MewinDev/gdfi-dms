@@ -22,7 +22,7 @@ import { isTestMode } from "@/lib/test-mode";
 import { getHolidaySet, getSetting, setSetting } from "@/lib/settings";
 import { businessDate, isBusinessDay, startOfBusinessDay } from "@/lib/time";
 import { advanceBalance, peso } from "@/lib/funds/rules";
-import { MORTGAGE_THRESHOLDS, type FinancingType, type OrcrStatus } from "@/lib/rules";
+import { MORTGAGE_THRESHOLDS, classifyProductName, type FinancingType, type OrcrStatus } from "@/lib/rules";
 import { recomputeStage } from "./stage";
 import { beginStats, callStore, callsThisHour, countCall, DbCallStore, lookupPn, noteCall, readStats } from "@/lib/myloans/client";
 import { jitteredPause, nextCap, nextCheckAt } from "@/lib/myloans/tiers";
@@ -76,7 +76,7 @@ function stateLine(t: { status: string; dpAssignments: { status: string; dpUser:
   }
 }
 
-async function txnsNow(db: Tx | typeof prisma, loanId: string): Promise<TxnNow[]> {
+export async function txnsNow(db: Tx | typeof prisma, loanId: string): Promise<TxnNow[]> {
   const rows = await db.loanTransaction.findMany({
     where: { loanId }, include: { type: true, dpAssignments: { include: { dpUser: { select: { name: true } } }, orderBy: { createdAt: "desc" } } }, orderBy: { createdAt: "asc" },
   });
@@ -249,7 +249,7 @@ async function proposedFor(db: Tx | typeof prisma, loanId: string, category: Cha
   const rec = snap ? recordFromPayload(snap.payload) : null;
   const next = (snap?.tracked as Tracked | null) ?? (rec ? trackedOf(rec) : null);
   if (!next) throw new UserError("There is no MyLoans copy to compare with.");
-  return proposeEffect({ category, loan: { ...loan, financingType: loan.financingType as FinancingType | null, orcrStatus: loan.orcrStatus as OrcrStatus | null }, txns: await txnsNow(db, loanId), next, picks });
+  return proposeEffect({ category, loan: { ...loan, financingType: loan.financingType as FinancingType | null, orcrStatus: loan.orcrStatus as OrcrStatus | null }, txns: await txnsNow(db, loanId), next, picks, rules: await getSetting("classification.rules", db) });
 }
 
 /** A new loan file of the same borrower: if it may replace an ended loan under review, add it as a possible replacement. */
@@ -373,6 +373,29 @@ const applySchema = z.object({
  * are added or removed (ticked papers stay where the item still exists); sent or in-process ones are
  * never changed: that part is refused with the reason.
  */
+/**
+ * The transactions a re-run of the rules adds or removes (Apply of a MyLoans change, and Reclassify, D-031).
+ * Only unsent transactions change; the callers refuse first when sent work would.
+ */
+export async function applyTransactionChanges(tx: Tx, loanId: string, p: Pick<Proposed, "added" | "removed">, now: Date = new Date()) {
+  const txns = await tx.loanTransaction.findMany({ where: { loanId }, include: { type: true } });
+  for (const code of p.removed) {
+    const t = txns.find((x) => x.type.code === code && x.status !== "CANCELLED");
+    if (t && UNSENT.includes(t.status)) await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now } });
+  }
+  for (const code of p.added) {
+    const back = txns.find((x) => x.type.code === code && x.status === "CANCELLED");
+    if (back) {
+      // Added back: the same checklist rows, so ticked papers stay ticked.
+      const done = await tx.checklistCheck.count({ where: { transactionId: back.id, required: true, checked: false } });
+      await tx.loanTransaction.update({ where: { id: back.id }, data: { status: done === 0 ? "READY" : "FOR_CHECKLIST", statusSince: now } });
+    } else {
+      const type = await tx.transactionType.findFirstOrThrow({ where: { code }, include: { rules: { where: { active: true }, include: { documentType: true }, orderBy: { sortOrder: "asc" } } } });
+      await createTransactionOfType(tx, { loanId, type, origin: "AUTOMATIC" });
+    }
+  }
+}
+
 export async function applySourceChange(u: CurrentUser, id: string, raw: unknown) {
   needReview(u);
   const d = applySchema.parse(raw);
@@ -399,6 +422,8 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
       ...(next.branchCode || next.branchName ? { sourceBranchCode: next.branchCode, sourceBranchName: next.branchName } : {}),
       totalReleasedAmount: typeof next.amount === "number" ? new Prisma.Decimal(next.amount / 100) : loan.totalReleasedAmount,
       classification: p.classificationNext!, mortgageResult: p.mortgageNext as never, ruleFired: p.ruleNext,
+      // Re-classified from the new product name (D-031): the label follows it, and any earlier flag is settled.
+      classifiedByDefault: classifyProductName(next.productName ?? "", await getSetting("classification.rules", tx)).byDefault, classificationNow: null,
       financingType: p.classificationNext === "FINANCING" ? (d.financingType ?? loan.financingType) : null,
       orcrStatus: p.classificationNext === "FINANCING" ? (d.orcrStatus ?? loan.orcrStatus) : null,
     };
@@ -417,23 +442,8 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
     }
     await tx.loan.update({ where: { id: loan.id }, data });
 
-    const txns = await tx.loanTransaction.findMany({ where: { loanId: loan.id }, include: { type: true } });
     const now = new Date();
-    for (const code of p.removed) {
-      const t = txns.find((x) => x.type.code === code && x.status !== "CANCELLED");
-      if (t && UNSENT.includes(t.status)) await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now } });
-    }
-    for (const code of p.added) {
-      const back = txns.find((x) => x.type.code === code && x.status === "CANCELLED");
-      if (back) {
-        // Added back: the same checklist rows, so ticked papers stay ticked.
-        const done = await tx.checklistCheck.count({ where: { transactionId: back.id, required: true, checked: false } });
-        await tx.loanTransaction.update({ where: { id: back.id }, data: { status: done === 0 ? "READY" : "FOR_CHECKLIST", statusSince: now } });
-      } else {
-        const type = await tx.transactionType.findFirstOrThrow({ where: { code }, include: { rules: { where: { active: true }, include: { documentType: true }, orderBy: { sortOrder: "asc" } } } });
-        await createTransactionOfType(tx, { loanId: loan.id, type, origin: "AUTOMATIC" });
-      }
-    }
+    await applyTransactionChanges(tx, loan.id, p, now);
     await tx.sourceChange.update({ where: { id: item.id }, data: { state: "APPLIED", decidedById: u.id, decidedByLabel: u.name, decidedAt: now, note, proposed: p as unknown as Prisma.InputJsonValue } });
     await writeAudit(tx, {
       actor: actorOf(u), mode: "MANUAL", action: "source_change_applied", entityType: "SourceChange", entityId: item.id, loanId: loan.id, pn: loan.pn,

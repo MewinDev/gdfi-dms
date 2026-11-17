@@ -156,7 +156,10 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
   else where.archivedAt = null;
   if (f.tab === "exceptions") where.exceptions = { some: { status: "OPEN" } };
   if (f.stage) where.stage = f.stage;
-  if (f.classification) where.classification = f.classification as "FINANCING" | "REFINANCING";
+  // D-031: "Classified by default" and "Changed since accepted" are filters of their own (for Admin's report).
+  if (f.classification === "BY_DEFAULT") where.classifiedByDefault = true;
+  else if (f.classification === "CHANGED") where.classificationNow = { not: null };
+  else if (f.classification) where.classification = f.classification as "FINANCING" | "REFINANCING";
   // ANDed onto the scope, never replacing it: a branch outside the person's access shows nothing (D-019).
   if (f.branch) where.AND = [{ branchId: f.branch }];
   if (f.area) where.branch = { areaId: f.area };

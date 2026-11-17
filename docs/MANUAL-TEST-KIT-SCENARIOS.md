@@ -63,7 +63,7 @@ The branches are real MyLoans branches. The made-up sample branches were replace
 | GD1012026902007 | New at 500,001 | LA 1 | Open the loan file. | Above 500,000 is Not Mortgage: Notary and For EDST. |
 | GD1652026902008 | Renewal at 1,000,000 (Angono) | LA 1 | Open the loan file. | Exactly 1,000,000 is Mortgage: 4 transactions. |
 | GD1652026902009 | Renewal at 1,000,001 (Angono) | LA 1 | Open the loan file. | Above 1,000,000 is Not Mortgage: Notary and For EDST. |
-| GD1012026902010 | "Auto Finance" is not the word Financing | LA 1 | Open the loan file. | Not the whole word Financing, so Refinancing; Not Mortgage. |
+| GD1012026902010 | "Car Loan" has no keyword | LA 1 | Open the loan file. | No Financing or Refinancing keyword, so Refinancing by default ("Classified by default"); Not Mortgage. |
 | GD1012026902011 | Needs LTO: office and cash estimate | LA 1 | Mortgage: the papers are ticked. Send it to DP 1. | Send asks for the LTO office and whether it needs funds, with the cash estimate. Then it waits for DP 1 to accept. |
 | GD1012026902012 | Required paper missing, with remarks | LA 1 | Notary: Valid IDs of borrower (2) is marked Missing (Borrower to submit later, with remarks). Send it to DP 1. Then mark it Received with today's date. | The row is amber "Missing, with remarks"; Send is allowed. Received keeps the reason and remarks in the history and clears the "Missing papers" row. |
 | GD1012026902080 | Optional paper included and missing | LA 1 | Notary: Valid ID of co-maker has "Include in this file" ticked and is Missing with remarks. Send Notary to DP 1. | An included optional paper behaves like a required one. An optional paper not included needs nothing. |

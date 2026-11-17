@@ -29,6 +29,7 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
       "Everything a Loan Associate can do (within their branches)",
       "Approve or reject myloans changes (Open Items) for their branches",
       "Move a hold to another person (within their branches)",
+      "Reclassify a loan when the keyword rules changed (within their branches)",
     ]);
   });
 });

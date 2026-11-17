@@ -183,7 +183,10 @@ Every change is audited with before and after.
 
 ---
 
-## 3a. Piece 3a: Product classification by keywords (D-027)
+## 3a. Piece 3a: Product classification by keywords (D-027, final rule D-031)
+
+> **Status (17 November 2026): built** with the final rule of D-031, which replaces §3a.1 to §3a.3 below: Refinancing keyword first, then Financing, else a default setting; no "Can't classify" and no conflict state; "Classified by default" is a label and a Loans filter, never a block. Built: `lib/rules/classify.ts` (rule), `classification.rules` setting and Settings, Product classification (keywords, default, Test keyword rules), `Loan.classifiedByDefault` / `Loan.classificationNow` (migration `20261119090016_product_classification`), the re-check on save, "Classification changed since accepted" and Reclassify (`loans:reclassify`: LA Supervisor/Head and Admin; `settings:classification`: Admin and Superadmin). **Not built here:** the `Product` table and ProductID rename detection (with API 5 in piece 11); a myloans product rename goes through the existing MyLoans change review (Apply re-runs the rules). The fake product "Auto Finance" in the kit and mock data became "Car Loan" (no keyword), since `financ` now makes "Auto Finance" Financing.
+
 
 ### 3a.1 Rule
 

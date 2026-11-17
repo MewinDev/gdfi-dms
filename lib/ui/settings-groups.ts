@@ -1,6 +1,6 @@
 /** Settings cards, grouped so it is clear what belongs together. Order matters. */
 export const SETTINGS_GROUPS = [
-  { key: "company", label: "Company setup", help: "Who and where.", cards: ["branches", "lto", "loan-types"] },
+  { key: "company", label: "Company setup", help: "Who and where.", cards: ["branches", "lto", "loan-types", "classification"] },
   { key: "people", label: "People and access", help: "Who can do what.", cards: ["permissions", "roles", "dp-capacity"] },
   { key: "documents", label: "Documents and steps", help: "What papers each transaction needs.", cards: ["transaction-types", "document-types", "checklist", "processing-stages", "problem-reasons", "hold-reasons", "return-reasons", "missing-reasons"] },
   { key: "time-money", label: "Time and money", help: "How long steps take and what funds are set aside.", cards: ["tat", "holidays", "cash-advance", "expense-kinds", "funds-types", "approval-bands"] },

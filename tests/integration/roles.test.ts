@@ -31,7 +31,7 @@ async function cleanup() {
   for (const [key, d] of Object.entries(ROLE_DEFAULTS)) {
     await prisma.role.update({ where: { key }, data: { permissions: [...d.permissions], branchAccess: d.branchAccess, description: d.description, active: true } });
   }
-  await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph"] } }, data: { active: true } });
+  await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph", "test.superadmin2@gdfi.ph"] } }, data: { active: true } });
 }
 
 const refused = async (p: Promise<unknown>, msg: RegExp) => {
@@ -167,7 +167,7 @@ describe("Safety rules", () => {
       await refused(saveRole(admin, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] }), /Nobody active could manage permissions/);
       await refused(setRowActive(admin, "user", manager.id, false), /last active person who can manage permissions/);
     } finally {
-      await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph"] } }, data: { active: true } });
+      await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph", "test.superadmin2@gdfi.ph"] } }, data: { active: true } });
     }
     // With a Superadmin active again, it may be removed.
     await saveRole(admin, roleId, { name: "Z Access Manager", description: "", branchAccess: "ASSIGNED", permissions: [P.USERS_VIEW] });

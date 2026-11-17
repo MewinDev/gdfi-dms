@@ -24,6 +24,10 @@ type LoanType = "New" | "Renewal";
 
 /** One rule as it fired for a loan: the key plus the values the wording needs. */
 export type RuleFiring =
+  // Keyword rule (D-031): REFINANCING_KEYWORD / FINANCING_KEYWORD with the keyword, or DEFAULT with the result.
+  // The whole-word reasons are the rule before D-031, kept so older records still read.
+  | { key: "PRODUCT_CLASSIFICATION"; reason: "REFINANCING_KEYWORD" | "FINANCING_KEYWORD"; keyword: string }
+  | { key: "PRODUCT_CLASSIFICATION"; reason: "DEFAULT"; result: "FINANCING" | "REFINANCING" }
   | { key: "PRODUCT_CLASSIFICATION"; reason: "FINANCING_WORD" | "REFINANCING_WORD" | "NEITHER_WORD" | "BLANK" }
   | { key: "UNDERTAKING_CHOICE"; financingType: "UNDERTAKING" | "NON_UNDERTAKING" }
   | { key: "ORCR_CHECK"; orcr: "TRANSFERRED" | "UNTRANSFERRED" | "SKIPPED" }
@@ -79,6 +83,14 @@ const reasonOf = (sentence: string) => { const i = sentence.indexOf(": "); retur
 function ruleTitleAndSentence(f: RuleFiring, thresholds: Thresholds): Omit<RuleWords, "reason" | "line"> {
   switch (f.key) {
     case "PRODUCT_CLASSIFICATION": {
+      if (f.reason === "REFINANCING_KEYWORD" || f.reason === "FINANCING_KEYWORD") {
+        const c = f.reason === "FINANCING_KEYWORD" ? "Financing" : "Refinancing";
+        return { key: f.key, title: `${c} loan`, sentence: `This is a ${c} loan: the product name contains "${f.keyword}".` };
+      }
+      if (f.reason === "DEFAULT") {
+        const c = f.result === "FINANCING" ? "Financing" : "Refinancing";
+        return { key: f.key, title: `${c} loan`, sentence: `This is a ${c} loan: the product name has no Financing or Refinancing keyword, so it is classified by default.` };
+      }
       const cls = f.reason === "FINANCING_WORD" ? "Financing" : "Refinancing";
       const why =
         f.reason === "FINANCING_WORD" ? "the product name has the word Financing"
@@ -118,7 +130,10 @@ function ruleTitleAndSentence(f: RuleFiring, thresholds: Thresholds): Omit<RuleW
 
 export function encodeFiring(f: RuleFiring): string {
   switch (f.key) {
-    case "PRODUCT_CLASSIFICATION": return `${f.key}:${f.reason}`;
+    case "PRODUCT_CLASSIFICATION":
+      return f.reason === "REFINANCING_KEYWORD" || f.reason === "FINANCING_KEYWORD" ? `${f.key}:${f.reason}:${f.keyword.replace(/:/g, " ")}`
+        : f.reason === "DEFAULT" ? `${f.key}:DEFAULT:${f.result}`
+        : `${f.key}:${f.reason}`;
     case "UNDERTAKING_CHOICE": return `${f.key}:${f.financingType}`;
     case "ORCR_CHECK": return `${f.key}:${f.orcr}`;
     case "MORTGAGE_THRESHOLD": return `${f.key}:${f.loanType}:${f.met ? "MET" : "ABOVE"}`;
@@ -133,6 +148,8 @@ export function encodeFiring(f: RuleFiring): string {
 export function decodeFiring(text: string | null | undefined): RuleFiring | null {
   const s = (text ?? "").trim();
   const [k, a, b] = s.split(":");
+  if (k === "PRODUCT_CLASSIFICATION" && (a === "REFINANCING_KEYWORD" || a === "FINANCING_KEYWORD") && b) return { key: k, reason: a, keyword: b };
+  if (k === "PRODUCT_CLASSIFICATION" && a === "DEFAULT" && (b === "FINANCING" || b === "REFINANCING")) return { key: k, reason: a, result: b };
   if (k === "PRODUCT_CLASSIFICATION" && (a === "FINANCING_WORD" || a === "REFINANCING_WORD" || a === "NEITHER_WORD" || a === "BLANK")) return { key: k, reason: a };
   if (k === "UNDERTAKING_CHOICE" && (a === "UNDERTAKING" || a === "NON_UNDERTAKING")) return { key: k, financingType: a };
   if (k === "ORCR_CHECK" && (a === "TRANSFERRED" || a === "UNTRANSFERRED" || a === "SKIPPED")) return { key: k, orcr: a };

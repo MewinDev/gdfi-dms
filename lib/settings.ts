@@ -51,6 +51,8 @@ export const SETTING_DEFAULTS = {
    * handles that type approves. On: only the roles of the band for the amount (Settings, Approval bands).
    */
   "funds.approvalBandsOn": false as boolean,
+  /** Product classification (D-031): Refinancing keywords first, then Financing, else the default. */
+  "classification.rules": { refinancing: ["refinanc", "refi"], financing: ["financ"], fallback: "REFINANCING" } as { refinancing: string[]; financing: string[]; fallback: "FINANCING" | "REFINANCING" },
   /** Monitoring: the default capacity of a processor, in open jobs (Settings, Processor capacity). */
   "dp.defaultCapacity": 10 as number,
   /** Email notifications: the master switch. Not active until the system goes live. */

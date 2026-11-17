@@ -694,13 +694,18 @@ model Loan {
   openedById  String
   openedBy    User     @relation("LoanOpenedBy", fields: [openedById], references: [id])
 
-  classification Classification
-  financingType  FinancingType?
-  orcrStatus     OrcrStatus?
-  mortgageResult MortgageResult
-  ruleFired      String
+  classification      Classification
+  /// D-031: no keyword matched when it was classified (the "Classified by default" label and filter). Never blocks.
+  classifiedByDefault Boolean         @default(false)
+  /// D-031: what the keyword rules say now when it differs from the saved classification ("Classification
+  /// changed since accepted"); null when they agree. Changed only by Reclassify (loans:reclassify).
+  classificationNow   Classification?
+  financingType       FinancingType?
+  orcrStatus          OrcrStatus?
+  mortgageResult      MortgageResult
+  ruleFired           String
   /// True when an Admin (Supervisor) overrode the automatic result.
-  overridden     Boolean        @default(false)
+  overridden          Boolean         @default(false)
 
   /// Derived from the transactions on every write (never typed in). Cached for list filters.
   stage      String   @default("Opened")

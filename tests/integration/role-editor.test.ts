@@ -22,7 +22,7 @@ async function cleanup() {
   for (const [key, d] of Object.entries(ROLE_DEFAULTS)) {
     await prisma.role.update({ where: { key }, data: { permissions: [...d.permissions], branchAccess: d.branchAccess, description: d.description, active: true } });
   }
-  await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph"] } }, data: { active: true } });
+  await prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph", "test.superadmin2@gdfi.ph"] } }, data: { active: true } });
 }
 
 const refused = async (p: Promise<unknown>, msg: RegExp) => {
@@ -80,7 +80,7 @@ describe("Impact preview", () => {
 describe("Lock-out protection", () => {
   // Since D-023 the Superadmin role holds "Manage permissions"; Admin and Superadmin hold "Change branch access".
   const restoreSuperadmin = () => prisma.role.update({ where: { key: "SUPERADMIN" }, data: { permissions: ROLE_DEFAULTS.SUPERADMIN.permissions } });
-  const reactivate = () => prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph"] } }, data: { active: true } });
+  const reactivate = () => prisma.user.updateMany({ where: { email: { in: ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph", "test.superadmin2@gdfi.ph"] } }, data: { active: true } });
 
   it("the editor's own role cannot lose Manage permissions", async () => {
     const saRole = await prisma.role.findUniqueOrThrow({ where: { key: "SUPERADMIN" } });

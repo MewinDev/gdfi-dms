@@ -12,6 +12,9 @@ const ALL: RuleFiring[] = [
   { key: "PRODUCT_CLASSIFICATION", reason: "REFINANCING_WORD" },
   { key: "PRODUCT_CLASSIFICATION", reason: "NEITHER_WORD" },
   { key: "PRODUCT_CLASSIFICATION", reason: "BLANK" },
+  { key: "PRODUCT_CLASSIFICATION", reason: "REFINANCING_KEYWORD", keyword: "refi" },
+  { key: "PRODUCT_CLASSIFICATION", reason: "FINANCING_KEYWORD", keyword: "financ" },
+  { key: "PRODUCT_CLASSIFICATION", reason: "DEFAULT", result: "REFINANCING" },
   { key: "UNDERTAKING_CHOICE", financingType: "UNDERTAKING" },
   { key: "UNDERTAKING_CHOICE", financingType: "NON_UNDERTAKING" },
   { key: "ORCR_CHECK", orcr: "TRANSFERRED" },
@@ -96,7 +99,7 @@ describe("rule names: the naming convention", () => {
     const r = evaluateLoanRules({ productName: "Auto Refinancing", loanType: "New", totalReleasedAmount: 450_000 });
     expect(r.summary).toBe("MORTGAGE_THRESHOLD:New:MET");
     expect(r.fired.map((f) => ruleText(f, T).line)).toEqual([
-      { title: null, text: "This is a Refinancing loan: the product name has the word Refinancing." },
+      { title: null, text: 'This is a Refinancing loan: the product name contains "refinanc".' },
       { title: "OR/CR transfer check", text: "A Refinancing loan skips the OR/CR question, so the amount is checked for a Mortgage." },
       { title: "Mortgage needed", text: "This is a New loan of ₱500,000 or below." },
     ]);

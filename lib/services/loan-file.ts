@@ -56,6 +56,8 @@ export type PnLookupResult =
       productName: string | null;
       classification: "FINANCING" | "REFINANCING";
       classificationRule: string;
+      /** No keyword matched: the default decided it (D-031: a small label, never a block). */
+      classifiedByDefault: boolean;
       /** Outcome for Refinancing (no LA picks needed). Null for Financing until the LA picks. */
       outcome: RuleOutcome | null;
       canOpen: boolean;
@@ -163,10 +165,12 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   }
   const off = await inactiveRefusal(lookup.record);
   if (off) return { kind: "refused", pn, ...off, record: lookup.record };
-  const cls = classifyProductName(check.normalized.productName);
+  // The keyword lists and default saved in Settings, Product classification (D-031).
+  const classificationRules = await getSetting("classification.rules");
+  const cls = classifyProductName(check.normalized.productName, classificationRules);
   const outcome =
     cls.classification === "REFINANCING"
-      ? evaluateLoanRules({ productName: check.normalized.productName, loanType: check.normalized.loanType, totalReleasedAmount: check.normalized.totalReleasedAmount })
+      ? evaluateLoanRules({ productName: check.normalized.productName, loanType: check.normalized.loanType, totalReleasedAmount: check.normalized.totalReleasedAmount, classificationRules })
       : null;
   return {
     kind: "preview",
@@ -177,6 +181,7 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
     productName: check.normalized.productName,
     classification: cls.classification,
     classificationRule: cls.rule,
+    classifiedByDefault: cls.byDefault,
     outcome,
     canOpen: can(user, PERMISSIONS.LOANS_OPEN),
     ...(await otherLoansOf(user, lookup.record)),
@@ -260,6 +265,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
   if (!inScope(user, branch.id)) throw new UserError("Outside your branch access.", "branch");
 
   let outcome: RuleOutcome;
+  const classificationRules = await getSetting("classification.rules");
   try {
     outcome = evaluateLoanRules({
       productName: check.normalized.productName,
@@ -267,6 +273,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       totalReleasedAmount: check.normalized.totalReleasedAmount,
       financingType: input.financingType ?? null,
       orcrStatus: input.orcrStatus ?? null,
+      classificationRules,
     });
   } catch (e) {
     if (e instanceof RuleInputError) throw new UserError(e.message, e.field);
@@ -298,6 +305,8 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
           retrievedAt: lookup.retrievedAt,
           openedById: user.id,
           classification: outcome.classification,
+          // Saved when the LA opens (accepts) it (D-031); a later keyword change only flags it.
+          classifiedByDefault: classifyProductName(check.normalized.productName, classificationRules).byDefault,
           financingType: outcome.financingType,
           orcrStatus: outcome.orcrStatus,
           mortgageResult: outcome.mortgage,

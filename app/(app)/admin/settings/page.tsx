@@ -51,6 +51,8 @@ import { SettingsList, type ListRow } from "@/components/admin/settings-list";
 import { StatusPanel } from "@/components/admin/status-panel";
 import { ImportStep } from "@/components/admin/import-step";
 import { BranchesModal, type BranchFilter } from "@/components/admin/branches/area";
+import { ClassificationForm } from "@/components/admin/classification-form";
+import { getClassificationRules, previewClassification, rulesFromForm } from "@/lib/services/classification";
 import {
   AlertIcon, ArrowLeftIcon, BellIcon, PauseIcon, RefreshIcon, BuildingIcon, CalendarIcon, ChecklistIcon, ClockIcon, CoinsIcon, FileTextIcon, FlaskIcon, LayersIcon, ListIcon, MapPinIcon, SettingsIcon, TagIcon, UsersIcon,
 } from "@/components/ui/icons";
@@ -67,6 +69,7 @@ const AREAS = [
   { key: "tat", title: "Turnaround times", desc: "Target business days for each step.", help: "Business days skip weekends and holidays. 0 means the same day.", Icon: ClockIcon },
   { key: "loan-types", title: "Loan types", desc: "Display names for the MyLoans loan types.", help: `The Data Check accepts only New and Renewal. The mortgage thresholds are fixed by the rule “${RULE_NAMES.MORTGAGE_THRESHOLD.title}”: ${pesoWhole(MORTGAGE_THRESHOLDS.New)} for New, ${pesoWhole(MORTGAGE_THRESHOLDS.Renewal)} for Renewal.`, Icon: TagIcon },
   { key: "dp-capacity", title: "Processor capacity", desc: "How many open jobs a processor takes, and who is on leave.", help: "Used by the Monitoring page and the Send panel. Open jobs = assigned + in process + on hold. A processor on leave is shown disabled in the Send panel and counts as 0% available. A past \"until\" day ends the leave by itself.", Icon: UsersIcon },
+  { key: "classification", title: "Product classification", desc: "Keywords that decide Financing or Refinancing.", help: "The product name decides it: a Refinancing keyword first, then a Financing keyword, else the default (D-031). Saving re-checks open loan files; a changed result is flagged, never applied by itself.", Icon: TagIcon },
   { key: "permissions", title: "Permissions", desc: "Every role against every permission, with tickboxes.", help: "The permission matrix (D-003). Ticks apply on each person's next click or page. Per-person changes (Granted / Denied) are on Users, Edit. Only the Superadmin changes it.", Icon: UsersIcon },
   { key: "roles", title: "Roles and access", desc: "What each role may do, and which branches it sees.", help: "Who can do what. A change applies on each person's next click or page.", Icon: UsersIcon },
   { key: "lto", title: "LTO offices", desc: "LTO offices a processor can be sent to.", help: "Add an office or rename it. Nothing is deleted: make it inactive instead.", Icon: MapPinIcon },
@@ -92,7 +95,7 @@ const listHref = (key: string) => `${BASE}?open=${key}`;
 const editHref = (key: string, id: string) => `${BASE}?open=${key}&edit=${id}`;
 const importHref = (key: string) => `${BASE}?open=${key}&step=import`;
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string; btype?: string; page?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ open?: string; edit?: string; tab?: string; step?: string; status?: string; from?: string; to?: string; before?: string; q?: string; area?: string; source?: string; show?: string; btype?: string; page?: string; refinancing?: string; financing?: string; fallback?: string }> }) {
   // Settings opens for anyone who may change at least one area; each card shows only if allowed.
   const user = await requirePageAny(SETTINGS_PERMISSIONS);
   const sp = await searchParams;
@@ -154,7 +157,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </section>
         ))}
       </div>
-      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show, page: sp.page }} btype={sp.btype === "FT" ? "FT" : "CA"} />}
+      {open && <AreaModal area={open} edit={sp.edit} step={sp.step} testMode={testMode} user={user} filter={{ status: sp.status, from: sp.from, to: sp.to, before: sp.before }} branchFilter={{ q: sp.q, area: sp.area, source: sp.source, show: sp.show, page: sp.page }} btype={sp.btype === "FT" ? "FT" : "CA"} test={sp.refinancing !== undefined || sp.financing !== undefined ? { refinancing: sp.refinancing, financing: sp.financing, fallback: sp.fallback } : undefined} />}
     </div>
   );
 }
@@ -174,7 +177,9 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
   const stages = await pair(prisma.processingStage);
   const customRoles = await prisma.role.count({ where: { active: true, builtIn: false } });
   const n = ([a, i]: number[], one: string, many: string, more = "") => ({ main: `${a} ${a === 1 ? one : many}${more}`, extra: i > 0 ? `+${i} inactive` : "" });
+  const cls = await getClassificationRules();
   return {
+    classification: { main: `Refinancing: ${cls.refinancing.join(", ")} · Financing: ${cls.financing.join(", ")}`, extra: `No keyword: ${cls.fallback === "FINANCING" ? "Financing" : "Refinancing"}` },
     branches: n(branches, "branch", "branches"),
     "transaction-types": n(types, "type", "types"),
     "document-types": n(docs, "type", "types"),
@@ -220,7 +225,7 @@ interface ListArea {
   filterLabel?: string;
 }
 
-async function AreaModal({ area, edit, step, testMode, user, filter, branchFilter, btype = "CA" }: { area: (typeof AREAS)[number]; edit?: string; step?: string; testMode: boolean; user: CurrentUser; filter: OutboxFilter; branchFilter: BranchFilter; btype?: TypeKey }) {
+async function AreaModal({ area, edit, step, testMode, user, filter, branchFilter, btype = "CA", test }: { area: (typeof AREAS)[number]; edit?: string; step?: string; testMode: boolean; user: CurrentUser; filter: OutboxFilter; branchFilter: BranchFilter; btype?: TypeKey; test?: { refinancing?: string; financing?: string; fallback?: string } }) {
   const common = { id: "settings-modal", title: area.title, help: area.help, closeHref: BASE, returnFocusId: `card-${area.key}` };
 
   // Settings, Branches: its own list, edit, Import from MyLoans, Branch review and sync steps.
@@ -248,6 +253,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
 
   if (area.key === "roles") return <RolesArea edit={edit} common={common} />;
   if (area.key === "permissions") return <PermissionsArea common={common} user={user} />;
+  if (area.key === "classification") return <ClassificationArea common={common} user={user} test={test} />;
   if (area.key === "dp-capacity") {
     return <SettingsModal {...common} footer={{ kind: "done" }}><CapacityArea /></SettingsModal>;
   }
@@ -724,6 +730,45 @@ async function loadListArea(key: AreaKey, opts: { btype?: TypeKey } = {}): Promi
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Product classification (D-031): the keyword lists, the default, and "Test keyword rules" (a preview).
+// ---------------------------------------------------------------------------
+
+async function ClassificationArea({ common, user, test }: { common: { id: string; title: string; help: string; closeHref: string; returnFocusId: string }; user: CurrentUser; test?: { refinancing?: string; financing?: string; fallback?: string } }) {
+  const canEdit = can(user, PERMISSIONS.SETTINGS_CLASSIFICATION);
+  const saved = await getClassificationRules();
+  // The values being tested (from Test keyword rules), or the saved ones.
+  const tried = test ? rulesFromForm(test) : null;
+  const rules = tried && !tried.problem ? tried.rules : saved;
+  const preview = await previewClassification(rules);
+  return (
+    <SettingsModal {...common} footer={canEdit ? { kind: "save", formId: "classification-form", cancelHref: BASE } : { kind: "done" }}>
+      <ClassificationForm key={JSON.stringify(rules)} formId="classification-form" canEdit={canEdit} refinancing={rules.refinancing} financing={rules.financing} fallback={rules.fallback} />
+      {tried?.problem && <p role="alert" className="mt-3 text-sm font-semibold text-bad-fg" data-test-problem>{tried.problem}</p>}
+      <section aria-labelledby="cls-preview" className="mt-5" data-classification-preview>
+        <h3 id="cls-preview" className="text-[15px] font-bold text-navy">{test ? "Test keyword rules: the result with these keywords (not saved)" : "Product names on open loan files"}</h3>
+        <p className="mt-1 text-sm text-ink-2" data-preview-summary>
+          {preview.loansChanging === 0 ? "No open loan file would change classification." : `${preview.loansChanging} open loan file${preview.loansChanging === 1 ? " would" : "s would"} change classification (flagged, then reclassified by someone with "Reclassify a loan").`}
+          {preview.byDefault > 0 ? ` ${preview.byDefault} would be classified by default (no keyword).` : ""}
+        </p>
+        {preview.rows.length > 0 && (
+          <ul className="mt-2 flex flex-col divide-y divide-line rounded-xl border border-line text-sm">
+            {preview.rows.map((r) => (
+              <li key={r.productName} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" data-preview-row={r.productName}>
+                <span className="min-w-0 flex-1 font-semibold">{r.productName || "(blank)"}</span>
+                <span className="text-ink-2">{r.loans} loan{r.loans === 1 ? "" : "s"}</span>
+                <span data-preview-next>{r.next === "FINANCING" ? "Financing" : "Refinancing"}{r.keyword ? ` ("${r.keyword}")` : ""}</span>
+                {r.byDefault && <span className="chip c-mute h-6 text-xs">By default</span>}
+                {r.changes > 0 && <span className="chip c-act h-6 text-xs" data-preview-changes>{r.changes} change{r.changes === 1 ? "s" : ""} (was {r.saved === "FINANCING" ? "Financing" : "Refinancing"})</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </SettingsModal>
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 import { storedRuleWording } from "@/lib/rules";
+import { ReclassifyForm } from "@/components/admin/classification-form";
+import { classificationChangedText } from "@/lib/services/classification";
 import { statusLabel } from "@/lib/myloans/status";
 import type { Metadata } from "next";
 import { txnFundsType } from "@/lib/jobs/view";
@@ -408,7 +410,9 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
   const mortgage = loan.mortgageResult === "MORTGAGE" ? "Yes" : loan.mortgageResult === "NOT_MORTGAGE" ? "No" : "Not checked";
   const today = businessDate(new Date());
   const deadline = ctx.deadline === today ? `Today, ${dayText(ctx.deadline, { year: false })}` : `${dayText(ctx.deadline, { year: false })}${ctx.pastDay2 ? " (passed)" : ""}`;
-  const facts: [string, string][] = [["Type", type], ["Mortgage needed", mortgage], ["OR/CR", orcr], ["Send by", deadline]];
+  // "Classified by default" (D-031): no keyword matched; a small label, never a block.
+  const facts: [string, string][] = [["Type", loan.classifiedByDefault ? `${type} (classified by default)` : type], ["Mortgage needed", mortgage], ["OR/CR", orcr], ["Send by", deadline]];
+  const changed = classificationChangedText(loan);
   const snap = loan.snapshots[0];
   const why = storedRuleWording(loan.ruleFired);
   // The full MyLoans account set, with codes and IDs (docs/myloans/field-map.md): the one everyday place
@@ -445,6 +449,8 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
           </div>
         ))}
       </dl>
+      {loan.classifiedByDefault && !changed && <p className="text-[13px] text-ink-2" data-classified-by-default>Classified by default: the product name has no Financing or Refinancing keyword (Settings, Product classification).</p>}
+      {changed && <ReclassifyForm loanId={loan.id} pn={loan.pn} text={changed} becomesFinancing={loan.classificationNow === "FINANCING"} canReclassify={can(user, PERMISSIONS.LOANS_RECLASSIFY)} />}
       {/* Collapsed: the full set from MyLoans, grouped, two compact columns. */}
       <details className="group @container border-t border-line pt-2" data-more-loan-details>
         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold text-navy [&::-webkit-details-marker]:hidden">

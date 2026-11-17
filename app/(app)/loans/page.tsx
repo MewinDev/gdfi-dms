@@ -168,7 +168,7 @@ async function holdReasonCounts(user: CurrentUser) {
 function AdminList({ f, rows, page, branches, areas, byArea, tabs, counts, holds, unfiltered, holidays }: { f: LoanListFilters; rows: LoanRow[]; page: number; branches: { id: string; name: string }[]; areas: { id: string; name: string }[]; byArea: boolean; tabs: { key: string; label: string }[]; counts: Record<string, number>; holds: Awaited<ReturnType<typeof holdReasonCounts>>; unfiltered: number | null; holidays: ReadonlySet<string> }) {
   const fields: FilterField[] = [
     { name: "stage", label: "Stage", value: f.stage, options: STAGES.map((s) => [s, stageLabel(s)]) },
-    { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"]] },
+    { name: "classification", label: "Classification", value: f.classification, options: [["FINANCING", "Financing"], ["REFINANCING", "Refinancing"], ["BY_DEFAULT", "Classified by default"], ["CHANGED", "Classification changed since accepted"]] },
     { name: "area", label: "Area", value: f.area, options: areas.map((a) => [a.id, a.name]) },
     { name: "branch", label: "Branch", value: f.branch, options: branches.map((b) => [b.id, b.name]) },
     { name: "loanType", label: "Loan type", value: f.loanType, options: [["New", "New"], ["Renewal", "Renewal"]] },

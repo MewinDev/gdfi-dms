@@ -200,7 +200,7 @@ describe("Inactive instead of delete", () => {
     try {
       expect(await inactiveRefusal("user", { id: admin.id }, { id: "someone-else" })).toMatch(/^This is the last active person who can (manage permissions|change branch access)\./);
     } finally {
-      await prisma.user.updateMany({ where: { email: "test.superadmin@gdfi.ph" }, data: { active: true } });
+      await prisma.user.updateMany({ where: { email: { in: ["test.superadmin@gdfi.ph", "test.superadmin2@gdfi.ph"] } }, data: { active: true } });
     }
 
     // The last active branch (a branch made in the DMS; the others switched off as MyLoans would).
