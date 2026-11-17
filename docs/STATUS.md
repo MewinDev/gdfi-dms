@@ -1,6 +1,6 @@
 # GDFI-DMS: project status
 
-As of 18 November 2026 (PHT), after piece 5. Branch `feature/foundation-settings-rbac-myloans`.
+As of 18 November 2026 (PHT), after piece 5, with the new build order (D-045). Branch `feature/foundation-settings-rbac-myloans`.
 
 Effort is in **developer-days for one experienced developer**. Figures for the foundation pieces are the plan's estimates (`IMPLEMENTATION_PLAN.md`, section 1), adjusted for work already done. Figures for the later modules and go-live are **rough estimates** (no detailed plan yet); they will change once each module is planned.
 
@@ -26,15 +26,17 @@ Done so far: pieces 1, 2, 3, 3a, 4 and 5 (the plan estimated 18.5 to 24.5 days f
 | 3a | Product classification by keywords | **Done** | 0 |
 | 4 | One working-days calendar: holidays, office closures, saved due dates, pauses (with the D-042 fixes) | **Done** | 0 |
 | 5 | Liquidation due date: N working days after the last LTO pickup, per CA / FT; fallback; late record (D-044) | **Done** | 0 |
-| 6 | myloans mock APIs 1 to 5 (the agreed contract) | **Next**. Partly done: contract, hash, mock and sync planning are built and tested as code; the mock endpoints and their tables are not | 2 |
-| 7 | myloans sync on API 2: checkpoint, paging, superseded copies, duplicates, run log, alerts | **Pending** (needs 6). Can be built against the mock now; **going live is blocked** by myloans: credentials (C5), limits (C2), timings (R2-6) | 5 to 7 |
-| 8 | Open Items per field: approver queues, Unassigned, superseded, cancellations, monitored fields | **Pending** (needs 7) | 7 to 9 |
-| 9 | Accept / Forward engine: movement ledger, branch pool and personal inbox, per-user TAT and waiting time | **Pending** | 8 to 12 |
-| 10 | PN # search on API 1, Search Log, "Released, not yet in the DMS" from the pool | **Pending** (needs 7 and 9) | 2 to 3 |
-| 11 | Products (API 5) and branches (API 4) | **Pending**. Products are **blocked** by myloans for real data: the product list and API 5 (R2-3) | 2 to 3 |
+| 6 | myloans mock APIs 1 to 5 (the agreed contract) | **On hold, waiting for myloans staging access (C5)**. Partly done: contract, hash, mock and sync planning are built and tested as code | 2 |
+| 7 | myloans sync on API 2: checkpoint, paging, superseded copies, duplicates, run log, alerts | **On hold, waiting for myloans staging access (C5)**; also needs limits (C2) and timings (R2-6) | 5 to 7 |
+| 8 | Open Items per field: approver queues, Unassigned, superseded, cancellations, monitored fields | **On hold, waiting for myloans staging access (C5)** | 7 to 9 |
+| 9 | Accept / Forward engine: movement ledger, branch pool and personal inbox, per-user TAT and waiting time; Correct due date on LA items | **Next** (worked examples first; built on the loans already in the DMS, with a hook for the feed) | 8 to 12 |
+| 10 | PN # search on API 1, Search Log, "Released, not yet in the DMS" from the pool | **On hold, waiting for myloans staging access (C5)** | 2 to 3 |
+| 11 | Products (API 5) and branches (API 4) | **Waiting for the product list and API 5 (R2-3)** | 2 to 3 |
 | 12 | Docs, Manual Test Kit, e2e update, final verification | **Pending** (ongoing with each piece) | 4 to 6 |
 | — | CI on GitHub (approved proposal) | **Blocked**: waiting for the GitHub setup (Actions, one secret, branch protection) | 1 |
 | | **Foundation remaining** | | **31 to 43** |
+
+**Build order (D-045):** piece **9 next**; then **6, 7, 8 and 10** when myloans staging access (C5) arrives; **11** when the product list (R2-3) arrives; 12 runs with each piece. Phase A go-live needs all of them, so its date depends on when C5 arrives.
 
 ## Outside decisions and blockers
 
@@ -42,7 +44,9 @@ Done so far: pieces 1, 2, 3, 3a, 4 and 5 (the plan estimated 18.5 to 24.5 days f
 |---|---|---|
 | myloans: 3 hash test-vector outputs | myloans team | Only the hash test (skipped until then) |
 | myloans R2-4: paid / closed source | myloans team | "Loan closed / released" (closure module) |
-| myloans R2-3 (product list, API 5), R2-6 (timings), A4, A5, C2 (limits), C5 (credentials) | myloans team, infrastructure | Pieces 7 and 11 going live (not their build on the mock) |
+| myloans staging access (C5) | myloans team, infrastructure | **Pieces 6, 7, 8 and 10 (on hold, D-045)** |
+| myloans R2-3 (product list, API 5) | myloans team | Piece 11 |
+| myloans R2-6 (timings), A4, A5, C2 (limits) | myloans team, infrastructure | Piece 7 going live |
 | myloans: do cancel and deactivate always update `updated_at` | myloans team | Confidence in the change feed (round 3 check) |
 | D-024 approval bands | Finance | Only whether bands are switched on |
 | GitHub setup for CI | Project owner | CI |

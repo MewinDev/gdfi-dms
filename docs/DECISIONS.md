@@ -616,3 +616,12 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - **Removed:** the setting `funds.liquidationDueDays` (10), the TAT row `P4_LIQUIDATE` (5) and its fallback, the column `CashAdvanceRule.liquidationDays`.
   - **UX (the user's instruction):** keep it simple. One line per advance in plain words: "Due Fri 27 Nov", "Due 2 working days after the LTO pickup (1 of 3 left)", "LTO not done. Liquidation due by fallback: Mon 30 Nov", "Liquidated 2 working days late". No new screens; the two values are on Settings, Funds types.
 - **Reason:** D-017 and the user's answers to the six open questions.
+
+## D-045 Build order: the myloans pieces wait for staging access
+
+- **Date:** 18 November 2026
+- **Decision (the user's):** pieces **6, 7, 8 and 10** (myloans mock APIs, the sync, Open Items, PN # search) are **on hold, waiting for myloans staging access (C5)**: we test against the real myloans API before building more of it. The new order: **piece 9 next** (Accept / Forward, inbox, TAT); then 6, 7, 8 and 10 when staging access arrives; piece 11 when the product list (R2-3) arrives.
+  - Piece 9 is built on the loans already in the DMS. The branch pool's "Released, not yet in the DMS" loans come from the sync later: piece 9 leaves one clear hook for that feed and builds no sync.
+  - Piece 9 scope also includes **Correct due date on LA work items** (the same rule as D-042: one item, a reason, the tick, in its history).
+  - The funds-types CSV import gains "liquidation_due_days" (whole number 0 to 30; blank keeps it, new types 2).
+- **Reason:** testing against the real API first avoids building twice; staging access is not there yet.

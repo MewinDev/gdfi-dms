@@ -14,7 +14,7 @@ import {
 import { returnToLa } from "@/lib/services/return-to-la";
 import { saveSettingsRow } from "@/lib/services/admin";
 import { setRowActive } from "@/lib/services/settings-status";
-import { checkImport, currentDataCsv, runImport } from "@/lib/import/importer";
+import { checkImport, currentDataCsv, runImport, templateCsv } from "@/lib/import/importer";
 import { toCsv } from "@/lib/import/csv";
 import { tatReport } from "@/lib/services/tat-report";
 import { setSetting } from "@/lib/settings";
@@ -103,8 +103,31 @@ describe("Funds types list (Settings)", () => {
     if (!run.ok) throw new Error(run.error);
     expect(await type("CHK")).toMatchObject({ name: "Check", needsReference: true, needsAccount: false, mustLiquidate: true });
     const csv = await currentDataCsv("funds-types");
-    expect(csv).toContain("FT,Fund transfer,2,Yes,Yes,Yes,Active");
-    expect(csv).toContain("CHK,Check,3,Yes,No,Yes,Active");
+    expect(csv).toContain("FT,Fund transfer,2,Yes,Yes,Yes,2,Active");
+    expect(csv).toContain("CHK,Check,3,Yes,No,Yes,2,Active"); // blank on a new row: 2
+  });
+
+  it("Import: liquidation due is a whole number 0 to 30; blank keeps it; anything else is refused in words (D-044)", async () => {
+    const cols = ["code", "name", "order", "liquidation_due_days", "status"];
+    // A new type with the column blank gets 2.
+    await runImport(admin, "funds-types", "f.csv", toCsv(cols, [{ code: "CHK", name: "Check", order: "3", liquidation_due_days: "", status: "Active" }]));
+    expect(await type("CHK")).toMatchObject({ liquidationDueDays: 2 });
+    const plan = await checkImport(admin, "funds-types", "f.csv", toCsv(cols, [
+      { code: "CHK", name: "Check", order: "3", liquidation_due_days: "4", status: "Active" },
+      { code: "GCX", name: "GCash payout", order: "4", liquidation_due_days: "31", status: "Active" },
+      { code: "GCY", name: "GCash other", order: "5", liquidation_due_days: "2.5", status: "Active" },
+      { code: "GCZ", name: "GCash third", order: "6", liquidation_due_days: "two", status: "Active" },
+    ]));
+    if (!plan.ok) throw new Error(plan.error);
+    expect(plan.rows[0]).toMatchObject({ action: "changed", changes: ["Liquidation due"] });
+    for (const r of plan.rows.slice(1)) expect(r.problems.join(" ")).toMatch(/whole number of working days from 0 to 30/);
+    await runImport(admin, "funds-types", "f.csv", toCsv(cols, [{ code: "CHK", name: "Check", order: "3", liquidation_due_days: "4", status: "Active" }]));
+    expect(await type("CHK")).toMatchObject({ liquidationDueDays: 4 });
+    // Blank keeps the current value.
+    await runImport(admin, "funds-types", "f.csv", toCsv(cols, [{ code: "CHK", name: "Check", order: "3", liquidation_due_days: "", status: "Active" }]));
+    expect(await type("CHK")).toMatchObject({ liquidationDueDays: 4 });
+    const tpl = templateCsv("funds-types");
+    expect(tpl.split("\r\n")[0]).toContain("must_liquidate,liquidation_due_days,status");
   });
 });
 

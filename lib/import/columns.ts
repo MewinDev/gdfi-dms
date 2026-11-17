@@ -222,11 +222,12 @@ export const IMPORT_LISTS: Record<ImportListKey, ImportListDef> = {
       { name: "needs_reference", label: "Release needs a reference number", what: "Finance enters the transfer reference number and date at release.", required: "no", allowed: "Yes, No (blank keeps it; new rows No)", example: "Yes" },
       { name: "needs_account", label: "Release needs receiving account details", what: "Bank or e-wallet, account name and the last 4 digits.", required: "no", allowed: "Yes, No (blank keeps it; new rows No)", example: "No" },
       { name: "must_liquidate", label: "Must be liquidated with receipts", what: "Receipts and the liquidation due date, as for every advance.", required: "no", allowed: "Yes, No (blank keeps it; new rows Yes)", example: "Yes" },
+      { name: "liquidation_due_days", label: "Liquidation due", what: "Working days after the last LTO pickup (D-044). Applies to new due dates only.", required: "no", allowed: "Whole number 0 to 30 (blank keeps it; new rows 2)", example: "2" },
       status, notes,
     ],
     examples: [
-      { code: "CHK", name: "Check", order: "3", needs_reference: "Yes", needs_account: "No", must_liquidate: "Yes", status: "Active", notes: EXAMPLE_NOTE },
-      { code: "GC", name: "GCash payout", order: "4", needs_reference: "Yes", needs_account: "Yes", must_liquidate: "Yes", status: "Active", notes: EXAMPLE_NOTE },
+      { code: "CHK", name: "Check", order: "3", needs_reference: "Yes", needs_account: "No", must_liquidate: "Yes", liquidation_due_days: "2", status: "Active", notes: EXAMPLE_NOTE },
+      { code: "GC", name: "GCash payout", order: "4", needs_reference: "Yes", needs_account: "Yes", must_liquidate: "Yes", liquidation_due_days: "3", status: "Active", notes: EXAMPLE_NOTE },
     ],
   },
   "expense-kinds": {

@@ -672,6 +672,8 @@ New items notify:
 
 ## 10. Piece 9: Accept / Forward engine, inbox, TAT (D-014, D-015)
 
+**Order (D-045):** piece 9 is built next, before pieces 6, 7, 8 and 10 (on hold for myloans staging access). It works on the loans already in the DMS and leaves one hook where the branch pool will receive "Released, not yet in the DMS" loans from the sync (piece 7). **Also in scope:** Correct due date on LA work items (D-042 rule).
+
 ### 10.1 Model
 
 | Model | Purpose |
