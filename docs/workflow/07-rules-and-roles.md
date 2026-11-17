@@ -147,4 +147,5 @@ Monitoring (group "Monitoring" in Roles): `monitor:dp` (the DP monitor), `monito
 
 - Approving MyLoans changes is **permission only**: anyone with the approver tick whose access includes the loan's branch decides it, and is told about it. "All branches" covers every branch, including branches with no approver of their own.
 - There is **no automatic fallback to Admin**. A branch where nobody has the approver tick in their own access is listed as "N active branches have no approver assigned." on Settings, Branches and on the Superadmin's Home, so it gets fixed. Its items stay visible to All-branches approvers.
+- **People with no branch** (active, not All branches, no branch in their access) see nothing at all. Users and the Superadmin's Home show "N users have no branches assigned (they see nothing)." in the same style, with the names (Show users on Users, each a link to Edit) and what to do: give them their branches on Users, Edit, or make them inactive if they have left.
 - Funds requests and their notices follow branch scope too (D-030): a request is in a person's scope only when the processor's branch and every line's loan are in their access.
