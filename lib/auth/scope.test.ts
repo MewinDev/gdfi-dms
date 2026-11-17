@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { allInScope, branchRowScope, hasAllBranches, inScope, loanRelationScope, loanScope, scopeIds } from "./scope";
+import { allInScope, branchRowScope, hasAllBranches, inScope, loanRelationScope, loanScope, scopeIds, worksInScope } from "./scope";
 
 const all = { scopeBranchIds: null };
 const two = { scopeBranchIds: ["b1", "b2"] };
@@ -32,6 +32,15 @@ describe("branch scope helpers (lib/auth/scope.ts)", () => {
     expect(loanScope(none).branchId!.in).toHaveLength(1);
     expect(loanScope(none).branchId!.in[0]).toMatch(/^__/);
     expect(inScope(none, "b1")).toBe(false);
+  });
+
+  it("worksInScope (D-039): a worker in one of the branches, or All branches on either side", () => {
+    const w = (ids: string[], allBranches = false) => ({ allBranches, branches: ids.map((branchId) => ({ branchId })) });
+    expect(worksInScope(two, w(["b2", "b9"]))).toBe(true);
+    expect(worksInScope(two, w(["b9"]))).toBe(false);
+    expect(worksInScope(two, w([], true))).toBe(true);
+    expect(worksInScope(all, w(["b9"]))).toBe(true);
+    expect(worksInScope(none, w(["b1"]))).toBe(false);
   });
 });
 

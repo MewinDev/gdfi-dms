@@ -6,7 +6,7 @@ import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { andWhere, holdsWhere } from "@/lib/auth/holders";
-import { overseerIds, ownsTransaction } from "./jobs";
+import { inScopeOrOwnJob, overseerIds, ownsTransaction } from "./jobs";
 import { currentStageIdFor } from "./job-stages";
 import { NotInScopeError, UserError } from "./errors";
 import { NO_OWNER, holdRemarksSchema, journeyHoldTransferred, mayAddDetails, mayResumeHold, onlyHolderMessage, remarksSchema, resumeRemarksSchema } from "@/lib/ui/holds";
@@ -52,7 +52,7 @@ export async function raiseHold(u: CurrentUser, raw: HoldInput, now: Date = new 
   if (!p.success) throw firstIssue(p.error);
   const d = p.data;
   const t = await prisma.loanTransaction.findUnique({ where: { id: d.transactionId }, include: { type: true, loan: true } });
-  if (!t || !inScope(u, t.loan.branchId)) throw new NotInScopeError();
+  if (!t || !(await inScopeOrOwnJob(u, t.loan.branchId, t.id))) throw new NotInScopeError();
   if (["COMPLETED", "CANCELLED"].includes(t.status)) throw new UserError("This transaction is already finished.");
   if (!(await ownsTransaction(u, t))) throw new UserError("You can put on hold only work you do.");
   const reason = await prisma.holdReason.findUnique({ where: { id: d.reasonId } });
@@ -81,7 +81,7 @@ export async function raiseHold(u: CurrentUser, raw: HoldInput, now: Date = new 
  */
 export async function resumeHold(u: CurrentUser, holdId: string, note: string, now: Date = new Date()) {
   const h = await prisma.hold.findUnique({ where: { id: holdId }, include: { reason: true, transaction: { include: { type: true, loan: true } } } });
-  if (!h || !inScope(u, h.transaction.loan.branchId)) throw new NotInScopeError();
+  if (!h || !(await inScopeOrOwnJob(u, h.transaction.loan.branchId, h.transactionId))) throw new NotInScopeError();
   if (h.resumedAt) throw new UserError("This hold has already ended.");
   if (!mayResumeHold(h, u)) throw new UserError(h.ownerLabel ? onlyHolderMessage(h.ownerLabel) : NO_OWNER);
   const r0 = resumeSchema.safeParse({ note });
@@ -107,7 +107,7 @@ export async function resumeHold(u: CurrentUser, holdId: string, note: string, n
  */
 export async function addHoldDetails(u: CurrentUser, holdId: string, note: string) {
   const h = await prisma.hold.findUnique({ where: { id: holdId }, include: { reason: true, transaction: { include: { type: true, loan: true } } } });
-  if (!h || !inScope(u, h.transaction.loan.branchId)) throw new NotInScopeError();
+  if (!h || !(await inScopeOrOwnJob(u, h.transaction.loan.branchId, h.transactionId))) throw new NotInScopeError();
   if (h.resumedAt) throw new UserError("This hold has already ended.");
   if (h.note.trim()) throw new UserError("This hold already has remarks.");
   if (!mayAddDetails(h, u)) throw new UserError(h.ownerLabel ? `Only ${h.ownerLabel} can add the details.` : NO_OWNER);

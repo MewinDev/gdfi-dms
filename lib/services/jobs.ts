@@ -63,11 +63,31 @@ function requireOwnJob(user: CurrentUser, a: { dpUserId: string; secondaryDpUser
   if (a.dpUserId !== user.id && a.secondaryDpUserId !== user.id) throw new UserError("This job is assigned to someone else.");
 }
 
-/** Jobs a person may see: their own, or in their branches when they can work jobs; Admin-like roles by loan scope. */
-export function canSeeJob(user: CurrentUser, a: { dpUserId: string; secondaryDpUserId?: string | null; dpBranchId: string; loan: { branchId: string } }) {
+/**
+ * Jobs a person may see (D-039): their own job in any branch; anyone else's only when the LOAN's branch is in
+ * their access (not the processor's branch). Stage files follow this rule (mayOpenStageFile).
+ */
+export function canSeeJob(user: CurrentUser, a: { dpUserId: string; secondaryDpUserId?: string | null; loan: { branchId: string } }) {
   if (a.dpUserId === user.id || a.secondaryDpUserId === user.id) return true;
-  if (can(user, PERMISSIONS.JOBS_WORK)) return inScope(user, a.dpBranchId);
   return inScope(user, a.loan.branchId);
+}
+
+/** Is there an active job on this transaction that is this processor's own (first or second processor)? */
+export async function hasOwnActiveJob(u: CurrentUser, transactionId: string): Promise<boolean> {
+  if (!can(u, PERMISSIONS.JOBS_WORK)) return false;
+  const job = await prisma.dpAssignment.findFirst({
+    where: { transactionId, status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] }, OR: [{ dpUserId: u.id }, { secondaryDpUserId: u.id }] },
+    select: { id: true },
+  });
+  return !!job;
+}
+
+/**
+ * The scope gate for holds and problems (D-039): the loan's branch in the person's access, or the
+ * processor's OWN active job on that transaction (the own-job rule), wherever the loan is.
+ */
+export async function inScopeOrOwnJob(u: CurrentUser, branchId: string, transactionId: string): Promise<boolean> {
+  return inScope(u, branchId) || (await hasOwnActiveJob(u, transactionId));
 }
 
 // ---------------------------------------------------------------------------
@@ -512,7 +532,7 @@ export async function ownsTransaction(u: CurrentUser, t: { id: string; status: s
 export async function raiseProblem(u: CurrentUser, input: { transactionId: string; reasonId: string; note: string }) {
   if (!can(u, PERMISSIONS.PROBLEMS_RAISE)) throw new UserError("Your role does not allow raising problems.");
   const t = await prisma.loanTransaction.findUnique({ where: { id: input.transactionId }, include: { type: true, loan: true, problems: true } });
-  if (!t || !inScope(u, t.loan.branchId)) throw new NotInScopeError();
+  if (!t || !(await inScopeOrOwnJob(u, t.loan.branchId, t.id))) throw new NotInScopeError();
   if (!(await ownsTransaction(u, t))) throw new UserError("You can raise a problem only on transactions you work on.");
   const reason = await prisma.problemReason.findUnique({ where: { id: input.reasonId } });
   if (!reason || !reason.active) throw new UserError("Pick a reason.", "reasonId");
@@ -528,7 +548,7 @@ export async function raiseProblem(u: CurrentUser, input: { transactionId: strin
 
 export async function resolveProblem(u: CurrentUser, problemId: string, note: string) {
   const p = await prisma.problem.findUnique({ where: { id: problemId }, include: { transaction: { include: { type: true, loan: true } }, reason: true } });
-  if (!p || !inScope(u, p.transaction.loan.branchId)) throw new NotInScopeError();
+  if (!p || !(await inScopeOrOwnJob(u, p.transaction.loan.branchId, p.transactionId))) throw new NotInScopeError();
   if (p.resolvedAt) throw new UserError("This problem is already resolved.");
   const any = can(u, PERMISSIONS.PROBLEMS_RESOLVE_ANY);
   if (!any && !(can(u, PERMISSIONS.PROBLEMS_RESOLVE) && (await ownsTransaction(u, p.transaction)))) throw new UserError("You can resolve problems only on transactions you work on.");
@@ -545,7 +565,7 @@ export async function resolveProblem(u: CurrentUser, problemId: string, note: st
 export async function markOutsideControl(u: CurrentUser, problemId: string, on: boolean) {
   if (!can(u, PERMISSIONS.PROBLEMS_OUTSIDE)) throw new UserError("Only an Admin can mark a problem outside our control.");
   const p = await prisma.problem.findUnique({ where: { id: problemId }, include: { transaction: { include: { type: true, loan: true } }, reason: true } });
-  if (!p || !inScope(u, p.transaction.loan.branchId)) throw new NotInScopeError();
+  if (!p || !(await inScopeOrOwnJob(u, p.transaction.loan.branchId, p.transactionId))) throw new NotInScopeError();
   await prisma.$transaction(async (tx) => {
     await tx.problem.update({ where: { id: p.id }, data: { outsideControl: on, outsideMarkedById: u.id, outsideMarkedAt: new Date() } });
     await writeAudit(tx, { actor: { id: u.id, label: u.name }, mode: "MANUAL", action: "problem_outside_control", entityType: "Problem", entityId: p.id, loanId: p.loanId, pn: p.transaction.loan.pn, summary: `Problem on ${p.transaction.type.name} (${p.reason.name}) ${on ? "marked" : "no longer marked"} outside our control`, before: { outsideControl: p.outsideControl }, after: { outsideControl: on } });

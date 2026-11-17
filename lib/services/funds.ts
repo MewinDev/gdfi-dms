@@ -5,7 +5,7 @@ import { ltoEstimate } from "@/lib/ui/lto";
 import { prisma, type Tx } from "@/lib/db";
 import { writeAudit, type Actor } from "@/lib/audit";
 import { notify, branchLaUserIds } from "@/lib/notify";
-import { allInScope, can, type CurrentUser } from "@/lib/auth/current-user";
+import { allInScope, can, worksInScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PRINTABLE_STATUSES } from "@/lib/funds/list-view";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getHolidaySet, getSetting } from "@/lib/settings";
@@ -318,6 +318,8 @@ export async function decideAdvance(u: CurrentUser, advanceId: string, raw: unkn
     await tx.$queryRaw`SELECT "id" FROM "CashAdvance" WHERE "id" = ${advanceId} FOR UPDATE`;
     const a = await tx.cashAdvance.findUnique({ where: { id: advanceId }, include: { lines: { include: { transaction: { include: { loan: true, type: true } } } }, requestedBy: true } });
     if (!a) throw new UserError("Cash advance not found.");
+    // Scope first (D-019): "already approved" must not tell someone outside the request that it exists.
+    await needSee(tx, u, a);
     if (d.approve && a.approvedAt && !["REQUESTED", "DENIED", "CANCELLED"].includes(a.status)) {
       return { status: a.status, approvedCents: a.approvedCents, already: true };
     }
@@ -512,8 +514,11 @@ export async function decideTopUp(u: CurrentUser, topUpId: string, approve: bool
     // Locked first: a second Approve (double tap) waits, then finds it approved and does nothing.
     await tx.$queryRaw`SELECT "id" FROM "CashAdvanceTopUp" WHERE "id" = ${topUpId} FOR UPDATE`;
     const t = await tx.cashAdvanceTopUp.findUnique({ where: { id: topUpId }, include: { line: { include: { advance: true } } } });
-    if (t && approve && t.status === "APPROVED") return;
-    if (!t || t.status !== "REQUESTED") throw new UserError("This top-up was already decided.");
+    if (!t) throw new UserError("Request not found.");
+    // Scope first (D-019): the idempotent "already approved" answer is only for someone who sees the request.
+    await needSee(tx, u, t.line.advance);
+    if (approve && t.status === "APPROVED") return;
+    if (t.status !== "REQUESTED") throw new UserError("This top-up was already decided.");
     await requireApprover(tx, u, t.extraCents, t.requestedById, t.line.advance);
     if (approve) await assertFundsNotHeld(tx, [t.line.transactionId]);
     const amount = approve ? cents ?? t.extraCents : 0;
@@ -571,9 +576,12 @@ export async function decideCarryOver(u: CurrentUser, carryId: string, approve: 
     // Locked first: a second Approve (double tap) waits, then finds it approved and does nothing.
     await tx.$queryRaw`SELECT "id" FROM "CarryOver" WHERE "id" = ${carryId} FOR UPDATE`;
     const c = await tx.carryOver.findUnique({ where: { id: carryId }, include: { line: { include: { advance: true } } } });
-    if (c && approve && c.status === "APPROVED") return;
-    if (c) { await needSee(tx, u, c.line.advance); needType(u, "approve", c.line.advance, "approving carry-overs of"); }
-    if (!c || c.status !== "PENDING") throw new UserError("This carry-over was already decided.");
+    if (!c) throw new UserError("Request not found.");
+    // Scope and the type's tick first (D-019), then the idempotent "already approved" answer.
+    await needSee(tx, u, c.line.advance);
+    needType(u, "approve", c.line.advance, "approving carry-overs of");
+    if (approve && c.status === "APPROVED") return;
+    if (c.status !== "PENDING") throw new UserError("This carry-over was already decided.");
     if (c.line.advance.requestedById === u.id) throw new UserError("You cannot approve your own carry-over.");
     if (approve) await assertFundsNotHeld(tx, [c.line.transactionId]); // approving puts cash back to work
     await tx.carryOver.update({ where: { id: c.id }, data: { status: approve ? "APPROVED" : "DENIED", decidedById: u.id, decidedAt: now } });
@@ -675,13 +683,24 @@ export async function closeAdvance(u: CurrentUser, advanceId: string) {
   });
 }
 
-/** Finance lets an overdue DP submit one more request (one-time). */
+/**
+ * Of these processors, the ones this Finance person may grant an exception to (D-039): they work in one of
+ * the person's branches. The Funds page offers the button only for them (no button that leads to "not found").
+ */
+export async function exceptionTargets(u: CurrentUser, dpUserIds: string[]): Promise<Set<string>> {
+  if (!can(u, PERMISSIONS.FUNDS_EXCEPTION) || !dpUserIds.length) return new Set();
+  const rows = await prisma.user.findMany({ where: { id: { in: dpUserIds } }, select: { id: true, allBranches: true, branches: { select: { branchId: true } } } });
+  return new Set(rows.filter((r) => r.id !== u.id && worksInScope(u, r)).map((r) => r.id));
+}
+
+/** Finance lets an overdue DP submit one more request (one-time), only a processor in their branches (D-039). */
 export async function grantException(u: CurrentUser, dpUserId: string, note: string) {
   need(u, PERMISSIONS.FUNDS_EXCEPTION, "Your role does not allow granting exceptions.");
   if (dpUserId === u.id) throw new UserError("You cannot grant yourself an exception.");
   return prisma.$transaction(async (tx) => {
-    const dp = await tx.user.findUnique({ where: { id: dpUserId } });
-    if (!dp) throw new UserError("Pick a processor.");
+    const dp = await tx.user.findUnique({ where: { id: dpUserId }, select: { name: true, allBranches: true, branches: { select: { branchId: true } } } });
+    // D-039: only processors who work in one of the Finance person's branches ("All branches" = anyone).
+    if (!dp || !worksInScope(u, dp)) throw new UserError("Pick a processor.");
     const ex = await tx.fundsException.create({ data: { dpUserId, grantedById: u.id, note: note.trim() } });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "funds_exception_granted", entityType: "User", entityId: dpUserId, summary: `${u.name} let ${dp.name} submit one more cash advance while overdue${note ? `: ${note.trim()}` : ""}` });
     await notify(tx, { userIds: [dpUserId], title: "You may submit one more cash advance", body: `${u.name} granted a one-time exception.`, link: "/my-funds" });

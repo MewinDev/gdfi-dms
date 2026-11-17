@@ -206,7 +206,7 @@ describe("every built-in role x another branch: list, count, detail and files ar
       expect(await prisma.cashAdvance.count({ where: { id: advance.id, ...loanScope(u), ...typeWhere(u) } })).toBe(0);
       // Files: a receipt of a branch-390 advance, and stage evidence of a branch-390 job.
       expect(mayOpenReceipt(u, advance)).toBe(false);
-      expect(mayOpenStageFile(u, { dpUserId: admin.id, secondaryDpUserId: null, dpBranchId: b390, loan: { branchId: b390 } })).toBe(false);
+      expect(mayOpenStageFile(u, { dpUserId: admin.id, secondaryDpUserId: null, loan: { branchId: b390 } })).toBe(false);
     });
   }
 

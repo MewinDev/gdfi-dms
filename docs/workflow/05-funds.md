@@ -2,7 +2,7 @@
 
 How cash advances and fund transfers are flagged, requested, approved, released, carried over and liquidated.
 
-Last updated: 11 November 2026 (PHT)
+Last updated: 17 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -61,6 +61,8 @@ flowchart TD
 - Carry-over is free for 3 business days by default, then Finance approves it. Liquidation is due 10 business days after release, restarting at each carry-over decision.
 - Cash amounts are visible only to people with the permission `journey:view_amounts`.
 - On a transaction that is on hold, Finance cannot request, approve, release, top up or approve a carry-over ("Locked: on hold by {name} since {date and time}."). Denying, receipts, returns, liquidation, close and exceptions stay allowed so money already out can be settled.
+- **One-time exception (D-039).** Finance grants "Allow one more request" only to an overdue processor who works in one of the Finance person's branches ("All branches" = any processor); the Overdue processors list on Outstanding offers the button only for them, and the server refuses anyone else.
+- **Branch scope first (D-019).** Approve on a request, top-up or carry-over that was already approved answers "already approved" only to someone who sees the request; anyone else gets "Request not found."
 - When a job goes back to the LA after cash was released, the advance stays the DP's to settle ("Cash to settle"). A re-send asks for new cash like any new job.
 
 ## How to read this page

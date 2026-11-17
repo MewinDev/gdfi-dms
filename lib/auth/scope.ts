@@ -46,6 +46,15 @@ export function allInScope(user: ScopeUser, branchIds: (string | null | undefine
   return branchIds.every((b) => inScope(user, b));
 }
 
+/**
+ * Does this worker (a processor) work in one of the person's branches (D-039, funds exceptions)? A worker
+ * with All branches works everywhere; a person with All branches reaches any worker.
+ */
+export function worksInScope(user: ScopeUser, worker: { allBranches: boolean; branches: { branchId: string }[] }): boolean {
+  if (user.scopeBranchIds === null || worker.allBranches) return true;
+  return worker.branches.some((b) => inScope(user, b.branchId));
+}
+
 /** All branches (display text, "All branches" badges). */
 export const hasAllBranches = (user: ScopeUser): boolean => user.scopeBranchIds === null;
 

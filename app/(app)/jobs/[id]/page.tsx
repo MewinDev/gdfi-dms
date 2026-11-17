@@ -5,7 +5,7 @@ import { ReportLtoProblemButton, ResolveAdvisoryButton } from "@/components/moni
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { can, requirePageAny } from "@/lib/auth/current-user";
+import { can, inScope, requirePageAny } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { canSeeJob, LTO_BLOCK_MESSAGE, lineTotals, loadAssignment, ltoBlocked } from "@/lib/services/jobs";
@@ -93,7 +93,14 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   // Holds: the DP on their own open job (waiting for acceptance or in process). Admin resumes any.
   const jobOpen = a.status === "PENDING_ACCEPTANCE" || (a.status === "ACCEPTED" && t.status === "IN_PROCESS");
   const mayHold = mine && jobOpen && can(user, PERMISSIONS.HOLDS_RAISE);
-  const mayResume = !!hold && mayResumeHold(hold, user); // only the person who put it on hold
+  // D-039: the loan's branch is the person's, or this is their own active job (the own-job rule). Without
+  // either, the server answers "not found", so those buttons are not shown (no button that leads to "not found").
+  const loanInScope = inScope(user, a.loan.branchId);
+  const ownActive = mine && (a.status === "PENDING_ACCEPTANCE" || a.status === "ACCEPTED");
+  const reachable = loanInScope || ownActive;
+  const mayResume = !!hold && reachable && mayResumeHold(hold, user); // only the person who put it on hold
+  const mayResolveProblem = reachable && (can(user, PERMISSIONS.PROBLEMS_RESOLVE_ANY) || (ownActive && can(user, PERMISSIONS.PROBLEMS_RESOLVE)));
+  const mayMarkOutside = reachable && can(user, PERMISSIONS.PROBLEMS_OUTSIDE);
   const holdReasons = mayHold && !hold ? await prisma.holdReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, code: true } }) : [];
   const funds = txnFunds(t);
   const tat = a.status === "CLOSED" && a.decidedAt ? doneTat(t.type.code, a.decidedAt, a.forwardedAt ?? a.closedAt ?? now, tats, holidays) : txnTat(t, tats, holidays, now);
@@ -233,7 +240,9 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         {a.secondaryDpUser && <ToneChip tone="wait">Pasuyo</ToneChip>}
         {t.attempts.length > 0 && <ToneChip tone="mute">{t.attempts.length} attempt{t.attempts.length === 1 ? "" : "s"}</ToneChip>}
         {pDays > 0 && <ToneChip tone={problem ? "bad" : "mute"}>Problem time {pDays} day{pDays === 1 ? "" : "s"}</ToneChip>}
-        <Link href={`/loans/${a.loan.pn}`} className="link ml-auto inline-flex min-h-11 items-center text-sm">Open the loan file</Link>
+        {loanInScope
+          ? <Link href={`/loans/${a.loan.pn}`} className="link ml-auto inline-flex min-h-11 items-center text-sm">Open the loan file</Link>
+          : <span className="ml-auto inline-flex min-h-11 items-center text-[13px] text-ink-2" data-loan-file-elsewhere>The loan file is in {a.loan.branch.name}, outside your branches. Ask its Loan Associate.</span>}
       </section>
 
       {atLto && (
@@ -281,8 +290,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <h2 className="text-lg font-bold">Problem: {problem.reason.name}{problem.outsideControl ? " · Outside our control" : ""}</h2>
           <p className="text-[15px]">Raised by {problem.raisedByLabel} on {dayText(problem.raisedAt)}{problem.note ? ` · ${problem.note}` : ""}. The turnaround time keeps counting.</p>
           <div className="flex flex-wrap gap-2">
-            {(mine || can(user, PERMISSIONS.PROBLEMS_RESOLVE_ANY)) && <ResolveProblemForm problemId={problem.id} />}
-            {can(user, PERMISSIONS.PROBLEMS_OUTSIDE) && <OutsideControlToggle problemId={problem.id} on={problem.outsideControl} />}
+            {mayResolveProblem && <ResolveProblemForm problemId={problem.id} />}
+            {mayMarkOutside && <OutsideControlToggle problemId={problem.id} on={problem.outsideControl} />}
           </div>
         </section>
       )}
@@ -291,7 +300,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       <LiveAnnouncer />
       {hold && (
         <HoldSummary hold={{ holdId: hold.id, reason: holdReasonName(hold), note: hold.note, raisedBy: hold.raisedByLabel, raisedAt: hold.raisedAt.toISOString(), owner: hold.ownerLabel ?? null }}
-          now={now.toISOString()} canResume={mayResume} canAddDetails={mayAddDetails(hold, user)} clockNote
+          now={now.toISOString()} canResume={mayResume} canAddDetails={reachable && mayAddDetails(hold, user)} clockNote
           transfer={mayTransferHold(user, a.loan.branchId) ? { candidates: await transferCandidates(user, hold.id) } : null} />
       )}
 

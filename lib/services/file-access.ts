@@ -1,4 +1,4 @@
-import { allInScope, can, inScope, type CurrentUser } from "@/lib/auth/current-user";
+import { allInScope, can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canFunds } from "@/lib/funds/access";
 import { canSeeJob } from "./jobs";
@@ -17,11 +17,8 @@ export function mayOpenReceipt(user: CurrentUser, advance: { requestedById: stri
   return canFunds(user, "view", advance) && allInScope(user, [advance.branchId, ...(advance.lineBranchIds ?? [])]);
 }
 
-/** Stage evidence: someone who sees loan files and the job (their own job) or the loan's branch. */
-export function mayOpenStageFile(
-  user: CurrentUser,
-  assignment: Parameters<typeof canSeeJob>[1] & { loan: { branchId: string } },
-): boolean {
+/** Stage evidence: someone who sees loan files and the job (D-039: their own job anywhere, else the loan's branch). */
+export function mayOpenStageFile(user: CurrentUser, assignment: Parameters<typeof canSeeJob>[1]): boolean {
   if (!can(user, PERMISSIONS.LOANS_VIEW)) return false;
-  return canSeeJob(user, assignment) || inScope(user, assignment.loan.branchId);
+  return canSeeJob(user, assignment);
 }

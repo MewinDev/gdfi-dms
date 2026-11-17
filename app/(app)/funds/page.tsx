@@ -6,7 +6,7 @@ import { advanceScope, can, requirePageAny } from "@/lib/auth/current-user";
 import { TYPE_ID, TYPE_NOUN, TYPE_TITLE, anyStepKeys, canFunds, canFundsAny, stepKeys, stepVerb, typeKeyOf, typeWhere, typesFor, type FundsStep, type TypeRef } from "@/lib/funds/access";
 import { bandTypeId, fundsGaps } from "@/lib/services/funds-handlers";
 import { PERMISSIONS, PERMISSION_GROUPS } from "@/lib/auth/permissions";
-import { cashToSettleIds, notifyOverdue } from "@/lib/services/funds";
+import { cashToSettleIds, exceptionTargets, notifyOverdue } from "@/lib/services/funds";
 import { OPEN_ADVANCE, ageBucket, bandRolesFor, decimalToCents, isOverdue, peso } from "@/lib/funds/rules";
 import { allKinds, kindOption, lineKindText } from "@/lib/services/expense-kinds";
 import { presetWas } from "@/lib/funds/kinds";
@@ -143,7 +143,10 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
   const balanceOf = (a: Adv) => a.releasedCents - a.lines.flatMap((l) => l.receipts).reduce((s, r) => s + r.cents, 0) - a.returns.reduce((s, r) => s + r.cents, 0);
   const ageOf = (a: Adv) => (a.releasedAt ? businessDaysBetween(businessDate(a.releasedAt), businessDate(now), holidays) : 0);
   const daysSince = (d: Date | null) => (d ? businessDaysBetween(businessDate(d), businessDate(now), holidays) : 0);
-  const overdueDps = new Map(open.filter((a) => isOverdue(a, now)).map((a) => [a.requestedBy.id, a.requestedBy.name]));
+  const overdueAll = new Map(open.filter((a) => isOverdue(a, now)).map((a) => [a.requestedBy.id, a.requestedBy.name]));
+  // D-039: an exception only for processors who work in this person's branches (the server refuses others).
+  const grantable = await exceptionTargets(user, [...overdueAll.keys()]);
+  const overdueDps = new Map([...overdueAll].filter(([id]) => grantable.has(id)));
   const counts = { approve: requested.length + topUps.filter((t) => t.status === "REQUESTED").length + carries.length, release: approved.length + topUps.filter((t) => t.status === "APPROVED").length, outstanding: open.length, history: history.length };
   // Counts by type for the filter (same branch scope, every open or recent record of the tab).
   const tabStatus: Record<string, string[]> = { approve: ["REQUESTED"], release: ["APPROVED"], outstanding: [...OPEN_ADVANCE, "LIQUIDATED"], history: ["CLOSED", "DENIED", "CANCELLED"] };
