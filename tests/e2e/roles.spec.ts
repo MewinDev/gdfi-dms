@@ -120,7 +120,7 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   await page.getByRole("link", { name: "Edit Zed Checker" }).click();
   const edit = page.getByRole("dialog", { name: "Edit Zed Checker" });
   await edit.locator('select[name="roleId"]').selectOption({ label: "Loan Associate" });
-  await edit.getByRole("button", { name: "Save" }).click();
+  await edit.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("alertdialog").getByText(/Zed Checker will lose: nothing\. And gain: .*Open a loan file.*Send to a processor/)).toBeVisible();
   await page.getByRole("alertdialog").getByRole("button", { name: "Change role and save" }).click();
   await expect(edit.getByText("Saved", { exact: true }).first()).toBeVisible();
