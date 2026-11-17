@@ -1,4 +1,5 @@
 import "server-only";
+import { arriveItem, closeItem, openItem, takeItem } from "./work-items";
 import { Prisma } from "@prisma/client";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
@@ -359,7 +360,10 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
         after: { mortgageResult: outcome.mortgage },
         details: { inputs, rulesFired: outcome.rulesFired },
       });
-      await createTransactions(tx, { loanId: loan.id, pn, codes: outcome.transactions, origin: "AUTOMATIC" });
+      // Find loan (D-046 item 4): the LA's items arrive and are accepted at the same moment (waiting 0).
+      await createTransactions(tx, { loanId: loan.id, pn, codes: outcome.transactions, origin: "AUTOMATIC", holderUserId: user.id });
+      const candidate = await openItem(tx, "LOAN_CANDIDATE", pn);
+      if (candidate) { await takeItem(tx, "LOAN_CANDIDATE", pn, user); await closeItem(tx, "LOAN_CANDIDATE", pn, "DONE", { by: { id: user.id, label: user.name } }); }
       await writeAudit(tx, {
         actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "transactions_generated", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn,
         journeyStep: "2.6",
@@ -386,7 +390,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
 /** Creates transactions with their checklist rows and expected document items. */
 export async function createTransactions(
   tx: Tx,
-  args: { loanId: string; pn: string; codes: TransactionCode[]; origin: "AUTOMATIC" | "OVERRIDE" },
+  args: { loanId: string; pn: string; codes: TransactionCode[]; origin: "AUTOMATIC" | "OVERRIDE"; holderUserId?: string | null },
 ) {
   const types = await tx.transactionType.findMany({
     where: { code: { in: args.codes } },
@@ -395,7 +399,7 @@ export async function createTransactions(
   const ordered = TRANSACTION_ORDER.filter((c) => args.codes.includes(c)).map((c) => types.find((t) => t.code === c)!);
   for (const type of ordered) {
     if (!type) throw new Error("Transaction type missing from Settings");
-    await createTransactionOfType(tx, { loanId: args.loanId, type, origin: args.origin });
+    await createTransactionOfType(tx, { loanId: args.loanId, type, origin: args.origin, holderUserId: args.holderUserId });
   }
 }
 
@@ -409,9 +413,20 @@ export async function createTransactionOfType(
     loanId: string;
     type: { id: string; rules: { id: string; required: boolean; label: string; originality: "ORIGINAL" | "COPY"; documentType: { code: string } }[] };
     origin: "AUTOMATIC" | "OVERRIDE" | "ADDED";
+    /** D-046: the LA who opened the loan (or added it) has the work at once; null or missing: the branch LA pool. */
+    holderUserId?: string | null;
   },
 ) {
   const txn = await tx.loanTransaction.create({ data: { loanId: args.loanId, typeId: args.type.id, origin: args.origin } });
+  const [loan, type] = await Promise.all([
+    tx.loan.findUniqueOrThrow({ where: { id: args.loanId }, select: { pn: true, branchId: true } }),
+    tx.transactionType.findUniqueOrThrow({ where: { id: args.type.id }, select: { name: true, code: true, requiresDp: true } }),
+  ]);
+  // The LA's work on it (check the papers, then send or complete): an inbox item (D-046).
+  await arriveItem(tx, {
+    kind: "TRANSACTION", subjectId: txn.id, role: "LA", branchId: loan.branchId, loanId: args.loanId, pn: loan.pn, label: `${loan.pn}: ${type.name}`,
+    holderUserId: args.holderUserId ?? null, accepted: !!args.holderUserId, targetKey: type.requiresDp ? "P3_ASSIGN" : type.code === "EDST" ? "P3_EDST" : "P3_ASSIGN",
+  });
   for (const rule of args.type.rules) {
     // Copy the rule's Required flag: later Settings changes do not affect this loan file.
     const check = await tx.checklistCheck.create({ data: { transactionId: txn.id, ruleId: rule.id, required: rule.required } });

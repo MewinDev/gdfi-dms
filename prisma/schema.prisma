@@ -261,6 +261,11 @@ model User {
   ltoAdvisoriesFiled LtoAdvisory[]        @relation("AdvisoryFiledBy")
   exceptionsResolved LoanException[]      @relation("ExceptionResolvedBy")
   fileAccesses       FileAccessLog[]      @relation("FileAccessBy")
+  workItems          WorkItem[]           @relation("WorkItemHolder")
+  /// Away (D-046): from / to (YYYY-MM-DD, inclusive). While away the person cannot be named for new work.
+  awayFrom           String?
+  awayTo             String?
+  awayNote           String               @default("")
 }
 
 /// Where a record comes from: the MyLoans branch list (code, name, area, division and status are
@@ -678,6 +683,75 @@ model HolidayBranch {
 
 /// A saved due date moved (D-041): a holiday or closure added inside its counting window, a hold that paused
 /// the clock, or an admin correction. Append-only history; the record keeps only its current due date.
+/// Piece 9 (D-014, D-015, D-046): one hand-off of work, its round and its clock. Every hand-off is an item: the LA's
+/// work on a transaction, a DP job, a funds request for Finance, a package for the receiving LA, and (from the
+/// sync, later) a loan released but not yet in the DMS. One row per round: a return, a move or a re-send opens the
+/// next round. History is in WorkMovement.
+model WorkItem {
+  id             String         @id @default(cuid())
+  /// TRANSACTION (LA work), DP_JOB, FUND_REQUEST, PACKAGE, LOAN_CANDIDATE.
+  kind           String
+  /// The transaction (TRANSACTION, DP_JOB), the cash advance (FUND_REQUEST), the job (PACKAGE), or the PN (LOAN_CANDIDATE).
+  subjectId      String
+  round          Int            @default(1)
+  /// LA, DP or FIN: who can take it from the pool.
+  role           String
+  /// The branch of the pool and of the calendar that counts it (D-041).
+  branchId       String
+  /// Narrows a pool (for example a funds type code for Finance).
+  poolKey        String         @default("")
+  loanId         String?
+  pn             String?
+  label          String         @default("")
+  /// POOL (nobody yet), INBOX (named, not accepted), HELD (accepted), DONE.
+  state          String
+  holderUserId   String?
+  holder         User?          @relation("WorkItemHolder", fields: [holderUserId], references: [id])
+  arrivedAt      DateTime       @default(now())
+  acceptedAt     DateTime?
+  /// This round's due date (YYYY-MM-DD) and target; the overall due date carries over a move unchanged.
+  dueDate        String?
+  targetDays     Int?
+  overallDueDate String?
+  /// TAT (accept to forward) or WAITING (arrival to the action, for "counts as accept" steps).
+  measure        String         @default("TAT")
+  /// FORWARDED, RETURNED, DONE, MOVED_AWAY, BACK_TO_POOL, CANCELLED, PULLED_BACK.
+  outcome        String?
+  doneAt         DateTime?
+  returnReason   String         @default("")
+  /// Made from older records with a time missing: left out of TAT performance reports.
+  migrated       Boolean        @default(false)
+  /// A DP job sent to the Branch DP pool: the send details, used when a processor accepts it.
+  sendInput      Json?
+  createdAt      DateTime       @default(now())
+  movements      WorkMovement[]
+
+  @@unique([kind, subjectId, round])
+  @@index([state, branchId, role])
+  @@index([holderUserId, state])
+  @@index([loanId])
+}
+
+/// The append-only history of a work item: arrive, accept, forward, return, move, back to the pool, cancel.
+model WorkMovement {
+  id          String   @id @default(cuid())
+  workItemId  String
+  workItem    WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  action      String
+  fromUserId  String?
+  toUserId    String?
+  byId        String?
+  byLabel     String   @default("")
+  at          DateTime @default(now())
+  remarks     String   @default("")
+  waitingDays Int?
+  tatDaysUsed Int?
+  isLate      Boolean?
+
+  @@index([workItemId])
+  @@index([at])
+}
+
 model DueDateChange {
   id               String   @id @default(cuid())
   /// "DpAssignment" (a DP job's TAT) or "CashAdvance" (the liquidation due date).

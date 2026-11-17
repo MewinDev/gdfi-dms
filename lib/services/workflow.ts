@@ -1,4 +1,6 @@
 import "server-only";
+import { arriveItem, closeItem, refuseAway } from "./work-items";
+import { txnStepKey } from "@/lib/workflow/tat";
 import { refreshLiquidationForTransaction } from "./liquidation";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
@@ -318,6 +320,7 @@ export async function recordEdst(user: CurrentUser, input: { transactionId: stri
     }
     const now = new Date();
     await tx.loanTransaction.update({ where: { id: txn.id }, data: { status: "COMPLETED", statusSince: now, completedAt: now, edstReference: ref } });
+    await closeItem(tx, "TRANSACTION", txn.id, "DONE", { at: now, by: actorOf(user) });
     await endHoldsOnCompletion(tx, { id: txn.id, loanId: t0.loanId, pn: t0.loan.pn, name: t0.type.name }, false, now);
     await writeAudit(tx, {
       actor: actorOf(user), mode: "MANUAL", action: "edst_completed", entityType: "LoanTransaction", entityId: txn.id, loanId: t0.loanId, pn: t0.loan.pn,
@@ -352,7 +355,7 @@ export async function addCustomTransaction(user: CurrentUser, input: { loanId: s
     if (NO_ADD_STAGES.includes(fresh.stage)) throw new UserError("Transactions can only be added before the papers go to the Vault.");
     const dup = await tx.loanTransaction.findFirst({ where: { loanId: loan.id, typeId: type.id, status: { not: "CANCELLED" } } });
     if (dup) throw new UserError(`${type.name} is already on this loan file.`, "typeId");
-    const txn = await createTransactionOfType(tx, { loanId: loan.id, type, origin: "ADDED" });
+    const txn = await createTransactionOfType(tx, { loanId: loan.id, type, origin: "ADDED", holderUserId: can(user, PERMISSIONS.CHECKLIST_TICK) ? user.id : null });
     await writeAudit(tx, {
       actor: actorOf(user), mode: "MANUAL", action: "transaction_added", entityType: "LoanTransaction", entityId: txn.id, loanId: loan.id, pn: loan.pn,
       summary: `Added the transaction ${type.name} (${type.rules.length} paper${type.rules.length === 1 ? "" : "s"} on its checklist)`,
@@ -377,6 +380,7 @@ export async function completeLaTransaction(user: CurrentUser, input: { transact
     if (!status.complete) throw new MissingPapersError(status.missing, status.needsRemarks);
     const now = new Date();
     await tx.loanTransaction.update({ where: { id: txn.id }, data: { status: "COMPLETED", statusSince: now, completedAt: now } });
+    await closeItem(tx, "TRANSACTION", txn.id, "DONE", { at: now, by: actorOf(user) });
     await endHoldsOnCompletion(tx, { id: txn.id, loanId: t0.loanId, pn: t0.loan.pn, name: t0.type.name }, false, now);
     await writeAudit(tx, {
       actor: actorOf(user), mode: "MANUAL", action: "transaction_completed", entityType: "LoanTransaction", entityId: txn.id, loanId: t0.loanId, pn: t0.loan.pn,
@@ -554,6 +558,7 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
   if (!dp) throw new UserError("Pick an active DP of the selected DP branch.", "dpUserId");
   // On leave (Settings, Processor capacity): shown disabled in the Send panel, and refused here too.
   if (onLeaveToday(dp, businessDate(new Date()))) throw new UserError(`${dp.name} is ${leaveText(dp.dpLeaveUntil, fmtDate).toLowerCase()}. Pick another processor.`, "dpUserId");
+  await refuseAway(prisma, dp.id); // D-046: someone away is not named for new work
   let secondary: { id: string; name: string } | null = null;
   if (input.pasuyo) {
     secondary = await prisma.user.findFirst({ where: processor(input.secondaryDpUserId ?? ""), select: { id: true, name: true } });
@@ -594,6 +599,9 @@ export async function assignToDp(user: CurrentUser, input: AssignInput) {
         recommendedDpUserId: recommended?.id ?? null, assignedById: user.id, endorsedAt: now,
       },
     });
+    // D-046: the LA's round ends (forwarded); the job waits in the processor's inbox for Accept.
+    await closeItem(tx, "TRANSACTION", txn.id, "FORWARDED", { at: now, by: actorOf(user) });
+    await arriveItem(tx, { kind: "DP_JOB", subjectId: txn.id, role: "DP", branchId: dpBranch.id, loanId: t0.loanId, pn: t0.loan.pn, label: `${t0.loan.pn}: ${t0.type.name}`, holderUserId: dp.id, targetKey: txnStepKey("IN_PROCESS", t0.type.code), at: now, by: actorOf(user) });
     // Second processor (Pasuyo) chosen at Send: one history row (append-only).
     if (secondary) {
       await tx.pasuyoEvent.create({ data: { assignmentId: assignment.id, toUserId: secondary.id, toLabel: secondary.name, byUserId: user.id, byLabel: user.name, reason: input.pasuyoReason!.trim() } });
@@ -716,6 +724,7 @@ export async function overrideAutomaticResult(user: CurrentUser, input: Override
     for (const t of toCancel) {
       await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now, cancelledAt: now, cancelReason: `Supervisor override: ${reason}` } });
       await refreshLiquidationForTransaction(tx, t.id, now);
+      for (const k of ["TRANSACTION", "DP_JOB"] as const) await closeItem(tx, k, t.id, "CANCELLED", { at: now, by: actorOf(user) });
     }
     if (toAdd.length) await createTransactions(tx, { loanId: loan.id, pn: loan.pn, codes: toAdd, origin: "OVERRIDE" });
     const before = { classification: loan.classification, financingType: loan.financingType, orcrStatus: loan.orcrStatus, mortgageResult: loan.mortgageResult, transactions: TRANSACTION_ORDER.filter((c) => liveCodes.includes(c)) };

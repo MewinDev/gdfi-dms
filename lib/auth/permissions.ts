@@ -117,6 +117,8 @@ export const PERMISSIONS = {
   AUDIT_VIEW: "audit:view",
   FILES_LOG_VIEW: "audit:files", // Audit, File access log (D-039)
   DUEDATES_CORRECT: "duedates:correct", // Correct one saved due date, with a reason (D-042)
+  WORKITEMS_MOVE: "workitems:move", // Inbox: Back to the pool / Give to... (D-046)
+  USERS_AWAY: "users:away", // Set who is away (D-046); everyone sets their own
   // Test tools
   SIMULATOR_USE: "simulator:use",
   TESTDATA_RESET: "testdata:reset",
@@ -205,6 +207,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.HOLDS_RAISE, label: "Put work on hold", help: "Put a transaction on hold while it waits on something that is not a fault. Only on work the person does. The clock keeps counting.", requires: [P.LOANS_VIEW], can: "put their work on hold", where: "Loan File, Job", was: "holds:raise" },
       { key: P.HOLDS_RESOLVE, label: "Resume own holds", help: "Resume a hold the person owns, or add the remarks to an older hold of theirs.", requires: [P.HOLDS_RAISE], can: "resume their holds", where: "Loan File, Job, Open items", was: "none (resume and add details checked only the hold owner)" },
       { key: P.HOLDS_TRANSFER, label: "Move a hold to another person", help: "Give a hold to another person of the same work (for example when the owner is on leave). Only in the person's branches, and only to someone who also has access to that branch. It never resumes the hold.", requires: [P.LOANS_VIEW], can: "move holds to another person", where: "Loan File, Open items", was: "holds:transfer (Admin: any branch, by role name)" },
+      { key: P.WORKITEMS_MOVE, label: "Move work items", help: "Inbox: move someone's item back to the branch pool or give it to another person of the same work role who has the branch (for example when they are away). Their round closes as Moved (away), never late; the item keeps its overall due date.", can: "move work items", where: "Inbox, Move", was: "new on 18 November 2026" },
+      { key: P.USERS_AWAY, label: "Set who is away", help: "Mark another person Away (from and to dates). While away they cannot be named for new work, and their items show on the supervisors' Home. Everyone can mark themselves away.", can: "set who is away", where: "Users, Away; Inbox", was: "new on 18 November 2026" },
     ],
   },
   {
@@ -421,7 +425,7 @@ const LA_PERMISSIONS: Permission[] = [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN
 /** Finance's default ticks (D-034): every funds tick of both types (the person's Handles CA / FT and branches decide). */
 const FIN_DEFAULT: Permission[] = [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW];
 /** The LA Supervisor/Head's oversight ticks (D-034): what the former Branch Supervisors kept as grants, now the role's own. */
-const SUP_OVERSIGHT: Permission[] = [P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT];
+const SUP_OVERSIGHT: Permission[] = [P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, P.WORKITEMS_MOVE, P.USERS_AWAY];
 /**
  * Approve or reject myloans changes ("Can approve LA Open Items", D-010). Purely permission-based (D-029):
  * anyone with these ticks approves for the branches in their access; with "All branches", every branch.
@@ -435,10 +439,10 @@ export const OPEN_ITEM_APPROVER_KEYS: Permission[] = [P.SOURCE_REVIEW, P.SOURCE_
  * configuration only); the Superadmin can still tick them on a role or a person.
  */
 export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
-  ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY,
+  ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY, P.WORKITEMS_MOVE, P.USERS_AWAY,
 ];
 /** Keys added on 17 November 2026 (D-031): the role migration ignores them when it compares a role with an earlier default. */
-export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW, P.DUEDATES_CORRECT];
+export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW, P.DUEDATES_CORRECT, P.WORKITEMS_MOVE, P.USERS_AWAY];
 
 /**
  * Seeded built-in roles: the defaults that "Reset to default" restores. The ten decided roles (D-002) plus

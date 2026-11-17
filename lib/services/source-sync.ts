@@ -1,4 +1,5 @@
 import { refuseInProduction } from "@/lib/env";
+import { closeItem } from "./work-items";
 import { refreshLiquidationForTransaction } from "./liquidation";
 import "server-only";
 import { buildPn, getPnFormat, parsePn } from "@/lib/pn";
@@ -387,6 +388,7 @@ export async function applyTransactionChanges(tx: Tx, loanId: string, p: Pick<Pr
     if (t && UNSENT.includes(t.status)) {
       await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now, cancelledAt: now } });
       await refreshLiquidationForTransaction(tx, t.id, now);
+      await closeItem(tx, "TRANSACTION", t.id, "CANCELLED", { at: now });
     }
   }
   for (const code of p.added) {
@@ -512,6 +514,7 @@ export async function closeAsCancelled(u: CurrentUser, id: string, raw: unknown)
     for (const t of open) {
       await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now, cancelledAt: now } });
       await refreshLiquidationForTransaction(tx, t.id, now); // cancelled before its LTO (D-044 item 2)
+      for (const k of ["TRANSACTION", "DP_JOB"] as const) await closeItem(tx, k, t.id, "CANCELLED", { at: now, by: actorOf(u) });
     }
     await tx.loan.update({ where: { id: loan.id }, data: { cancelledAt: now, cancelReason: reason } });
     await tx.sourceChange.update({ where: { id }, data: { state: "CLOSED_CANCELLED", decidedById: u.id, decidedByLabel: u.name, decidedAt: now, note } });

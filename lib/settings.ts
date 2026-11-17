@@ -56,6 +56,9 @@ export const SETTING_DEFAULTS = {
   "calendar.workingDays": [false, true, true, true, true, true, true] as boolean[],
   /** A holiday or closure dated before today may be added this many days back at most (D-041), with a reason. */
   "calendar.backdateMaxDays": 7 as number,
+  /** Branch pool (D-046): an item waiting this many working days or more is amber, then red. */
+  "pool.amberAfterDays": 1 as number,
+  "pool.redAfterDays": 2 as number,
   /** Due-date colour (D-041): amber when this many working days are left or fewer (0 = only on the due day). */
   "tat.amberWithinDays": 1 as number,
   /** Monitoring: the default capacity of a processor, in open jobs (Settings, Processor capacity). */

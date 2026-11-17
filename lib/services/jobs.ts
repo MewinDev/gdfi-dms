@@ -1,4 +1,5 @@
 import "server-only";
+import { arriveItem, closeItem, refuseAway, takeItem } from "./work-items";
 import { validFlagKinds } from "./expense-kinds";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -106,6 +107,7 @@ export async function acceptCore(tx: Tx, a: AssignmentFull, who: Who) {
   const target = targetOf(await getTatMap(tx), txnStepKey("IN_PROCESS", a.transaction.type.code));
   const due = target === null ? null : addWorkingDays(businessDate(now), target, daysFor(await loadCalendar(tx), a.dpBranchId));
   await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "ACCEPTED", decidedAt: now, dueDate: due, targetDays: target, dueBranchId: due ? a.dpBranchId : null } });
+  await takeItem(tx, "DP_JOB", a.transactionId, { id: a.dpUserId, name: a.dpUser.name }, now); // D-046: the DP round starts
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "IN_PROCESS", statusSince: now } });
   // Custody moves only for papers in transit to the processor, and never for a paper marked Missing
   // (it keeps any Document ID from an earlier tick, which is not proof that it was handed over).
@@ -156,6 +158,9 @@ async function backToLa(tx: Tx, a: AssignmentFull, who: Who, kind: "declined" | 
   });
   // Back with the LA who sent it. statusSince is kept: the clock never restarts.
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "RETURNED" } });
+  // D-046: the DP's round ends as Returned (reason required); the LA who sent it gets it in their inbox to accept.
+  await closeItem(tx, "DP_JOB", a.transactionId, "RETURNED", { at: now, by: who.actor, reason: reasons.join(", "), remarks });
+  await arriveItem(tx, { kind: "TRANSACTION", subjectId: a.transactionId, role: "LA", branchId: a.loan.branchId, loanId: a.loanId, pn: a.loan.pn, label: `${a.loan.pn}: ${a.transaction.type.name}`, holderUserId: a.assignedBy.active ? a.assignedById : null, targetKey: "P3_ASSIGN", at: now, by: who.actor });
   await moveDocs(tx, a.transaction.documents.filter((d) => d.stage === "IN_TRANSIT" || d.stage === "WITH_DP"), { stage: "AT_BRANCH", custodian: null, role: "LA", userId: null, location: `${a.loan.branch.name} branch`, action: kind === "declined" ? "RETURNED_UNACKNOWLEDGED" : "RETURNED_BY_DP" }, { simulated: who.mode === "SIMULATED", by: who.actor });
   // Not a Problem: the findings stay on the assignment (shown at the top of the transaction for the sender).
   await audit(tx, who, a, kind === "declined" ? "dp_assignment_declined" : "dp_assignment_returned", "4.1", `${a.dpUser.name} ${kind} ${a.transaction.type.name}; sent back to ${a.assignedBy.name}`, { details: { reasons, remarks } });
@@ -386,6 +391,9 @@ export async function forwardCore(tx: Tx, a: AssignmentFull, who: Who, raw: Forw
   const again = await tx.loanException.findMany({ where: { transactionId: a.transactionId, type: "INCOMPLETE_PACKAGE", status: "OPEN" } });
   for (const ex of again) await tx.loanException.update({ where: { id: ex.id }, data: { status: "RESOLVED", resolvedAt: now, resolvedById: who.userId, resolvedByLabel: who.actor.label, resolution: `Corrected and forwarded again to ${receiving.name}, ${branch.name}.` } });
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "FORWARDED", statusSince: now } });
+  // D-046: the DP's round ends; the package waits for the named LA (Receive counts as accept: time to act).
+  await closeItem(tx, "DP_JOB", a.transactionId, "FORWARDED", { at: now, by: who.actor });
+  await arriveItem(tx, { kind: "PACKAGE", subjectId: a.id, role: "LA", branchId: branch.id, loanId: a.loanId, pn: a.loan.pn, label: `${a.loan.pn}: ${a.transaction.type.name} package`, holderUserId: receiving.id, measure: "WAITING", targetKey: "P5_ACCEPT", at: now, by: who.actor });
   await moveDocs(tx, docs, { stage: "IN_TRANSIT", custodian: null, role: "DP", userId: a.dpUserId, location: `Forwarded to ${where}`, action: "FORWARDED_TO_BRANCH" }, { simulated: who.mode === "SIMULATED", by: who.actor });
   await audit(tx, who, a, "package_forwarded", "4.6", `${a.dpUser.name} forwarded the ${a.transaction.type.name} package (${docs.length} paper${docs.length === 1 ? "" : "s"}) to ${where}; package In transit`, { details: { branchId: branch.id, receivingLaId: receiving.id, note: p.data.note } });
   const body = `${a.dpUser.name} forwarded the ${a.transaction.type.name} package (${docs.length} paper${docs.length === 1 ? "" : "s"}) to you at ${branch.name}. Check each paper and receive it when it arrives.${p.data.note ? ` Note: ${p.data.note}` : ""}`;
@@ -420,6 +428,10 @@ export async function receiveCore(tx: Tx, a: AssignmentFull, who: Who, input: Re
     // Back to the DP to correct and forward again. The processing clock continues from acceptance.
     await tx.dpAssignment.update({ where: { id: a.id }, data: { forwardedAt: null, receivingLaId: null, receivingBranchId: null } });
     await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "IN_PROCESS", statusSince: a.decidedAt ?? now } });
+    // D-046: Receive counts as accept; the package goes back to the processor (a new DP round, accepted at once).
+    if (who.userId) await takeItem(tx, "PACKAGE", a.id, { id: who.userId, name: who.actor.label }, now);
+    await closeItem(tx, "PACKAGE", a.id, "RETURNED", { at: now, by: who.actor, reason: what, remarks: r.note });
+    await arriveItem(tx, { kind: "DP_JOB", subjectId: a.transactionId, role: "DP", branchId: a.dpBranchId, loanId: a.loanId, pn: a.loan.pn, label: `${a.loan.pn}: ${a.transaction.type.name}`, holderUserId: a.dpUserId, accepted: true, dueDate: a.dueDate, targetDays: a.targetDays, at: now, by: who.actor });
     await moveDocs(tx, a.transaction.documents.filter((d) => d.stage === "IN_TRANSIT"), { stage: "WITH_DP", custodian: `${a.dpUser.name} (DP)`, role: "DP", userId: a.dpUserId, location: `With DP ${a.dpUser.name}`, action: "BACK_TO_DP_INCOMPLETE" }, { simulated: sim, by: who.actor });
     await audit(tx, who, a, "package_incomplete", "5.1", `${who.actor.label} recorded the ${a.transaction.type.name} package as ${what}; back to ${a.dpUser.name} to correct and forward again`, { details: { result: r.result, note: r.note } });
     await notify(tx, {
@@ -432,6 +444,8 @@ export async function receiveCore(tx: Tx, a: AssignmentFull, who: Who, input: Re
   await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "COMPLETED", statusSince: now, completedAt: now } });
   await refreshLiquidationForTransaction(tx, a.transactionId, now);
   await tx.dpAssignment.update({ where: { id: a.id }, data: { status: "CLOSED", closedAt: now } });
+  if (who.userId) await takeItem(tx, "PACKAGE", a.id, { id: who.userId, name: who.actor.label }, now);
+  await closeItem(tx, "PACKAGE", a.id, "DONE", { at: now, by: who.actor });
   await endHoldsOnCompletion(tx, { id: a.transactionId, loanId: a.loanId, pn: a.loan.pn, name: a.transaction.type.name }, sim, now);
   await moveDocs(tx, a.transaction.documents.filter((d) => d.stage === "IN_TRANSIT"), { stage: "AT_BRANCH", custodian: `${receiving.name} (LA, ${branch.name})`, role: "LA", userId: receiving.id, location: `${branch.name} branch`, action: "ACCEPTED_AT_BRANCH" }, { simulated: sim, by: who.actor });
   const remark = r.result === "other" && r.note ? ` (Other: ${r.note})` : "";

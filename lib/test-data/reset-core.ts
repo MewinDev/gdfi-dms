@@ -37,6 +37,8 @@ export async function resetLoanData(tx: Prisma.TransactionClient): Promise<Reset
   await tx.thirdParty.deleteMany({ where: { requests: { none: {} } } });
   await tx.digitalRecord.deleteMany({});
   await tx.qaFinding.deleteMany({});
+  // Inbox items and their history (D-046) are all about loan files and funds requests.
+  await tx.workItem.deleteMany({});
   const assignments = (await tx.dpAssignment.deleteMany({})).count;
   await tx.attachment.deleteMany({ where: { loanId: { not: null } } });
 

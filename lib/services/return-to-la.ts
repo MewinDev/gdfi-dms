@@ -1,4 +1,5 @@
 import "server-only";
+import { arriveItem, closeItem } from "./work-items";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { writeAudit } from "@/lib/audit";
@@ -123,6 +124,9 @@ export async function returnToLa(u: CurrentUser, assignmentId: string, raw: Retu
       },
     });
     await tx.loanTransaction.update({ where: { id: a.transactionId }, data: { status: "RETURNED" } });
+    // D-046: the DP's round ends as Returned with its reason; the sender gets it in their inbox to accept.
+    await closeItem(tx, "DP_JOB", a.transactionId, "RETURNED", { at: now, by: { id: u.id, label: u.name }, reason: reason.name, remarks: d.note });
+    await arriveItem(tx, { kind: "TRANSACTION", subjectId: a.transactionId, role: "LA", branchId: a.loan.branchId, loanId: a.loanId, pn: a.loan.pn, label: `${a.loan.pn}: ${a.transaction.type.name}`, holderUserId: a.assignedBy.active ? a.assignedById : null, targetKey: "P3_ASSIGN", at: now, by: { id: u.id, label: u.name } });
 
     // Custody: handed over to the LA, in transit until the LA confirms them back (send again waits for that).
     if (withDp.length) {
