@@ -624,6 +624,7 @@ export async function moveCashToNewPn(u: CurrentUser, id: string, lineId: string
     if (!old.replacedByPn) throw new UserError("Link the replacement PN first.");
     const nw = await tx.loan.findUnique({ where: { pn: old.replacedByPn }, include: { transactions: { include: { type: true } } } });
     if (!nw) throw new UserError(`${old.replacedByPn} is not opened yet. Ask the LA to open it first.`);
+    if (!inScope(u, nw.branchId)) throw new NotInScopeError(); // the new loan may have moved branch since the link
     const cash = (await outstandingCash(tx, old.id)).find((c) => c.lineId === lineId);
     if (!cash || cash.notReleased) throw new UserError("Pick released cash that is still out.");
     if (await tx.cashAdvance.findFirst({ where: { movedFromLineId: lineId, status: "REQUESTED" } })) throw new UserError("A move for this cash is already waiting for approval.");
@@ -664,10 +665,11 @@ export interface ReusableOption {
  * they would go on this loan. Replacement: as built. Additional unit: only papers whose form here is
  * Copy; Originals are listed with the reason and never copied. Unit papers are never listed.
  */
-export async function reusablePapers(db: Tx | typeof prisma, newLoanId: string): Promise<ReusableOption[]> {
+export async function reusablePapers(db: Tx | typeof prisma, newLoanId: string, user?: CurrentUser): Promise<ReusableOption[]> {
   const nw = await db.loan.findUnique({ where: { id: newLoanId }, select: RELATED_SELECT });
   if (!nw) return [];
-  const related = (await relatedLoans(db, nw)).filter((r) => r.tag !== "REPLACES"); // never copy back onto the old loan
+  // Never copy back onto the old loan; and only loans in the person's branches (D-019).
+  const related = (await relatedLoans(db, nw)).filter((r) => r.tag !== "REPLACES" && (!user || inScope(user, r.loan.branchId)));
   if (!related.length) return [];
   const newChecks = await db.checklistCheck.findMany({
     where: { checked: false, transaction: { loanId: nw.id, status: { in: ["FOR_CHECKLIST", "READY", "RETURNED"] } } },
@@ -699,8 +701,10 @@ export async function copyReusablePapers(u: CurrentUser, newLoanId: string, from
   return withLoanLock(newLoanId, async (tx) => {
     const nw = await tx.loan.findUniqueOrThrow({ where: { id: newLoanId } });
     if (!inScope(u, nw.branchId)) throw new NotInScopeError();
-    const options = await reusablePapers(tx, newLoanId);
+    const options = await reusablePapers(tx, newLoanId, u);
     const picked = options.filter((o) => fromCheckIds.includes(o.fromCheckId));
+    // A paper of a loan outside the person's branches is not offered, so it cannot be picked (D-019).
+    if (picked.length !== new Set(fromCheckIds).size) throw new NotInScopeError();
     if (picked.length !== new Set(fromCheckIds).size) throw new UserError("Only ticked papers that belong to the borrower can be copied.");
     const blocked = picked.find((o) => o.blocked);
     if (blocked) throw new UserError(`${blocked.label}: ${blocked.blocked}`);
@@ -1070,7 +1074,7 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
   if (!isTestMode() || myLoansMode() !== "mock") throw new UserError("The simulator works only in test mode with the mock MyLoans.");
   if (!can(u, PERMISSIONS.SIMULATOR_USE)) throw new UserError("Your role does not allow the simulator.");
   const loan = await prisma.loan.findUnique({ where: { id: loanId } });
-  if (!loan) throw new UserError("Loan File not found.");
+  if (!loan || !inScope(u, loan.branchId)) throw new NotInScopeError();
   const lookup = await getMyLoansAdapter().getByPn(loan.pn);
   if (!lookup.ok) throw new UserError(lookup.message);
   const rec = lookup.record;

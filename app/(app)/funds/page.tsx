@@ -1,3 +1,4 @@
+import { fileHref } from "@/lib/services/files";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
@@ -416,7 +417,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
                     <p className="text-[12px] font-semibold text-ink-2">Receipts ({receipts.length})</p>
                     <ul className="text-[13px]">
                       {receipts.map(({ r, l }) => (
-                        <li key={r.id}>{dayText(r.date)} · {r.number} · {peso(r.cents)} · {lineLabel(l)} {r.fileKey && <a href={`/api/receipts/${r.id}`} target="_blank" rel="noopener" className="link">View file</a>}</li>
+                        <li key={r.id}>{dayText(r.date)} · {r.number} · {peso(r.cents)} · {lineLabel(l)} {r.fileKey && <a href={fileHref("receipt", r.id)} target="_blank" rel="noopener" className="link">View file</a>}</li>
                       ))}
                     </ul>
                   </div>

@@ -115,6 +115,7 @@ export const PERMISSIONS = {
   ROLES_MANAGE: "roles:manage", // manage permissions: the role matrix, per-user overrides, the Open Item approver tick (D-023)
   // Reports and audit
   AUDIT_VIEW: "audit:view",
+  FILES_LOG_VIEW: "audit:files", // Audit, File access log (D-039)
   // Test tools
   SIMULATOR_USE: "simulator:use",
   TESTDATA_RESET: "testdata:reset",
@@ -259,6 +260,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.REPORTS_TAT, label: "See the TAT and problems report", help: "Problems and holds by reason, days, overdue counts.", requires: [P.LOANS_VIEW], can: "see the TAT and problems report", where: "Reports, TAT", was: "reports:tat" },
       { key: P.REPORTS_TAT_EXPORT, label: "Download the TAT report (CSV)", help: "Download the TAT and problems report as a spreadsheet file.", requires: [P.REPORTS_TAT], view: P.REPORTS_TAT, can: "download the TAT report", where: "Reports, TAT, Download CSV", was: "reports:tat + loans:export", hidden: true },
       { key: P.AUDIT_VIEW, label: "See the audit log", help: "Every automatic decision and user action (the technical log).", can: "see the audit log", where: "Audit log", was: "audit:view" },
+      { key: P.FILES_LOG_VIEW, label: "View file access log", help: "Who opened or downloaded which receipt, stage evidence or LTO proof, and when; filter and export it (each export is logged too). Give it to a Data Protection Officer if needed.", can: "view the file access log", where: "Audit, File access log", was: "new on 17 November 2026" },
     ],
   },
   {
@@ -434,7 +436,7 @@ export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
   ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY,
 ];
 /** Keys added on 17 November 2026 (D-031): the role migration ignores them when it compares a role with an earlier default. */
-export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY];
+export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW];
 
 /**
  * Seeded built-in roles: the defaults that "Reset to default" restores. The ten decided roles (D-002) plus

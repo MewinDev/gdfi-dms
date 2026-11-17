@@ -260,6 +260,7 @@ model User {
   holdsOwned         Hold[]               @relation("HoldOwner")
   ltoAdvisoriesFiled LtoAdvisory[]        @relation("AdvisoryFiledBy")
   exceptionsResolved LoanException[]      @relation("ExceptionResolvedBy")
+  fileAccesses       FileAccessLog[]      @relation("FileAccessBy")
 }
 
 /// Where a record comes from: the MyLoans branch list (code, name, area, division and status are
@@ -1981,4 +1982,30 @@ model MyLoansBreaker {
   failures  Int       @default(0)
   openUntil DateTime?
   updatedAt DateTime  @updatedAt
+}
+
+/// Piece 3 (D-019, D-039): one row per file view, download or log export. Append-only: the app never updates
+/// or deletes these rows. Read on Audit, File access log ("View file access log").
+model FileAccessLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation("FileAccessBy", fields: [userId], references: [id])
+  /// RECEIPT, STAGE_EVIDENCE, LTO_PROOF, or FILE_ACCESS_LOG for a CSV export of this log.
+  entityType String
+  entityId   String
+  loanId     String?
+  pn         String?
+  branchId   String?
+  fileKey    String   @default("")
+  fileName   String   @default("")
+  /// VIEW, DOWNLOAD or EXPORT.
+  action     String
+  at         DateTime @default(now())
+  ip         String?
+  userAgent  String?
+
+  @@index([at])
+  @@index([userId, at])
+  @@index([branchId, at])
+  @@index([pn])
 }

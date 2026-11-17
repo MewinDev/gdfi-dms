@@ -138,7 +138,7 @@ export function differentBranch(oldName: string | undefined, newName: string | u
 /** Copy reusable papers: the options for the new loan file (Admin), or none. */
 export async function reusableFor(user: CurrentUser, loanId: string) {
   if (!can(user, PERMISSIONS.SOURCE_REVIEW)) return [];
-  return reusablePapers(prisma, loanId);
+  return reusablePapers(prisma, loanId, user);
 }
 
 /** The Related loans card: every other loan of the same borrower (CIN or CIF), scope respected. */
