@@ -1,4 +1,4 @@
-# Handover: pieces 4, 5 and 9 done; stop before the next piece
+# Handover: pieces 4, 5, 9 and 6 done; stop before piece 10a
 
 Last updated: 18 November 2026 (PHT)
 Branch: `feature/foundation-settings-rbac-myloans` (pushed)
@@ -14,7 +14,21 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
 - **Last runs (18 November 2026):** vitest green (1,272 and the 2 updated funds tests); full e2e: 194 / 194 / 191 passed with the only failure a wrong fixture in the new liquidation spec, fixed and rerun at all three widths (pass); tsc and lint clean; kit rebuilt after migration 020.
 - **Piece 9 done (D-046):** the inbox engine (`lib/services/work-items.ts`, rules in `lib/work/rules.ts`), WorkItem / WorkMovement (migration `20261119090021_work_items`), wired into every hand-off; the Inbox page; the Branch DP pool (`lib/services/dp-pool.ts`); Away and Move; the supervisors' Home lines; TAT by person; `npm run work:backfill`. See the section below.
 - **Last runs (18 November 2026, piece 9):** vitest 1,296 passed (the 2 guard failures fixed and rerun); full e2e 192 / 192 / 188 with 5 / 5 / 6 failures, all fixed (the job's own Accept takes the item; the pool choice outside the processor list; a file-access-log PN collision) and rerun green at all three widths; tsc and lint clean; kit rebuilt on migration 021.
-- **Next:** the project owner plans to un-hold pieces 6, 7, 8 and 10 and build them on the mock. Wait for them.
+- **D-047:** pieces 6, 7, 8 and 10 un-held, built on the mock: 6 → 10a → 7 → 8 → 10b → 11 (R2-3) → 12. Real API verification (C5) and the Production scheduler (hosting) are separate, blocked items.
+- **D-048, done before piece 6:**
+  - the Inbox waiting colours Settings card;
+  - the kit accounts renamed to the current role names;
+  - `npm run kit:demo` (aged items);
+  - the demo script with both approval flows (`docs/DEMO_SCRIPT.md`).
+- **Piece 6 done (D-047, D-048):**
+  - `lib/myloans/v1`: the schema, client, mock rows, mock store, scenarios and failures;
+  - the route `app/api/dev/myloans/api/dms/v1/[...path]`;
+  - migration `20261119090022_myloans_mock`;
+  - the Settings, System "myloans mock" panel and the "MOCK myloans data" banner;
+  - `tests/contract` (`npm run test:contract`).
+
+  See `docs/myloans/mock-and-contract.md`. Find loan and Refresh still use the old adapter (moved in 10a).
+- **Next: piece 10a** (plan first). Wait for the project owner.
 - **Open small items:** none from pieces 4, 5 and 9 (the funds-types CSV has `liquidation_due_days`; Correct due date is also on LA items in the Inbox).
 - Decisions: `docs/DECISIONS.md` (D-001 to D-041); plan: `IMPLEMENTATION_PLAN.md` (piece 5 is section 6; myloans round 3 is 7.3).
 
@@ -44,7 +58,7 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
 
 ## Things a fresh session must know
 
-- **Both databases are on migration 021** (`20261119090021_work_items`).
+- **Both databases are on migration 022** (`20261119090022_myloans_mock`).
 - **Migration 020 history:** `gdfi_dms_test` was reset (with the owner's consent) and re-seeded on 17 November 2026; the kit was rebuilt after each migration up to 020 (`gdfi_dms` holds the CLEAN kit; automatic backups in `storage/kit/backups/`). Never touch the test DB directly; use the sanctioned scripts.
 - **File access log rows keep their user forever** (append-only, `ON DELETE RESTRICT`). In tests, only seeded users that are never deleted (such as Test Admin) may open files or export the log; a temporary `zz.` user who does can never be removed, and every test that cleans `zz.` users then fails (this happened once; it took a test DB reset to fix).
 - **Migrations:** never `prisma migrate dev`. Use `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`, put it in the next numbered folder (`20261119090018_...`), remove the trigram DROP INDEX lines, apply with `npm run db:deploy`, then print the folder list and `npx prisma migrate status`. Full rules: `CLAUDE.md`.

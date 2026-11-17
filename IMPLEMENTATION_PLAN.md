@@ -577,6 +577,8 @@ myloans' answers are `docs/MYLOANS_ANSWERS_R3.md`; the query in `docs/myloans-ap
    - the workflow docs;
    - STATUS.
 
+**Built 18 November 2026** (docs/myloans/mock-and-contract.md). One change from point 6: **Find loan and Refresh stay on the old adapter until 10a**. Today's screens read fields that are not in the agreed contract (vehicle, address, contact number, previous PN), so moving them is part of 10a (PN # search on API 1), not a plain swap.
+
 **Not in piece 6:**
 - the sync and its checkpoint (piece 7);
 - the Search Log (10a);

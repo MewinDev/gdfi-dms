@@ -16,6 +16,7 @@ Run these in PowerShell, in the project folder. Each one says what it will do, a
 | `npm run kit:backup -- my-name` | Saves what is there now as `my-name`. |
 | `npm run kit:restore -- my-name` | Puts a backup back. |
 | `npm run kit:list` | Which kit is loaded, the saved kits and the backups. |
+| (Settings, System) | **myloans mock**: switch a failure on (for example API 1 Unavailable, next call only), add a scenario, or Reset the mock data. Every page shows "MOCK myloans data" while the mock is on. See [myloans mock and contract](myloans/mock-and-contract.md). |
 | `npm run kit:demo` | Adds a few aged Inbox items to the clean kit (red, amber, Paused, and two loans waiting in the Angono pool) for the [demo script](DEMO_SCRIPT.md). |
 
 Add `-- --with-scenarios` to `kit:start`, `kit:reset` or `kit:rebuild` to load the old scenario data instead (see [Manual Test Kit: scenarios](MANUAL-TEST-KIT-SCENARIOS.md)). The first time the clean kit replaces your data, the backup is called `before-clean-kit`.
