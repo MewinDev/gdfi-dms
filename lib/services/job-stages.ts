@@ -1,4 +1,5 @@
 import "server-only";
+import { refreshLiquidationForTransaction } from "./liquidation";
 import type { JobStage, Prisma, ProcessingStage } from "@prisma/client";
 import { prisma, type Tx } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
@@ -176,6 +177,8 @@ export async function finishStageCore(tx: Tx, a: AssignmentFull, who: Who, stage
     }
   }
   await tx.jobStage.update({ where: { id: row.id }, data: { status: "DONE", finishedAt: now, finishedById: who.userId, finishedByLabel: who.actor.label, evidence: evidence as Prisma.InputJsonValue } });
+  // The LTO pickup sets the liquidation due date of the advances that fund it (D-044).
+  if (row.kind === "LTO_PICKUP") await refreshLiquidationForTransaction(tx, a.transactionId, now);
   await auditStage(tx, who, a, "stage_finished", `${row.name} finished on ${a.transaction.type.name} by ${who.actor.label}${summary ? `: ${summary}` : ""}`, { stage: row.code, evidence: redactFiles(asFields(row.fields), evidence) });
   return row;
 }

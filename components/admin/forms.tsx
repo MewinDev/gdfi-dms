@@ -34,17 +34,13 @@ export interface FieldDef {
 }
 
 /** Cash-advance switches (top of the Cash-advance rules pop-up). */
-export function FundsSettingsForm({ carryOverLimitDays, liquidationDueDays, blockLtoUntilFunded, approvalBandsOn }: { carryOverLimitDays: number; liquidationDueDays: number; blockLtoUntilFunded: boolean; approvalBandsOn: boolean }) {
+export function FundsSettingsForm({ carryOverLimitDays, blockLtoUntilFunded, approvalBandsOn }: { carryOverLimitDays: number; blockLtoUntilFunded: boolean; approvalBandsOn: boolean }) {
   const [state, action] = useActionState(saveFundsSettingsAction, null);
   return (
     <form onSubmit={(e) => submitKeepingValues(e, action)} className="mb-4 grid gap-3 rounded-lg border border-line bg-white p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_auto] lg:items-end">
       <div>
-        <label htmlFor="fs-carry" className="label">Carry-over limit (business days)</label>
+        <label htmlFor="fs-carry" className="label">Carry-over limit (working days)</label>
         <input id="fs-carry" name="carryOverLimitDays" type="number" min={0} max={60} required defaultValue={carryOverLimitDays} className="input" />
-      </div>
-      <div>
-        <label htmlFor="fs-liq" className="label">Liquidation due (business days)</label>
-        <input id="fs-liq" name="liquidationDueDays" type="number" min={1} max={90} required defaultValue={liquidationDueDays} className="input" />
       </div>
       <label className="inline-flex min-h-11 items-center gap-2 text-[15px]">
         <input type="checkbox" name="blockLtoUntilFunded" defaultChecked={blockLtoUntilFunded} className="h-5 w-5 accent-[var(--navy)]" />

@@ -1,4 +1,5 @@
 import "server-only";
+import { refreshLiquidationForTransaction } from "./liquidation";
 import { z } from "zod";
 import { prisma, type Tx } from "@/lib/db";
 import { writeAudit, type Actor } from "@/lib/audit";
@@ -114,7 +115,8 @@ async function openDueDates(db: Tx | typeof prisma) {
       select: { id: true, dueDate: true, decidedAt: true, dueBranchId: true, dpBranchId: true, dpUserId: true, secondaryDpUserId: true, loanId: true, loan: { select: { pn: true } }, transaction: { select: { type: { select: { name: true } } } } },
     }),
     db.cashAdvance.findMany({
-      where: { status: { in: OPEN_ADVANCE as never }, liquidationDueAt: { not: null } },
+      // A fallback date follows its job's TAT due date instead (D-044), so it is not moved twice.
+      where: { status: { in: OPEN_ADVANCE as never }, liquidationDueAt: { not: null }, OR: [{ liquidationBasis: null }, { liquidationBasis: { not: "FALLBACK" } }] },
       select: { id: true, number: true, branchId: true, requestedById: true, liquidationDueAt: true, liquidationDueFrom: true, releasedAt: true },
     }),
   ]);
@@ -175,7 +177,10 @@ type Cause = keyof typeof CAUSE_WORDS;
 /** Moves the saved due dates (one DueDateChange and audit row each), tells each owner, and counts. */
 async function applyMoves(tx: Tx, moves: DueMove[], cause: Cause, why: string, actor: Actor, entryId: string | null, tally?: Tally) {
   for (const m of moves) {
-    if (m.subjectType === "DpAssignment") await tx.dpAssignment.update({ where: { id: m.subjectId }, data: { dueDate: m.to } });
+    if (m.subjectType === "DpAssignment") {
+      const j = await tx.dpAssignment.update({ where: { id: m.subjectId }, data: { dueDate: m.to }, select: { transactionId: true } });
+      await refreshLiquidationForTransaction(tx, j.transactionId); // a fallback liquidation date follows the TAT due date (D-044)
+    }
     else await tx.cashAdvance.update({ where: { id: m.subjectId }, data: { liquidationDueAt: endOfBusinessDay(m.to), overdueNotifiedAt: null } });
     await tx.dueDateChange.create({ data: { subjectType: m.subjectType, subjectId: m.subjectId, loanId: m.loanId, pn: m.pn, fromDate: m.from, toDate: m.to, cause, calendarEntryId: entryId, reversesChangeId: m.reverses ?? null, wasOverdue: m.wasOverdue, note: why, byId: actor.id, byLabel: actor.label } });
     await writeAudit(tx, {

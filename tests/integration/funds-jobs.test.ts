@@ -158,7 +158,8 @@ describe("Cash advances", () => {
     await releaseAdvance(fin, r.id, { ref: "VOUCHER-9" });
     const adv = await prisma.cashAdvance.findUniqueOrThrow({ where: { id: r.id } });
     expect(adv).toMatchObject({ status: "RELEASED", releasedCents: 150000, releaseRef: "VOUCHER-9" });
-    expect(adv.liquidationDueAt).not.toBeNull();
+    // D-044: no due date until the LTO pickup (it waits, never overdue meanwhile).
+    expect(adv).toMatchObject({ liquidationDueAt: null, liquidationBasis: null });
     expect(await funds(txn.id)).toBe("FUNDED");
   });
 

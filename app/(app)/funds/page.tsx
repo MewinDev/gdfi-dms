@@ -1,4 +1,5 @@
 import { CorrectDueDate, DueHistory } from "@/components/jobs/due-date";
+import { liquidationLineFor } from "@/lib/funds/liquidation";
 import { dueChangeWords } from "@/lib/services/calendar";
 import { fileHref } from "@/lib/services/files";
 import { daysFor, workingDaysBetween } from "@/lib/calendar/core";
@@ -409,7 +410,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
                   <dt className="font-semibold">Balance</dt><dd className={`font-bold ${bal > 0 ? "text-act-fg" : "text-ink"}`} data-balance>{peso(bal)}</dd>
                 </dl>
                 <span className="mt-1 flex items-center gap-1.5 text-[12px] text-ink-2" data-aging={agingTone({ overdue, days })}><span className={`fl-dot fl-dot-${agingTone({ overdue, days })}`} aria-hidden="true" />{daysText(days, "outstanding")}</span>
-                <Grey>{a.liquidationDueAt ? `Liquidate by ${dayText(a.liquidationDueAt)}` : "No receipts needed for this type"}</Grey>
+                <Grey><span data-liquidation-line>{liquidationLineFor(a)}</span></Grey>
                 <Grey><span data-release-line>{releaseLine(a) || DASH}</span></Grey>
               </div>
             ),
@@ -464,7 +465,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             forKind: <>{forCell(a, { amounts: "requested" })}{a.deniedReason && <Grey>Reason: {a.deniedReason}</Grey>}</>,
             asked: askedCell(a.requestedBy.name, a.branch.name, `Asked ${dayText(a.createdAt)}`),
             amount: amountCell(a.requestedCents, a.releasedCents ? <Grey>Released {peso(a.releasedCents)}</Grey> : <Grey>Asked</Grey>),
-            status: <div className="flex flex-col items-end gap-1"><AdvanceStatusChip status={a.status} /><Grey>{when}</Grey></div>,
+            status: <div className="flex flex-col items-end gap-1"><AdvanceStatusChip status={a.status} /><Grey>{when}</Grey>{a.daysLate !== null && <Grey><span data-days-late={a.daysLate}>{liquidationLineFor(a)}</span></Grey>}</div>,
             action: PRINTABLE_STATUSES.includes(a.status) ? printLink(a.number, a) : null,
           }} />
         ),

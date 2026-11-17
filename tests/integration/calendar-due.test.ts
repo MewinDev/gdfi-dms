@@ -4,10 +4,6 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { addCalendarEntry, correctDueDate, dueChanges, previewEntry, previewEntryActive, previewWorkingDays, setCalendarEntryActive } from "@/lib/services/calendar";
 import { raiseHold, resumeHold } from "@/lib/services/holds";
-import { liquidationDueFields } from "@/lib/services/funds";
-import { loadCalendar } from "@/lib/calendar/load";
-import { addWorkingDays, daysFor } from "@/lib/calendar/core";
-import { endOfBusinessDay } from "@/lib/time";
 import { checkImport, runImport } from "@/lib/import/importer";
 import { asUser } from "./helpers";
 
@@ -197,13 +193,6 @@ describe("working days and liquidation follow the same rule", () => {
     const pre = await previewWorkingDays(admin, [false, true, true, true, true, true, false], at("2026-12-04"));
     expect(pre.extend).toBeGreaterThanOrEqual(1);
     expect(await dueOf(s.id)).toBe("2026-12-07"); // the preview saved nothing
-  });
-
-  it("the liquidation due date counts on the requesting processor's branch calendar and saves its start", async () => {
-    const fields = await prisma.$transaction((tx) => liquidationDueFields(tx, angono, at("2026-11-27")));
-    const days = daysFor(await loadCalendar(), angono);
-    expect(fields.liquidationDueFrom).toBe("2026-11-27");
-    expect(fields.liquidationDueAt.getTime()).toBe(endOfBusinessDay(addWorkingDays("2026-11-27", 10, days)).getTime());
   });
 });
 

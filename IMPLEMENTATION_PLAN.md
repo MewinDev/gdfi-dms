@@ -325,7 +325,8 @@ Finance runs first, then all roles. A user with no scope sees nothing.
 | Settings | `funds.liquidationDueWorkingDaysCa` = 2 and `funds.liquidationDueWorkingDaysFt` = 2. Zod 0–30; audited |
 | Saved on the record | When LTO completion is recorded (the DP stage that completes LTO; Mortgage pick-up), compute `addWorkingDays(completionDate, N, branch)` with the calendar and save it on the advance as `liquidationDueAt`. It is **not** recomputed when the setting changes |
 | Removed by migration | Setting row `funds.liquidationDueDays` (10); TatRule row `P4_LIQUIDATE` (5) and its fallback `lib/workflow/tat.ts:48`; column `CashAdvanceRule.liquidationDays`. Existing advances keep their saved `liquidationDueAt` |
-| Open point | An advance covering several transactions: due after the **last** LTO completion of its lines (proposal, Q-N3) |
+| Decided | D-044: due after the **last** LTO pickup; cancellations, note-only lines, carry-over and the fallback as recorded there; N is a column on Funds types (`liquidationDueDays`), not two settings |
+| Late record | `liquidatedAt` and `daysLate` on the advance (working days after the due date up to the liquidation day). **v2 demerit points (a later phase) will read this record.** |
 
 **Tests:**
 - due date across a weekend, a holiday, month end and year end;

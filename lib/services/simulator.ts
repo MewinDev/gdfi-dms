@@ -10,7 +10,7 @@ import { notify, branchLaUserIds } from "@/lib/notify";
 import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getSetting } from "@/lib/settings";
-import { liquidationDueFields } from "./funds";
+import { refreshLiquidationDue } from "./liquidation";
 import { recomputeStage } from "./stage";
 import { UserError } from "./errors";
 import { evaluateChecklist, refuseMissingPapers } from "./workflow";
@@ -113,7 +113,8 @@ async function simulateInner(user: CurrentUser, input: { loanId: string; action:
         if (ca.status !== "REQUESTED" && ca.status !== "APPROVED") throw new UserError("Only a requested or approved advance can be released.");
         for (const l of ca.lines) await tx.cashAdvanceLine.update({ where: { id: l.id }, data: { approvedCents: l.approvedCents ?? l.requestedCents, releasedCents: l.approvedCents ?? l.requestedCents } });
         const total = ca.lines.reduce((x, l) => x + (l.approvedCents ?? l.requestedCents), 0);
-        await tx.cashAdvance.update({ where: { id: ca.id }, data: { status: "RELEASED", approvedCents: total, approvedAt: now, releasedCents: total, releasedAt: now, releaseRef: "SIM-RELEASE", ...(await liquidationDueFields(tx, ca.branchId, now)) } });
+        await tx.cashAdvance.update({ where: { id: ca.id }, data: { status: "RELEASED", approvedCents: total, approvedAt: now, releasedCents: total, releasedAt: now, releaseRef: "SIM-RELEASE", liquidationDueAt: null } });
+        await refreshLiquidationDue(tx, ca.id, now);
         await audit(sim("Finance"), "advance_released", "CashAdvance", ca.id, "3.5", `${ca.number} approved and released: ${peso(total)}; jobs Funded`);
         break;
       }

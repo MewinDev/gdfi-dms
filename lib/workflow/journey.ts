@@ -66,7 +66,7 @@ export const PHASES: PhaseDef[] = [
       { id: "4.2", title: "Notary: send to notary, record details", owner: ["DP"], mode: "Manual", tatKey: "P4_NOTARY" },
       { id: "4.3", title: "For Entry PPSR: registration, number and certificate", owner: ["DP"], mode: "Manual", tatKey: "P4_PPSR" },
       { id: "4.4", title: "Mortgage: LTO drop and pickup of the annotated OR/CR (attempts logged daily; problems shown beside the TAT, the clock keeps running)", owner: ["DP", "LA"], mode: "Manual", tatKey: "P4_MORTGAGE" },
-      { id: "4.5", title: "Liquidate the cash advance with receipts", owner: ["DP"], mode: "Manual", tatKey: "P4_LIQUIDATE" },
+      { id: "4.5", title: "Liquidate the cash advance with receipts", owner: ["DP"], mode: "Manual" },
       { id: "4.6", title: "Forward the package to a named LA", owner: ["DP", "SYS"], mode: "Manual + notify", tatKey: "P4_FORWARD" },
     ],
   },

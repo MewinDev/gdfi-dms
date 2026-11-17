@@ -1,4 +1,5 @@
 import "server-only";
+import { recordLiquidated, refreshLiquidationDue, refreshOpenLiquidations, restartLiquidationWait } from "./liquidation";
 import { OPEN_ADVANCE } from "@/lib/funds/rules";
 import { z } from "zod";
 import { ltoEstimate } from "@/lib/ui/lto";
@@ -9,11 +10,9 @@ import { allInScope, can, worksInScope, type CurrentUser } from "@/lib/auth/curr
 import { PRINTABLE_STATUSES } from "@/lib/funds/list-view";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getSetting } from "@/lib/settings";
-import { loadCalendar } from "@/lib/calendar/load";
-import { daysFor } from "@/lib/calendar/core";
 import { businessDate } from "@/lib/time";
 import {
-  advanceBalance, bandRolesFor, decimalToCents, isOverdue, liquidationDue, liquidationStatus, peso,
+  advanceBalance, bandRolesFor, decimalToCents, isOverdue, liquidationStatus, peso,
 } from "@/lib/funds/rules";
 import { OTHER, kindText, lineAmountSource, otherDescriptionProblem, sortKinds, startingAmount, type AmountMode, type AmountSource } from "@/lib/funds/kinds";
 import { canFunds, canFundsAny, TYPE_NOUN, typeKeyOf, type FundsStep, type TypeRef } from "@/lib/funds/access";
@@ -421,14 +420,15 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
     }
     // A type that need not be liquidated with receipts is settled when it is released (no due date).
     const settle = !a.fundsType.mustLiquidate;
-    const due = settle ? { liquidationDueAt: null } : await liquidationDueFields(tx, a.branchId, now);
     await tx.cashAdvance.update({
       where: { id: a.id },
       data: {
-        status: settle ? "LIQUIDATED" : "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, ...due,
+        status: settle ? "LIQUIDATED" : "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, liquidationDueAt: null,
         transferDate: r.transferDate, accountProvider: r.accountProvider, accountName: r.accountName, accountLast4: r.accountLast4,
       },
     });
+    // The liquidation due date (D-044): N working days after the last LTO pickup; waiting until then.
+    if (!settle) await refreshLiquidationDue(tx, a.id, now);
     const line = releaseLine({ releaseRef: ref, ...r });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_released", entityType: "CashAdvance", entityId: a.id, summary: `${a.number} (${a.fundsTypeName}) ${sent ? "sent" : "released"} by ${u.name}: ${peso(total)} (${line}); jobs Funded`, after: { released: total, ...r } });
     const loans = new Map<string, { pn: string; branchId: string }>();
@@ -587,7 +587,9 @@ export async function decideCarryOver(u: CurrentUser, carryId: string, approve: 
     if (approve) await assertFundsNotHeld(tx, [c.line.transactionId]); // approving puts cash back to work
     await tx.carryOver.update({ where: { id: c.id }, data: { status: approve ? "APPROVED" : "DENIED", decidedById: u.id, decidedAt: now } });
     if (approve) {
-      await tx.cashAdvance.update({ where: { id: c.line.advanceId }, data: { overdueNotifiedAt: null, ...(await liquidationDueFields(tx, c.line.advance.branchId, now)) } });
+      // D-044: the cash is for the next attempt; due N working days after that attempt's LTO pickup.
+      await tx.cashAdvance.update({ where: { id: c.line.advanceId }, data: { overdueNotifiedAt: null } });
+      await restartLiquidationWait(tx, c.line.advanceId, now);
     }
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: approve ? "carryover_approved" : "carryover_denied", entityType: "CashAdvance", entityId: c.line.advanceId, summary: `${c.line.advance.number}: carry-over of ${peso(c.cents)} ${approve ? "approved" : "denied (return the cash)"} by ${u.name}` });
     await notify(tx, { email: { event: "advance_decided", vars: { number: c.line.advance.number, kind: c.line.advance.fundsTypeName, status: approve ? "carry-over approved" : "carry-over denied", who: u.name, reason: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance." } }, userIds: [c.line.advance.requestedById], title: `${c.line.advance.number}: carry-over ${approve ? "approved" : "denied"}`, body: approve ? "Keep the balance for the next attempt." : "Return the balance to Finance.", link: "/my-funds?tab=advances" });
@@ -608,6 +610,8 @@ export async function refreshAdvance(tx: Tx, advanceId: string) {
   const settled = !a.fundsType.mustLiquidate && OPEN_ADVANCE.concat("LIQUIDATED").includes(a.status);
   const status = settled ? "LIQUIDATED" : liquidationStatus({ releasedCents: a.releasedCents, receiptCents, returnedCents, status: a.status });
   if (status !== a.status) await tx.cashAdvance.update({ where: { id: a.id }, data: { status: status as never } });
+  // The late record (D-044): the due date, the liquidated date and the working days late.
+  if (status === "LIQUIDATED" && a.status !== "LIQUIDATED" && a.fundsType.mustLiquidate) await recordLiquidated(tx, a.id);
   // Jobs of a settled advance may now let the loan move on (step 5.3).
   const loanIds = await tx.loanTransaction.findMany({ where: { advanceLines: { some: { advanceId } } }, select: { loanId: true } });
   for (const l of new Set(loanIds.map((x) => x.loanId))) await recomputeStage(tx, l);
@@ -693,15 +697,6 @@ export async function exceptionTargets(u: CurrentUser, dpUserIds: string[]): Pro
   return new Set(rows.filter((r) => r.id !== u.id && worksInScope(u, r)).map((r) => r.id));
 }
 
-/**
- * The liquidation due date and the start of its count (D-041): on the requesting processor's branch calendar,
- * from the release or the latest carry-over decision. Piece 5 changes the start to the last LTO completion.
- */
-export async function liquidationDueFields(tx: Tx, branchId: string, from: Date) {
-  const days = daysFor(await loadCalendar(tx), branchId);
-  return { liquidationDueAt: liquidationDue(from, await getSetting("funds.liquidationDueDays", tx), days), liquidationDueFrom: businessDate(from) };
-}
-
 /** Finance lets an overdue DP submit one more request (one-time), only a processor in their branches (D-039). */
 export async function grantException(u: CurrentUser, dpUserId: string, note: string) {
   need(u, PERMISSIONS.FUNDS_EXCEPTION, "Your role does not allow granting exceptions.");
@@ -749,6 +744,8 @@ export async function financeIds(db: Tx | typeof prisma, type?: TypeRef | null, 
 
 /** Overdue liquidations: tell the DP and Finance once per advance (called when the funds pages load). */
 export async function notifyOverdue(now: Date = new Date()) {
+  // A fallback starts (or moves) as job due dates pass (D-044), before the overdue notices.
+  await refreshOpenLiquidations(now);
   const open = await prisma.cashAdvance.findMany({ where: { status: { in: ["RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"] }, overdueNotifiedAt: null, liquidationDueAt: { lt: now } } });
   for (const a of open) {
     await prisma.$transaction(async (tx) => {

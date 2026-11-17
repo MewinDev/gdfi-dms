@@ -2,7 +2,7 @@
 
 How cash advances and fund transfers are flagged, requested, approved, released, carried over and liquidated.
 
-Last updated: 17 November 2026 (PHT)
+Last updated: 18 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -58,7 +58,8 @@ flowchart TD
 - On To approve, Finance and approvers can change a line's kind, description and amount, or add a line, before the request is decided; the total follows the lines. "+ Add new kind" next to the Expense kind dropdown adds a kind (Active, selected at once, audited). Processors see the link only with `funds:kinds_manage`; otherwise they use Other with a description.
 - Receipts (liquidation) always take the amount really spent, even for a kind with a fixed amount. Top-ups and receipts belong to an existing line, so its kind (and Other description) shows there; they do not ask for a kind again.
 - In a Cash-advance rule, Other means "any kind that has no rule of its own" for that transaction: no description is asked there.
-- Carry-over is free for 3 working days by default, then Finance approves it. Liquidation is due 10 working days after release, restarting at each carry-over decision, on the requesting processor's branch calendar; the due date is saved and moves only when a holiday or closure is added inside its count (D-041). Piece 5 changes the start to the last LTO completion.
+- Carry-over is free for 3 working days by default, then Finance approves it.
+- **Liquidation due date (D-017, D-044):** a set number of working days after the **last LTO pickup** of the request (Settings, Funds types: "Liquidation due", 2 by default for each type), on the requesting processor's branch calendar. Each advance shows one line: "Due 2 working days after the LTO pickup (1 of 3 left)" while it waits (no date, never overdue), then "Due Fri 27 Nov". A transaction cancelled before its LTO counts from the cancellation; a note-only line from the release; a carry-over waits for that attempt's pickup. A saved date stays if an LTO is later redone or cancelled (more time only through a carry-over or Correct due date). If the LTO is still not done after the job's own due date, the line reads "LTO not done. Liquidation due by fallback: …" (the job's due date + the same days; it follows that due date while the LTO is pending, and stays once the LTO is done) and Finance and the branch supervisors are told once. When liquidated, the advance keeps its due date, the liquidated date and the working days late ("Liquidated 2 working days late"), shown on Funds, My funds and the TAT report. A holiday or closure added inside the count moves the date like any saved due date (D-041).
 - Cash amounts are visible only to people with the permission `journey:view_amounts`.
 - On a transaction that is on hold, Finance cannot request, approve, release, top up or approve a carry-over ("Locked: on hold by {name} since {date and time}."). Denying, receipts, returns, liquidation, close and exceptions stay allowed so money already out can be settled.
 - **One-time exception (D-039).** Finance grants "Allow one more request" only to an overdue processor who works in one of the Finance person's branches ("All branches" = any processor); the Overdue processors list on Outstanding offers the button only for them, and the server refuses anyone else.

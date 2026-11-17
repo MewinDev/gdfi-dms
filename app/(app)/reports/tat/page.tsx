@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { TAT_SHOW, reasonReport, tatReport } from "@/lib/services/tat-report";
+import { TAT_SHOW, liquidationSummary, reasonReport, tatReport } from "@/lib/services/tat-report";
 import { ReasonTable } from "@/components/jobs/reason-table";
 import { PageTop } from "@/components/loan/page-top";
 import { JobRow } from "@/components/jobs/job-row";
@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "TAT and problems" };
 export default async function TatReportPage({ searchParams }: { searchParams: Promise<{ branch?: string; type?: string; stage?: string; show?: string; outside?: string; from?: string; to?: string; ftype?: string }> }) {
   const user = await requirePagePermission(PERMISSIONS.REPORTS_TAT);
   const sp = await searchParams;
-  const [{ rows, all }, reasons] = await Promise.all([tatReport(user, sp), reasonReport(user, sp)]);
+  const [{ rows, all }, reasons, liq] = await Promise.all([tatReport(user, sp), reasonReport(user, sp), liquidationSummary(user, sp)]);
   // Branch choices: the name only (also the filter value), "Antipolo".
   const branches = [...new Map(all.map((r) => [r.branch, r.branch])).entries()].sort(([a], [z]) => a.localeCompare(z));
   const types = [...new Map(all.map((r) => [r.typeCode, r.typeName])).entries()];
@@ -81,8 +81,18 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pb-2 pt-4 sm:px-6">
           <h2 id="by-reason" className="text-lg font-bold text-navy">Problems and holds by reason</h2>
         </div>
-        <p className="px-4 pb-2 text-[13px] text-ink-2 sm:px-6">Average days are business days (weekends and holidays skipped); open ones count to today. Dates are Philippine time.</p>
+        <p className="px-4 pb-2 text-[13px] text-ink-2 sm:px-6">Average days are working days (Sundays, holidays and office closures skipped); open ones count to today. Dates are Philippine time.</p>
         <ReasonTable rows={reasons} caption="Problems and holds by reason" />
+      </section>
+      <section aria-labelledby="liq-h" className="card px-4 py-4 sm:px-6" data-liquidation-summary>
+        <h2 id="liq-h" className="text-lg font-bold text-navy">Liquidations</h2>
+        {liq.total === 0 ? <p className="mt-1 text-[15px] text-ink-2">No advance liquidated in these dates.</p> : (
+          <>
+            <p className="mt-1 text-[15px]"><strong>{liq.onTime}</strong> on time · <strong>{liq.late}</strong> late{liq.avgDaysLate !== null ? ` (${liq.avgDaysLate} working days late on average)` : ""}</p>
+            {liq.worst.length > 0 && <p className="mt-1 text-[13px] text-ink-2">Latest: {liq.worst.map((w) => `${w.number} ${w.daysLate} day${w.daysLate === 1 ? "" : "s"}`).join(" · ")}</p>}
+          </>
+        )}
+        <p className="mt-1 text-[13px] text-ink-2">Due a set number of working days after the last LTO pickup (Settings, Funds types). Days late: the working days after the due date, up to the day it was liquidated.</p>
       </section>
       <section aria-label="Jobs" className="card overflow-hidden">
         {rows.length === 0 ? <p className="px-4 py-5 text-[15px] text-ink-2">Nothing matches.</p> : rows.map((r) => <JobRow key={r.id} r={r} showDp />)}

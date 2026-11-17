@@ -46,7 +46,7 @@ export function loanTat(input: LoanTatInput, tats: TatMap, days: Days, now: Date
     case "In process": {
       const map: Record<string, string> = { NOTARY: "P4_NOTARY", PPSR: "P4_PPSR", MORTGAGE: "P4_MORTGAGE" };
       const d = Math.max(0, ...(input.inProcessCodes ?? []).map((c) => target(tats, map[c] ?? "P4_NOTARY", 3)));
-      deadline = addWorkingDays(since, d || target(tats, "P4_LIQUIDATE", 5), days);
+      deadline = addWorkingDays(since, d || target(tats, "P4_NOTARY", 3), days);
       basis = "DP processing";
       break;
     }

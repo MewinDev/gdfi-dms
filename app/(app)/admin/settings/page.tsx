@@ -335,7 +335,6 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
       {area.key === "cash-advance" && (
         <FundsSettingsForm
           carryOverLimitDays={await getSetting("funds.carryOverLimitDays")}
-          liquidationDueDays={await getSetting("funds.liquidationDueDays")}
           blockLtoUntilFunded={await getSetting("funds.blockLtoUntilFunded")}
           approvalBandsOn={await getSetting("funds.approvalBandsOn")}
         />
@@ -651,6 +650,7 @@ async function loadListArea(key: AreaKey, opts: { btype?: TypeKey } = {}): Promi
         { name: "needsReference", label: "Release needs a reference number", type: "checkbox", value: r?.needsReference ?? false, help: "Finance enters the transfer reference number and the transfer date at release." },
         { name: "needsAccount", label: "Release needs receiving account details", type: "checkbox", value: r?.needsAccount ?? false, help: "Bank or e-wallet, account name and the last 4 digits only (never the full number)." },
         { name: "mustLiquidate", label: "Must be liquidated with receipts", type: "checkbox", value: r?.mustLiquidate ?? true, help: "On: liquidation, the due date and the overdue notice as for every advance. Off: settled when released." },
+        { name: "liquidationDueDays", label: "Liquidation due (working days after the LTO pickup)", type: "number", value: r?.liquidationDueDays ?? 2, width: "sm", help: "Counted from the last LTO pickup of the request, on the processor's branch calendar. A change applies to new due dates only." },
       ];
       return {
         kind: "fundsType", statusKind: "fundsType", noun: "funds type", addLabel: "Add type", filterLabel: "Find a type",
