@@ -2,7 +2,7 @@
 
 Every feature is a tick on a role: how the ticks work, the full catalogue, the defaults and the audit of the permissions pass.
 
-Last updated: 17 November 2026 (PHT)
+Last updated: 18 November 2026 (PHT)
 
 ## Roles are just ticks
 
@@ -83,6 +83,8 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Put work on hold | Put a transaction on hold while it waits on something that is not a fault. Only on work the person does. The clock keeps counting. | Loan File, Job | See loan files | `holds:raise` | LA, DP, Branch Supervisor |
 | Resume own holds | Resume a hold the person owns, or add the remarks to an older hold of theirs. | Loan File, Job, Open items | Put work on hold | `holds:resolve` | LA, DP, Branch Supervisor |
 | Move a hold to another person | Give a hold to another person of the same work (for example when the owner is on leave). Only in the person's branches, and only to someone who also has access to that branch. It never resumes the hold. | Loan File, Open items | See loan files | `holds:transfer` | Admin, Branch Supervisor |
+| Move work items | Inbox: move someone's item back to the branch pool or give it to another person of the same work role who has the branch (for example when they are away). Their round closes as Moved (away), never late; the item keeps its overall due date. | Inbox, Move | - | `workitems:move` | Admin, Branch Supervisor |
+| Set who is away | Mark another person Away (from and to dates). While away they cannot be named for new work, and their items show on the supervisors' Home. Everyone can mark themselves away. | Inbox, With people away | - | `users:away` | Admin, Branch Supervisor |
 
 ### Send to DP and returns
 
@@ -226,6 +228,8 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Put work on hold | Loan File, Job | holds:raise | `holds:raise` |  |
 | Resume own holds | Loan File, Job, Open items | none (resume and add details checked only the hold owner) | `holds:resolve` | **Gap, closed** |
 | Move a hold to another person | Loan File, Open items | holds:transfer (Admin: any branch, by role name) | `holds:transfer` | **Gap, closed** |
+| Move work items | Inbox, Move | new on 18 November 2026 | `workitems:move` | Split or renamed |
+| Set who is away | Inbox, With people away | new on 18 November 2026 | `users:away` | Split or renamed |
 | Send to a processor | Loan File, Send | processing:send | `processing:send` |  |
 | Flag funds | Loan File, Send | funds:flag | `funds:flag` |  |
 | Accept returned papers | Receive package | processing:accept_returns | `processing:accept_returns` |  |

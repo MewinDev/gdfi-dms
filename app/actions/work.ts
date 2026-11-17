@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/current-user";
 import { runAction, str, type ActionState } from "@/lib/action";
 import { acceptWork } from "@/lib/services/inbox";
@@ -10,7 +11,8 @@ import { prisma } from "@/lib/db";
 
 /** Piece 9 (D-046): Accept, Move (Give to... / Back to the pool), Away, and taking a job back from the DP pool. */
 
-export async function acceptWorkAction(_p: ActionState, fd: FormData): Promise<(NonNullable<ActionState> & { href?: string }) | null> {
+/** Accept, then straight to the work (the job page or the loan file). */
+export async function acceptWorkAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   let href = "";
   const r = await runAction(async () => {
     const user = await requireUser();
@@ -19,7 +21,8 @@ export async function acceptWorkAction(_p: ActionState, fd: FormData): Promise<(
     revalidatePath("/jobs");
     return "Accepted. It is in your items now.";
   });
-  return r?.ok ? { ...r, href } : r;
+  if (r?.ok && href) redirect(href);
+  return r;
 }
 
 export async function moveItemAction(_p: ActionState, fd: FormData): Promise<ActionState> {

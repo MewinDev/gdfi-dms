@@ -248,7 +248,7 @@ export async function refuseAway(db: Tx | typeof prisma, userId: string, now: Da
 // ---------------------------------------------------------------------------
 
 export interface InboxRow {
-  id: string; kind: WorkKind; kindText: string; label: string; pn: string | null; link: string; branchName: string;
+  id: string; kind: WorkKind; role: WorkRole; kindText: string; label: string; pn: string | null; link: string; branchName: string;
   state: string; holder: string | null; arrivedText: string; waiting: number; waitingText: string; poolTone: PoolTone;
   dueDate: string | null; dueText: string | null; tone: DueTone | null; paused: boolean; measureText: string;
 }
@@ -279,7 +279,7 @@ async function rows(db: typeof prisma, where: Prisma.WorkItemWhereInput, now: Da
     const paused = holds.some((h) => h.transactionId === it.subjectId && h.reason.pausesTat);
     const waiting = waitingDays(day(it.arrivedAt), it.acceptedAt ? day(it.acceptedAt) : today, days);
     return {
-      id: it.id, kind: it.kind as WorkKind, kindText: KIND_WORDS[it.kind as WorkKind] ?? it.kind, label: it.label, pn: it.pn, link: linkOf(it, job?.id), branchName: branches.find((b) => b.id === it.branchId)?.name ?? "",
+      id: it.id, kind: it.kind as WorkKind, role: it.role as WorkRole, kindText: KIND_WORDS[it.kind as WorkKind] ?? it.kind, label: it.label, pn: it.pn, link: linkOf(it, job?.id), branchName: branches.find((b) => b.id === it.branchId)?.name ?? "",
       state: it.state, holder: it.holder?.name ?? null, arrivedText: fmtShort(it.arrivedAt), waiting, waitingText: waitingText(waiting), poolTone: poolTone(waiting, amber, red),
       dueDate: due, dueText: due ? fmtDate(due) : null, tone: due ? dueTone(due, today, days, cal.amberWithinDays ?? 1, paused) : null, paused,
       measureText: it.measure === "WAITING" ? "Time to act (from arrival)" : "Turnaround time (from accept)",
@@ -304,8 +304,10 @@ export async function poolItems(u: CurrentUser, now: Date = new Date()) {
   if (can(u, PERMISSIONS.CHECKLIST_TICK)) roles.push({ role: "LA" });
   if (can(u, PERMISSIONS.JOBS_WORK)) roles.push({ role: "DP" });
   for (const code of ["CA", "FT"]) if (canFunds(u, "approve", code) || canFunds(u, "release", code)) roles.push({ role: "FIN", poolKey: code });
-  if (!roles.length) return [];
-  const items = await rows(prisma, { state: "POOL", ...loanScope(u), OR: roles }, now);
+  // Supervisors (Move work items) see every pool of their branches, to move work on.
+  const all = can(u, PERMISSIONS.WORKITEMS_MOVE);
+  if (!roles.length && !all) return [];
+  const items = await rows(prisma, { state: "POOL", ...loanScope(u), ...(all ? {} : { OR: roles }) }, now);
   // Longest waiting first (the pool has no due date until someone takes it).
   return items.sort((a, b) => b.waiting - a.waiting);
 }

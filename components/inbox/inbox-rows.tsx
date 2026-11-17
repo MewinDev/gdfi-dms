@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useId, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { acceptWorkAction, moveItemAction, setAwayAction } from "@/app/actions/work";
 import { FormMessage } from "@/components/form-status";
 import { CorrectDueDate } from "@/components/jobs/due-date";
@@ -21,16 +20,28 @@ export interface RowExtras {
   giveTo?: { id: string; name: string }[];
   /** "Correct due date" on an LA item (Correct due dates tick). */
   correct?: boolean;
+  /** The reader does not do this work role (a supervisor looking at the pool): no Accept. */
+  noAccept?: boolean;
 }
+
+type MoveAction = (fd: FormData) => void;
 
 export function InboxList({ rows, extras = {}, empty, pool = false }: { rows: InboxRow[]; extras?: Record<string, RowExtras>; empty: string; pool?: boolean }) {
-  if (!rows.length) return <p className="px-4 py-5 text-[15px] text-ink-2 sm:px-5" data-inbox-empty>{empty}</p>;
-  return <ul className="flex flex-col divide-y divide-line">{rows.map((r) => <Row key={r.id} r={r} x={extras[r.id] ?? {}} pool={pool} />)}</ul>;
+  // The Move result is kept here: the moved row leaves the list, and its message must stay in view.
+  const [moved, move, moving] = useActionState(moveItemAction, null);
+  return (
+    <>
+      {moved && <div className="px-4 pt-3 sm:px-5" data-move-result><FormMessage state={moved} /></div>}
+      {!rows.length
+        ? <p className="px-4 py-5 text-[15px] text-ink-2 sm:px-5" data-inbox-empty>{empty}</p>
+        : <ul className="flex flex-col divide-y divide-line">{rows.map((r) => <Row key={r.id} r={r} x={extras[r.id] ?? {}} pool={pool} move={move} moving={moving} />)}</ul>}
+    </>
+  );
 }
 
-function Row({ r, x, pool }: { r: InboxRow; x: RowExtras; pool: boolean }) {
+function Row({ r, x, pool, move, moving: busy }: { r: InboxRow; x: RowExtras; pool: boolean; move: MoveAction; moving: boolean }) {
   const [moving, setMoving] = useState(false);
-  const acceptable = (r.state === "POOL" || r.state === "INBOX") && r.kind !== "FUND_REQUEST" && r.kind !== "PACKAGE";
+  const acceptable = !x.noAccept && (r.state === "POOL" || r.state === "INBOX") && r.kind !== "FUND_REQUEST" && r.kind !== "PACKAGE";
   return (
     <li className="flex flex-col gap-2 px-4 py-3 sm:px-5" data-inbox-row={r.label} data-state={r.state}>
       <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
@@ -58,15 +69,13 @@ function Row({ r, x, pool }: { r: InboxRow; x: RowExtras; pool: boolean }) {
         {x.giveTo && !moving && <button type="button" className="link inline-flex min-h-11 items-center text-[13px]" onClick={() => setMoving(true)} data-move-open>Move</button>}
         {x.correct && r.dueDate && r.kind !== "DP_JOB" && <CorrectDueDate subjectType="WorkItem" subjectId={r.id} current={r.dueDate} />}
       </div>
-      {moving && x.giveTo && <MoveForm r={r} people={x.giveTo} onClose={() => setMoving(false)} />}
+      {moving && x.giveTo && <MoveForm r={r} people={x.giveTo} action={move} pending={busy} onClose={() => setMoving(false)} />}
     </li>
   );
 }
 
 function AcceptButton({ id }: { id: string }) {
   const [state, action, pending] = useActionState(acceptWorkAction, null);
-  const router = useRouter();
-  useEffect(() => { if (state?.ok && state.href) router.push(state.href); }, [state, router]);
   return (
     <form action={action} className="flex flex-col gap-1">
       <input type="hidden" name="itemId" value={id} />
@@ -76,8 +85,7 @@ function AcceptButton({ id }: { id: string }) {
   );
 }
 
-function MoveForm({ r, people, onClose }: { r: InboxRow; people: { id: string; name: string }[]; onClose: () => void }) {
-  const [state, action, pending] = useActionState(moveItemAction, null);
+function MoveForm({ r, people, action, pending, onClose }: { r: InboxRow; people: { id: string; name: string }[]; action: MoveAction; pending: boolean; onClose: () => void }) {
   const id = useId();
   const canPool = r.kind !== "DP_JOB";
   return (
@@ -103,7 +111,6 @@ function MoveForm({ r, people, onClose }: { r: InboxRow; people: { id: string; n
         <button type="submit" className="btn-navy btn-sm" disabled={pending}>{pending ? "Moving..." : "Move"}</button>
         <button type="button" className="btn-ghost btn-sm" onClick={onClose}>Cancel</button>
       </div>
-      <FormMessage state={state} />
     </form>
   );
 }

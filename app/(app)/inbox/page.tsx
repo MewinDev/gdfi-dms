@@ -37,8 +37,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   // Move (Give to... / Back to the pool) for supervisors; Correct due date on LA items with that tick.
   const extras: Record<string, RowExtras> = {};
   const correct = can(user, PERMISSIONS.DUEDATES_CORRECT);
+  const takes = { LA: can(user, PERMISSIONS.CHECKLIST_TICK), DP: can(user, PERMISSIONS.JOBS_WORK), FIN: canFundsAny(user) };
   for (const r of rows.slice(0, 60)) {
-    extras[r.id] = { correct, ...(canMove && tab !== "mine" ? { giveTo: await giveToCandidates(user, r.id) } : {}) };
+    extras[r.id] = { correct, noAccept: !takes[r.role], ...(canMove && tab !== "mine" ? { giveTo: await giveToCandidates(user, r.id) } : {}) };
   }
   const awayText = (p: { awayFrom: string | null; awayTo: string | null; awayNote: string }) =>
     p.awayFrom && p.awayTo && p.awayTo >= today ? `${p.awayFrom === p.awayTo ? fmtDate(p.awayFrom) : `${fmtDate(p.awayFrom)} to ${fmtDate(p.awayTo)}`}${p.awayNote ? ` (${p.awayNote})` : ""}` : null;
