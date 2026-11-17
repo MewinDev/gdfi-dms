@@ -591,10 +591,10 @@ describe("13. Chips and lists", () => {
 });
 
 describe("Permissions: the new tick", () => {
-  it("myloans:review_borrower is on for the Branch Supervisor, Admin and the funds approvers; never by role name", async () => {
+  it("myloans:review_borrower is on for the LA Supervisor/Head and Admin, not Finance (D-034); never by role name", async () => {
     const roles = await prisma.role.findMany({ where: { key: { in: ["SUP", "ADMIN", "FIN", "LA", "DP"] } } });
     const has = (k: string) => roles.find((r) => r.key === k)!.permissions.includes(PERMISSIONS.SOURCE_REVIEW_BORROWER);
-    expect(["SUP", "ADMIN", "FIN"].map(has)).toEqual([true, true, true]);
+    expect(["SUP", "ADMIN", "FIN"].map(has)).toEqual([true, true, false]);
     expect(["LA", "DP"].map(has)).toEqual([false, false]);
   });
 });

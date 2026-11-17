@@ -159,7 +159,8 @@ describe("3. The renamed tick", () => {
     const roles = await prisma.role.findMany({ select: { key: true, permissions: true } });
     const old = ["source", "review_borrower"].join(":");
     expect(roles.filter((r) => r.permissions.includes(old)).map((r) => r.key)).toEqual([]);
-    for (const k of ["SUP", "ADMIN", "FIN"]) expect(roles.find((r) => r.key === k)!.permissions, k).toContain("myloans:review_borrower");
+    for (const k of ["SUP", "ADMIN"]) expect(roles.find((r) => r.key === k)!.permissions, k).toContain("myloans:review_borrower");
+    expect(roles.find((r) => r.key === "FIN")!.permissions).not.toContain("myloans:review_borrower"); // D-034 (Q-N19)
   });
 });
 

@@ -1,5 +1,6 @@
 import type { Api1Answer, FeedPage, FeedRow, FeedState, ProductRow } from "./contract";
 import { hashOf, type HashValues } from "./hash";
+import { isAcceptedStatus } from "@/lib/myloans/status";
 
 /**
  * In-memory mock of the myloans APIs, round 2 contract (D-036). Fake data only (GD999... PNs). The hash is the
@@ -22,7 +23,7 @@ export function feedStateOf(t: MockTxn): FeedState {
   if (t.statusId === 14) return "Cancelled";
   // In myloans a redone copy gets the "x<timestamp>" code (longer than 20): here, replacedBy marks it.
   if (t.replacedBy) return "Superseded";
-  if (t.statusId !== 12) return "NotReleased";
+  if (!isAcceptedStatus(t.statusId)) return "NotReleased"; // lib/myloans/status.ts knows the one released status
   if (t.isActive === 0) return "Inactive";
   return "Released";
 }
