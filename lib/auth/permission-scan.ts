@@ -25,6 +25,7 @@ export const ALLOW_LIST: AllowEntry[] = [
   { file: "app/login/actions.ts", name: "signOut", why: "Sign out: anyone may end their own session.", mustContain: "cookies()).delete(SESSION_COOKIE)" },
   { file: "app/actions/loan.ts", name: "markNotificationsReadAction", why: "Marks the signed-in person's own notifications as read.", mustContain: "getCurrentUser(" },
   { file: "app/api/files/[kind]/[id]/route.ts", name: "GET", why: "The one file route (D-019, D-039): the check is per record, not one tick. resolveFile asks mayOpenReceipt (the funds type's See tick and the request's branches, or the requester) or mayOpenStageFile (See loan files and the job or the loan's branch); anything else is 404.", mustContain: "resolveFile(" },
+  { file: "app/api/dev/myloans/api/dms/v1/[...path]/route.ts", name: "GET", why: "The myloans mock (piece 6, D-048): machine to machine with a Bearer key like the real API; 404 unless MYLOANS_MODE=mock outside production.", mustContain: "handleMockRequest(" },
   { file: "app/actions/email.ts", name: "myEmailPreferenceAction", why: "The signed-in person's own email choice (non-urgent emails on or off).", mustContain: "getCurrentUser(" },
 ];
 

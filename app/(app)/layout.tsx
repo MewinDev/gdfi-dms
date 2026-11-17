@@ -6,6 +6,7 @@ import { inboxCount } from "@/lib/services/work-items";
 import { AppShell, type ShellNavItem } from "@/components/ui/app-shell";
 import { isTestMode } from "@/lib/test-mode";
 import { appEnv } from "@/lib/env";
+import { myLoansMode } from "@/lib/myloans";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -37,7 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      <AppShell items={items} user={{ name: user.name, subtitle }} unread={unread} testMode={isTestMode()} staging={appEnv() === "staging"} findLoan={worksLoans && can(user, PERMISSIONS.LOANS_SEARCH)}>
+      <AppShell items={items} user={{ name: user.name, subtitle }} unread={unread} testMode={isTestMode()} staging={appEnv() === "staging"} mockMyLoans={myLoansMode() === "mock"} findLoan={worksLoans && can(user, PERMISSIONS.LOANS_SEARCH)}>
         {children}
       </AppShell>
     </>

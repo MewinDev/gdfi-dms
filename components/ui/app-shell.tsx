@@ -47,7 +47,7 @@ function Badge({ n, className = "" }: { n: number; className?: string }) {
 }
 
 export function AppShell({
-  items, user, unread, testMode, staging = false, findLoan, children,
+  items, user, unread, testMode, staging = false, mockMyLoans = false, findLoan, children,
 }: {
   items: ShellNavItem[];
   user: { name: string; subtitle: string };
@@ -55,6 +55,8 @@ export function AppShell({
   testMode: boolean;
   /** APP_ENV=staging: a banner on every page so nobody mistakes it for the live system. */
   staging?: boolean;
+  /** MYLOANS_MODE=mock (D-048): a banner on every page, so nobody mistakes sample myloans data for the real thing. */
+  mockMyLoans?: boolean;
   /** Loan Associate: the gold "Find loan" button (opens Loans with the search box focused). */
   findLoan: boolean;
   children: React.ReactNode;
@@ -165,6 +167,11 @@ export function AppShell({
         {staging && (
           <p role="note" className="no-print bg-gold px-4 py-1 text-center text-[13px] font-bold tracking-wide text-navy" data-staging-banner>
             Staging <span className="font-semibold">· not the live system</span>
+          </p>
+        )}
+        {mockMyLoans && (
+          <p role="note" className="no-print border-b border-act-line bg-act-bg px-4 py-1 text-center text-[13px] font-bold tracking-wide text-act-fg" data-mock-banner>
+            MOCK myloans data <span className="font-semibold">· loans come from the sample myloans, not the real one</span>
           </p>
         )}
         {/* Tablet/desktop top bar: white, 72px. System name left; Find loan (LA), bell and user right. */}

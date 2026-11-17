@@ -2171,3 +2171,63 @@ model FileAccessLog {
   @@index([branchId, at])
   @@index([pn])
 }
+
+/// Piece 6 (D-047, D-048): the myloans MOCK's own data, used only while MYLOANS_MODE=mock on local or staging (never
+/// production). One row per myloans transaction (ExternalLoanId); the mock builds the agreed API rows from it.
+model MockMyLoansTxn {
+  id                  Int       @id
+  cin                 String?
+  pnNo                String?
+  statusId            Int       @default(12)
+  isActive            Boolean   @default(true)
+  /// The transaction code: 20 characters, plus "x<yyyymmddhhmmss>" once redone.
+  code                String
+  /// The newest updated_at of the loan's parts; created_at (a replacement's creation refreshes the old copy).
+  updatedAt           DateTime
+  createdAt           DateTime
+  /// The live transaction that replaced this one (redo).
+  replacedById        Int?
+  /// A duplicate LOANS.CIN row: the loan comes back twice.
+  duplicate           Boolean   @default(false)
+  releaseDate         DateTime?
+  amount              String?
+  cifNo               String?
+  firstName           String?
+  middleName          String?
+  lastName            String?
+  suffix              String?
+  loanId              String?
+  loanTypeId          String?
+  loanType            String?
+  borrowerCompanyName String?
+  productId           Int?
+  branchId            Int?
+  /// Where the row came from: "kit", "test", or a scenario name.
+  source              String    @default("")
+
+  @@index([pnNo])
+  @@index([cin])
+}
+
+/// API 5 of the mock: products.
+model MockMyLoansProduct {
+  productId   Int     @id
+  productCode String
+  name        String
+  active      Boolean @default(true)
+}
+
+/// API 4 of the mock: the organization (branch, area, division, company).
+model MockMyLoansBranch {
+  branchId     Int       @id
+  branchCode   String?
+  branchName   String
+  areaId       Int?
+  areaName     String?
+  divisionId   Int?
+  divisionName String?
+  companyId    Int?
+  companyName  String?
+  isActive     Boolean   @default(true)
+  updatedAt    DateTime?
+}

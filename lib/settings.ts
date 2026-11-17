@@ -14,6 +14,8 @@ export const SETTING_DEFAULTS = {
   "myloans.mockOverrides": {} as Record<string, MockOverride>,
   /** Mock-only: extra source loans (a replacement PN made by the simulator). */
   "myloans.mockExtra": [] as MyLoansRecord[],
+  /** Mock-only (D-048): failure simulation switches for the myloans mock (never in production). */
+  "myloans.mockFailures": [] as import("@/lib/myloans/v1/failures").MockFailure[],
   /** MyLoans sync: refresh a loan when it is opened if its copy is older than this (minutes; 0 = always). */
   "myloans.refreshOnOpenMinutes": 60 as number,
   /** MyLoans sync: when Find a loan shows a saved loan, refresh it in the background if last checked more than this many hours ago (0 = never). */
