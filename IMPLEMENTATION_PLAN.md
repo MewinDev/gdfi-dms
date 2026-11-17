@@ -42,6 +42,8 @@ Effort is in **developer-days** for one experienced developer.
 
 Pieces 4 and 6 have no dependencies and can be built early or in parallel. Each piece is committed on its own, with its tests.
 
+**Order now (D-047, 18 November 2026; replaces D-045):** 1 to 5 and 9 are done. Next 6 → 10a (PN # search and Search Log on API 1, mock) → 7 → 8 → 10b (the piece 9 feed hook to the branch LA pool) → 11 when R2-3 arrives → 12 with each piece. Separate, blocked items: **Real API verification** (myloans staging, C5) and the **Production scheduler** (hosting).
+
 ---
 
 ## 2. Piece 1: Sign-in hardening (priority #1)
@@ -464,6 +466,134 @@ myloans' answers are `docs/MYLOANS_ANSWERS_R3.md`; the query in `docs/myloans-ap
 | 5 | **Still open with myloans:** whether cancel and deactivate always touch `updated_at` (they will report the check); no other path changing status or `is_active` silently; R2-3, R2-4, R2-6, A4, A5, C2, C5 | HANDOVER |
 | 6 | **Mock scenarios added:** a redo WITHOUT a cancellation that reaches API 2 only through the suffix time; the redo chain of 3 now re-sends its oldest copy | `mock.ts`, `r2.test.ts` |
 
+### 7.4 Build plan (18 November 2026, D-047): for confirmation before building
+
+**What is built already (kept):**
+- `lib/myloans/r2/` holds the round 3 contract as pure, tested code:
+  - the API 1 / API 2 / API 5 types and `readApi1`;
+  - the 17-field hash;
+  - the in-memory mock with its scenarios;
+  - `fetchRun` and `planRun`.
+- `lib/myloans/` holds today's adapter seam (`getMyLoansAdapter`):
+  - the in-process mock (the kit's 44 sample PNs);
+  - a placeholder HTTP adapter;
+  - retries, Retry-After and the circuit breaker;
+  - the hourly call ceiling.
+- **Gap:** the screens (Find loan, Refresh, the old background sync) still use the old `MyLoansRecord` shape. No HTTP path is exercised locally.
+
+**What piece 6 builds:**
+
+1. **The full contract shape, validated once.**
+   - `lib/myloans/v1/schema.ts`: zod schemas for every response:
+     - API 1: 200, 404, 422, 409;
+     - API 2 change mode and pool mode;
+     - API 4 branches;
+     - API 5 products;
+     - the error body.
+   - The schemas carry every column of the query, in its order, with:
+     - names as parts (`null` when empty);
+     - `TotalLoanAmount` as a string;
+     - `ReleaseDate` in +08:00;
+     - the organization ids and names;
+     - `RunStartedAt` on every row.
+   - The adapter and the contract tests use the same schemas, so a drift fails in one place with one message: "myloans sent something we did not expect: <field>".
+2. **A contract client**, `lib/myloans/v1/client.ts`:
+   - `api1(pn)`;
+   - `changesPage({ since, afterId, limit })`;
+   - `poolPage({ releasedSince, afterId, limit })`;
+   - `branches()`;
+   - `products()`.
+
+   It is HTTP only. It sends the key as a Bearer header, has a timeout, uses the existing retries / Retry-After / breaker and counts towards the hourly ceiling. The address and the key never appear in an error, a log or the database.
+3. **The HTTP mock**, a route handler at `/api/dev/myloans/api/dms/v1/...` with the same paths as the contract:
+   - `GET /loans/{pn}`;
+   - `GET /loans/changes?since=&afterId=&limit=`;
+   - `GET /loans/changes?releasedSince=&afterId=&limit=` (the pool mode; URL still "proposed");
+   - `GET /branches`;
+   - `GET /products`.
+
+   Behaviour:
+   - It answers from the round 3 mock logic (`r2/mock.ts`, extended to the full columns).
+   - It checks the Bearer key, so a 401 can be tested.
+   - It refuses with 404 unless `APP_ENV` is `local` or `staging` and `MYLOANS_MODE=mock`. It is never available in production, where the startup check already refuses mock.
+   - Its data is a local-only table, `MockMyLoansTxn`, seeded from the kit's sample PNs plus the scenario rows.
+4. **One switch, two modes, the same code path.**
+   - `MYLOANS_MODE=mock`: the contract client calls the app's own mock (`MYLOANS_BASE_URL` defaults to `http://localhost:<port>/api/dev/myloans/api/dms/v1`).
+   - `MYLOANS_MODE=live`: the client calls `MYLOANS_BASE_URL` (staging, later production).
+
+   Nothing else changes between the modes. The in-process mock stays for the unit tests only (fast, no server).
+5. **Failure simulation** in Settings, Test data, "myloans mock" (local and staging only). Each failure can be set per endpoint, or for all:
+   - unavailable (503);
+   - slow (a delay over the timeout);
+   - busy (429 with Retry-After);
+   - server error (500);
+   - wrong key (401);
+   - a malformed body (a field missing or of the wrong type);
+   - "page N fails" (to prove a failed run keeps the checkpoint).
+
+   Each failure can be "next call only" or "until switched off". The panel shows what is on, and every switch is audited. The scenario buttons are:
+   - cancel-then-redo;
+   - redo without a cancellation;
+   - redo chain of 3;
+   - NotReleased;
+   - duplicate row;
+   - API 1 409;
+   - exactly 500 rows;
+   - pool mode with more than 500 rows;
+   - product rename;
+   - branch rename;
+   - timestamp-only change.
+6. **The screens switch over** where it is a direct swap: Find loan and Refresh read API 1 through the contract client and `readApi1`, with the plain words:
+   - 404: "PN not found in myloans";
+   - 422: "Cancelled in myloans. Replaced by …";
+   - 409: "Multiple records in myloans, contact Admin".
+
+   The Search Log is piece 10a, the sync (API 2) piece 7, and branches and products apply in piece 11. Piece 6 only reads them.
+7. **Contract tests**, `tests/contract/myloans.contract.test.ts`, run with `npm run test:contract`:
+   - The default target is the mock, through HTTP.
+   - `-- --target=staging` reads `MYLOANS_CONTRACT_URL`, `MYLOANS_CONTRACT_KEY` and optional known PNs (`MYLOANS_CONTRACT_PN_OK`, `_PN_CANCELLED`, `_PN_REDONE`).
+   - Against staging they are read-only GETs with small limits. A check that needs a scenario only the mock can make (409, duplicate row) is skipped there unless a PN for it is given.
+   - The checks:
+     - status codes and body shapes;
+     - `afterId` ascending with pages cut by loan;
+     - `since` fixed for the run;
+     - one `RunStartedAt` per page;
+     - `nextAfterId` null on the last page;
+     - an exactly-full page followed by an empty one;
+     - hash format (64 lowercase hex);
+     - amounts as strings;
+     - +08:00 dates;
+     - API 4 and API 5 shapes.
+
+   This suite becomes the **Real API verification** item when staging (C5) arrives. It is never part of CI until then.
+8. **Tests:**
+   - unit: schemas (each answer; a missing field is refused);
+   - integration: the client against the HTTP mock, through a test server, covering every failure switch and retries / breaker / ceiling;
+   - Find loan and Refresh through API 1 (200 / 404 / 422 / 409);
+   - e2e: Find loan with the mock's 404, 422 and 409, and the Test data panel turning a failure on and off.
+9. **Docs:**
+   - `docs/myloans/` contract notes;
+   - a new myloans mock section in the Manual Test Kit, with the failure panel;
+   - the workflow docs;
+   - STATUS.
+
+**Not in piece 6:**
+- the sync and its checkpoint (piece 7);
+- the Search Log (10a);
+- Open Items (8);
+- applying branches and products (11);
+- the production scheduler;
+- running against real staging (C5).
+
+**Effort:** 2 to 3 days.
+
+**To confirm:**
+- (a) the mock is also available on staging (never production), not only local;
+- (b) its data lives in a local-only table, not in settings;
+- (c) the staging contract run is by hand (read-only), not in CI, until C5.
+
+---
+
 ## 8. Piece 7: myloans sync (D-005, D-016 as amended by D-022)
 
 ### 8.1 Identity: linked on CIN
@@ -672,7 +802,7 @@ New items notify:
 
 ## 10. Piece 9: Accept / Forward engine, inbox, TAT (D-014, D-015)
 
-**Order (D-045):** piece 9 is built next, before pieces 6, 7, 8 and 10 (on hold for myloans staging access). It works on the loans already in the DMS and leaves one hook where the branch pool will receive "Released, not yet in the DMS" loans from the sync (piece 7). **Also in scope:** Correct due date on LA work items (D-042 rule).
+**Order (D-045, now D-047):** piece 9 was built first, before pieces 6, 7, 8 and 10. It works on the loans already in the DMS and leaves one hook where the branch pool will receive "Released, not yet in the DMS" loans from the sync (piece 7). **Also in scope:** Correct due date on LA work items (D-042 rule).
 
 ### 10.1 Model
 

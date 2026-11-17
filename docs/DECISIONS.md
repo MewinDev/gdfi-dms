@@ -642,3 +642,18 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - **Correct due date** also on LA items (D-042 rule).
   - **The feed hook:** one function receives "Released, not yet in the DMS" loans into the branch pool; the sync (piece 7, on hold) will call it. No sync is built.
 - **Reason:** D-014, D-015 and the user's answers.
+
+## D-047 Build order: the myloans pieces are built on the mock (replaces D-045)
+
+- **Date:** 18 November 2026
+- **Decision (the user's, after piece 9 was approved):** pieces **6, 7, 8 and 10 are un-held** and built on the myloans mock, in this order:
+  1. **6:** mock APIs 1 to 5 (plan first, confirmed before building);
+  2. **10a:** PN # search and the Search Log, through API 1 on the mock;
+  3. **7:** the sync on API 2;
+  4. **8:** Open Items per field;
+  5. **10b:** connect the piece 9 feed hook ("Released, not yet in the DMS") to the branch LA pool;
+  6. **11** when the product list (R2-3) arrives;
+  7. **12** (docs, kit, e2e, final checks) with each piece.
+- Two items stay **separate and blocked**: **Real API verification** (the contract tests and a sync dry run against myloans staging; blocked on staging access, C5) and the **Production scheduler** (the sync and daily jobs on the real hosting; blocked on the hosting decision).
+- **Reason:** staging access is not in sight; building on the agreed contract with tests that can later run against staging keeps the foundation moving without building twice.
+
