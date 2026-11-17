@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { can, requireUser } from "@/lib/auth/current-user";
+import { can, requireUser, scopeIds } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { canFundsAny } from "@/lib/funds/access";
 import { prisma } from "@/lib/db";
@@ -44,9 +44,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const awayText = (p: { awayFrom: string | null; awayTo: string | null; awayNote: string }) =>
     p.awayFrom && p.awayTo && p.awayTo >= today ? `${p.awayFrom === p.awayTo ? fmtDate(p.awayFrom) : `${fmtDate(p.awayFrom)} to ${fmtDate(p.awayTo)}`}${p.awayNote ? ` (${p.awayNote})` : ""}` : null;
   // People of the reader's branches, for "Set who is away".
+  const scope = scopeIds(user);
   const people = tab === "away" && can(user, PERMISSIONS.USERS_AWAY)
     ? (await prisma.user.findMany({
-        where: { active: true, ...(user.scopeBranchIds === null ? {} : { OR: [{ allBranches: true }, { branches: { some: { branchId: { in: user.scopeBranchIds } } } }] }) },
+        where: { active: true, ...(scope === null ? {} : { OR: [{ allBranches: true }, { branches: { some: { branchId: { in: scope } } } }] }) },
         select: { id: true, name: true, awayFrom: true, awayTo: true, awayNote: true }, orderBy: { name: "asc" }, take: 300,
       })).map((p) => ({ id: p.id, name: p.name, away: awayText(p) }))
     : undefined;

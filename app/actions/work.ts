@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth/current-user";
+import { can, requireAnyPermission, requirePermission, requireUser } from "@/lib/auth/current-user";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { UserError } from "@/lib/services/errors";
 import { runAction, str, type ActionState } from "@/lib/action";
 import { acceptWork } from "@/lib/services/inbox";
 import { moveItem, setAway } from "@/lib/services/work-items";
@@ -15,7 +17,7 @@ import { prisma } from "@/lib/db";
 export async function acceptWorkAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   let href = "";
   const r = await runAction(async () => {
-    const user = await requireUser();
+    const user = await requireAnyPermission([PERMISSIONS.CHECKLIST_TICK, PERMISSIONS.JOBS_WORK]);
     href = await acceptWork(user, str(fd, "itemId"));
     revalidatePath("/inbox");
     revalidatePath("/jobs");
@@ -27,7 +29,7 @@ export async function acceptWorkAction(_p: ActionState, fd: FormData): Promise<A
 
 export async function moveItemAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const user = await requireUser();
+    const user = await requirePermission(PERMISSIONS.WORKITEMS_MOVE);
     const to = str(fd, "to");
     await moveItem(user, str(fd, "itemId"), to === "POOL" ? { pool: true } : { userId: to }, str(fd, "note"));
     revalidatePath("/inbox");
@@ -41,6 +43,8 @@ export async function setAwayAction(_p: ActionState, fd: FormData): Promise<Acti
   return runAction(async () => {
     const user = await requireUser();
     const userId = str(fd, "userId") || user.id;
+    // Everyone may mark themselves away; someone else needs "Set who is away" (checked again in the service).
+    if (userId !== user.id && !can(user, PERMISSIONS.USERS_AWAY)) throw new UserError("Ask a Superadmin to turn on \"Set who is away\" for your role.");
     const clear = str(fd, "intent") === "clear";
     await setAway(user, userId, clear ? null : { from: str(fd, "from"), to: str(fd, "to"), note: str(fd, "note") });
     revalidatePath("/inbox");
@@ -52,7 +56,7 @@ export async function setAwayAction(_p: ActionState, fd: FormData): Promise<Acti
 
 export async function takeBackFromPoolAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
-    const user = await requireUser();
+    const user = await requirePermission(PERMISSIONS.DP_SEND);
     const transactionId = str(fd, "transactionId");
     await takeBackFromPool(user, transactionId, str(fd, "reason"));
     const t = await prisma.loanTransaction.findUnique({ where: { id: transactionId }, select: { loan: { select: { pn: true } } } });
