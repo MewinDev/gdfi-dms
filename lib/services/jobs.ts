@@ -443,7 +443,11 @@ export async function receiveCore(tx: Tx, a: AssignmentFull, who: Who, input: Re
 // ---------------------------------------------------------------------------
 
 export async function withJob<T>(user: CurrentUser, assignmentId: string, fn: (tx: Tx, a: AssignmentFull) => Promise<T>) {
+  // The role first, then scope (D-019): a job the person may not see is "not found", the same answer as a
+  // job that does not exist; only a job they can see may say "assigned to someone else".
+  if (!can(user, PERMISSIONS.JOBS_WORK)) throw new UserError("Your role does not allow working on jobs.");
   const a0 = await loadAssignment(prisma, assignmentId);
+  if (!canSeeJob(user, a0)) throw new UserError("Job not found.");
   requireOwnJob(user, a0);
   return withLoanLock(a0.loanId, async (tx) => {
     const a = await loadAssignment(tx, assignmentId);

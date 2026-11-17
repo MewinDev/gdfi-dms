@@ -703,9 +703,14 @@ export async function copyReusablePapers(u: CurrentUser, newLoanId: string, from
     if (!inScope(u, nw.branchId)) throw new NotInScopeError();
     const options = await reusablePapers(tx, newLoanId, u);
     const picked = options.filter((o) => fromCheckIds.includes(o.fromCheckId));
-    // A paper of a loan outside the person's branches is not offered, so it cannot be picked (D-019).
-    if (picked.length !== new Set(fromCheckIds).size) throw new NotInScopeError();
-    if (picked.length !== new Set(fromCheckIds).size) throw new UserError("Only ticked papers that belong to the borrower can be copied.");
+    if (picked.length !== new Set(fromCheckIds).size) {
+      // A paper of a loan outside the person's branches is not offered: "not found" (D-019), without saying
+      // what it is. A paper of an in-scope loan that is not reusable gets the plain reason.
+      const rest = fromCheckIds.filter((id) => !picked.some((o) => o.fromCheckId === id));
+      const loans = await tx.checklistCheck.findMany({ where: { id: { in: rest } }, select: { transaction: { select: { loan: { select: { branchId: true } } } } } });
+      if (loans.length !== new Set(rest).size || loans.some((c) => !inScope(u, c.transaction.loan.branchId))) throw new NotInScopeError();
+      throw new UserError("Only ticked papers that belong to the borrower can be copied.");
+    }
     const blocked = picked.find((o) => o.blocked);
     if (blocked) throw new UserError(`${blocked.label}: ${blocked.blocked}`);
     const now = new Date();

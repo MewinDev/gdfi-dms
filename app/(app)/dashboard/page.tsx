@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { can, requirePageAny, requireUser } from "@/lib/auth/current-user";
 import { redirect } from "next/navigation";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { listLoans } from "@/lib/services/queries";
+import { listLoans, notificationWhere } from "@/lib/services/queries";
 import { getHolidaySet } from "@/lib/settings";
 import { plainUpdate, timeAgo } from "@/lib/ui/plain";
 import { cardFor, sortByUrgency } from "@/lib/ui/loan-cards";
@@ -45,7 +45,7 @@ export default async function HomePage() {
   const [rows, holidays, updates, samples, packages, sentBack, source, corrections, branches, tat, setup] = await Promise.all([
     listLoans(user, { tab: "all" }),
     getHolidaySet(),
-    prisma.notification.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 3, include: { loan: { select: { borrowerName: true } } } }),
+    prisma.notification.findMany({ where: notificationWhere(user), orderBy: { createdAt: "desc" }, take: 3, include: { loan: { select: { borrowerName: true } } } }),
     loadSampleCards(user),
     packagesFor(user),
     sentBackFor(user),

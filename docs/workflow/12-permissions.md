@@ -312,6 +312,7 @@ Every server action and API route checks a permission (a test scans `app/actions
 | `app/login/actions.ts` testSignIn | Test sign-in: before anyone is signed in (the test provider refuses unless test sign-in is allowed: AUTH_MODE=test and APP_ENV=local, lib/auth/mode.ts). | `testProvider.resolveUser` |
 | `app/login/actions.ts` signOut | Sign out: anyone may end their own session. | `cookies()).delete(SESSION_COOKIE)` |
 | `app/actions/loan.ts` markNotificationsReadAction | Marks the signed-in person's own notifications as read. | `getCurrentUser` |
+| `app/api/files/[kind]/[id]/route.ts` GET | The one file route (D-019, D-039): the check is per record, not one tick. resolveFile asks mayOpenReceipt (the funds type's See tick and the request's branches, or the requester) or mayOpenStageFile (See loan files and the job or the loan's branch); anything else is 404. | `resolveFile` |
 | `app/actions/email.ts` myEmailPreferenceAction | The signed-in person's own email choice (non-urgent emails on or off). | `getCurrentUser` |
 
 <!-- generated:permissions:end -->

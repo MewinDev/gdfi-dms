@@ -24,6 +24,7 @@ export const ALLOW_LIST: AllowEntry[] = [
   { file: "app/login/actions.ts", name: "testSignIn", why: "Test sign-in: before anyone is signed in (the test provider refuses unless test sign-in is allowed: AUTH_MODE=test and APP_ENV=local, lib/auth/mode.ts).", mustContain: "testProvider.resolveUser(" },
   { file: "app/login/actions.ts", name: "signOut", why: "Sign out: anyone may end their own session.", mustContain: "cookies()).delete(SESSION_COOKIE)" },
   { file: "app/actions/loan.ts", name: "markNotificationsReadAction", why: "Marks the signed-in person's own notifications as read.", mustContain: "getCurrentUser(" },
+  { file: "app/api/files/[kind]/[id]/route.ts", name: "GET", why: "The one file route (D-019, D-039): the check is per record, not one tick. resolveFile asks mayOpenReceipt (the funds type's See tick and the request's branches, or the requester) or mayOpenStageFile (See loan files and the job or the loan's branch); anything else is 404.", mustContain: "resolveFile(" },
   { file: "app/actions/email.ts", name: "myEmailPreferenceAction", why: "The signed-in person's own email choice (non-urgent emails on or off).", mustContain: "getCurrentUser(" },
 ];
 

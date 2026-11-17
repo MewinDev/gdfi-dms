@@ -2,7 +2,7 @@ import "server-only";
 import { borrowerChangedLoanIds } from "./borrower-review";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { inScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
+import { inScope, loanRelationScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
 import { getHolidaySet, getTatMap } from "@/lib/settings";
 import { loanTat, assignDeadline, type TatMap } from "@/lib/workflow/tat";
 import { nextStepFor, type NextStepText } from "@/lib/workflow/stage-map";
@@ -210,8 +210,19 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
   return rows;
 }
 
-export async function unreadNotificationCount(userId: string) {
-  return prisma.notification.count({ where: { userId, readAt: null } });
+/**
+ * A person's updates within their branch access (D-019): an update about a loan outside their branches is
+ * not listed or counted (its link would be "not found"). Updates with no loan, and those about the person's
+ * own jobs and funds (the own-job rule, D-039), stay.
+ */
+export function notificationWhere(user: CurrentUser): Prisma.NotificationWhereInput {
+  const scope = loanRelationScope(user);
+  if (!scope.loan) return { userId: user.id };
+  return { userId: user.id, OR: [{ loanId: null }, scope, { link: { startsWith: "/jobs/" } }, { link: { startsWith: "/my-funds" } }] };
+}
+
+export async function unreadNotificationCount(user: CurrentUser) {
+  return prisma.notification.count({ where: { AND: [notificationWhere(user), { readAt: null }] } });
 }
 
 /** The distinct cash advances that fund this loan's transactions. */

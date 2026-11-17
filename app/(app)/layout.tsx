@@ -8,7 +8,7 @@ import { appEnv } from "@/lib/env";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const unread = await unreadNotificationCount(user.id);
+  const unread = await unreadNotificationCount(user);
   // Every item follows the person's permissions (no role names).
   const worksLoans = can(user, PERMISSIONS.CHECKLIST_TICK); // Loan Associate workspace: "My loans", Find loan
   const settings = SETTINGS_PERMISSIONS.some((p) => can(user, p));

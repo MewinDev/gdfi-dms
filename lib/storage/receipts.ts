@@ -12,7 +12,15 @@ export interface ReceiptStore {
   get(key: string): Promise<Uint8Array>;
 }
 
-const ROOT = path.resolve(process.env.RECEIPTS_DIR ?? path.join(process.cwd(), "storage", "receipts"));
+/** Is this folder inside public/ (served to anyone as a static file)? Stored files must never be (D-019). */
+export function isUnderPublic(dir: string, cwd: string = process.cwd()): boolean {
+  const rel = path.relative(path.resolve(cwd, "public"), path.resolve(cwd, dir));
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+export const RECEIPTS_ROOT = path.resolve(process.env.RECEIPTS_DIR ?? path.join(process.cwd(), "storage", "receipts"));
+if (isUnderPublic(RECEIPTS_ROOT)) throw new Error("RECEIPTS_DIR must not be inside public/: stored files are opened only through /api/files (D-019).");
+const ROOT = RECEIPTS_ROOT;
 const KEY = /^[0-9a-f-]{36}\.(png|jpg|pdf|webp)$/;
 
 export const localStore: ReceiptStore = {
