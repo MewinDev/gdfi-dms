@@ -18,7 +18,7 @@ test("cards are grouped under four headings, in order; Jump to scrolls to a grou
     ["Company setup", ["Branches", "LTO offices", "Loan types", "Product classification"]],
     ["People and access", ["Permissions", "Processor capacity"]], // Admin: the matrix read-only; Roles and access is the Superadmin's (D-023); users: the Users page
     ["Documents and steps", ["Transaction types", "Document types", "Checklist items", "Processing stages", "Problem reasons", "Hold reasons", "Return reasons", "Missing paper reasons"]],
-    ["Time and money", ["Turnaround times", "Holidays", "Cash-advance rules", "Expense kinds", "Funds types", "Approval bands"]],
+    ["Time and money", ["Turnaround times", "Inbox waiting colours", "Holidays", "Cash-advance rules", "Expense kinds", "Funds types", "Approval bands"]],
     ["System and testing", ["System and test mode", "MyLoans sync", "Email notifications", "Test data"]],
   ];
   for (const [g, cards] of groups) {

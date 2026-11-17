@@ -883,6 +883,59 @@ The existing `DpAssignment` / `DocumentMovement` records keep working. The engin
 
 ---
 
+### 11.1 Piece 10a build plan (18 November 2026, D-047): for confirmation before building
+
+**What 10a builds** (on the mock, through the piece 6 client):
+
+1. **Find loan and Refresh on API 1:**
+   - The order is unchanged: check the PN → the DMS → myloans (API 1).
+   - The answers, in plain words (`readApi1`):
+     - 404: "PN not found in myloans. Check the number."
+     - 422: a status card that says why from FeedState (Cancelled, Inactive, Not released, or "This copy was redone in myloans. Replaced by GD…"), with a link when that PN is already in the DMS.
+     - 409: the single selectable row is used and Admin is alerted; with none selectable: "Multiple records in myloans, contact Admin." and Admin is alerted.
+   - `IsSelectable` replaces the "status 12 only" and "statuses 15 to 19 are not loans" rules.
+   - `ReleaseDate` becomes the Manila date.
+   - The hourly limit, the breaker, the 60-second cache and the "MyLoans is busy" wording stay.
+2. **Identity saved on open:** `cin`, `externalLoanId` and `contentHash`, with a `LoanSourceIdentity` row (one per myloans copy, for redo history; piece 7 adds to it). The database prevents duplicates (`Loan.pn` unique and a unique `externalLoanId`), and a race between two people opening the same PN opens it once.
+3. **The PN search log** (`PnSearchLog`):
+   - What it records: who, the PN typed, the outcome (INVALID, FOUND_IN_DMS, NOT_FOUND, NOT_SELECTABLE, MULTIPLE, BUSY, OPENED), the myloans status and FeedState, the loan's branch when known, and when.
+   - Where: Reports, "PN searches", with filters and Download CSV.
+4. **"Released, not yet in the DMS"** (the pool's LOAN_CANDIDATE item): Accept opens Find loan with the PN (already built), and opening it closes the item.
+5. **The old adapter retires for Find loan and Refresh.** The background refresh (the old sync) stays until piece 7 replaces it with API 2. The kit and the tests use the mock's tables, and the simulator's "MyLoans change" buttons write to them, so the change shows on Refresh.
+6. **Tests:**
+   - every outcome logged;
+   - 404 / 422 (Replaced by) / 409 with one selectable / 409 with none;
+   - open twice at the same moment opens one file;
+   - the identity saved;
+   - the pool item opens and closes once;
+   - Refresh on a cancelled copy;
+   - e2e Find loan with each answer, and the Search log page.
+
+**Decisions needed:**
+
+- **(a) Fields not in the agreed contract.** Today's loan file reads 5 fields the agreed query does not send:
+  - the borrower's address;
+  - the borrower's contact number;
+  - the vehicle (plate, engine, chassis, make);
+  - previous PN (the replacement guess);
+  - payment recorded.
+
+  **Recommendation:**
+  - Keep address and contact as DMS fields, empty from myloans for now, and ask myloans to add `Address` and `ContactNo` to the query (a new request, R-item). The "Borrower details" review keeps working on name, CIF and CIN.
+  - The vehicle stays a DMS-entered field.
+  - The replacement guess is replaced by the contract's own redo link (`ReplacedByExternalLoanId` / `ReplacedByPNNo`), so the "Link as replacement" suggestion goes.
+  - Payment recorded stays unknown (as today).
+- **(b) Who sees the PN search log:** a new tick "See PN searches" (`reports:pnsearch`), on by default for Admin and LA Supervisor/Head, scoped to the reader's branches by the searcher's home branch (and the loan's branch when known). **Recommendation:** yes.
+- **(c) Two small items from the old plan.**
+  - Exact decimals for rule 4: refuse "1,000" and "1e6", and compare as decimal strings (Q16).
+  - A partial unique index on (`loanId`, `typeId`) for active transactions.
+
+  **Recommendation:** include both.
+
+**Effort:** 2 to 3 days (was 1 to 2; the identity table and the contract fields add a day).
+
+---
+
 ## 12. Piece 11: Branches and products (APIs 4 and 5)
 
 - **Branches:** the live adapter's `listBranches` uses API 4. The mock serves it. Renames are applied and logged (D-012). Existing Branch review is kept for new or unknown branches.

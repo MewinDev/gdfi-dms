@@ -28,7 +28,11 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
   - `tests/contract` (`npm run test:contract`).
 
   See `docs/myloans/mock-and-contract.md`. Find loan and Refresh still use the old adapter (moved in 10a).
-- **Next: piece 10a** (plan first). Wait for the project owner.
+- **Last runs (18 November 2026, after piece 6):**
+  - vitest: 1,328 passed, 1 skipped;
+  - full e2e: 197 / 197 / 194 with 2 failures at each width, both test-side. Settings counted 6 cards, not 7. The monitoring fixture counted Monday to Friday, where the app counts Monday to Saturday. Both fixed and rerun green at all widths;
+  - tsc and lint clean; kit rebuilt on 022 with the demo items.
+- **Next: piece 10a**, plan in IMPLEMENTATION_PLAN.md 11.1, decisions (a) to (c) pending. Wait for the project owner.
 - **Open small items:** none from pieces 4, 5 and 9 (the funds-types CSV has `liquidation_due_days`; Correct due date is also on LA items in the Inbox).
 - Decisions: `docs/DECISIONS.md` (D-001 to D-041); plan: `IMPLEMENTATION_PLAN.md` (piece 5 is section 6; myloans round 3 is 7.3).
 
