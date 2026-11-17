@@ -178,11 +178,11 @@ test("Role editor: the Print liquidation report tick, the LA Supervisor/Head rol
 
   await page.goto(`/admin/settings?open=roles&edit=${sup.id}`);
   await expect(page.getByRole("dialog")).toContainText("Roles and access: LA Supervisor/Head");
-  // D-010: every LA tick plus the Open Item approver ticks; moving holds is a per-user grant now, not the role's.
-  for (const k of ["loans:view", ...OPEN_ITEM_APPROVER_KEYS]) {
+  // D-010, D-029: every LA tick, the Open Item approver ticks and moving holds.
+  for (const k of ["loans:view", ...OPEN_ITEM_APPROVER_KEYS, "holds:transfer"]) {
     await expect(page.locator(`[data-perm="${k}"]`).getByRole("checkbox"), k).toBeChecked();
   }
-  for (const k of ["holds:transfer", "funds:ca_approve", "funds:ft_release", "roles:manage", "users:edit", "branches:import", "settings:system"]) {
+  for (const k of ["funds:ca_approve", "funds:ft_release", "roles:manage", "users:edit", "branches:import", "settings:system"]) {
     await expect(page.locator(`[data-perm="${k}"]`).getByRole("checkbox"), k).not.toBeChecked();
   }
   await expect(page.locator('[data-perm="holds:transfer"]')).toContainText("Move a hold to another person");

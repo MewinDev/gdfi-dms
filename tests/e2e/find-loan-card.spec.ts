@@ -149,7 +149,7 @@ test("both chosen: the buttons fill navy with a check, one choice each, keyboard
   const setup = c.locator("[data-setup]");
   await expect(setup.locator("[data-setup-txns]")).toHaveText("Notary, EDST, Entry of PPSR, Mortgage");
   await expect(setup.locator("li")).toHaveText([
-    "This is a Financing loan: the product name has the word Financing.",
+    'This is a Financing loan: the product name contains "financ".',
     "Undertaking answer required · This is a Financing loan, answered Undertaking.",
     "OR/CR transfer check · The OR/CR is transferred, so the amount is checked for a Mortgage.",
     "Mortgage needed · This is a Renewal loan of ₱1,000,000 or below.",
@@ -180,7 +180,7 @@ test("Refinancing: nothing to answer, What will be set up at once", async ({ pag
   const c = card(page);
   await expect(c.getByRole("radiogroup")).toHaveCount(0);
   await expect(c.locator("[data-setup] li")).toHaveText([
-    "This is a Refinancing loan: the product name has the word Refinancing.",
+    'This is a Refinancing loan: the product name contains "refinanc".',
     "OR/CR transfer check · A Refinancing loan skips the OR/CR question, so the amount is checked for a Mortgage.",
     "Mortgage needed · This is a New loan of ₱500,000 or below.",
   ]);

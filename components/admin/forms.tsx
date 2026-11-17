@@ -196,7 +196,7 @@ export function UserEditForm({
         </div>
         <div className="sm:col-span-2">
           <label htmlFor={`u-role-${uid}`} className="label">Role</label>
-          <select id={`u-role-${uid}`} name="roleId" defaultValue={user?.roleId ?? roles.find((r) => r.canSignIn)?.id} className="input" aria-invalid={!!err("roleId")}>
+          <select id={`u-role-${uid}`} name="roleId" defaultValue={user?.roleId ?? (roles.find((r) => r.canSignIn && r.active && !r.allByDefault) ?? roles.find((r) => r.canSignIn))?.id /* a new person: a branch role first (Loan Associate), not the Superadmin at the top of the list */} className="input" aria-invalid={!!err("roleId")}>
             {roles.map((r) => <option key={r.id} value={r.id}>{r.name}{!r.active ? " · Inactive" : r.canSignIn ? "" : r.builtIn ? " (not signed in yet)" : " (test users in test mode)"}</option>)}
           </select>
           <p className="help">Every built-in role may sign in. Custom roles: test users in test mode only. You can only give a role whose permissions you have yourself, unless you manage permissions.</p>

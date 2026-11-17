@@ -232,8 +232,9 @@ async function UsersModal({
     .filter((r) => r.active || r.id === u?.roleId)
     .map((r) => ({ id: r.id, name: r.name, canSignIn: r.canSignIn, builtIn: r.builtIn, active: r.active, permissions: [...effectivePermissions(r)].map(permissionLabel), admin: false, allByDefault: r.branchAccess === "ALL" }));
   const tree = await accessTreeData();
-  // A new user starts with the default of the first role offered (All for roles whose default is All).
-  const firstRole = roles.find((r) => r.active && r.canSignIn);
+  // A new user starts with the role the form selects first (a branch role, not the Superadmin at the top of
+  // the list; components/admin/forms.tsx) and that role's default access.
+  const firstRole = roles.find((r) => r.active && r.canSignIn && r.branchAccess !== "ALL") ?? roles.find((r) => r.active && r.canSignIn);
   const initial = u
     ? { all: u.allBranches, grants: u.accessGrants.map((g) => ({ kind: g.kind, divisionId: g.divisionId, areaId: g.areaId, branchId: g.branchId, exclude: g.exclude })), homeBranchId: u.homeBranchId }
     : { all: firstRole?.branchAccess === "ALL", grants: [], homeBranchId: null };

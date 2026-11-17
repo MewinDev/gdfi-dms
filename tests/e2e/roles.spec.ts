@@ -84,7 +84,7 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   const csv = readFileSync(await dl.path()!, "utf8");
   expect(csv.startsWith("﻿area,permission,key,")).toBe(true);
   expect(csv).toContain("Z Branch Checker");
-  expect(csv).toMatch(/Transactions and papers,Tick papers,checklist:tick,Yes,No/); // Loan Associate Yes, Admin No
+  expect(csv).toMatch(/Transactions and papers,Tick papers,checklist:tick,No,Yes,No/); // Superadmin No, Loan Associate Yes, Admin No
 
   // Assign it to a new test user.
   await page.goto("/admin/users?open=user&edit=new");
@@ -119,7 +119,7 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   await expect(page).toHaveURL(new RegExp(`role=${role.id}`));
   await page.getByRole("link", { name: "Edit Zed Checker" }).click();
   const edit = page.getByRole("dialog", { name: "Edit Zed Checker" });
-  await edit.getByLabel("Role").selectOption({ label: "Loan Associate" });
+  await edit.locator('select[name="roleId"]').selectOption({ label: "Loan Associate" });
   await edit.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("alertdialog").getByText(/Zed Checker will lose: nothing\. And gain: .*Open a loan file.*Send to a processor/)).toBeVisible();
   await page.getByRole("alertdialog").getByRole("button", { name: "Change role and save" }).click();

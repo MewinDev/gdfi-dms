@@ -181,7 +181,8 @@ test("3. Borrower details: chip, old and new side by side, read-only for the LA;
   await expect(entry).toContainText("Changed: Name, Address, Contact number.");
   await entry.getByRole("button", { name: "See the change" }).click();
   const sheet = page.getByRole("dialog", { name: /^MyLoans corrected the borrower's details/ });
-  await expect(sheet.locator("[data-borrower-waiting]")).toHaveText("No supervisor or approver in this branch. Admin reviews it.");
+  await expect(sheet.locator("[data-borrower-waiting]")).toHaveText("Waiting for review by an approver for this branch."); // D-029: Admin (All branches) decides; no fallback
+  await expect(sheet.locator("[data-no-branch-approver]")).toContainText("No approver assigned to this branch.");
   await expect(sheet.getByRole("button", { name: "Accept the correction" })).toHaveCount(0);
   await expect(sheet.locator('[data-diff="now"]').filter({ visible: true }).first()).toBeVisible();
   await noSideways(page);
