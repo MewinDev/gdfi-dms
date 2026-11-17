@@ -513,3 +513,21 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - Existing Finance people keep the access they have (the role migration lists those with All branches); only the role's default changed.
   - Seed: Test Finance (CA + FT, All branches), Test Finance Cash (CA only, Antipolo and Angono), Test Finance Transfer (FT only, Alaminos).
 - **Reason:** the user's decision; funds work follows branch scope like every other screen (D-019).
+
+## D-036 myloans contract, round 2 (amends D-016 and D-022)
+
+- **Date:** 17 November 2026
+- **Decision:** the DMS follows myloans' round 2 contract (`docs/myloans-api-contract.sql`, reference only; `docs/MYLOANS_ANSWERS_R2.md`):
+  1. ContentHash has 18 fields (18 = `ReplacedByExternalLoanId`). The DMS only compares hash strings; it never recomputes them in production.
+  2. API 2 pages are cut by loan: `{ runStartedAt, items, nextAfterId }`; `nextAfterId` null is the last page; an empty page is `items: []` with null. Page 1's `runStartedAt` is kept for the run; the checkpoint (it minus 5 minutes) is saved only after every page succeeded.
+  3. `RowsForThisLoan` > 1: a duplicate alert to Admin with the rows logged, and no Open Items for that loan in that run.
+  4. API 1: 404 not found; 422 not selectable (FeedState and "Replaced by <PN>"); 200; 409: log all rows, use the single selectable row if there is exactly one, else "Multiple records in myloans, contact Admin." and an alert.
+  5. API 3 is dropped: the Refresh button calls API 1.
+  6. All 5 FeedStates are handled in API 2 as well (NotReleased can appear for an ever-released loan).
+  7. Redo chains: the CIN always links to its current live transaction; a new `ExternalLoanId` for a known CIN raises "record replaced" (rule b), even if older copies are never re-sent.
+  8. API 5: the full product list each sync; renames by `ProductID` re-run the keyword classification and flag the loans that flip.
+  9. The mock implements the real hash (SHA-256 over UTF-16LE, lowercase hex, NULL = empty text) and the round 2 scenarios; the test of myloans' 3 vectors is skipped until they send the outputs.
+  10. "Loan closed/released" stays blocked until myloans finds the paid/closed source (their check R2-4).
+- **Built now:** `lib/myloans/r2/` (contract types, hash, mock, sync planning; tested). The database side (Open Items, checkpoint row, alerts, the product table) comes with pieces 6 to 8 and 11.
+- **Reply:** `docs/MYLOANS_REPLY_3.md` (filtered unique indexes with `<> N''`, optional; the application_code index recommended; the NotReleased correction; 200 vs 409; re-generated test vectors; what is still needed).
+- **Reason:** the agreed contract; paging by loan already protects the DMS from duplicates.

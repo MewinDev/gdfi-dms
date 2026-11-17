@@ -351,7 +351,7 @@ Finance runs first, then all roles. A user with no scope sees nothing.
 | API 1 `GET /loans/{pnNo}` | The query returns **0–2 rows, any status** (`TOP 2`). The API layer maps them: no row → 404; no selectable row → 422 with `TransactionStatusId`, `FeedState` and, for a redo, `ReplacedByPNNo`; a selectable row → 200. The 404 / 422 mapping is v2 §11.1, still to be confirmed with myloans |
 | API 2 change mode `GET /loans/changes?since=&afterId=&limit=500` | Loans **ever released** (they have a ReleaseDate) and changed after `since`, in **any FeedState**. `since` is **fixed for the whole run**. Pages are `ORDER BY ExternalLoanId` with `id > afterId`. **Every row** carries `RunStartedAt`; each page has its own, and the DMS uses page 1's. The query has no `nextCursor`: the next `afterId` is the last row's id. A page with fewer than 500 rows is the last; an exactly full last page is followed by an empty page |
 | Pool mode (first load) `GET /loans/changes?releasedSince=&afterId=&limit=500` (URL proposed; the query defines the mode, not the URL) | Only `FeedState = Released` loans released on or after the cutoff, paged the same way (D-022 #9) |
-| API 3 `GET /loans/{pnNo}/freshness` | **Not in the query.** Until myloans confirms whether API 3 exists, the mock offers it as API 1's row cut down to PNNo, TransactionStatusId, TransactionIsActive, SourceUpdatedAt and ContentHash |
+| ~~API 3 freshness~~ | **Dropped (myloans round 2, D-036).** The Refresh button calls API 1 for that PN #; API 1 returns the loan in any state, so a refresh also shows a cancellation or a redo. Nothing in the mock or the code calls API 3 |
 | API 4 `GET /branches` | Branches |
 | API 5 `GET /products` | Products |
 
@@ -388,7 +388,7 @@ The query picks the **first** state that applies, in this order:
 So a loan that is cancelled **and then redone** stays `Cancelled`, never `Superseded`, but it still carries `ReplacedByExternalLoanId` / `ReplacedByPNNo`.
 
 **ContentHash** is computed in the mock exactly as the query does:
-- SHA-256 over the UTF-16LE text of `CONCAT` of 17 fields joined by `|`, in this order: FeedState, PN, status id, is_active, CIF, first, middle, last, suffix, birth date (style 126), LoanID, LoanClass, borrower company name, amount, release date (+08:00, style 126), ProductCode, BranchID.
+- **Round 2 (D-036): 18 fields** (field 18 = `ReplacedByExternalLoanId`). SHA-256 over the UTF-16LE text of `CONCAT` of the fields joined by `|`, in this order: FeedState, PN, status id, is_active, CIF, first, middle, last, suffix, birth date (style 126), LoanID, LoanClass, borrower company name, amount, release date (+08:00, style 126), ProductCode, BranchID.
 - **NULL counts as empty text** (no `~` marker).
 - Output: 64 lowercase hex characters.
 - `ReplacedByExternalLoanId` is **not** in today's hash (requested in `docs/MYLOANS_REPLY_2.md`). The mock has a switch to add it once myloans does.
@@ -398,7 +398,7 @@ So a loan that is cancelled **and then redone** stays `Cancelled`, never `Supers
 
 | # | The plan said | The actual query | Now |
 |---|---|---|---|
-| 1 | API 3 freshness exists | No API 3 mode; only API 1, API 2 and Pool | On-demand refresh uses API 1; API 3 is to confirm |
+| 1 | API 3 freshness exists | No API 3 | **Dropped (D-036):** on-demand refresh uses API 1 |
 | 2 | API 1: 404 / 422 / 200 | The query returns 0–2 rows of any status; the HTTP codes are the API's job | Mapping kept, marked "to confirm"; 422 explains why from FeedState and `ReplacedByPNNo` |
 | 3 | `RunStartedAt` on page 1 | On **every row**, set per call | The DMS uses page 1's value |
 | 4 | Fields as summarized | Also `ReplacedByPNNo`, `ProductID`, org ids and names, `BranchCode`, and **two** company fields | Field list corrected. `BorrowerCompanyName` is a monitored loan field; `CompanyName` is reference data |
@@ -432,6 +432,23 @@ Settings → Test data has a "myloans mock" panel (local only) to fire each scen
 **Tests:** contract tests on the mock (status codes, `afterId` paging, fixed `since`, `runStartedAt`, exactly 500, pool mode, 2-row API 1) and on the adapter's zod parsing of every response.
 
 ---
+
+### 7.2 Round 2 contract (17 Nov 2026, D-036)
+
+The agreed query is `docs/myloans-api-contract.sql` (reference only, never run by the DMS); myloans' answers are `docs/MYLOANS_ANSWERS_R2.md`. Built now as pure, tested code in `lib/myloans/r2/` (the database side comes with pieces 7 and 8):
+
+| # | Contract | Where |
+|---|---|---|
+| 1 | **ContentHash = 18 fields** (18 = `ReplacedByExternalLoanId`). The DMS only **compares** hash strings; it never recomputes them in production | `hash.ts` (mock and test vectors only) |
+| 2 | **Paging by loan:** `{ runStartedAt, items, nextAfterId }`; `nextAfterId` null = last page; empty page = `items: []` and null. Page 1's `runStartedAt` is kept for the run; checkpoint = it minus 5 minutes, saved **only after every page succeeded** | `sync-plan.ts` `fetchRun` |
+| 3 | `RowsForThisLoan` > 1 (or two rows for one loan): **duplicate alert** to Admin with the rows logged; **no Open Items** for that loan in that run | `planRun` |
+| 4 | **API 1 codes:** 404 not found; 422 not selectable (FeedState and "Replaced by <PN>"); 200; 409 several rows: log all, use the single `IsSelectable = 1` row if there is exactly one, else "Multiple records in myloans, contact Admin." and alert | `contract.ts` `readApi1` |
+| 5 | **API 3 dropped:** Refresh calls API 1 | plan rows above |
+| 6 | **All 5 FeedStates in API 2 too:** `NotReleased` can appear for an ever-released loan whose status left 12 (myloans' note says otherwise; corrected in `docs/MYLOANS_REPLY_3.md`) | `planRun`, mock |
+| 7 | **Redo chains:** the CIN always links to its current live transaction. A new `ExternalLoanId` for a known CIN raises "record replaced" (rule b), even if the older copies are never re-sent | `planRun` |
+| 8 | **API 5 products:** the full list each sync (`UpdatedAt` may not exist); renames by `ProductID`; re-run the keyword classification; flag "Classification changed since accepted" on the loans that flip | `productRenames`, `classificationFlips` |
+| 9 | **Mock:** SHA-256 over UTF-16LE of HashInput, lowercase hex, NULL = empty text, 18 fields. Scenarios: page cut by loan with a duplicate row, 409 on API 1, redo chain of 3, NotReleased in API 2, product rename that flips the classification. The test of myloans' 3 vectors is **skipped until they send the outputs** | `mock.ts`, `r2.test.ts` |
+| 10 | **"Loan closed/released" stays BLOCKED** until myloans finds the paid/closed source (their check R2-4) | stage map, piece 9 |
 
 ## 8. Piece 7: myloans sync (D-005, D-016 as amended by D-022)
 
