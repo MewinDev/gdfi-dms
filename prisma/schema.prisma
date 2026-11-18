@@ -796,10 +796,6 @@ model Loan {
   cif                 String?
   sourceLoanId        String?
   borrowerName        String
-  /// The borrower's address and contact number as the DMS shows them (MyLoans' values, changed only when a
-  /// "Borrower details" correction is accepted).
-  borrowerAddress     String?
-  borrowerContactNo   String?
   branchId            String
   branch              Branch   @relation(fields: [branchId], references: [id])
   loanType            String
@@ -876,6 +872,8 @@ model Loan {
   snapshots        LoanSourceSnapshot[]
   sourceChanges    SourceChange[]
   transactions     LoanTransaction[]
+  /// D-050: every myloans copy this loan file was read from (one row per ExternalLoanId; piece 7 adds redo copies).
+  sourceIdentities LoanSourceIdentity[]
   documents        DocumentItem[]
   dpAssignments    DpAssignment[]
   problems         Problem[]
@@ -891,6 +889,10 @@ model Loan {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// D-050: myloans' transaction id (ExternalLoanId) and the contract hash, saved when the loan file is opened.
+  externalLoanId      Int?     @unique
+  contentHash         String?
 
   @@index([branchId, stage])
   @@index([cin])
@@ -2252,4 +2254,42 @@ model Product {
   updatedAt           DateTime        @updatedAt
 
   @@index([code])
+}
+
+/// D-050: a myloans copy (ExternalLoanId) a loan file was read from. The first is saved on open; piece 7 adds redo copies.
+model LoanSourceIdentity {
+  id             String   @id @default(cuid())
+  loanId         String
+  loan           Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  externalLoanId Int
+  cin            String?
+  pnNo           String?
+  contentHash    String?
+  feedState      String?
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+
+  @@unique([loanId, externalLoanId])
+  @@index([externalLoanId])
+}
+
+/// D-050: every PN # search on Find loan (who, the PN typed, the outcome, when). Reports, PN searches.
+model PnSearchLog {
+  id               String   @id @default(cuid())
+  userId           String
+  userLabel        String
+  /// The searcher's home branch at the time (the log is scoped by it, and by the loan's branch when known).
+  searcherBranchId String?
+  pn               String
+  /// INVALID, FOUND_IN_DMS, NOT_FOUND, NOT_SELECTABLE, MULTIPLE, BUSY, UNAVAILABLE, REFUSED, PREVIEW, OPENED.
+  outcome          String
+  statusId         String?
+  feedState        String?
+  loanBranchId     String?
+  at               DateTime @default(now())
+
+  @@index([at])
+  @@index([pn])
+  @@index([loanBranchId, at])
+  @@index([searcherBranchId, at])
 }

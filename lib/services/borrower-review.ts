@@ -13,7 +13,7 @@ import { fmtDateTime } from "@/lib/time";
 import { UserError, NotInScopeError } from "./errors";
 
 /**
- * "Borrower details" (name, address, contact number, CIF, CIN): MyLoans corrects the borrower, a person
+ * "Borrower details" (name, CIF, CIN; no address or contact number, D-051): MyLoans corrects the borrower, a person
  * decides. Never a silent update and never a block on Send, Accept or funds. One open item per loan (apart
  * from the Admin item for amount, status and replacement); a newer correction updates it and keeps the
  * earlier one in its history. Decided by anyone with myloans:review_borrower whose access includes the
@@ -26,11 +26,9 @@ type Mode = "MANUAL" | "AUTOMATIC" | "SIMULATED";
 export type BorrowerKey = (typeof BORROWER_KEYS)[number];
 
 /** Where the DMS keeps each one (what the screens show until a correction is accepted). */
-const COLUMN: Record<BorrowerKey, "borrowerName" | "borrowerAddress" | "borrowerContactNo" | "cif" | "cin"> = {
-  borrowerName: "borrowerName", address: "borrowerAddress", contactNo: "borrowerContactNo", cif: "cif", cin: "cin",
-};
-export const BORROWER_SELECT = { borrowerName: true, borrowerAddress: true, borrowerContactNo: true, cif: true, cin: true } as const;
-type DmsBorrower = { borrowerName: string; borrowerAddress: string | null; borrowerContactNo: string | null; cif: string | null; cin: string | null };
+const COLUMN: Record<BorrowerKey, "borrowerName" | "cif" | "cin"> = { borrowerName: "borrowerName", cif: "cif", cin: "cin" };
+export const BORROWER_SELECT = { borrowerName: true, cif: true, cin: true } as const;
+type DmsBorrower = { borrowerName: string; cif: string | null; cin: string | null };
 
 const norm = (v: unknown) => {
   const t = v === undefined || v === null ? "" : String(v).replace(/\s+/g, " ").trim();

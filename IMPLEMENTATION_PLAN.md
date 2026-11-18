@@ -728,6 +728,41 @@ The old sync settings (tiers, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hour
 
 ---
 
+### 8.10 Piece 7 build plan (18 November 2026): for confirmation before building
+
+On the mock, through the piece 6 client (`changesPage`, `poolPage`) and the round 3 logic already tested (`fetchRun`, `planRun`).
+
+1. **Run engine:**
+   - a `SyncRun` table (start, end, mode, pages, rows, decisions by kind, errors, checkpoint before and after) and a lease row (`SyncLease`), so two runs never overlap;
+   - the fixed `since` per run;
+   - pages by `afterId`;
+   - the checkpoint is saved only after every page succeeds (page 1's RunStartedAt minus 5 minutes);
+   - Retry-After and retries; Admin and Superadmin are alerted after N failed runs in a row (a setting, 3).
+2. **Modes:**
+   - **change** runs on an interval (a setting);
+   - the **daily catch-up** (02:00 Manila, the last 26 hours, D-049);
+   - the one-time **first load** (pool mode from the cutoff date, a Superadmin setting).
+   - The cron route calls one function; "Run now" stays for Admin.
+3. **Row handling** (8.3) **with what exists until piece 8:** the duplicate alert, "same hash, no action", redo (a) and (b), "away from Released", field differences and reference-name renames are each mapped onto **today's review items** (one per loan, the existing Apply / Keep current / Link screens). Piece 8 then splits them into per-field Open Items with approver queues.
+4. **Unknown released CINs** go into a `SourceLoanCandidate` table now. They appear in the branch pool in **10b** (the feed hook built in piece 9).
+5. **The old tiered background refresh retires** once API 2 runs: tiers, per-loan polling, `nextCheckAt` and the hourly background budget. Refresh on a loan file and Find loan stay on API 1.
+6. **Screens:** Settings, MyLoans sync shows the run log (last 50 runs, with counts and errors), the interval, the catch-up time and window, the alert threshold, the first-load cutoff and Run now. Each is audited.
+7. **Tests:**
+   - the mock scenarios: duplicate row, redo chain of 3, redo without a cancellation, NotReleased, exactly 500 rows, page 2 fails (no checkpoint), timestamp-only change, product and branch rename;
+   - the catch-up finding a change the normal run missed (a wrong time label);
+   - the lease against two concurrent runs;
+   - the old background refresh gone;
+   - e2e: Settings, MyLoans sync, run log and Run now.
+
+**Decisions needed:**
+- **(a)** Until piece 8, changes found by API 2 raise today's review items (one per loan). I recommend yes.
+- **(b)** Retire the tiered background refresh when API 2 runs. I recommend yes.
+- **(c)** Store unknown released loans now, and show them in the pool in 10b. I recommend yes.
+
+**Effort:** 5 to 7 days.
+
+---
+
 ## 9. Piece 8: Open Items (D-004, D-010 to D-013)
 
 ### 9.1 Model

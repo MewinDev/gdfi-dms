@@ -1,10 +1,9 @@
 import "server-only";
 import { prisma, type Tx } from "@/lib/db";
-import { getSetting } from "@/lib/settings";
 import { businessDate } from "@/lib/time";
 import { trackedOf, type Tracked } from "@/lib/myloans/changes";
 import { mapLoan } from "@/lib/myloans/live-mapping";
-import { classifyRelation, isEnded, type Relation, type RelLoan } from "@/lib/myloans/relation";
+import { isEnded, type Relation, type RelLoan } from "@/lib/myloans/relation";
 import type { MyLoansRecord } from "@/lib/myloans/types";
 
 /**
@@ -13,7 +12,8 @@ import type { MyLoansRecord } from "@/lib/myloans/types";
  */
 
 type Db = Tx | typeof prisma;
-export type RelationTag = "REPLACES" | "REPLACED_BY" | "POSSIBLE" | "ADDITIONAL";
+/** D-051: linked (replaces / replaced by), or simply the same borrower (no guessed tag). */
+export type RelationTag = "REPLACES" | "REPLACED_BY" | "SAME_BORROWER";
 
 export const RELATED_SELECT = {
   id: true, pn: true, branchId: true, cin: true, cif: true, stage: true, sourceStatus: true, productName: true, loanType: true,
@@ -74,24 +74,24 @@ export async function relatedLoans(db: Db, loan: LoanLite): Promise<Related[]> {
   if (!or.length) return [];
   const others = await db.loan.findMany({ where: { OR: or, id: { not: loan.id } }, select: RELATED_SELECT, orderBy: { releasedAt: "desc" }, take: 50 });
   if (!others.length) return [];
-  const [copies, windowDays] = await Promise.all([latestCopies(db, [loan.id, ...others.map((o) => o.id)]), getSetting("myloans.replacementWindowDays", db)]);
+  const copies = await latestCopies(db, [loan.id, ...others.map((o) => o.id)]);
   const me = relLoanOf(loan, copies.get(loan.id));
   return others.map((o) => {
     const it = relLoanOf(o, copies.get(o.id));
     // The old one: the one that ended in MyLoans; otherwise the one released first.
     const otherIsOld = isEnded(it.status) && !isEnded(me.status) ? true : isEnded(me.status) && !isEnded(it.status) ? false : o.releasedAt <= loan.releasedAt;
-    const [oldR, newR, oldId] = otherIsOld ? [it, me, o.id] : [me, it, loan.id];
-    const base = { loan: o, oldPn: oldR.pn, newPn: newR.pn, paymentRecorded: copies.get(oldId)?.record?.paymentRecorded, status: it.status };
+    const [oldR, newR] = otherIsOld ? [it, me] : [me, it];
+    // D-051: payment recorded is unknown (the paid / closed source is Phase C).
+    const base = { loan: o, oldPn: oldR.pn, newPn: newR.pn, paymentRecorded: undefined, status: it.status };
     if (loan.replacesPn === o.pn || o.replacedByPn === loan.pn) return { ...base, tag: "REPLACED_BY" as const, relation: null };
     if (o.replacesPn === loan.pn || loan.replacedByPn === o.pn) return { ...base, tag: "REPLACES" as const, relation: null };
-    const relation = classifyRelation(oldR, newR, { windowDays });
-    // Already linked to something else: not a candidate again.
-    const linked = (otherIsOld ? o.replacedByPn : loan.replacedByPn) || (otherIsOld ? loan.replacesPn : o.replacesPn);
-    return { ...base, tag: relation.kind === "REPLACEMENT_CANDIDATE" && !linked ? "POSSIBLE" as const : "ADDITIONAL" as const, relation };
+    // D-051: no replacement / additional-unit guess (it returns with vehicle data from myloans, Phase B).
+    return { ...base, tag: "SAME_BORROWER" as const, relation: null };
   });
 }
 
-/** Possible replacements for a loan that ended in MyLoans (it is the old one). */
-export async function replacementCandidates(db: Db, loan: LoanLite): Promise<Related[]> {
-  return (await relatedLoans(db, loan)).filter((r) => r.tag === "POSSIBLE" && r.oldPn === loan.pn);
+/** D-051: no guessed replacements. A redo is named by myloans ("Replaced by"); Admin may still link by hand. */
+export async function replacementCandidates(_db: Db, _loan: LoanLite): Promise<Related[]> {
+  void _db; void _loan;
+  return [];
 }

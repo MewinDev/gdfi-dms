@@ -65,6 +65,11 @@ export async function resetLoanData(tx: Prisma.TransactionClient): Promise<Reset
   await tx.sourceChange.deleteMany({});
   // Simulated MyLoans changes (mock source) go with the sample loans.
   await tx.setting.deleteMany({ where: { key: { in: ["myloans.mockOverrides", "myloans.mockExtra"] } } });
+  // The myloans mock's own rows (piece 6, 10a): filled again from the samples on the next call, so a simulated change
+  // never outlives the loans.
+  await tx.mockMyLoansTxn.deleteMany({});
+  await tx.mockMyLoansProduct.deleteMany({});
+  await tx.mockMyLoansBranch.deleteMany({});
   const loanFiles = (await tx.loan.deleteMany({})).count;
 
   // Vault slots are reference data; free the ones that held test papers.

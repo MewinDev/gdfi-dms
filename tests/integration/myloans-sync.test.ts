@@ -133,7 +133,8 @@ describe("Refresh rules", () => {
     expect(l.nextCheckAt!.getTime() - l.lastCheckedAt!.getTime()).toBe(240 * 60_000);
     // With the changed-since feed (the mock has one; the cursor is set now): one call, only loans MyLoans changed.
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 0, calls: 1 });
-    await change("GD1012026901001", { address: "5 Mabini St" });
+    // A field the agreed contract sends (D-050: it sends no address).
+    await change("GD1012026901001", { areaName: "LUZON 1 - RIZAL (corrected)" });
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 1, changes: 1, calls: 1 });
     await expect(runSyncNow(la)).rejects.toThrow('Ask a Superadmin to turn on "Run the MyLoans sync now" for your role.');
     await runSyncNow(admin);
@@ -141,7 +142,7 @@ describe("Refresh rules", () => {
     // A loan closed as cancelled is not checked again (no tier).
     const l1 = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026901001" } });
     await prisma.loan.update({ where: { id: l1.id }, data: { cancelledAt: new Date(), syncTier: null, nextCheckAt: null } });
-    await change("GD1012026901001", { address: "6 Mabini St" });
+    await change("GD1012026901001", { areaName: "6 Mabini St" });
     expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ checked: 0 });
   });
 
@@ -272,7 +273,7 @@ describe("Replacement PN", () => {
     expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "source_change_detected", loanId: old.id } })).mode).toBe("SIMULATED");
     // Find loan: the new PN warns about the other open loan of the same borrower.
     const preview = await lookupPn(la, newPn);
-    expect(preview).toMatchObject({ kind: "preview", otherLoans: [PN], replacesPn: PN });
+    expect(preview).toMatchObject({ kind: "preview", replacesPn: PN }); // a redo: the same CIN, the old copy replaced (D-051)
     await openLoanFile(la, { pn: newPn, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     // Only a suggestion: nothing is linked until Admin presses Link as replacement (with a note).
     expect((await prisma.loan.findUniqueOrThrow({ where: { pn: newPn } })).replacesPn).toBeNull();

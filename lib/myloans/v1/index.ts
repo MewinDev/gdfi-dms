@@ -1,5 +1,5 @@
 import "server-only";
-import { myLoansMode } from "@/lib/myloans";
+import { myLoansMode } from "@/lib/myloans/mode";
 import { myLoansBaseUrl } from "@/lib/env";
 import { DbBreakerStore } from "@/lib/myloans/resilience";
 import { MyLoansClientV1, type ClientOptions } from "./client";

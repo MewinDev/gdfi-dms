@@ -10,8 +10,6 @@ import type { MyLoansRecord } from "./types";
 
 export interface Tracked {
   borrowerName: string | null;
-  address: string | null;
-  contactNo: string | null;
   plateNo: string | null;
   engineNo: string | null;
   chassisNo: string | null;
@@ -44,13 +42,11 @@ export interface Tracked {
   isActive: string | null;
 }
 export type TrackedKey = keyof Tracked;
-/** borrower: the borrower's own details (name, address, contact number, CIF, CIN): a review of its own. */
+/** borrower: the borrower's own details (name, CIF, CIN): a review of its own. No address or contact number (D-051, RA 10173). */
 export type FieldKind = "minor" | "borrower" | "material" | "status" | "replacement";
 
 export const FIELDS: Record<TrackedKey, { label: string; kind: FieldKind }> = {
   borrowerName: { label: "Name", kind: "borrower" },
-  address: { label: "Address", kind: "borrower" },
-  contactNo: { label: "Contact number", kind: "borrower" },
   plateNo: { label: "Plate number", kind: "minor" },
   engineNo: { label: "Engine number", kind: "minor" },
   chassisNo: { label: "Chassis number", kind: "minor" },
@@ -87,7 +83,7 @@ const txt = (v: unknown) => {
 export function trackedOf(r: MyLoansRecord): Tracked {
   const n = parseAmount(r.totalReleasedAmount);
   return {
-    borrowerName: txt(r.borrowerName), address: txt(r.address), contactNo: txt(r.contactNo),
+    borrowerName: txt(r.borrowerName),
     plateNo: txt(r.vehicle?.plateNo), engineNo: txt(r.vehicle?.engineNo), chassisNo: txt(r.vehicle?.chassisNo), make: txt(r.vehicle?.make),
     cin: txt(r.cin), cif: txt(r.cif), status: txt(r.status)?.toUpperCase() ?? null,
     loanType: txt(r.loanType), productName: txt(r.productName),
@@ -98,6 +94,17 @@ export function trackedOf(r: MyLoansRecord): Tracked {
     companyId: txt(r.companyId), companyName: txt(r.companyName),
     statusId: txt(r.statusId), statusName: txt(r.statusName), isActive: r.isActive === undefined || r.isActive === null ? null : r.isActive ? "Yes" : "No",
   };
+}
+
+/** Tracked keys of each field the agreed contract does not send (D-050): left out of a copy that came from it. */
+const NOT_SENT_KEYS: Record<NonNullable<MyLoansRecord["notSent"]>[number], (keyof Tracked)[]> = {
+  vehicle: ["plateNo", "engineNo", "chassisNo", "make"], previousPn: ["previousPn"], paymentRecorded: [],
+};
+/** The tracked fields of a record, without the fields its source does not send (so their absence is never a change). */
+export function trackedOfSent(r: MyLoansRecord): Tracked {
+  const t = trackedOf(r);
+  for (const f of r.notSent ?? []) for (const k of NOT_SENT_KEYS[f]) delete (t as Partial<Tracked>)[k];
+  return t;
 }
 
 const ACCOUNT_KEYS = ["productCode", "areaId", "areaName", "divisionId", "divisionName", "companyId", "companyName", "statusId", "statusName", "isActive"] as const;
@@ -120,7 +127,7 @@ export function hashTracked(t: Tracked): string {
 export interface FieldChange { field: TrackedKey; label: string; kind: FieldKind; was: string | number | null; now: string | number | null }
 export type ChangeCategory = "NONE" | "MINOR" | "BORROWER" | "MATERIAL" | "STATUS" | "REPLACEMENT";
 /** The borrower details fields (the "Borrower details" class), in the order the review shows them. */
-export const BORROWER_KEYS = ["borrowerName", "address", "contactNo", "cif", "cin"] as const satisfies readonly TrackedKey[];
+export const BORROWER_KEYS = ["borrowerName", "cif", "cin"] as const satisfies readonly TrackedKey[];
 
 /**
  * What changed between two copies, and one category: Replacement (a replaces-PN link appears),
@@ -129,7 +136,8 @@ export const BORROWER_KEYS = ["borrowerName", "address", "contactNo", "cif", "ci
 export function detectChanges(previous: Tracked | null, current: Tracked): { category: ChangeCategory; changes: FieldChange[] } {
   if (!previous) return { category: "NONE", changes: [] };
   // A field the previous copy did not track yet (an older snapshot) is not a change.
-  const changes: FieldChange[] = KEYS.filter((k) => k in previous && (previous[k] ?? null) !== (current[k] ?? null)).map((k) => ({
+  // A field the new copy does not carry (not in the agreed contract, D-050) is not a change either.
+  const changes: FieldChange[] = KEYS.filter((k) => k in previous && k in current && (previous[k] ?? null) !== (current[k] ?? null)).map((k) => ({
     field: k, label: FIELDS[k].label, kind: FIELDS[k].kind, was: previous[k] ?? null, now: current[k] ?? null,
   }));
   const has = (kind: FieldKind) => changes.some((c) => c.kind === kind);

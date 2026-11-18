@@ -9,7 +9,7 @@ import type { MyLoansAdapter, MyLoansLookup, MyLoansRecord } from "./types";
 
 const rec = (over: Partial<MyLoansRecord> = {}): MyLoansRecord => ({
   pn: "GD1012026901001", cin: "CIN-1", cif: "CIF-1", sourceLoanId: "ML-1", borrowerName: "Maria Santos", branchName: "Antipolo", branchCode: "101",
-  status: "RELEASED", loanType: "New", productName: "Auto Refinancing", totalReleasedAmount: 450_000, releaseDate: "2026-11-02", address: "1 Rizal Ave", ...over,
+  status: "RELEASED", loanType: "New", productName: "Auto Refinancing", totalReleasedAmount: 450_000, releaseDate: "2026-11-02", ...over,
 });
 const t = (over: Partial<MyLoansRecord> = {}): Tracked => trackedOf(rec(over));
 
@@ -20,17 +20,17 @@ describe("detectChanges", () => {
     expect(hashTracked(t({ totalReleasedAmount: "450000.00" }))).toBe(hashTracked(t())); // same amount, other spelling
     expect(detectChanges(null, t()).category).toBe("NONE"); // first copy
   });
-  it("borrower details: name spelling and address (a review of their own, not minor)", () => {
-    const d = detectChanges(t(), t({ borrowerName: "Maria  Santos-Cruz", address: "2 Rizal Ave" }));
+  it("borrower details: name spelling and CIF (a review of their own, not minor)", () => {
+    const d = detectChanges(t(), t({ borrowerName: "Maria  Santos-Cruz", cif: "CIF-2" }));
     expect(d.category).toBe("BORROWER");
-    expect(d.changes.map((c) => c.label)).toEqual(["Name", "Address"]);
+    expect(d.changes.map((c) => c.label).sort()).toEqual(["CIF", "Name"].sort());
     expect(detectChanges(t(), t({ areaName: "Somewhere" } as never)).category).toBe("MINOR");
   });
   it("material: amount (in centavos), product, loan type; several at once keep the minor ones too", () => {
-    const d = detectChanges(t(), t({ totalReleasedAmount: 520_000, productName: "Auto Financing", loanType: "Renewal", address: "3 Mabini St" }));
+    const d = detectChanges(t(), t({ totalReleasedAmount: 520_000, productName: "Auto Financing", loanType: "Renewal", areaName: "3 Mabini St" }));
     expect(d.category).toBe("MATERIAL");
     expect(d.changes.find((c) => c.field === "amount")).toMatchObject({ was: 45_000_000, now: 52_000_000, kind: "material" });
-    expect(d.changes.map((c) => c.kind).sort()).toEqual(["borrower", "material", "material", "material"]);
+    expect(d.changes.map((c) => c.kind).sort()).toEqual(["material", "material", "material", "minor"]);
   });
   it("status wins over material; replacement wins over status", () => {
     expect(detectChanges(t(), t({ status: "CANCELLED", totalReleasedAmount: 1 })).category).toBe("STATUS");

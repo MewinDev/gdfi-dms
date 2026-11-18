@@ -1,6 +1,6 @@
 /**
- * Replacement vs additional unit: related loans (same CIN or CIF), possible replacements, the
- * no-payment rule, manual links, branch scope, amounts, and Copy reusable papers for each case.
+ * Related loans (same CIN or CIF; D-051: no guessed additional-unit / replacement tag, payment recorded unknown), a redo
+ * myloans names, manual links, branch scope, amounts, and Copy reusable papers.
  * LOCAL database, mock MyLoans.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -62,57 +62,46 @@ async function cancelOld() {
 }
 
 describe("Replacement or additional unit", () => {
-  it("additional unit: the other loan is active, or ended with other details; never by name alone", async () => {
+  it("D-051: other loans of the same borrower show as Same borrower, with no additional-unit or replacement guess", async () => {
     await open(OLD);
-    await extra({ pn: "GD1012026909201", totalReleasedAmount: 900_000, vehicle: { plateNo: "NEW 9201", engineNo: "E9201", chassisNo: "C9201", make: "Toyota Wigo" } });
-    await extra({ pn: "GD1012026909202", cin: "CIN-OTHER", cif: "CIF-OTHER" }); // same name and details, another borrower number
+    await extra({ pn: "GD1012026909201", cin: "CIN-UNIT-9201", totalReleasedAmount: 900_000 }); // same CIF, another loan
+    await extra({ pn: "GD1012026909202", cin: "CIN-OTHER", cif: "CIF-OTHER" }); // same name, another borrower
     await open("GD1012026909201");
     await open("GD1012026909202");
     const rel = await relatedLoans(prisma, await loanOf(OLD));
-    expect(rel.map((r) => [r.loan.pn, r.tag])).toEqual([["GD1012026909201", "ADDITIONAL"]]);
-    expect(rel[0].relation?.reason).toMatch(/still active in MyLoans/);
-    // The old one ends, but the details differ: still additional; no possible replacement in the review.
+    expect(rel.map((r) => [r.loan.pn, r.tag, r.relation])).toEqual([["GD1012026909201", "SAME_BORROWER", null]]);
+    // The old one is cancelled: still no guessed candidate (a redo is named by myloans, D-051).
     const item = await cancelOld();
     expect(item.candidates).toEqual([]);
-    const after = await relatedLoans(prisma, await loanOf(OLD));
-    expect(after[0]).toMatchObject({ tag: "ADDITIONAL", relation: { mismatched: ["Amount", "Plate number", "Chassis number", "Engine number"] } });
     expect((await reviewFor(admin, item.loanId))!.candidates).toEqual([]);
-    // Find loan: the preview names any loan of the same borrower, open or not.
-    await extra({ pn: "GD1012026909203", totalReleasedAmount: 800_000 });
-    expect(await lookupPn(la, "GD1012026909203")).toMatchObject({ kind: "preview", otherLoans: expect.arrayContaining([OLD, "GD1012026909201"]), otherHidden: 0 });
+    expect((await relatedPanel(admin, await loanOf(OLD))).rows[0]).toMatchObject({ tag: "SAME_BORROWER", tagText: "Same borrower", canLink: true });
+    // Find loan: no "this borrower has another loan" warning now (D-051).
+    await extra({ pn: "GD1012026909203", cin: "CIN-UNIT-9203", totalReleasedAmount: 800_000 });
+    const preview = await lookupPn(la, "GD1012026909203");
+    expect(preview).toMatchObject({ kind: "preview", replacesPn: null });
+    expect(preview).not.toHaveProperty("otherLoans");
   });
 
-  it("replacement candidate (same details, ended, in time) by CIF too; the Admin confirms no payment; saved and audited", async () => {
+  it("a redo myloans names (same CIN, the old copy cancelled): the review offers it; the Admin confirms no payment (unknown, D-051); linked and audited", async () => {
     await open(OLD);
-    await extra({ pn: "GD1012026909210", cin: "CIN-CHANGED", cif: base.cif }); // same CIF, same unit and amount
+    const item0 = await cancelOld();
+    expect(item0.candidates).toEqual([]);
+    await extra({ pn: "GD1012026909210" }); // the same CIN as the old copy: myloans' redo
+    expect(await lookupPn(la, "GD1012026909210")).toMatchObject({ kind: "preview", replacesPn: OLD });
     await open("GD1012026909210");
-    const item = await cancelOld();
+    const item = await prisma.sourceChange.findFirstOrThrow({ where: { loan: { pn: OLD }, state: "OPEN" } });
     expect(item.candidates).toEqual(["GD1012026909210"]);
     const review = (await reviewFor(admin, item.loanId))!;
-    expect(review.candidates[0]).toMatchObject({ pn: "GD1012026909210", matched: "Product name, Loan type, Amount, Plate number, Chassis number, Engine number" });
     expect(review.payment).toEqual({ known: false, recorded: false, text: null });
-    await expect(linkReplacement(admin, item.id, { newPn: "GD1012026909210", note: "Unit issue after release" })).rejects.toThrow(/I confirmed no payment was made on the old PN/);
+    await expect(linkReplacement(admin, item.id, { newPn: "GD1012026909210", note: "Redone in myloans" })).rejects.toThrow(/I confirmed no payment was made on the old PN/);
     await expect(linkReplacement(la, item.id, { newPn: "GD1012026909210", note: "x note", confirmNoPayment: true })).rejects.toThrow(/Only approvers/);
-    await linkReplacement(admin, item.id, { newPn: "GD1012026909210", note: "Unit issue after release", confirmNoPayment: true });
+    await linkReplacement(admin, item.id, { newPn: "GD1012026909210", note: "Redone in myloans", confirmNoPayment: true });
     const nw = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026909210" } });
-    expect(nw).toMatchObject({ replacesPn: OLD, replacementEvidence: "Test Admin confirmed no payment was made on GD1652026901003. Note: Unit issue after release" });
+    expect(nw).toMatchObject({ replacesPn: OLD, replacementEvidence: "Test Admin confirmed no payment was made on GD1652026901003. Note: Redone in myloans" });
     expect((await prisma.loan.findUniqueOrThrow({ where: { pn: OLD } })).replacedByPn).toBe("GD1012026909210");
-    const audit = await prisma.auditLog.findFirstOrThrow({ where: { action: "replacement_linked", loanId: nw.id } });
-    expect(audit.details).toMatchObject({ confirmedNoPayment: true, payment: "no payments field", manual: false });
+    expect(await prisma.auditLog.count({ where: { action: "replacement_linked", loanId: nw.id } })).toBe(1);
     expect((await relatedPanel(admin, await loanOf(OLD))).rows[0]).toMatchObject({ tag: "REPLACES", tagText: "Replaces this loan" });
     expect((await relatedPanel(admin, await loanOf("GD1012026909210"))).rows[0]).toMatchObject({ tag: "REPLACED_BY", tagText: "Replaced by this loan" });
-  });
-
-  it("a payment recorded in MyLoans refuses the link unless the Admin gives an override note", async () => {
-    await open(OLD);
-    await change(OLD, { paymentRecorded: true });
-    await extra({ pn: "GD1012026909220" });
-    await open("GD1012026909220");
-    const item = await cancelOld();
-    expect((await reviewFor(admin, item.loanId))!.payment).toEqual({ known: true, recorded: true, text: "Payment recorded in MyLoans" });
-    await expect(linkReplacement(admin, item.id, { newPn: "GD1012026909220", note: "Unit issue", confirmNoPayment: true })).rejects.toThrow(/Payment recorded in MyLoans on GD1652026901003/);
-    await linkReplacement(admin, item.id, { newPn: "GD1012026909220", note: "Unit issue", overrideNote: "Payment was reversed by Finance" });
-    expect((await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026909220" } })).replacementEvidence).toMatch(/^Payment recorded in MyLoans; linked by Test Admin with an override: Payment was reversed by Finance/);
   });
 
   it("manual link from Related loans (unusual case): Admin only, the same confirmation plus a note", async () => {
@@ -138,7 +127,7 @@ describe("Replacement or additional unit", () => {
     const forLa = await relatedPanel(la, await loanOf(OLD));
     expect(forLa.hidden).toBe(1);
     expect(forLa.rows.map((r) => r.pn)).toEqual(["GD1012026909240"]);
-    expect(forLa.rows[0]).toMatchObject({ amount: null, tag: "ADDITIONAL", canLink: false });
+    expect(forLa.rows[0]).toMatchObject({ amount: null, tag: "SAME_BORROWER", canLink: false });
     const forAdmin = await relatedPanel(admin, await loanOf(OLD));
     expect(forAdmin.hidden).toBe(0);
     expect(forAdmin.rows.find((r) => r.pn === "GD1012026909240")).toMatchObject({ amount: "₱700,000.00", canLink: true });

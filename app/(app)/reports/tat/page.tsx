@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { requirePagePermission } from "@/lib/auth/current-user";
+import Link from "next/link";
+import { can, requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { TAT_SHOW, liquidationSummary, reasonReport, tatReport } from "@/lib/services/tat-report";
 import { ReasonTable } from "@/components/jobs/reason-table";
@@ -30,6 +31,7 @@ export default async function TatReportPage({ searchParams }: { searchParams: Pr
         title="TAT and problems"
         subtitle="The turnaround clock never pauses. Problem time is the sum of each problem's business days."
       />
+      {can(user, PERMISSIONS.REPORTS_PNSEARCH) && <p className="text-sm"><Link href="/reports/pn-searches" className="link">PN searches</Link>: every PN # searched on Find loan.</p>}
       <form action="/reports/tat" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_1fr_auto_auto] lg:items-end">
         <div>
           <label htmlFor="ts" className="label">Show</label>

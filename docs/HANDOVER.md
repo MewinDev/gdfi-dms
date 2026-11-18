@@ -1,4 +1,4 @@
-# Handover: pieces 4, 5, 9 and 6 done; stop before piece 10a
+# Handover: pieces 4, 5, 9, 6 and 10a done; stop before piece 7
 
 Last updated: 18 November 2026 (PHT)
 Branch: `feature/foundation-settings-rbac-myloans` (pushed)
@@ -28,11 +28,15 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
   - `tests/contract` (`npm run test:contract`).
 
   See `docs/myloans/mock-and-contract.md`. Find loan and Refresh still use the old adapter (moved in 10a).
-- **Last runs (18 November 2026, after piece 6):**
-  - vitest: 1,328 passed, 1 skipped;
-  - full e2e: 197 / 197 / 194 with 2 failures at each width, both test-side. Settings counted 6 cards, not 7. The monitoring fixture counted Monday to Friday, where the app counts Monday to Saturday. Both fixed and rerun green at all widths;
-  - tsc and lint clean; kit rebuilt on 022 with the demo items.
-- **Next: piece 10a**, plan in IMPLEMENTATION_PLAN.md 11.1, decisions (a) to (c) pending. Wait for the project owner.
+- **D-049 / D-051, product classification:** "brand new" and "2nd hand" are Financing; a product can be set by hand (Settings, Product classification, "Manage product classification"); the products come from API 5 (`pr_products.tsv` in the mock and kit). On the real list, 20 products move from Refinancing (default) to Financing and nothing else changes; 12 are marked "Please confirm".
+- **Piece 10a done (D-050, replaced by D-051):**
+  - Find loan and Refresh read API 1 (`lib/myloans/v1/adapter.ts`, the "MOCK myloans data" overlay of the simulator in `mock-store.ts`).
+  - The identity is saved on open; every search is logged (`PnSearchLog`, Reports, PN searches, `reports:pnsearch`).
+  - Amounts are exact; one active transaction per type (partial index `LoanTransaction_one_active_per_type`).
+  - The replacement guess, the additional-unit tags, "payment recorded" and the Find loan "other loans" warning are gone (Related loans shows "Same borrower"; manual linking stays).
+  - The borrower's address and contact number are removed everywhere (migration 025 also clears them from saved copies and review items; the audit log is append-only and keeps its old rows).
+- **Migrations:** 023 products, 024 PN search, 025 no borrower address. Both databases are on 025.
+- **Next: piece 7** (plan in IMPLEMENTATION_PLAN.md 8.10, decisions (a) to (c)). Wait for the project owner.
 - **Open small items:** none from pieces 4, 5 and 9 (the funds-types CSV has `liquidation_due_days`; Correct due date is also on LA items in the Inbox).
 - Decisions: `docs/DECISIONS.md` (D-001 to D-041); plan: `IMPLEMENTATION_PLAN.md` (piece 5 is section 6; myloans round 3 is 7.3).
 
@@ -62,7 +66,7 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
 
 ## Things a fresh session must know
 
-- **Both databases are on migration 022** (`20261119090022_myloans_mock`).
+- **Both databases are on migration 025** (`20261119090025_no_borrower_address`).
 - **Migration 020 history:** `gdfi_dms_test` was reset (with the owner's consent) and re-seeded on 17 November 2026; the kit was rebuilt after each migration up to 020 (`gdfi_dms` holds the CLEAN kit; automatic backups in `storage/kit/backups/`). Never touch the test DB directly; use the sanctioned scripts.
 - **File access log rows keep their user forever** (append-only, `ON DELETE RESTRICT`). In tests, only seeded users that are never deleted (such as Test Admin) may open files or export the log; a temporary `zz.` user who does can never be removed, and every test that cleans `zz.` users then fails (this happened once; it took a test DB reset to fix).
 - **Migrations:** never `prisma migrate dev`. Use `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`, put it in the next numbered folder (`20261119090018_...`), remove the trigram DROP INDEX lines, apply with `npm run db:deploy`, then print the folder list and `npx prisma migrate status`. Full rules: `CLAUDE.md`.

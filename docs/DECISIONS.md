@@ -700,3 +700,40 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
      - **The mid-June time offset change:** covered by the daily catch-up.
 - **Reason:** the user's decisions after the round 4 results.
 
+## D-050 Piece 10a: the plan's recommendations (the user said "continue with piece 10a")
+
+- **Date:** 18 November 2026
+- **Decision:** piece 10a is built as planned in `IMPLEMENTATION_PLAN.md` 11.1, with its three recommendations (the user approved continuing; open to change on review):
+  - **(a) Fields the agreed contract does not send:**
+    - **Address and contact number** stay DMS fields. myloans does not send them yet; a new request asks myloans to add them. Until then a Refresh never treats them as changed.
+    - **The vehicle** is a DMS-entered field.
+    - **The replacement guess** (previous PN) goes. A redo is read from myloans' own link (Superseded / Cancelled with "Replaced by"). The automatic "Link as replacement" suggestion goes with it.
+    - **Payment recorded** stays unknown.
+  - **(b) The PN search log:** a new tick **"See PN searches"** (`reports:pnsearch`), on by default for Admin and LA Supervisor/Head, limited to the reader's branches.
+  - **(c) Two small items:**
+    - exact decimals for rule 4 (refuse "1,000" and "1e6", compare as decimal strings);
+    - one active transaction per type on a loan (a partial unique index).
+- **Reason:** the user's instruction to continue after the 10a plan.
+
+## D-051 Piece 10a: the user's answers (replaces D-050 where they differ)
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **The replacement guess is removed.** The "additional unit / replacement" tags and the "payment recorded" check go for now. A redo shows only from myloans' own "Replaced by" link. The **existing manual linking** in Related loans stays (Admin, "Link as replacement", with a note and "I confirmed no payment was made on the old PN"). No new linking is built. STATUS, Phase B: "Related-loan tags (additional unit / replacement) return with vehicle data from myloans."
+  2. **The borrower's address and contact number are removed completely:** the fields, the database columns (by migration), the screens, the kit and seed, the docs and the demo script. They are not kept as empty fields. **Reason:** not needed; data minimization under the Data Privacy Act (RA 10173), as for the birth date (D-037). The borrower-details review covers name, CIF and CIN only.
+  3. **Find loan for a PN that is not a released loan** (API 1 422): approved as built. The card gives the reason only (myloans' status name and FeedState, "Replaced by" after a redo), with no borrower name or branch. Status 15 is "not a released loan".
+  4. **Earlier decisions confirmed:**
+     - **Vehicle details:** hidden, and moved to the Phase B Collateral module.
+     - **Renewal link** (previous loan / OldPNNo): deferred to Phase B. No "other loans of this borrower" warning on Find loan, and no new linking now.
+     - **Payment recorded:** unknown; the paid / closed source is parked for Phase C.
+  5. **Products:** `docs/incoming/myloans-round4-results/pr_products.tsv` (104 products, 88 active) is the mock's API 5 and the kit's product list.
+     - **"Test keyword rules"** over the 88 active products: exactly **20 move from Refinancing (default) to Financing** (the "2nd hand" and "Brand New" truck and van products), and nothing else changes. "SME - Refinancing Heavy Truck" and "WSME - Refinancing Heavy Truck" stay Refinancing.
+     - **"Please confirm"** marks the 12 undecided products:
+       - SME - Car Financing (R);
+       - Personal and SME REM Financing;
+       - the three real-estate take-outs (REF Developer In-House, REF Division / REM, Developer Real Estate In-House);
+       - the four Doctors loans;
+       - Personal Salary Loan;
+       - Tricycle Loan.
+- **Reason:** the user's answers after the 10a report.
+

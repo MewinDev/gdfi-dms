@@ -78,8 +78,6 @@ export function mapLoan(raw: unknown): MyLoansRecord | null {
     companyId: s(r.CompanyID), companyName: s(r.CompanyName),
     sourceUpdatedAt: s(r.SourceUpdatedAt),
     // Not in the source query (field-map question 6): optional until MyLoans says where they are.
-    address: s(r.address),
-    contactNo: s(r.contactNo),
     previousPn: s(r.previousPn ?? r.replacesPn),
     // TO CONFIRM: is there a payments field? true/false when MyLoans says; undefined when it has none.
     paymentRecorded: r.paymentRecorded === undefined && r.hasPayments === undefined ? undefined : Boolean(r.paymentRecorded ?? r.hasPayments),

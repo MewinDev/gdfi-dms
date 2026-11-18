@@ -30,7 +30,7 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
       "Approve or reject myloans changes (Open Items) for their branches",
       "Move a hold to another person (within their branches)",
       "Reclassify a loan when the keyword rules changed (within their branches)",
-      "Resolve any problem, see the DP and LTO monitors and the TAT report (within their branches)",
+      "Resolve any problem, see the DP and LTO monitors, the TAT report and PN searches (within their branches)",
       "Manage product classification: the keywords and setting a product to Financing or Refinancing (D-049)",
     ]);
   });

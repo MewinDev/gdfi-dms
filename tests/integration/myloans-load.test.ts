@@ -113,7 +113,7 @@ describe("Changed-since feed", () => {
     const cursor = new Date(Date.now() - 30 * 60_000);
     await setSetting("myloans.state", { cursor: cursor.toISOString(), cap: null, runs: [] });
     const at = new Date().toISOString();
-    const adapter = source(30, { feed: true, overrides: { "PN-5000003": { address: "New St", changedAt: at }, "PN-5000025": { address: "Not here", changedAt: at } } });
+    const adapter = source(30, { feed: true, overrides: { "PN-5000003": { areaName: "New St", changedAt: at }, "PN-5000025": { areaName: "Not here", changedAt: at } } });
     const feed = vi.spyOn(adapter, "getChangedSince");
     const getByPn = vi.spyOn(adapter, "getByPn");
     const r = await runMyLoansSync({ trigger: "cron", force: true, adapter });
@@ -199,7 +199,8 @@ describe("Snapshot retention", () => {
     await change({ totalReleasedAmount: 1_020_000 });
     await change({ areaName: "Area 3 Third St" });
     await change({ status: "CANCELLED" });
+    // Cancelled in myloans: API 1 answers 422 with no details (D-050), so a later area change cannot be seen.
     await change({ areaName: "Area 4 Fourth St" });
-    expect(await kinds()).toEqual(["BASE", "MATERIAL", "STATUS", "MINOR"]);
+    expect(await kinds()).toEqual(["BASE", "MATERIAL", "MINOR", "STATUS"]);
   });
 });

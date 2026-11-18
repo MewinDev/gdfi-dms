@@ -1,3 +1,4 @@
+import { statusFromId } from "@/lib/myloans/status";
 import { refuseInProduction } from "@/lib/env";
 import { closeItem } from "./work-items";
 import { refreshLiquidationForTransaction } from "./liquidation";
@@ -17,7 +18,7 @@ import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloan
 import { mapLoan } from "@/lib/myloans/live-mapping";
 import { MINOR_ACCOUNT_COLUMNS, sourceTime } from "@/lib/myloans/account";
 import {
-  detectChanges, hashTracked, proposeEffect, trackedOf, trackedOfSaved, UNSENT,
+  detectChanges, hashTracked, proposeEffect, trackedOf, trackedOfSaved, trackedOfSent, UNSENT,
   type ChangeCategory, type FieldChange, type Proposed, type Tracked, type TxnNow,
 } from "@/lib/myloans/changes";
 import { isTestMode } from "@/lib/test-mode";
@@ -155,7 +156,18 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
   const loan = await prisma.loan.findUnique({ where: { id: loanId } });
   if (!loan) throw new UserError("Loan File not found.");
   // The background run passes what it already got; otherwise one shared call (coalesced; the button asks fresh).
-  const lookup = opts.lookup ?? await lookupPn(getMyLoansAdapter(), loan.pn, { fresh: opts.trigger === "button" || opts.trigger === "simulator", ceiling: opts.ceiling });
+  let lookup = opts.lookup ?? await lookupPn(getMyLoansAdapter(), loan.pn, { fresh: opts.trigger === "button" || opts.trigger === "simulator", ceiling: opts.ceiling });
+  // D-050: API 1 says this copy is no longer a released loan (cancelled, redone, not released, inactive). That is a
+  // status change on the copy we hold: the last copy with the status myloans gives, in its words, for the usual review.
+  if (!lookup.ok && lookup.reason === "NOT_SELECTABLE") {
+    const prev = await prisma.loanSourceSnapshot.findFirst({ where: { loanId: loan.id }, orderBy: { retrievedAt: "desc" } });
+    const base = prev ? recordFromPayload(prev.payload) : null;
+    if (base) {
+      const st = lookup.feedState === "Cancelled" ? statusFromId(lookup.statusId ?? 14)
+        : { status: `STATUS_${(lookup.feedState ?? "NOT_SELECTABLE").toUpperCase()}`, statusId: lookup.statusId === undefined ? base.statusId ?? null : String(lookup.statusId), statusName: lookup.message.replace(/\.$/, "") };
+      lookup = { ok: true, record: { ...base, ...st, feedState: lookup.feedState ?? null, notSent: base.notSent }, raw: { status: 422, feedState: lookup.feedState, replacedByPnNo: lookup.replacedByPnNo ?? null, statusId: lookup.statusId ?? null }, adapter: getMyLoansAdapter().name, retrievedAt: now };
+    }
+  }
   // No call was made (the shared count said no): nothing about the loan changes.
   if (!lookup.ok && lookup.limited) return { ok: false, message: lookup.message, checkedAt: now, limited: true };
   if (!lookup.ok) {
@@ -169,7 +181,7 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
     return { ok: false, message: lookup.message, checkedAt: now };
   }
 
-  const current = trackedOf(lookup.record);
+  const current = trackedOfSent(lookup.record);
   const hash = hashTracked(current);
   let result: RefreshResult = { ok: true, outcome: "none", category: "NONE", checkedAt: now };
   await withLoanLock(loan.id, async (tx) => {
@@ -214,7 +226,7 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
         summary: minorSummary(minor), details: { changes: minor },
       });
     }
-    // Borrower details (name, address, contact number, CIF, CIN): their own review item, decided by the
+    // Borrower details (name, CIF, CIN): their own review item, decided by the
     // branch supervisors and approvers. The loan keeps the old details until then; nothing is blocked.
     const borrower = det.changes.some((c) => c.kind === "borrower")
       ? !!(await raiseBorrowerReview(tx, { loanId: loan.id, pn: loan.pn, current, hash, mode, now }))
@@ -256,16 +268,6 @@ async function proposedFor(db: Tx | typeof prisma, loanId: string, category: Cha
   return proposeEffect({ category, loan: { ...loan, financingType: loan.financingType as FinancingType | null, orcrStatus: loan.orcrStatus as OrcrStatus | null }, txns: await txnsNow(db, loanId), next, picks, rules: await getClassificationRules(db) });
 }
 
-/** A new loan file of the same borrower: if it may replace an ended loan under review, add it as a possible replacement. */
-export async function suggestOnOpen(newPn: string) {
-  const nw = await prisma.loan.findUnique({ where: { pn: newPn }, select: RELATED_SELECT });
-  if (!nw) return;
-  for (const r of await relatedLoans(prisma, nw)) {
-    if (r.tag !== "POSSIBLE" || r.oldPn !== r.loan.pn) continue;
-    const open = await prisma.sourceChange.findFirst({ where: { loanId: r.loan.id, state: "OPEN" } });
-    if (open && !open.candidates.includes(nw.pn)) await prisma.sourceChange.update({ where: { id: open.id }, data: { candidates: [...open.candidates, nw.pn] } });
-  }
-}
 
 /**
  * A new loan file whose MyLoans record names the PN it replaces: a suggestion only. The old one gets the
@@ -578,10 +580,11 @@ async function linkCore(tx: Tx, u: CurrentUser, oldPn: string, newPn: string, ra
   // MyLoans named the old PN on the new one: a suggestion a person may confirm even without the same CIF.
   const named = !found && !manual && await namedByMyLoans(tx, old.pn, nw.pn);
   if (!found && !named) throw new UserError("Pick one of the loans of the same borrower (same CIN or CIF).", "newPn");
-  const rel = found ?? { tag: "POSSIBLE" as const, relation: null, paymentRecorded: (await tx.loanSourceSnapshot.findFirst({ where: { loanId: old.id }, orderBy: { retrievedAt: "desc" }, select: { payload: true } }).then((s) => (s ? recordFromPayload(s.payload)?.paymentRecorded : undefined))) };
+  const rel = found ?? { tag: "SAME_BORROWER" as const, relation: null, paymentRecorded: (await tx.loanSourceSnapshot.findFirst({ where: { loanId: old.id }, orderBy: { retrievedAt: "desc" }, select: { payload: true } }).then((s) => (s ? recordFromPayload(s.payload)?.paymentRecorded : undefined))) };
   if (old.replacedByPn && old.replacedByPn !== nw.pn) throw new UserError(`${old.pn} is already replaced by ${old.replacedByPn}.`, "newPn");
   if (nw.replacesPn && nw.replacesPn !== old.pn) throw new UserError(`${nw.pn} already replaces ${nw.replacesPn}.`, "newPn");
-  if (!manual && rel.tag !== "POSSIBLE") throw new UserError(`${rel.relation?.reason ?? "This is not a replacement."} Link it from Related loans only if you are sure.`, "newPn");
+  // D-051: no guessed tags; a review item offers the PN myloans named, and Related loans links by hand.
+  if (!manual && rel.tag !== "SAME_BORROWER") throw new UserError("This is not a replacement. Link it from Related loans only if you are sure.", "newPn");
   const pay = paymentEvidence(rel.paymentRecorded);
   const override = String(raw.overrideNote ?? "").trim();
   const confirmed = raw.confirmNoPayment === true || raw.confirmNoPayment === "on";
@@ -1105,9 +1108,8 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
     message = `MyLoans now says the amount is ₱${Number(over.totalReleasedAmount).toLocaleString("en-PH")}.`;
   } else if (kind === "name") {
     over.borrowerName = /Jr\.$/.test(rec.borrowerName) ? rec.borrowerName.replace(/ Jr\.$/, "") : `${rec.borrowerName} Jr.`;
-    over.address = `${Math.floor(Math.random() * 900) + 100} Rizal Ave, ${rec.branchName ?? "Antipolo"}`;
-    over.contactNo = `0917${String(Math.floor(Math.random() * 10_000_000)).padStart(7, "0")}`;
-    message = "MyLoans now spells the borrower's name differently and has a new address and contact number (Borrower details: a supervisor reviews it).";
+    // D-051: no address or contact number in the DMS; only the name changes.
+    message = "MyLoans now spells the borrower's name differently (Borrower details: a supervisor reviews it).";
   } else if (kind === "cif") {
     over.cif = `CIF-${String(Math.floor(Math.random() * 900_000) + 100_000)}`;
     message = "MyLoans now has another CIF for the borrower (Borrower details: a supervisor reviews it).";

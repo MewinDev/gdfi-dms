@@ -18,13 +18,14 @@ const at = (d: string, hh = "10:00") => new Date(`${d}T${hh}:00+08:00`);
 let seq = 0;
 
 async function loanWith(n: number, jobDue: string | null = null) {
-  const mortgage = await prisma.transactionType.findUniqueOrThrow({ where: { code: "MORTGAGE" } });
+  // Different types: a loan file has at most one active transaction of each type (D-050).
+  const types = await prisma.transactionType.findMany({ where: { requiresDp: true }, orderBy: { code: "asc" }, take: n });
   const pn = `${P}${String(++seq).padStart(2, "0")}`;
   const loan = await prisma.loan.create({
     data: {
       pn, borrowerName: `Zz Liq ${pn.slice(-2)}`, branchId: angono, loanType: "New", productName: "Auto Financing", totalReleasedAmount: 400000, releasedAt: new Date(), sourceStatus: "RELEASED", retrievedAt: new Date(), openedById: admin.id,
       classification: "REFINANCING", mortgageResult: "MORTGAGE", ruleFired: "test", stage: "In process",
-      transactions: { create: Array.from({ length: n }, () => ({ typeId: mortgage.id, status: "IN_PROCESS" as const })) },
+      transactions: { create: types.map((t) => ({ typeId: t.id, status: "IN_PROCESS" as const })) },
     },
     include: { transactions: true },
   });

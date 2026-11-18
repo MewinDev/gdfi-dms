@@ -144,6 +144,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
 | See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | SUPERADMIN, Admin, LA Supervisor/Head |
+| See PN searches | Every PN # searched on Find loan: who, the PN, what myloans answered, when (within the branches in your access). Download CSV. | Reports, PN searches | See loan files | `reports:pnsearch` | Admin, LA Supervisor/Head |
 | See the audit log | Every automatic decision and user action (the technical log). | Audit log | - | `audit:view` | SUPERADMIN, Admin |
 | View file access log | Who opened or downloaded which receipt, stage evidence or LTO proof, and when; filter and export it (each export is logged too). Give it to a Data Protection Officer if needed. | Audit, File access log | - | `audit:files` | SUPERADMIN, Admin |
 
@@ -155,7 +156,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Reclassify a loan | When the keyword rules changed after a loan file was opened ("Classification changed since accepted"): apply the new Financing or Refinancing result, with remarks. Sent work never changes. | Loan File, Classification changed since accepted | See loan files | `loans:reclassify` | Admin, LA Supervisor/Head |
 | Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | SUPERADMIN, LA, Admin, DP, Vault, Digital Records, QA, ARCHIVER, LA Supervisor/Head |
 | Review MyLoans changes | Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin, LA Supervisor/Head |
-| Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, address, contact number, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, LA Supervisor/Head |
+| Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, LA Supervisor/Head |
 | Change MyLoans sync settings | How often loans are checked against MyLoans and the business hours. | Settings, MyLoans sync | - | `myloans:manage` | SUPERADMIN, Admin |
 | Run the MyLoans sync now | The Run now button: check every open loan against MyLoans at once. | Settings, MyLoans sync, Run now | - | `myloans:sync` | SUPERADMIN, Admin |
 
@@ -264,6 +265,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Be told about LTO advisories | Notifications | none (the Operations Monitor role, by its name) | `ltoreports:notify` | **Gap, closed** |
 | Set processor capacity and leave | Settings, Processor capacity | dpcapacity:manage | `dpcapacity:manage` |  |
 | See the TAT and problems report | Reports, TAT | reports:tat | `reports:tat` |  |
+| See PN searches | Reports, PN searches | new on 18 November 2026 | `reports:pnsearch` | Split or renamed |
 | See the audit log | Audit log | audit:view | `audit:view` |  |
 | View file access log | Audit, File access log | new on 17 November 2026 | `audit:files` | Split or renamed |
 | See when MyLoans was last checked | Loan File, top strip | loans:view | `myloans:view` | Split or renamed |

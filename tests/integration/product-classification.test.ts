@@ -88,13 +88,17 @@ describe("product classification (D-049)", () => {
     await expect(setProductClassification(la, p.id, "REFINANCING", "Should not work")).rejects.toThrow(/Manage product classification/);
   });
 
-  it.skipIf(!existsSync(path.join(process.cwd(), PRODUCTS_FILE)))("myloans' real product list: 20 products move from Refinancing (default) to Financing; nothing else changes", async () => {
+  it("myloans' real product list (pr_products.tsv, 88 active): 20 products move from Refinancing (default) to Financing; nothing else changes", async () => {
+    expect(existsSync(path.join(process.cwd(), PRODUCTS_FILE))).toBe(true);
     await prisma.mockMyLoansProduct.deleteMany({ where: { productId: { gte: 990000 } } });
     await refreshProducts();
     const before = { ...DEFAULT_CLASSIFICATION_RULES, financing: DEFAULT_CLASSIFICATION_RULES.financing.filter((k) => k.text !== "brand new" && k.text !== "2nd hand") };
     await setSetting("classification.rules", before);
     const p = await productPreview(DEFAULT_CLASSIFICATION_RULES);
     expect(p.moving).toEqual([{ from: "Refinancing (default)", to: "Financing", n: 20 }]);
-    expect(p.rows.find((r) => /refinancing heavy truck/i.test(r.name))?.after.classification ?? "REFINANCING").toBe("REFINANCING");
+    for (const r of p.rows.filter((x) => /refinancing heavy truck/i.test(x.name))) expect(r.after.classification, r.name).toBe("REFINANCING");
+    expect(p.rows.filter((r) => /refinancing heavy truck/i.test(r.name))).toHaveLength(2);
+    // The 12 undecided products carry "Please confirm" (D-051).
+    expect(p.rows.filter((r) => r.confirm).length).toBe(12);
   });
 });
