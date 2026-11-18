@@ -1,4 +1,4 @@
-# Scheduling the myloans sync
+# Scheduling: the myloans sync, email reminders and backups
 
 Last updated: 18 November 2026 (PHT)
 
@@ -90,3 +90,18 @@ Settings, MyLoans sync:
 - **Last run** and **Last catch-up**: when, how (Scheduled, Console, Run now, Dev timer) and the result.
 - **Run log**: the latest runs, with the changes read, review items raised, released loans not yet in the DMS, loans sent twice, and the error or the reason a run was skipped.
 - **Failed runs in a row**: above 0, the last error says why; at the alert threshold Admin is notified.
+
+## Email reminders
+
+`POST /api/cron/email-reminders` (same `x-cron-secret` header) or `npm run email:reminders` on the app machine. Call it **every 15 minutes, 7:00 AM to 6:45 PM Manila**. Each call marks overdue jobs, sends the reminders that are due (each once) and then the email outbox. On weekends and holidays it sends no reminders but still marks overdue jobs and sends the outbox. While emails are Not active (Settings, Email notifications), nothing is sent. The daily overdue digest goes on the first call of a business day, so starting at 7:00 AM makes it arrive in the morning.
+
+```cron
+*/15 7-18 * * * curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://dms.example/api/cron/email-reminders >/dev/null
+```
+
+Answers: 200 with the counts; 401 `{"error":"Not allowed."}` for a wrong or missing secret; 500 when it could not run (the next call tries again).
+
+## Backups
+
+Once a day (for example 01:00 Manila, before the catch-up): `npm run backup` on a machine with the PostgreSQL client tools and read access to the storage folder. Targets, retention and the restore rehearsal: `docs/GO_LIVE_RUNBOOK.md`, section 5.
+
