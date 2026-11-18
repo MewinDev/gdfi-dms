@@ -39,6 +39,7 @@
     "email:reminders": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/email.ts reminders",
     "backup": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/backup.ts",
     "restore": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/restore.ts",
+    "volume": "tsx scripts/volume.ts",
     "sync:myloans": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/myloans-sync.ts",
     "work:backfill": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/work-backfill.ts",
     "email:test": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/email.ts test",
