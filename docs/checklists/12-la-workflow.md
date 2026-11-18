@@ -1,6 +1,6 @@
 # 12 LA workflow (Phase A)
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 19 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -21,7 +21,7 @@ The Loan Associate opens the loan file, answers the preview card, gets the trans
 | 9 | Preview card shows classification, the picks, the Mortgage result and the transactions to be created (§3.3) | ✅ Built | Find loan | LA | No | `docs/workflow/03-loan-associate.md` ("What will be set up") | Preview |
 | 10 | Override of an automatic result with a reason (§4.4 MANUAL_CORRECTION) | ✅ Built (Changed by D-028: `rules:override`) | Loan file | `rules:override` | No | module 06 row 6 | n/a |
 | 11 | Chart 4 / §4.6, §5.4: each transaction has its own checklist, loaded when created | ✅ Built (per transaction type) | Check documents | `checklist:tick` | Checklist items | `workflow.ts` | UAT LA-6 |
-| 12 | Checklists per loan type (§9.2 "per loan type/transaction") | ⚠️ Partial: per transaction type only; not by loan type, classification or Undertaking | Settings, Checklist items | `settings:checklist` | Yes | `ChecklistRule` (no loan-type column) | n/a |
+| 12 | Checklists per loan type (§9.2 "per loan type/transaction") | ✅ As decided: per transaction type (D-056 item 7) [TO CONFIRM with the LA Supervisor/Head] | Settings, Checklist items | `settings:checklist` | Yes | `ChecklistRule` (no loan-type column) | n/a |
 | 13 | §4.6 the 8 sample checklists | ⚠️ Partial: 4 types seeded with their own papers; the v2 sample lists to be confirmed with Operations | Settings, Checklist items | Admin | Yes | `prisma/seed.ts` | n/a |
 | 14 | Missing document flow: LA flags it with a reason and remarks, can still send; receives it later with the date (§6.4) | ✅ Built | Check documents | `papers:mark_missing`, `papers:receive_late` | Missing-paper reasons | `docs/workflow/09-status-and-open-questions.md` (Missing papers with reasons: Built), e2e `missing-papers.spec.ts` | UAT LA-6, LA-8 |
 | 15 | LA-only transactions (For EDST): record the reference, done without a processor | ✅ Built | Loan file | `transactions:complete` | Transaction type "needs a processor" | `docs/workflow/03-loan-associate.md` | EDST row |

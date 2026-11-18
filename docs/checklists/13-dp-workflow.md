@@ -1,6 +1,6 @@
 # 13 DP workflow (Phase A)
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 19 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -26,7 +26,7 @@ The Document Processor accepts (or declines, or holds) each transaction sent to 
 | 14 | With issue: retry or return to LA (§6.2) | ✅ Built (Not processed attempt opens a problem; retry; return to LA) | Job | `jobs:work` | Problem reasons | `jobs.ts` (`attemptCore`), docs/workflow/04 | UAT DP-4 |
 | 15 | LTO advisory (office down, closed, long queue): warns others, never blocks | ✅ Built (DMS addition) | Job, Monitoring | `ltoreports:create` | No | e2e `lto.spec.ts` | UAT DP-10 |
 | 16 | Update each document's status (Check and verify) | ✅ Built | Job, Check and verify | `jobs:work` | No | `job-stages.ts` | Verify each paper |
-| 17 | Forward to the LA branch only after LTO and liquidation (§5.8) | ⚠️ Partial: forward needs Check and verify; not gated on liquidation (liquidation has its own due date and blocks new requests) | Job | `jobs:work` | No | `jobs.ts`; module 15 | Forward with an open liquidation |
+| 17 | Forward to the LA branch only after LTO and liquidation (§5.8) | ✅ As decided: Forward needs Check and verify, not the liquidation (D-056 item 6a) | Job | `jobs:work` | No | `jobs.ts`; module 15 | Forward with an open liquidation |
 | 18 | DP TAT 5 working days (§2.2) | ✅ Built as per-stage targets (Notary 3, PPSR 5, Mortgage 10) | Settings, Turnaround times | `settings:tat` | Yes | TAT keys | TAT report |
 | 19 | Processor capacity and On leave; Monitoring | ✅ Built (DMS addition) | Monitoring | `monitor:dp`, `dpcapacity:manage` | Capacity | e2e `monitoring.spec.ts` | n/a |
 | 20 | "Set schedule date; group PN #" (older PNG Chart 5 only) | ✅ As decided: not built (Changed by D-020: no scheduling step) | n/a | n/a | n/a | D-020 | n/a |

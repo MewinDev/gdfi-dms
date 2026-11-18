@@ -2,7 +2,7 @@
 
 Last updated: 18 November 2026 (PHT)
 
-Every ⚠️ Partial and ❌ Missing row of the module checklists (`docs/checklists/`) that matters for phase A (LA, DP and Funds on the live myloans feed), sorted into **needed for go-live**, **soon after go-live** and **later**. ⏸ Blocked rows (waiting for someone outside the team) are in `docs/STATUS.md`; 📦 phase B and C rows are not repeated here. Effort is developer-days for one experienced developer. **Nothing here is being fixed until the project owner decides (D-055).**
+Every ⚠️ Partial and ❌ Missing row of the module checklists (`docs/checklists/`) that matters for phase A (LA, DP and Funds on the live myloans feed), sorted into **needed for go-live**, **soon after go-live** and **later**. ⏸ Blocked rows (waiting for someone outside the team) are in `docs/STATUS.md`; 📦 phase B and C rows are not repeated here. Effort is developer-days for one experienced developer. **Decided on 19 November 2026 (D-056):** G2, G3, G4, G5 are being built; G6 and G7 wait for IT (Q10); S1, S2, S3 and S5 are settled as recorded in D-056; open business points are in `docs/BUSINESS_QUESTIONS.md`.
 
 ## 1. Needed for go-live
 

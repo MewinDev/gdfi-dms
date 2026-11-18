@@ -1,6 +1,6 @@
 # 14 Finance and funds (CA / FT, approval, release, exceptions, bands)
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 19 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -10,8 +10,8 @@ The processor asks for money for LTO work as a Cash advance (CA) or a Fund trans
 
 | # | Item (v2 source) | Status | Where | Who | Customizable? | Evidence | UAT check |
 |---|---|---|---|---|---|---|---|
-| 1 | **Known gap 1. DP fund request, v2: one request per account; amount = document fees + km × rate + meals + other.** Built today: one request per DP covering several jobs and PNs, with lines per expense kind; each line's amount comes from the rule's suggested amount, the kind's preset, the LTO office's transport, or typed; maximums per transaction type; no km × rate or meals-per-day formula | ⚠️ Partial (formula ❌ missing; one request per DP, not per account) | My funds, New request | `funds:request` | Expense kinds, Cash-advance rules, LTO office transport | `lib/services/funds.ts` (`CashAdvanceLine` source RULE / PRESET / OFFICE / TYPED) | UAT DP-7 |
-| 2 | Computed rates locked; other expenses with required remarks | ⚠️ Partial: "Other" lines need remarks; amounts are editable up to the maximum | My funds | `funds:request` | Maximums | `funds.ts` | Add an Other line without remarks |
+| 1 | **Known gap 1. DP fund request, v2: one request per account; amount = document fees + km × rate + meals + other.** Built today: one request per DP covering several jobs and PNs, with lines per expense kind; each line's amount comes from the rule's suggested amount, the kind's preset, the LTO office's transport, or typed; maximums per transaction type; no km × rate or meals-per-day formula | ✅ As decided: today's model kept, no v2 formula (D-056 item 4) [TO CONFIRM with Finance and Operations] | My funds, New request | `funds:request` | Expense kinds, Cash-advance rules, LTO office transport | `lib/services/funds.ts` (`CashAdvanceLine` source RULE / PRESET / OFFICE / TYPED) | UAT DP-7 |
+| 2 | Computed rates locked; other expenses with required remarks | ✅ As decided with item 1 (D-056 item 4) | My funds | `funds:request` | Maximums | `funds.ts` | Add an Other line without remarks |
 | 3 | Fund type per request: CA or FT | ✅ Built | My funds | `funds:request` | Funds types | `lib/funds/types.ts` | UAT DP-7 |
 | 4 | CA details: amount, date, needs; FT: amount, payee, receiving account (last 4 only) | ⚠️ Partial: FT account (provider, name, last 4) is entered by Finance at release, not by the DP at request | Funds, Release | Finance | Funds types (needs account / reference) | `checkRelease` in `lib/funds/types.ts` | UAT FIN-4 |
 | 5 | Routed to the matching Finance user (CA only to CA users, FT to FT users) | ✅ Built (Changed by D-009: one Finance role, "Handles CA / FT" per person) | Funds | `funds:ca_*` / `funds:ft_*` | Per person | D-009, D-035 | CA-only user sees no FT |

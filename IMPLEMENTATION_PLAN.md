@@ -1042,6 +1042,9 @@ Places where the DMS deliberately does not follow the v2 spec. Each one is a rec
 | v2 asks for | The DMS does | Decision |
 |---|---|---|
 | The borrower's **birth date** (stored and monitored) | Neither receives, stores nor monitors it: not in the myloans contract, not in the ContentHash, no "birth date changed" item | D-037 (not needed by the business; less personal data under RA 10173) |
+| One fund request per account, its amount computed as document fees per transaction type + km to the LTO × rate per km + meals + other (v2 §3.5, §5.6) | One request per processor covering several jobs; lines per expense kind with preset, suggested or typed amounts and maximums; no formula | D-056 item 4 (working default, to confirm with Finance and Operations) |
+| The LTO stage waits for the processor to confirm receipt of the funds (v2 §5.7) | The confirmation and mismatch flag are built; the LTO does not wait unless the setting `funds.blockLtoUntilReceiptConfirmed` is turned on | D-056 item 1 (to confirm with Finance) |
+| Only the last 4 digits of the receiving account are stored (v2 §5.7) | The processor enters the full number at request; it is shown in full only on Finance's release screen and cleared at release (the last 4 digits stay) | D-056 item 5 |
 
 ## 15. Questions still open
 
