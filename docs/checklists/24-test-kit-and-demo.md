@@ -20,6 +20,7 @@ How the team tests by hand and shows the system: the Manual Test Kit (clean stat
 | 8 | e2e in groups at 1440, 820 and 390 px, production build, 1 worker | ✅ Built | `npm run e2e:groups` | Developer | n/a | `scripts/e2e-groups.ts` | n/a |
 | 9 | Documentation screenshots on purpose only | ✅ Built | `npm run docs:screenshots` | Developer | n/a | D-042 | n/a |
 | 10 | Volume test database (separate, 15,000 loans) | ✅ Built | `npm run volume` | Developer | n/a | module 23 row 11 | n/a |
+| 11 | Accessibility and phone-width basics on the main screens of each role (language, heading, names, labels, alt text, no sideways scroll) | ✅ Built | e2e | Developer | n/a | e2e `a11y-basics.spec.ts` (15 / 15, 19 Nov 2026) | n/a |
 
 ## D. Known limits and open questions
 

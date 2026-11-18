@@ -33,8 +33,8 @@ Status values: ✅ Built · ⚠️ Partial · ❌ Missing · ⏸ Blocked (by who
 | 21 | [Security](21-security.md) | 12 | 0 | 1 | 1 | 0 | 12 / 14 |
 | 22 | [Backup and restore](22-backup-and-restore.md) | 7 | 0 | 0 | 2 | 0 | 7 / 9 |
 | 23 | [Operations](23-operations.md) | 7 | 2 | 1 | 4 | 0 | 7 / 14 |
-| 24 | [Test kit, seed data and demo](24-test-kit-and-demo.md) | 10 | 0 | 0 | 0 | 0 | 10 / 10 |
-| | **Total** | **232** | **36** | **12** | **14** | **15** | **232 / 294 (79%)** |
+| 24 | [Test kit, seed data and demo](24-test-kit-and-demo.md) | 11 | 0 | 0 | 0 | 0 | 11 / 11 |
+| | **Total** | **233** | **36** | **12** | **14** | **15** | **233 / 295 (79%)** |
 
 (Module 19 counts row 0, "filters and export for all reports", as one ⚠️ besides the 19 reports.)
 
