@@ -215,7 +215,7 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 
 34. **Return the cash and notes.** On a loan with cash out, as Admin simulate "Set the loan cancelled", open the review and press **Return the cash** without a note, then with a 4-character note, then with a longer one. Try **Keep current** on another review with a 4-character note.
 35. **Replacement at another branch.** As Admin, on a cancelled Angono loan whose borrower has a new loan at Antipolo (Related loans), open the review or the Link form and read it before linking.
-36. **This hour.** Run `npm run myloans:sync` in PowerShell, then open Settings, MyLoans sync and read "This hour".
+36. **The sync from the console.** Run `npm run sync:myloans -- --now` in PowerShell, then open Settings, MyLoans sync and read the Run log.
 
 ### Find a loan card and rule names (12 November 2026)
 

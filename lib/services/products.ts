@@ -5,7 +5,6 @@ import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { myLoansClientV1 } from "@/lib/myloans/v1";
 import { classifyByKeywords, classificationWord, type ClassificationRules, type ClassificationValue, type ClassifyResult } from "@/lib/rules/classify";
-import { pleaseConfirm } from "@/lib/rules/classify-confirm";
 import { getClassificationRules, recheckClassifications } from "./classification";
 import { UserError } from "./errors";
 
@@ -37,7 +36,9 @@ export async function refreshProducts(now: Date = new Date()): Promise<{ added: 
 export interface ProductRow {
   id: string; code: string; name: string;
   manual: ClassificationValue | null; note: string; by: string; at: Date | null;
-  before: ClassifyResult; after: ClassifyResult; changes: boolean; confirm: string | null;
+  before: ClassifyResult; after: ClassifyResult; changes: boolean;
+  /** D-052: the product's history (each change with who, when and the reason), newest first. */
+  history: { at: Date; by: string; text: string }[];
 }
 
 const how = (r: ClassifyResult) => (r.step === "MANUAL" ? "set by hand" : r.step === "DEFAULT" ? "by default" : `"${r.keyword}"`);
@@ -45,19 +46,20 @@ export const resultText = (r: ClassifyResult) => `${classificationWord(r.classif
 
 /**
  * "Test keyword rules" over all active products (D-049): each product with the saved rules (before) and with the
- * rules being tried (after). Manual settings count in both. Changed rows first, then "Please confirm", then by name.
+ * rules being tried (after). Manual settings count in both. Changed rows first, then by name.
  */
 export async function productPreview(tried?: ClassificationRules): Promise<{ rows: ProductRow[]; moving: { from: string; to: string; n: number }[] }> {
   const [saved, products] = await Promise.all([getClassificationRules(), prisma.product.findMany({ where: { active: true }, orderBy: { name: "asc" } })]);
+  const audits = await prisma.auditLog.findMany({ where: { action: "product_classification_set", entityType: "Product", entityId: { in: products.map((p) => p.id) } }, orderBy: { at: "desc" }, select: { entityId: true, at: true, actorLabel: true, summary: true } });
   const after = tried ? { ...tried, manual: saved.manual } : saved;
   const rows = products.map((p) => {
     const b = classifyByKeywords(p.name, saved, p.code), a = classifyByKeywords(p.name, after, p.code);
     return {
       id: p.id, code: p.code, name: p.name, manual: p.classification, note: p.classificationNote, by: p.classifiedByLabel, at: p.classifiedAt,
       before: b, after: a, changes: b.classification !== a.classification || b.step !== a.step,
-      confirm: p.classification ? null : pleaseConfirm(p.name),
+      history: audits.filter((a) => a.entityId === p.id).map((a) => ({ at: a.at, by: a.actorLabel, text: a.summary })),
     };
-  }).sort((x, y) => Number(y.changes) - Number(x.changes) || Number(!!y.confirm) - Number(!!x.confirm) || x.name.localeCompare(y.name));
+  }).sort((x, y) => Number(y.changes) - Number(x.changes) || x.name.localeCompare(y.name));
   const label = (r: ClassifyResult) => `${classificationWord(r.classification)}${r.step === "DEFAULT" ? " (default)" : r.step === "MANUAL" ? " (set by hand)" : ""}`;
   const moves = new Map<string, number>();
   for (const r of rows.filter((x) => x.before.classification !== x.after.classification)) {

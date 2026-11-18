@@ -1,45 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { jitteredPause, nextCap, nextCheckAt, tierOf } from "./tiers";
 import { beginStats, callsThisHour, lookupPn, MemoryCallStore, readStats, resetClient, setCallStore } from "./client";
 import type { MyLoansAdapter, MyLoansLookup } from "./types";
-
-describe("Tiers", () => {
-  it("A work in progress, B not yet sent, C finished but not closed; closed and cancelled never", () => {
-    expect(tierOf("In process")).toBe("A");
-    expect(tierOf("Assigned to DP")).toBe("A");
-    expect(tierOf("For checklist", { openReview: true })).toBe("A");
-    expect(tierOf("For checklist", { cashOut: true })).toBe("A");
-    expect(tierOf("For checklist")).toBe("B");
-    expect(tierOf("No DP assignment required")).toBe("B");
-    expect(tierOf("In Safekeeping")).toBe("C");
-    expect(tierOf("For Vault Transmittal")).toBe("C");
-    for (const s of ["Closed", "Archived", "Disposed", "Cancelled in MyLoans"]) expect(tierOf(s)).toBeNull();
-    expect(tierOf("In process", { cancelled: true })).toBeNull();
-  });
-  it("each tier at its own interval", () => {
-    const now = new Date("2026-11-09T02:00:00Z");
-    expect(nextCheckAt(now, "A")!.toISOString()).toBe("2026-11-09T03:00:00.000Z");
-    expect(nextCheckAt(now, "B")!.toISOString()).toBe("2026-11-09T06:00:00.000Z");
-    expect(nextCheckAt(now, "C")!.toISOString()).toBe("2026-11-10T02:00:00.000Z");
-    expect(nextCheckAt(now, null)).toBeNull();
-    expect(nextCheckAt(now, "A", { A: 15, B: 1, C: 1 })!.toISOString()).toBe("2026-11-09T02:15:00.000Z");
-  });
-  it("jitter stays between the pause and one and a half times it", () => {
-    for (let i = 0; i <= 10; i++) {
-      const p = jitteredPause(400, i / 10);
-      expect(p).toBeGreaterThanOrEqual(400);
-      expect(p).toBeLessThanOrEqual(600);
-    }
-    expect(jitteredPause(0, 0.7)).toBe(0);
-  });
-  it("adaptive cap: halves on trouble, grows back a quarter of the maximum when healthy", () => {
-    expect(nextCap(50, 50, true)).toBe(25);
-    expect(nextCap(25, 50, true)).toBe(12);
-    expect(nextCap(1, 50, true)).toBe(1);
-    expect(nextCap(25, 50, false)).toBe(38);
-    expect(nextCap(38, 50, false)).toBe(50);
-  });
-});
 
 describe("Shared calls", () => {
   // The shared count lives in the database; this unit test keeps it in memory.

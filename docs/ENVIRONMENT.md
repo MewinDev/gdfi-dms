@@ -26,7 +26,7 @@ This order is the same everywhere:
 - **Next.js** (`npm run dev`, `npm run build`, `npm start`) loads the files itself.
 - **Prisma CLI** (`generate`, `migrate diff`, `migrate deploy`, `studio`, `db seed`) gets them through `prisma.config.ts`, which uses `lib/env/load-files.ts` (unit-tested: the shell wins, then `.env.local`, then `.env`). When that file exists, Prisma no longer reads `.env` by itself.
   - Migrations connect through `DIRECT_URL`, the app through `DATABASE_URL`. If they name different databases (for example you set only `DATABASE_URL` in the shell for a scratch database, and `DIRECT_URL` still comes from `.env.local`), Prisma commands refuse to start. To point a command at another database, set **both** in the shell.
-- **Console scripts** (`npm run db:seed`, `db:seed:reference`, `email:test`, `email:reminders`, `myloans:sync`) use `tsx --env-file-if-exists=.env --env-file-if-exists=.env.local`, where the later file wins. They also run the startup check.
+- **Console scripts** (`npm run db:seed`, `db:seed:reference`, `email:test`, `email:reminders`, `sync:myloans`) use `tsx --env-file-if-exists=.env --env-file-if-exists=.env.local`, where the later file wins. They also run the startup check.
 - **Vitest** (`vitest.config.mts`) uses the same order (a value set in the shell is kept, not replaced by a file's), with three exceptions:
   - Tests always run as `APP_ENV=local`.
   - `DATABASE_URL` and `DIRECT_URL` always point at the test database, `gdfi_dms_test` (see Two local databases).
@@ -186,6 +186,7 @@ PowerShell, a random secret: `[Convert]::ToBase64String((1..36 | ForEach-Object 
 | `MYLOANS_BASE_URL` | MyLoans API address (old name `MYLOANS_API_BASE_URL` is still read, with a warning) | **yes** | production, or when live |
 | `MYLOANS_API_KEY` | MyLoans API key | **yes** | production, or when live |
 | `MYLOANS_TIMEOUT_MS` | MyLoans time limit | no | optional |
+| `MYLOANS_SYNC_DEV_TIMER` | Development only: `true` starts an in-app timer that calls the myloans sync every minute (needs `CRON_SECRET`; `APP_ENV=local` only; docs/SCHEDULER.md) | no | optional |
 | `GRAPH_CLIENT_ID`, `GRAPH_TENANT_ID` | Microsoft app and tenant IDs | **yes** | staging, production |
 | `GRAPH_CLIENT_SECRET` | Microsoft app secret | **yes** | staging, production |
 | `GRAPH_SENDER_EMAIL` | Mailbox emails are sent from | no | staging, production |

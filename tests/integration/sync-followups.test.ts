@@ -12,7 +12,8 @@ import { getSetting, setSetting } from "@/lib/settings";
 import { getMyLoansAdapter } from "@/lib/myloans";
 import { lookupPn, openLoanFile, MYLOANS_BUSY } from "@/lib/services/loan-file";
 import { assignToDp, saveChecklist } from "@/lib/services/workflow";
-import { askCashBack, keepCurrent, linkReplacement, refreshLoan, runMyLoansSync, syncStatus } from "@/lib/services/source-sync";
+import { askCashBack, keepCurrent, linkReplacement, refreshLoan } from "@/lib/services/source-sync";
+import { runMyLoansSync } from "@/lib/services/myloans-sync";
 import { reviewFor, relatedPanel } from "@/lib/services/source-review";
 import { setUserBranches } from "@/lib/services/access";
 import { callStore, callsThisHour, countCall, DbCallStore, hourKey, lookupPn as clientLookup, resetClient, setCallStore, type CallStore } from "@/lib/myloans/client";
@@ -44,7 +45,6 @@ beforeEach(async () => {
   await setSetting("myloans.mockExtra", []);
   await setSetting("myloans.hourlyCeiling", 600);
   await setSetting("myloans.paused", false);
-  await setSetting("myloans.state", { cursor: null, cap: null, runs: [] });
   resetClient();
 });
 afterAll(async () => {
@@ -251,18 +251,13 @@ describe("5. The hourly count and the circuit breaker are shared by every instan
     }
   });
 
-  it("console-script calls appear in This hour on the Settings card", async () => {
-    await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    await prisma.loan.update({ where: { pn: PN }, data: { nextCheckAt: new Date(Date.now() - 60_000) } });
+  it("This hour counts the calls of Find loan and the refreshes, shared (the sync reads pages and is not counted)", async () => {
     const before = await callsThisHour();
-    resetClient();
-    const r = await runMyLoansSync({ trigger: "script", force: true });
-    expect(r).toMatchObject({ ran: true, calls: 1 });
-    expect(await callsThisHour()).toBe(before + 1);
-    expect((await syncStatus()).hourCalls).toBe(before + 1);
     expect(callStore()).toBeInstanceOf(DbCallStore);
-    // countCall is the same shared count.
     await countCall();
-    expect((await syncStatus()).hourCalls).toBe(before + 2);
+    expect(await callsThisHour()).toBe(before + 1);
+    resetClient();
+    await runMyLoansSync({ mode: "CHANGE", trigger: "script" });
+    expect(await callsThisHour()).toBe(before + 1);
   });
 });

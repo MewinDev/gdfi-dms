@@ -277,8 +277,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.LOANS_REFRESH, label: "Refresh a loan from MyLoans", help: "The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now.", requires: [P.MYLOANS_VIEW], view: P.MYLOANS_VIEW, can: "refresh a loan from MyLoans", where: "Loan File, Refresh from MyLoans", was: "none (shown to everyone who sees the loan file)" },
       { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
       { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
-      { key: P.SOURCE_MANAGE, label: "Change MyLoans sync settings", help: "How often loans are checked against MyLoans and the business hours.", can: "change MyLoans sync settings", where: "Settings, MyLoans sync", was: "source:manage" },
-      { key: P.MYLOANS_SYNC, label: "Run the MyLoans sync now", help: "The Run now button: check every open loan against MyLoans at once.", can: "run the MyLoans sync now", where: "Settings, MyLoans sync, Run now", was: "source:manage" },
+      { key: P.SOURCE_MANAGE, label: "Change MyLoans sync settings", help: "The myloans sync: how often it runs, the daily catch-up, the alert, the go-live and branch-pool dates, and Pause MyLoans calls.", can: "change MyLoans sync settings", where: "Settings, MyLoans sync", was: "source:manage" },
+      { key: P.MYLOANS_SYNC, label: "Run the MyLoans sync now", help: "Run now and Run the catch-up now: read what changed in myloans at once (nothing is applied; changes become review items).", can: "run the MyLoans sync now", where: "Settings, MyLoans sync, Run now", was: "source:manage" },
     ],
   },
   {
@@ -358,7 +358,8 @@ export const WORKFLOW_PERMISSIONS: Permission[] = [
  * Not in the default Admin role either: who is told about LTO advisories, and what only the Superadmin
  * does by default (D-023): the permission matrix and overrides, and giving "All branches".
  */
-const NOT_ADMIN_DEFAULT: Permission[] = [P.LTO_REPORTS_NOTIFY, P.ROLES_MANAGE, P.ACCESS_ALL_BRANCHES];
+// D-052: "Manage product classification" is the LA Supervisor/Head's by default (the Superadmin can grant it).
+const NOT_ADMIN_DEFAULT: Permission[] = [P.LTO_REPORTS_NOTIFY, P.ROLES_MANAGE, P.ACCESS_ALL_BRANCHES, P.SETTINGS_CLASSIFICATION];
 export const ADMIN_PERMISSIONS: Permission[] = ALL_PERMISSIONS.filter((k) => !WORKFLOW_PERMISSIONS.includes(k) && !NOT_ADMIN_DEFAULT.includes(k));
 
 /** Turning keys on adds what they require (recursively). */
@@ -441,7 +442,7 @@ export const OPEN_ITEM_APPROVER_KEYS: Permission[] = [P.SOURCE_REVIEW, P.SOURCE_
  * configuration only); the Superadmin can still tick them on a role or a person.
  */
 export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
-  ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH,
+  ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH, P.SETTINGS_CLASSIFICATION,
 ];
 /** Keys added on 17 November 2026 (D-031): the role migration ignores them when it compares a role with an earlier default. */
 export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW, P.DUEDATES_CORRECT, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH];

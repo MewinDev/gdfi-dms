@@ -730,6 +730,8 @@ The old sync settings (tiers, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hour
 
 ### 8.10 Piece 7 build plan (18 November 2026): for confirmation before building
 
+> **Built 18 November 2026 (D-052).** As planned, with the owner's answers: (a) API 2 changes become review items, one per loan, nothing applied by itself (minor fields too; Apply sets them); (b) the old tiered background refresh, its settings and the `syncTier` / `nextCheckAt` columns are removed (migration 027); (c) released loans not yet in the DMS are kept from the branch-pool cutoff (`SourceLoanCandidate`). Engine: `lib/services/myloans-sync.ts`; one entry point for any scheduler (`npm run sync:myloans`, `POST /api/cron/myloans-sync`, docs/SCHEDULER.md); a development timer (`lib/myloans/dev-timer.ts`). Tests: `tests/integration/myloans-sync-run.test.ts`, `myloans-load.test.ts`.
+
 On the mock, through the piece 6 client (`changesPage`, `poolPage`) and the round 3 logic already tested (`fetchRun`, `planRun`).
 
 1. **Run engine:**

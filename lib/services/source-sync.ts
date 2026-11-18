@@ -23,16 +23,12 @@ import {
 } from "@/lib/myloans/changes";
 import { isTestMode } from "@/lib/test-mode";
 import { getClassificationRules, getSetting, setSetting } from "@/lib/settings";
-import { loadCalendar } from "@/lib/calendar/load";
-import { daysFor, type Days } from "@/lib/calendar/core";
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { advanceBalance, peso } from "@/lib/funds/rules";
 import { MORTGAGE_THRESHOLDS, classifyProductName, type FinancingType, type OrcrStatus } from "@/lib/rules";
 import { recomputeStage } from "./stage";
-import { beginStats, callStore, callsThisHour, countCall, DbCallStore, lookupPn, noteCall, readStats } from "@/lib/myloans/client";
-import { jitteredPause, nextCap, nextCheckAt } from "@/lib/myloans/tiers";
-import { SETTING_DEFAULTS, type SettingValue } from "@/lib/settings";
-import type { MyLoansAdapter, MyLoansLookup } from "@/lib/myloans/types";
+import { callsThisHour, lookupPn } from "@/lib/myloans/client";
+import type { MyLoansLookup } from "@/lib/myloans/types";
 import { RELATED_SELECT, relatedLoans, replacementCandidates } from "./related-loans";
 import { paymentEvidence } from "@/lib/myloans/relation";
 export { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "./source-blocks";
@@ -51,7 +47,7 @@ import { financeIds, nextNumber } from "./funds";
 
 type Mode = "MANUAL" | "AUTOMATIC" | "SIMULATED";
 /** find: the background refresh after Find a loan shows a saved loan (Settings > MyLoans sync, "When a saved loan is found"). */
-export type Trigger = "open" | "button" | "background" | "simulator" | "find";
+export type Trigger = "open" | "button" | "background" | "simulator" | "find" | "sync";
 export type RefreshResult =
   | { ok: true; outcome: "none" | "minor" | "review"; category: ChangeCategory; checkedAt: Date; borrower?: boolean }
   /** limited: no call was made (hourly limit, breaker, or the shared count could not be written); the loan is left as it is. */
@@ -150,8 +146,9 @@ const RANK: Record<string, number> = { MATERIAL: 1, STATUS: 2, REPLACEMENT: 3 };
 /**
  * Asks MyLoans for one loan and records what changed. Minor changes update the copy; material,
  * status and replacement changes open (or update) the loan's one review item. Nothing else changes.
+ * holdMinor (the piece 7 sync, strict v2, D-052 (a)): nothing is applied, minor changes too go to the review item.
  */
-export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mode; trigger: Trigger; now?: Date; lookup?: MyLoansLookup; ceiling?: number }): Promise<RefreshResult> {
+export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mode; trigger: Trigger; now?: Date; lookup?: MyLoansLookup; ceiling?: number; holdMinor?: boolean }): Promise<RefreshResult> {
   const now = opts.now ?? new Date();
   const loan = await prisma.loan.findUnique({ where: { id: loanId } });
   if (!loan) throw new UserError("Loan File not found.");
@@ -190,9 +187,7 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
     const prevRecord = prev ? recordFromPayload(prev.payload) : null;
     const previous: Tracked | null = (prev?.tracked as Tracked | null) ?? (prevRecord ? trackedOfSaved(prevRecord) : null);
     const det = detectChanges(previous, current);
-    const tiers = await getSetting("myloans.tierMinutes", tx);
-    const t = loan.syncTier === "A" || loan.syncTier === "B" || loan.syncTier === "C" ? loan.syncTier : null;
-    await tx.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: now, retrievedAt: lookup.retrievedAt, sourceCurrent: true, lastRefreshError: null, nextCheckAt: nextCheckAt(now, t, tiers), ...(lookup.record.sourceUpdatedAt ? { sourceUpdatedAt: sourceTime(lookup.record.sourceUpdatedAt) } : {}) } });
+    await tx.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: now, retrievedAt: lookup.retrievedAt, sourceCurrent: true, lastRefreshError: null, ...(lookup.record.sourceUpdatedAt ? { sourceUpdatedAt: sourceTime(lookup.record.sourceUpdatedAt) } : {}) } });
     if (det.category === "NONE") {
       // First copy with tracked fields: keep it as the baseline (no new row for an unchanged copy).
       if (!prev || !prev.hash) {
@@ -212,7 +207,7 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
       },
     });
     const mode: Mode = opts.mode === "SIMULATED" ? "SIMULATED" : "AUTOMATIC";
-    const minor = det.changes.filter((c) => c.kind === "minor");
+    const minor = opts.holdMinor ? [] : det.changes.filter((c) => c.kind === "minor");
     if (minor.length) {
       // Minor: the copy is updated, no alert ("MyLoans updated the loan's area"). The borrower's own details
       // are never updated here: they are the Borrower details review below.
@@ -233,7 +228,7 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
       ? !!(await raiseBorrowerReview(tx, { loanId: loan.id, pn: loan.pn, current, hash, mode, now }))
       : false;
     // (A replaces-PN link that disappears is not a change to review.)
-    const big = det.changes.filter((c) => c.kind !== "minor" && c.kind !== "borrower" && !(c.kind === "replacement" && !c.now));
+    const big = det.changes.filter((c) => (opts.holdMinor || c.kind !== "minor") && c.kind !== "borrower" && !(c.kind === "replacement" && !c.now));
     if (!big.length) { result = { ok: true, outcome: borrower ? "review" : "minor", category: borrower ? "BORROWER" : "MINOR", checkedAt: now, borrower }; return; }
 
     const category = (big.some((c) => c.kind === "replacement" && c.now) ? "REPLACEMENT" : big.some((c) => c.kind === "status") ? "STATUS" : "MATERIAL") as Exclude<ChangeCategory, "NONE" | "MINOR" | "BORROWER">;
@@ -315,7 +310,6 @@ async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Ex
     });
     id = created.id;
   }
-  if (!loan.cancelledAt) await tx.loan.update({ where: { id: a.loanId }, data: { syncTier: "A", nextCheckAt: loan.nextCheckAt && loan.nextCheckAt < a.now ? loan.nextCheckAt : a.now } });
   const what = category === "REPLACEMENT" ? `MyLoans gave this loan a replacement PN (${a.candidates[0] ?? "new PN"})` : `MyLoans changed ${words(a.changes)}`;
   await writeAudit(tx, {
     actor: SYSTEM_ACTOR, mode: a.mode, action: "source_change_detected", entityType: "SourceChange", entityId: id, loanId: a.loanId, pn: a.pn,
@@ -439,6 +433,10 @@ export async function applySourceChange(u: CurrentUser, id: string, raw: unknown
       orcrStatus: p.classificationNext === "FINANCING" ? (d.orcrStatus ?? loan.orcrStatus) : null,
     };
     if (next.releaseDate && next.releaseDate !== businessDate(loan.releasedAt)) data.releasedAt = startOfBusinessDay(next.releaseDate);
+    // Piece 7 holds minor changes for review too (D-052 (a)): area, division and company as myloans now has them.
+    for (const c of item.changes as unknown as FieldChange[]) {
+      if (c.kind === "minor" && c.field in MINOR_ACCOUNT_COLUMNS) data[MINOR_ACCOUNT_COLUMNS[c.field as keyof typeof MINOR_ACCOUNT_COLUMNS]] = c.now === null ? null : String(c.now);
+    }
     // The loan's CURRENT branch comes from the MyLoans branch field (code first, then name); it changes
     // only here, when Admin applies the change. The PN's branch code stays: it says where it was opened.
     let moved: { from: string; to: string } | null = null;
@@ -804,205 +802,6 @@ function skippedOnOpen(loanId: string, why: string): null {
   return null;
 }
 
-/**
- * 7:00 AM to 7:00 PM Philippine time on a working day of the one calendar (D-018, D-041: its own Mon-Sat rule
- * is gone). Whether the sync keeps an office-hours window at all is piece 7 (Q-N8: 24/7).
- */
-export function isBusinessHours(now: Date, days: Days): boolean {
-  if (!days.isWorkingDay(businessDate(now))) return false;
-  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "numeric", hour12: false }).formatToParts(now).find((p) => p.type === "hour")?.value) % 24;
-  return hour >= 7 && hour < 19;
-}
-
-export interface SyncOptions {
-  now?: Date; trigger: "cron" | "run_now" | "script"; force?: boolean; actor?: Actor;
-  sleep?: (ms: number) => Promise<void>;
-  /** Tests: another source (for example 25,000 loans), and a fixed random for the jitter. */
-  adapter?: MyLoansAdapter; rnd?: () => number;
-}
-
-export interface RunStat {
-  at: string; trigger: string; mode: "feed" | "poll"; status: "healthy" | "slowed" | "paused";
-  due: number; checked: number; calls: number; saved: number; avgMs: number; maxMs: number; errors: number; ms: number;
-  updated: number; changes: number; cap: number; hourCalls: number; ceiling: number;
-  /** Kept for the old status lines. */
-  ok: boolean; failed: number; error: string | null;
-  /** Skipped: Admin paused MyLoans calls (status "paused"). */
-  byAdmin?: boolean;
-}
-
-const LOCK_KEY = 7_120_001; // pg advisory lock: one MyLoans sync at a time (cron, Run now, a second server)
-const OVERLAP_MS = 5 * 60_000;
-const SYNC_KEYS = [
-  "myloans.backgroundMinutes", "myloans.businessHoursOnly", "myloans.maxPerRun", "myloans.pauseMs", "myloans.lastRun",
-  "myloans.tierMinutes", "myloans.hourlyCeiling", "myloans.slowMs", "myloans.state",
-] as const;
-
-/** All the sync settings in one query (defaults for missing ones). */
-async function syncSettings() {
-  const rows = await prisma.setting.findMany({ where: { key: { in: [...SYNC_KEYS] } } });
-  const get = <K extends (typeof SYNC_KEYS)[number]>(k: K): SettingValue<K> => (rows.find((r) => r.key === k)?.value as SettingValue<K> | undefined) ?? SETTING_DEFAULTS[k];
-  return {
-    every: get("myloans.backgroundMinutes"), hoursOnly: get("myloans.businessHoursOnly"), max: get("myloans.maxPerRun"), pause: get("myloans.pauseMs"),
-    last: get("myloans.lastRun"), tiers: get("myloans.tierMinutes"), ceiling: get("myloans.hourlyCeiling"), slowMs: get("myloans.slowMs"), state: get("myloans.state"),
-  };
-}
-
-/** The latest copy's hash of each loan (one query). */
-async function latestHashes(ids: string[]): Promise<Map<string, string | null>> {
-  if (!ids.length) return new Map();
-  const rows = await prisma.$queryRaw<{ loanId: string; hash: string | null }[]>`
-    SELECT DISTINCT ON ("loanId") "loanId", "hash" FROM "LoanSourceSnapshot" WHERE "loanId" = ANY(${ids}::text[]) ORDER BY "loanId", "retrievedAt" DESC`;
-  return new Map(rows.map((r) => [r.loanId, r.hash]));
-}
-
-/** One statement for the whole run: last checked, next check, answered or not. */
-async function batchChecked(now: Date, rows: { id: string; next: Date | null; ok: boolean; err: string | null }[]) {
-  if (!rows.length) return;
-  await prisma.$executeRaw`
-    UPDATE "Loan" AS l SET "lastCheckedAt" = ${now}, "nextCheckAt" = v.next, "sourceCurrent" = v.ok, "lastRefreshError" = v.err,
-      "retrievedAt" = CASE WHEN v.ok THEN ${now} ELSE l."retrievedAt" END
-    FROM unnest(${rows.map((r) => r.id)}::text[], ${rows.map((r) => r.next?.toISOString() ?? null)}::timestamp(3)[], ${rows.map((r) => r.ok)}::boolean[], ${rows.map((r) => r.err)}::text[]) AS v(id, next, ok, err)
-    WHERE l.id = v.id`;
-}
-
-/** Due loans (partial index "Loan_due_idx"): active ones whose next check has come, oldest first. */
-export const dueQuery = (now: Date, cap: number) => Prisma.sql`
-  SELECT id, pn, "syncTier" FROM "Loan" WHERE "syncTier" IS NOT NULL AND "nextCheckAt" <= ${now} ORDER BY "nextCheckAt" LIMIT ${cap}`;
-
-/**
- * Background refresh with a bounded load on MyLoans and on our database:
- *  - one runner at a time (advisory lock); business hours (Manila, holidays); every N minutes;
- *  - the changed-since feed first (one call; only PNs open and active here; a cursor with 5 minutes of overlap);
- *  - otherwise the due loans by tier, capped (adaptive cap, hourly ceiling), with a jittered pause;
- *  - unchanged loans cost no write but one batched update for the whole run; only changes are written.
- */
-/** The words for a run skipped because Admin paused MyLoans calls. */
-export const PAUSED_BY_ADMIN = "MyLoans calls are paused by Admin.";
-
-export async function runMyLoansSync(o: SyncOptions) {
-  const now = o.now ?? new Date();
-  const s = await syncSettings();
-  // Paused by Admin: no call at all (the schedule, the console script and Run now alike). The run history
-  // says Paused so the schedule can be seen working.
-  if (await getSetting("myloans.paused")) {
-    const run: RunStat = {
-      at: now.toISOString(), trigger: o.trigger, mode: "poll", status: "paused", due: 0, checked: 0, calls: 0, saved: 0, avgMs: 0, maxMs: 0, errors: 0, ms: 0,
-      updated: 0, changes: 0, cap: s.state.cap ?? s.max, hourCalls: await callsThisHour(), ceiling: s.ceiling, ok: true, failed: 0, error: PAUSED_BY_ADMIN, byAdmin: true,
-    };
-    await setSetting("myloans.state", { ...s.state, runs: [run, ...s.state.runs].slice(0, 10) });
-    await writeAudit(prisma as unknown as Tx, { actor: o.trigger === "run_now" && o.actor ? o.actor : SYSTEM_ACTOR, mode: o.trigger === "run_now" ? "MANUAL" : "AUTOMATIC", action: "myloans_sync_run", entityType: "Setting", entityId: "myloans.lastRun", summary: `MyLoans sync skipped: ${PAUSED_BY_ADMIN}`, details: { trigger: o.trigger, paused: true } });
-    return { ran: false as const, reason: PAUSED_BY_ADMIN };
-  }
-  if (!o.force) {
-    if (s.hoursOnly && !isBusinessHours(now, daysFor(await loadCalendar(), null))) return { ran: false as const, reason: "Outside business hours." };
-    if (s.last && now.getTime() - new Date(s.last.at).getTime() < s.every * 60_000 - 30_000) return { ran: false as const, reason: `Ran less than ${s.every} minutes ago.` };
-  }
-  const result = await prisma.$transaction(async (lockTx) => {
-    const got = await lockTx.$queryRaw<{ ok: boolean }[]>`SELECT pg_try_advisory_xact_lock(${LOCK_KEY}) AS ok`;
-    if (!got[0]?.ok) return null;
-    return runLocked(o, s, now);
-  }, { timeout: 30 * 60_000, maxWait: 10_000 });
-  return result ?? { ran: false as const, reason: "Another MyLoans sync is running." };
-}
-
-async function runLocked(o: SyncOptions, s: Awaited<ReturnType<typeof syncSettings>>, now: Date) {
-  const t0 = Date.now();
-  const adapter = o.adapter ?? getMyLoansAdapter();
-  const sleep = o.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
-  const rnd = o.rnd ?? Math.random;
-  beginStats();
-  const cap = Math.max(1, Math.min(s.state.cap ?? s.max, s.max));
-  const rows: { id: string; next: Date | null; ok: boolean; err: string | null }[] = [];
-  let due = 0, updated = 0, changes = 0, paused = false, lastErr: string | null = null;
-  let cursor = s.state.cursor;
-  const nextFor = (tier: string | null, ok: boolean) => {
-    const t = (tier === "A" || tier === "B" || tier === "C") ? tier : null;
-    if (!t) return null;
-    const minutes = ok ? s.tiers[t] : Math.min(s.tiers[t], 30); // not answered: ask again sooner
-    return new Date(now.getTime() + minutes * 60_000);
-  };
-  const apply = async (loanId: string, lookup: MyLoansLookup) => {
-    const r = await refreshLoan(loanId, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", trigger: "background", now, lookup });
-    if (r.ok && r.outcome !== "none") changes++;
-    updated++;
-  };
-  const mode: "feed" | "poll" = adapter.capabilities.changedSince && cursor ? "feed" : "poll";
-
-  // The shared hourly count: old hours are not kept.
-  const shared = callStore();
-  if (shared instanceof DbCallStore) await shared.prune(now.getTime()).catch(() => null);
-  if ((await callsThisHour()) >= s.ceiling) {
-    paused = true;
-  } else if (mode === "feed" && !(await countCall({ ceiling: s.ceiling }))) {
-    paused = true;
-  } else if (mode === "feed") {
-    // One call: what changed since the cursor (minus an overlap, so nothing is missed)?
-    const since = new Date(new Date(cursor!).getTime() - OVERLAP_MS);
-    const started = Date.now();
-    const feed = await adapter.getChangedSince(since, 1_000);
-    noteCall(Date.now() - started, feed.ok ? { ok: true } : { ok: false, retryAfterMs: feed.retryAfterMs });
-    if (feed.ok) {
-      const pns = [...new Set(feed.records.map((r) => r.pn))];
-      const local = pns.length ? await prisma.loan.findMany({ where: { pn: { in: pns }, syncTier: { not: null } }, select: { id: true, pn: true, syncTier: true } }) : [];
-      due = local.length;
-      const hashes = await latestHashes(local.map((l) => l.id));
-      for (const l of local) {
-        const record = feed.records.find((r) => r.pn === l.pn)!;
-        if (hashTracked(trackedOf(record)) !== hashes.get(l.id)) {
-          await apply(l.id, { ok: true, record, raw: { source: "MyLoansFeed", loan: record }, adapter: adapter.name, retrievedAt: now });
-        }
-        rows.push({ id: l.id, next: nextFor(l.syncTier, true), ok: true, err: null });
-      }
-      cursor = feed.until.toISOString();
-    } else {
-      lastErr = feed.message;
-    }
-  } else {
-    const budget = Math.max(0, Math.min(cap, s.ceiling - (await callsThisHour())));
-    const list = budget ? await prisma.$queryRaw<{ id: string; pn: string; syncTier: string | null }[]>(dueQuery(now, budget)) : [];
-    due = list.length;
-    const hashes = await latestHashes(list.map((l) => l.id));
-    for (const [i, l] of list.entries()) {
-      if (i > 0 && s.pause > 0) await sleep(jitteredPause(s.pause, rnd()));
-      // Reserved in one atomic step against the shared count: the limit holds across instances.
-      const r = await lookupPn(adapter, l.pn, { ceiling: s.ceiling });
-      if (!r.ok && r.limited) { paused = true; break; }
-      if (r.ok) {
-        if (hashTracked(trackedOf(r.record)) !== hashes.get(l.id)) await apply(l.id, r);
-        rows.push({ id: l.id, next: nextFor(l.syncTier, true), ok: true, err: null });
-      } else if (r.reason === "NOT_FOUND") {
-        rows.push({ id: l.id, next: nextFor(l.syncTier, true), ok: true, err: null });
-      } else {
-        lastErr = r.message;
-        rows.push({ id: l.id, next: nextFor(l.syncTier, false), ok: false, err: r.message });
-      }
-    }
-    // With a feed: start its cursor now; the next runs ask only for what changed.
-    if (adapter.capabilities.changedSince && !cursor) cursor = now.toISOString();
-  }
-  await batchChecked(now, rows);
-
-  const st = readStats();
-  const avgMs = st.ms.length ? Math.round(st.ms.reduce((a, b) => a + b, 0) / st.ms.length) : 0;
-  const maxMs = st.ms.length ? Math.max(...st.ms) : 0;
-  const trouble = st.rateLimited > 0 || st.failed > 0 || avgMs > s.slowMs;
-  const run: RunStat = {
-    at: now.toISOString(), trigger: o.trigger, mode, status: paused ? "paused" : trouble ? "slowed" : "healthy",
-    due, checked: rows.length, calls: st.calls, saved: st.saved, avgMs, maxMs, errors: st.failed, ms: Date.now() - t0,
-    updated, changes, cap, hourCalls: await callsThisHour(), ceiling: s.ceiling,
-    ok: st.failed === 0, failed: rows.filter((r) => !r.ok).length, error: lastErr,
-  };
-  const state = { cursor, cap: paused ? cap : nextCap(cap, s.max, trouble), runs: [run, ...s.state.runs].slice(0, 10) };
-  await prisma.setting.upsert({ where: { key: "myloans.state" }, create: { key: "myloans.state", value: state as unknown as Prisma.InputJsonValue }, update: { value: state as unknown as Prisma.InputJsonValue } });
-  await prisma.setting.upsert({ where: { key: "myloans.lastRun" }, create: { key: "myloans.lastRun", value: run as unknown as Prisma.InputJsonValue }, update: { value: run as unknown as Prisma.InputJsonValue } });
-  // Every run is audited: Run now as the person, the schedule and the console script as the system.
-  const by = o.trigger === "run_now" && o.actor ? o.actor : SYSTEM_ACTOR;
-  const who = o.trigger === "run_now" && o.actor ? o.actor.label : o.trigger === "cron" ? "The schedule" : "The console script";
-  await writeAudit(prisma as unknown as Tx, { actor: by, mode: o.trigger === "run_now" ? "MANUAL" : "AUTOMATIC", action: "myloans_sync_run", entityType: "Setting", entityId: "myloans.lastRun", summary: `${who} ran the MyLoans sync: ${run.checked} checked, ${run.changes} with changes, ${run.calls} calls${run.failed ? `, ${run.failed} not answered` : ""}${paused ? " (hourly limit reached)" : ""}`, details: { trigger: o.trigger } });
-  return { ran: true as const, ...run };
-}
-
 /** Admin: "Pause MyLoans calls" on or off (myloans:manage). Audited. */
 export async function setMyLoansPaused(u: CurrentUser, on: boolean) {
   if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask a Superadmin to turn on \"Change MyLoans sync settings\" for your role.");
@@ -1012,73 +811,10 @@ export async function setMyLoansPaused(u: CurrentUser, on: boolean) {
     await setSetting("myloans.paused", on, tx);
     await writeAudit(tx, {
       actor: actorOf(u), mode: "MANUAL", action: "myloans_paused", entityType: "Setting", entityId: "myloans.paused",
-      summary: on ? `${u.name} paused MyLoans calls: the background run, the stale refresh and refresh on open make no call` : `${u.name} turned MyLoans calls back on`,
+      summary: on ? `${u.name} paused MyLoans calls: the sync, the stale refresh and refresh on open make no call` : `${u.name} turned MyLoans calls back on`,
       before: { paused: was }, after: { paused: on },
     });
   });
-}
-
-export async function runSyncNow(u: CurrentUser) {
-  if (!can(u, PERMISSIONS.MYLOANS_SYNC)) throw new UserError("Ask a Superadmin to turn on \"Run the MyLoans sync now\" for your role.");
-  return runMyLoansSync({ trigger: "run_now", force: true, actor: actorOf(u) });
-}
-
-const minutes = (label: string, min: number, max: number) => z.coerce.number({ message: `Enter ${label}.` }).int("Whole minutes.").min(min, `At least ${min}.`).max(max, `At most ${max.toLocaleString("en-PH")}.`);
-export const syncSettingsSchema = z.object({
-  refreshOnOpenMinutes: z.coerce.number({ message: "Enter minutes (0 means always)." }).int("Whole minutes.").min(0, "0 or more.").max(1440, "At most 1,440 (a day)."),
-  refreshOnFindHours: z.coerce.number({ message: "Enter hours (0 means never)." }).int("Whole hours.").min(0, "0 or more.").max(720, "At most 720 (30 days).").default(4),
-  backgroundMinutes: z.coerce.number({ message: "Enter minutes." }).int("Whole minutes.").min(5, "At least 5 minutes.").max(1440, "At most 1,440 (a day)."),
-  businessHoursOnly: z.boolean(),
-  maxPerRun: z.coerce.number({ message: "Enter a number." }).int("A whole number.").min(1, "At least 1.").max(500, "At most 500 a run."),
-  pauseMs: z.coerce.number({ message: "Enter milliseconds." }).int("Whole milliseconds.").min(0, "0 or more.").max(10_000, "At most 10,000 (10 seconds)."),
-  tierA: minutes("minutes", 5, 1440).default(60),
-  tierB: minutes("minutes", 15, 2880).default(240),
-  tierC: minutes("minutes", 60, 10080).default(1440),
-  hourlyCeiling: z.coerce.number({ message: "Enter a number." }).int("A whole number.").min(10, "At least 10.").max(100_000, "At most 100,000.").default(600),
-  replacementWindowDays: z.coerce.number({ message: "Enter days." }).int("Whole days.").min(1, "At least 1 day.").max(365, "At most 365 days.").default(30),
-});
-
-export async function saveSyncSettings(u: CurrentUser, raw: unknown) {
-  if (!can(u, PERMISSIONS.SOURCE_MANAGE)) throw new UserError("Ask a Superadmin to turn on \"Change MyLoans sync settings\" for your role.");
-  const p = syncSettingsSchema.safeParse(raw);
-  if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
-  const d = p.data;
-  await prisma.$transaction(async (tx) => {
-    const before = {
-      refreshOnOpenMinutes: await getSetting("myloans.refreshOnOpenMinutes", tx), refreshOnFindHours: await getSetting("myloans.refreshOnFindHours", tx), backgroundMinutes: await getSetting("myloans.backgroundMinutes", tx),
-      businessHoursOnly: await getSetting("myloans.businessHoursOnly", tx), maxPerRun: await getSetting("myloans.maxPerRun", tx), pauseMs: await getSetting("myloans.pauseMs", tx),
-      tierMinutes: await getSetting("myloans.tierMinutes", tx), hourlyCeiling: await getSetting("myloans.hourlyCeiling", tx), replacementWindowDays: await getSetting("myloans.replacementWindowDays", tx),
-    };
-    await setSetting("myloans.refreshOnOpenMinutes", d.refreshOnOpenMinutes, tx);
-    await setSetting("myloans.refreshOnFindHours", d.refreshOnFindHours, tx);
-    await setSetting("myloans.backgroundMinutes", d.backgroundMinutes, tx);
-    await setSetting("myloans.businessHoursOnly", d.businessHoursOnly, tx);
-    await setSetting("myloans.maxPerRun", d.maxPerRun, tx);
-    await setSetting("myloans.pauseMs", d.pauseMs, tx);
-    await setSetting("myloans.tierMinutes", { A: d.tierA, B: d.tierB, C: d.tierC }, tx);
-    await setSetting("myloans.hourlyCeiling", d.hourlyCeiling, tx);
-    await setSetting("myloans.replacementWindowDays", d.replacementWindowDays, tx);
-    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "myloans_sync_settings", entityType: "Setting", entityId: "myloans", summary: `${u.name} changed the MyLoans sync settings`, before, after: d });
-  });
-}
-
-/** For the sync card: mode, health, the last runs, active loans per tier (one grouped query). */
-export async function syncStatus() {
-  const adapter = getMyLoansAdapter();
-  const [state, ceiling, tiers] = await Promise.all([
-    getSetting("myloans.state"), getSetting("myloans.hourlyCeiling"),
-    prisma.loan.groupBy({ by: ["syncTier"], where: { syncTier: { not: null } }, _count: { _all: true } }),
-  ]);
-  const last = state.runs[0] ?? null;
-  const breaker = await adapter.breakerState();
-  const hourCalls = await callsThisHour();
-  const health = (await getSetting("myloans.paused")) ? "Paused by Admin: MyLoans calls are paused"
-    : hourCalls >= ceiling || (last?.status === "paused" && !last.byAdmin) ? "Paused: hourly limit reached"
-    : breaker.open || last?.status === "slowed" ? "Slowed down: MyLoans is answering slowly" : "Healthy";
-  return {
-    mode: myLoansMode(), capabilities: adapter.capabilities, breaker, lastRun: last, runs: state.runs, cap: state.cap, cursor: state.cursor,
-    hourCalls, ceiling, health, tiers: { A: 0, B: 0, C: 0, ...Object.fromEntries(tiers.map((t) => [t.syncTier!, t._count._all])) } as { A: number; B: number; C: number },
-  };
 }
 
 // ---------------------------------------------------------------------------

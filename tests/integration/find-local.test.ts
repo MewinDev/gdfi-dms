@@ -191,7 +191,7 @@ describe("Pressing Find loan", () => {
   });
 
   it("a cancelled loan replaced by another: the card says so and names the replacement", async () => {
-    await prisma.loan.update({ where: { pn: ANTIPOLO }, data: { cancelledAt: new Date(), cancelReason: `Replaced by ${ANGONO}`, replacedByPn: ANGONO, syncTier: null } });
+    await prisma.loan.update({ where: { pn: ANTIPOLO }, data: { cancelledAt: new Date(), cancelReason: `Replaced by ${ANGONO}`, replacedByPn: ANGONO } });
     await setSetting("myloans.refreshOnFindHours", 4);
     await prisma.loan.update({ where: { pn: ANTIPOLO }, data: { lastCheckedAt: new Date(Date.now() - 5 * 3_600_000) } });
     const card = await savedLoanCard(la, ANTIPOLO);

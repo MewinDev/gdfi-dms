@@ -157,8 +157,8 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | SUPERADMIN, LA, Admin, DP, Vault, Digital Records, QA, ARCHIVER, LA Supervisor/Head |
 | Review MyLoans changes | Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin, LA Supervisor/Head |
 | Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, LA Supervisor/Head |
-| Change MyLoans sync settings | How often loans are checked against MyLoans and the business hours. | Settings, MyLoans sync | - | `myloans:manage` | SUPERADMIN, Admin |
-| Run the MyLoans sync now | The Run now button: check every open loan against MyLoans at once. | Settings, MyLoans sync, Run now | - | `myloans:sync` | SUPERADMIN, Admin |
+| Change MyLoans sync settings | The myloans sync: how often it runs, the daily catch-up, the alert, the go-live and branch-pool dates, and Pause MyLoans calls. | Settings, MyLoans sync | - | `myloans:manage` | SUPERADMIN, Admin |
+| Run the MyLoans sync now | Run now and Run the catch-up now: read what changed in myloans at once (nothing is applied; changes become review items). | Settings, MyLoans sync, Run now | - | `myloans:sync` | SUPERADMIN, Admin |
 
 ### Branches and access
 
@@ -194,7 +194,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Change funds types | Rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off. | Settings, Funds types | - | `fundtypes:manage` | SUPERADMIN, Admin |
 | Change processing stages | The stages of each transaction type, their evidence and targets. | Settings, Processing stages | - | `stages:manage` | SUPERADMIN, Admin |
 | Change system switches | MyLoans test switches, the simulator switch, sample MyLoans changes. | Settings, System | - | `settings:system` | SUPERADMIN, Admin |
-| Manage product classification | The Refinancing and Financing keyword lists, the default for a product name with no keyword, and setting any product to Financing or Refinancing (overrides the keywords; a reason is required) (D-031, D-049). Saving re-checks open loan files. | Settings, Product classification | - | `settings:classification` | SUPERADMIN, Admin, LA Supervisor/Head |
+| Manage product classification | The Refinancing and Financing keyword lists, the default for a product name with no keyword, and setting any product to Financing or Refinancing (overrides the keywords; a reason is required) (D-031, D-049). Saving re-checks open loan files. | Settings, Product classification | - | `settings:classification` | LA Supervisor/Head |
 | Change the PN format | The parts of a PN (prefix, branch code, year, system digit, running number) and the PN check. | Settings, System, PN format | - | `settings:pn_format` | SUPERADMIN, Admin |
 | Import data | Import / Export files, for the lists this role may change. | Settings, Import / Export | - | `settings:import` | SUPERADMIN, Admin |
 | Use the test simulator | Move sample loans through the processor and vault steps, and simulate MyLoans changes. Only in test mode. | Loan File, Simulator (test mode) | See loan files | `simulator:use` | SUPERADMIN, Admin |

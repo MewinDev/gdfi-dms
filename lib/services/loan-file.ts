@@ -364,9 +364,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       await tx.loanSourceSnapshot.create({
         data: { loanId: loan.id, retrievedAt: lookup.retrievedAt, adapter: lookup.adapter, payload: lookup.raw as Prisma.InputJsonValue, tracked: tracked as unknown as Prisma.InputJsonValue, hash: hashTracked(tracked), kind: "BASE" },
       });
-      // Not yet sent: tier B, first background check after its interval.
-      const tiers = await getSetting("myloans.tierMinutes", tx);
-      await tx.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: lookup.retrievedAt, syncTier: "B", nextCheckAt: new Date(lookup.retrievedAt.getTime() + tiers.B * 60_000) } });
+      await tx.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: lookup.retrievedAt } });
       await writeAudit(tx, {
         actor, mode: "MANUAL", action: "loan_file_opened", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn,
         journeyStep: "1.4",

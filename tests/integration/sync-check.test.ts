@@ -16,8 +16,10 @@ import { lookupPn, openLoanFile, refreshFromMyLoans, MYLOANS_BUSY } from "@/lib/
 import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { requestAdvance } from "@/lib/services/funds";
 import {
-  applySourceChange, keepCurrent, linkReplacement, refreshLoan, refreshOnOpen, runMyLoansSync, runSyncNow, setMyLoansPaused, simulateSourceChange, PAUSED_BY_ADMIN,
+  applySourceChange, keepCurrent, linkReplacement, refreshLoan, refreshOnOpen, setMyLoansPaused, simulateSourceChange,
 } from "@/lib/services/source-sync";
+import { runMyLoansSync, runScheduled, runSyncNow } from "@/lib/services/myloans-sync";
+const PAUSED_BY_ADMIN = "MyLoans calls are paused by Admin.";
 import { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "@/lib/services/source-blocks";
 import { reviewFor } from "@/lib/services/source-review";
 import { acceptBorrowerCorrection, borrowerReviewFor, borrowerToDo, keepBorrowerCurrent } from "@/lib/services/borrower-review";
@@ -67,11 +69,8 @@ beforeEach(async () => {
   await cleanLoans();
   // This file sets up who approves in each branch itself: the seeded LA Supervisor/Head is parked.
   await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
-  for (const [k, v] of [["myloans.refreshOnOpenMinutes", 15], ["myloans.refreshOnFindHours", 4], ["myloans.maxPerRun", 50], ["myloans.pauseMs", 0], ["myloans.hourlyCeiling", 600]] as const) await setSetting(k, v);
+  for (const [k, v] of [["myloans.refreshOnOpenMinutes", 15], ["myloans.refreshOnFindHours", 4], ["myloans.hourlyCeiling", 600]] as const) await setSetting(k, v);
   await setSetting("myloans.paused", false);
-  await setSetting("myloans.businessHoursOnly", false);
-  await setSetting("myloans.lastRun", null);
-  await setSetting("myloans.state", { cursor: null, cap: null, runs: [] });
   await setSetting("myloans.mockOverrides", {});
   await setSetting("myloans.mockExtra", []);
   await setSetting("email.active", false);
@@ -83,7 +82,6 @@ afterAll(async () => {
   await cleanLoans();
   await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
   await setSetting("myloans.paused", false);
-  await setSetting("myloans.businessHoursOnly", true);
   await setSetting("myloans.mockOverrides", {});
   await setSetting("myloans.mockExtra", []);
   for (const email of [SUP_A, SUP_B, APPR_A]) {
@@ -437,21 +435,20 @@ describe("11. Refresh paths, the pause switch, limits", () => {
   it("paused: the background run, the stale refresh and refresh on open make zero calls; the button and a new-PN Find still call; audited; noted; Admin only", async () => {
     const t0 = new Date();
     const { loan } = await setup();
-    await prisma.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: new Date(Date.now() - 6 * 3_600_000), nextCheckAt: new Date(Date.now() - 60_000) } });
+    await prisma.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: new Date(Date.now() - 6 * 3_600_000) } });
     await expect(setMyLoansPaused(la, true)).rejects.toThrow(/Ask a Superadmin/);
     await expect(setMyLoansPaused(supAngono, true)).rejects.toThrow(/Ask a Superadmin/);
     await setMyLoansPaused(admin, true);
     expect(await prisma.auditLog.count({ where: { action: "myloans_paused", actorId: admin.id, at: { gte: t0 } } })).toBe(1);
     resetClient();
     spy();
-    expect(await runMyLoansSync({ trigger: "cron" })).toEqual({ ran: false, reason: PAUSED_BY_ADMIN });
-    expect(await runMyLoansSync({ trigger: "script", force: true })).toEqual({ ran: false, reason: PAUSED_BY_ADMIN });
+    expect(await runScheduled("schedule")).toMatchObject({ ran: false, skipped: PAUSED_BY_ADMIN });
+    expect(await runMyLoansSync({ mode: "CHANGE", trigger: "script" })).toMatchObject({ ran: false, skipped: PAUSED_BY_ADMIN });
     expect(await refreshFoundLoan(la, PN)).toMatchObject({ called: false });
     expect(await refreshOnOpen(await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } }))).toBeNull();
     expect(count()).toBe(0);
-    const state = await getSetting("myloans.state");
-    expect(state.runs[0]).toMatchObject({ status: "paused", byAdmin: true, error: PAUSED_BY_ADMIN });
-    expect((await (await import("@/lib/services/source-sync")).syncStatus()).health).toBe("Paused by Admin: MyLoans calls are paused");
+    // The run log says why (the schedule can be seen working).
+    expect(await prisma.syncRun.count({ where: { skipped: PAUSED_BY_ADMIN } })).toBe(2);
     // A person asked: the button and a new-PN lookup still call MyLoans.
     await refreshFromMyLoans(la, loan.id);
     expect(count()).toBe(1);
@@ -468,9 +465,9 @@ describe("11. Refresh paths, the pause switch, limits", () => {
     expect(await refreshOnOpen(await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } }))).toBeNull();
     expect(await refreshFoundLoan(la, PN)).toMatchObject({ called: false });
     expect(count()).toBe(0);
-    await runMyLoansSync({ trigger: "script", force: true });
+    await runMyLoansSync({ mode: "CHANGE", trigger: "script" });
     await runSyncNow(admin);
-    expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run", summary: { startsWith: "The console script ran" } } })).toBeGreaterThan(0);
+    expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run", summary: { startsWith: "The console command ran" } } })).toBeGreaterThan(0);
     expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run", actorId: admin.id } })).toBeGreaterThan(0);
     process.env.CRON_SECRET = "a-long-test-secret-123456";
     const wrong = await cronPost(new NextRequest("http://localhost/api/cron/myloans-sync", { method: "POST", headers: { "x-cron-secret": "wrong-secret-0000000000" } }));
@@ -479,10 +476,10 @@ describe("11. Refresh paths, the pause switch, limits", () => {
     expect(right.status).toBe(200);
   });
 
-  it("two runs at once do not overlap (advisory lock)", async () => {
+  it("two runs at once do not overlap (the lock)", async () => {
     await setup();
-    const [a, b] = await Promise.all([runMyLoansSync({ trigger: "script", force: true, sleep: () => new Promise((r) => setTimeout(r, 50)) }), runMyLoansSync({ trigger: "script", force: true })]);
-    const reasons = [a, b].filter((r) => !r.ran).map((r) => (r as { reason: string }).reason);
+    const [a, b] = await Promise.all([runMyLoansSync({ mode: "CHANGE", trigger: "script" }), runMyLoansSync({ mode: "CHANGE", trigger: "script" })]);
+    const reasons = [a, b].filter((r) => !r.ran).map((r) => r.skipped);
     expect(reasons.length).toBeLessThanOrEqual(1);
     if (reasons.length) expect(reasons[0]).toBe("Another MyLoans sync is running.");
   });

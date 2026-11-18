@@ -7,9 +7,10 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, strOrNull, type ActionState } from "@/lib/action";
 import {
   applySourceChange, askCashBack, closeAsCancelled, copyReusablePapers, keepCurrent, linkFromRelated, linkReplacement, moveCashToNewPn,
-  runSyncNow, saveSyncSettings, setMyLoansPaused, simulateSourceChange, SIM_SOURCE_KINDS, type SimSourceKind,
+  setMyLoansPaused, simulateSourceChange, SIM_SOURCE_KINDS, type SimSourceKind,
 } from "@/lib/services/source-sync";
 import { UserError } from "@/lib/services/errors";
+import { runSyncNow, saveSyncSettings } from "@/lib/services/myloans-sync";
 import { acceptBorrowerCorrection, keepBorrowerCurrent } from "@/lib/services/borrower-review";
 
 async function revalidateItem(id: string) {
@@ -100,11 +101,7 @@ export async function copyPapersAction(_prev: ActionState, fd: FormData): Promis
 export async function syncSettingsAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.SOURCE_MANAGE);
-    await saveSyncSettings(u, {
-      refreshOnOpenMinutes: str(fd, "refreshOnOpenMinutes"), refreshOnFindHours: str(fd, "refreshOnFindHours"), backgroundMinutes: str(fd, "backgroundMinutes"),
-      businessHoursOnly: fd.get("businessHoursOnly") === "on", maxPerRun: str(fd, "maxPerRun"), pauseMs: str(fd, "pauseMs"),
-      tierA: str(fd, "tierA"), tierB: str(fd, "tierB"), tierC: str(fd, "tierC"), hourlyCeiling: str(fd, "hourlyCeiling"), replacementWindowDays: str(fd, "replacementWindowDays"),
-    });
+    await saveSyncSettings(u, Object.fromEntries(["refreshOnOpenMinutes", "refreshOnFindHours", "hourlyCeiling", "intervalMinutes", "catchUpTime", "catchUpHours", "alertAfterFailedRuns", "goLiveDate", "cutoffDate"].map((k) => [k, str(fd, k)])));
     revalidatePath("/admin/settings");
     return "Saved.";
   });
@@ -121,14 +118,15 @@ export async function pauseMyLoansAction(_prev: ActionState, fd: FormData): Prom
   });
 }
 
-export async function runSyncNowAction(): Promise<ActionState> {
+/** Run now (a change run) or Run the catch-up now (myloans:sync). */
+export async function runSyncNowAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const u = await requirePermission(PERMISSIONS.MYLOANS_SYNC);
-    const r = await runSyncNow(u);
+    const r = await runSyncNow(u, str(fd, "mode") === "CATCHUP" ? "CATCHUP" : "CHANGE");
     revalidatePath("/admin/settings");
-    if (!r.ran) return r.reason;
-    if (r.status === "paused") return "Paused: hourly limit reached. The next hour continues.";
-    return `Checked ${r.checked} loan${r.checked === 1 ? "" : "s"}: ${r.changes} with changes, ${r.calls} call${r.calls === 1 ? "" : "s"} to MyLoans${r.failed ? `, ${r.failed} not answered` : ""}.`;
+    if (!r.ran) return r.skipped ?? "Skipped.";
+    if (!r.ok) throw new UserError(`The sync failed: ${r.error}. The checkpoint was kept; the next run catches up.`);
+    return `${r.rows} change${r.rows === 1 ? "" : "s"} read from myloans: ${r.reviews} review item${r.reviews === 1 ? "" : "s"}, ${r.candidates} released not yet in the DMS${r.duplicates ? `, ${r.duplicates} sent twice` : ""}.`;
   });
 }
 

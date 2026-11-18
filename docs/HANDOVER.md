@@ -28,7 +28,7 @@ Branch: `feature/foundation-settings-rbac-myloans` (pushed)
   - `tests/contract` (`npm run test:contract`).
 
   See `docs/myloans/mock-and-contract.md`. Find loan and Refresh still use the old adapter (moved in 10a).
-- **D-049 / D-051, product classification:** "brand new" and "2nd hand" are Financing; a product can be set by hand (Settings, Product classification, "Manage product classification"); the products come from API 5 (`pr_products.tsv` in the mock and kit). On the real list, 20 products move from Refinancing (default) to Financing and nothing else changes; 12 are marked "Please confirm".
+- **D-049 / D-051, product classification:** "brand new" and "2nd hand" are Financing; a product can be set by hand (Settings, Product classification, "Manage product classification"); the products come from API 5 (`pr_products.tsv` in the mock and kit). On the real list, 20 products move from Refinancing (default) to Financing and nothing else changes. D-052: the keyword rule decides, no product needs confirming in advance (the "Please confirm" markers are gone); "Classified by default" stays as a label and filter; the tick is on by default for the LA Supervisor/Head only; every change needs a reason and shows in the product's history.
 - **Piece 10a done (D-050, replaced by D-051):**
   - Find loan and Refresh read API 1 (`lib/myloans/v1/adapter.ts`, the "MOCK myloans data" overlay of the simulator in `mock-store.ts`).
   - The identity is saved on open; every search is logged (`PnSearchLog`, Reports, PN searches, `reports:pnsearch`).

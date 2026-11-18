@@ -737,3 +737,37 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
        - Tricycle Loan.
 - **Reason:** the user's answers after the 10a report.
 
+## D-052 Product classification final; 10a notes; piece 7 approved
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **Product classification, final** (updates D-049 and D-051):
+     - **The automatic keyword rule decides:**
+       1. Refinancing words in the name → Refinancing;
+       2. otherwise Financing words → Financing;
+       3. no matching word → Refinancing (automatic).
+
+       No products need confirming in advance: the **"Please confirm" markers and their list are removed**.
+     - **"Classified by default"** (no matching word) keeps its label and filter, so supervisors find and check those quickly.
+     - **"Manage product classification"** is on by default for the **LA Supervisor/Head only** (off by default for Admin and Superadmin). The Superadmin can grant it to others (for example an LA) in the permission matrix.
+     - **Changing a product's classification always requires a reason, for anyone.** It is logged and shown in the product's history.
+     - **Reason:** keep it simple; the rule decides, and people correct a product with a reason.
+  2. **Notes on 10a:**
+     - **Old audit-log rows with an address or contact number:** no action. The DMS is not live and they are fake test data. Confirmed: no production code can write an address or contact number anywhere, the audit log included.
+     - **"Same borrower" in Related loans** is the existing Related loans card (other loans with the same CIN or CIF, within the reader's branches), with its guessed tag replaced by a neutral label. It is not new.
+  3. **Piece 7, myloans sync on API 2: approved.**
+     - **(a)** As a short bridge until piece 8, API 2 changes raise today's review items, one per loan. **Nothing is applied automatically** (strict v2). Only people with the approver tick for the loan's branch can act, and items show the changed fields.
+     - **(b)** The old tiered background refresh retires: its code and settings are removed, so there is one sync path. Find loan and Refresh stay on API 1.
+     - **(c)** Released loans not yet in the DMS are stored, only those released on or after the branch-pool cutoff (a setting, default go-live minus 30 days), keeping only what the pool card needs. They are shown in the pool in 10b.
+     - **Scheduler:** the hosting is not decided. The sync is one command / entry point that any scheduler can call (Windows Task Scheduler, cron, a cloud scheduler); in development an in-app timer is fine. `docs/SCHEDULER.md` shows each option. Runs never overlap (a lock).
+     - **Daily catch-up:** 02:00 Manila, the last 26 hours (settings).
+- **Reason:** the user's decisions after the 10a report.
+- **How it was built (18 November 2026), choices within the decision:**
+  - A change run every **30 minutes** (the interval already decided for the sync, editable); the scheduler may call every 5 minutes and the sync decides what is due (the catch-up first, else a change run when the interval passed).
+  - **Admin is alerted after 3 failed runs in a row** (a setting). A failed run keeps the checkpoint, so nothing is lost.
+  - **Until go-live is set, the branch-pool cutoff is 30 days ago** (go-live minus 30 days once set; a cutoff date can be set directly).
+  - **The first load (pool mode)** runs from the console only (`npm run sync:myloans -- --first-load`); Settings has Run now and Run the catch-up now.
+  - **What counts as a change is the contract's ContentHash.** A field outside its 17 fields (area, division, company) is not seen by the sync on its own; it reaches the loan with the next change or a Refresh from MyLoans.
+  - A loan sent twice in one run raises nothing and notifies Admin (ask the myloans team).
+  - Removed: the tier columns, the old background refresh (business hours, cap per run, pause between calls, adaptive cap) and their settings; the hourly call ceiling stays for API 1 (Find loan and the refreshes of one loan).
+

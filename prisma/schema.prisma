@@ -852,10 +852,6 @@ model Loan {
   lastRefreshError    String?
   /// When MyLoans was last asked (answered or not). retrievedAt is the last answer.
   lastCheckedAt       DateTime?
-  /// MyLoans polling: A work in progress, B not yet sent, C finished steps not closed; null = never (closed, cancelled).
-  syncTier            String?
-  /// When the background sync should ask MyLoans again (partial index "Loan_due_idx" on active loans).
-  nextCheckAt         DateTime?
   /// Replacement PN links (a changed unit gets a new PN: a new loan file linked to the old one).
   replacesPn          String?
   replacedByPn        String?
@@ -2292,4 +2288,58 @@ model PnSearchLog {
   @@index([pn])
   @@index([loanBranchId, at])
   @@index([searcherBranchId, at])
+}
+
+/// Piece 7 (D-052): one myloans sync run (API 2 change mode, the daily catch-up, or the first load): what it did.
+model SyncRun {
+  id               String    @id @default(cuid())
+  /// CHANGE, CATCHUP, FIRST_LOAD.
+  mode             String
+  /// schedule, script, run_now, dev_timer.
+  trigger          String
+  startedAt        DateTime  @default(now())
+  endedAt          DateTime?
+  ok               Boolean   @default(false)
+  /// A skipped run (paused, another run holds the lock, not due): why.
+  skipped          String?
+  since            DateTime?
+  pages            Int       @default(0)
+  rows             Int       @default(0)
+  unchanged        Int       @default(0)
+  reviews          Int       @default(0)
+  duplicates       Int       @default(0)
+  candidates       Int       @default(0)
+  error            String?
+  checkpointBefore DateTime?
+  checkpointAfter  DateTime?
+  byLabel          String    @default("")
+
+  @@index([startedAt])
+}
+
+/// Piece 7: the lock that keeps two sync runs from overlapping (one row; a run holds it until it ends or it expires).
+model SyncLease {
+  id        String   @id
+  holder    String
+  expiresAt DateTime
+}
+
+/// Piece 7 (D-052 (c)): a loan myloans released that has no loan file here yet, released on or after the branch-pool
+/// cutoff. Only what the pool card needs. Shown in the branch pool in piece 10b.
+model SourceLoanCandidate {
+  id             String   @id @default(cuid())
+  externalLoanId Int      @unique
+  cin            String?
+  pn             String
+  borrowerName   String
+  branchCode     String?
+  branchName     String?
+  productName    String?
+  amount         String?
+  releaseDate    DateTime
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+
+  @@index([pn])
+  @@index([branchCode, releaseDate])
 }

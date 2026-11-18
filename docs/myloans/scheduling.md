@@ -2,7 +2,9 @@
 
 How to make the background MyLoans sync and the email reminders run on a schedule, and how to check that they do.
 
-Last updated: 13 November 2026 (PHT)
+Last updated: 18 November 2026 (PHT)
+
+> **The MyLoans sync part of this page is out of date.** Piece 7 (D-052, 18 November 2026) replaced the tiered background refresh with one sync on API 2 (change runs, a daily catch-up at 02:00 Manila, a lock, a run log). How to schedule it: **[../SCHEDULER.md](../SCHEDULER.md)** (`npm run sync:myloans` or `POST /api/cron/myloans-sync`). The business hours, tiers, cap per run, pause between calls and `npm run myloans:sync` described below no longer exist. The **email reminders** parts of this page are still current.
 
 - **Nothing runs by itself.** The DMS has no timer of its own for the MyLoans sync or the email reminders. Something outside the app must call them: a scheduler on this PC, a cron job on a server, or Supabase.
 - **The rules live in the app.** The scheduler only knocks on the door. Business hours, "every N minutes", the cap per run and the hourly limit are checked by the app (`lib/services/source-sync.ts`, `runMyLoansSync`).

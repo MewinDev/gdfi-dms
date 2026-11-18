@@ -2,9 +2,7 @@
  * MyLoans sync: refresh rules, change detection and review items, Apply / Keep / Close as cancelled,
  * replacement PNs, reusable papers, moving cash, Find loan at scale. LOCAL database, mock MyLoans.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadCalendar } from "@/lib/calendar/load";
-import { daysFor } from "@/lib/calendar/core";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getSetting, setSetting } from "@/lib/settings";
@@ -13,8 +11,8 @@ import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob } from "@/lib/services/jobs";
 import { decideAdvance, requestAdvance } from "@/lib/services/funds";
 import {
-  applySourceChange, closeAsCancelled, copyReusablePapers, isBusinessHours, keepCurrent, linkReplacement, moveCashToNewPn, outstandingCash, refreshLoan, refreshOnOpen,
-  reusablePapers, runMyLoansSync, runSyncNow, sameBorrowerLoans, saveSyncSettings, simulateSourceChange,
+  applySourceChange, closeAsCancelled, copyReusablePapers, keepCurrent, linkReplacement, moveCashToNewPn, outstandingCash, refreshLoan, refreshOnOpen,
+  reusablePapers, sameBorrowerLoans, simulateSourceChange,
 } from "@/lib/services/source-sync";
 import { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "@/lib/services/source-blocks";
 import { reviewFor } from "@/lib/services/source-review";
@@ -43,18 +41,11 @@ beforeEach(async () => {
   process.env.MYLOANS_MODE = "mock";
   await cleanLoans();
   await setSetting("myloans.refreshOnOpenMinutes", 15);
-  await setSetting("myloans.maxPerRun", 50);
-  await setSetting("myloans.pauseMs", 0);
-  await setSetting("myloans.businessHoursOnly", true);
-  await setSetting("myloans.lastRun", null);
-  await setSetting("myloans.state", { cursor: null, cap: null, runs: [] });
-  await setSetting("myloans.businessHoursOnly", true);
   resetClient();
 });
 afterAll(async () => {
   await cleanLoans();
   await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
-  await setSetting("myloans.lastRun", null);
   await prisma.$disconnect();
 });
 
@@ -96,64 +87,7 @@ describe("Refresh rules", () => {
       await setSetting("myloans.simulateUnavailable", false);
     }
   });
-
-  it("background: business hours (Manila, holidays), active loans only, a cap per run with a pause; Run now is audited", async () => {
-    const cal = await loadCalendar();
-    const holidays = daysFor(cal, null);
-    expect(isBusinessHours(new Date("2026-11-08T10:00:00+08:00"), holidays)).toBe(false); // Sunday
-    expect(isBusinessHours(new Date("2026-11-07T08:00:00+08:00"), holidays)).toBe(true); // Saturday
-    expect(isBusinessHours(new Date("2026-11-09T06:59:00+08:00"), holidays)).toBe(false);
-    expect(isBusinessHours(new Date("2026-11-09T07:00:00+08:00"), holidays)).toBe(true);
-    expect(isBusinessHours(new Date("2026-11-09T19:00:00+08:00"), holidays)).toBe(false);
-    const holiday = cal.entries.find((e) => e.allBranches && holidays.isWorkingDay(e.date) === false && new Date(`${e.date}T00:00:00+08:00`).getUTCDay() !== 0)?.date;
-    if (holiday) expect(isBusinessHours(new Date(`${holiday}T10:00:00+08:00`), holidays)).toBe(false);
-    await open();
-    await open("GD1012026901001");
-    expect(await runMyLoansSync({ trigger: "cron", now: new Date("2026-11-08T10:00:00+08:00") })).toMatchObject({ ran: false, reason: "Outside business hours." });
-    await setSetting("myloans.maxPerRun", 1);
-    await setSetting("myloans.pauseMs", 250);
-    await setSetting("myloans.businessHoursOnly", false);
-    await setSetting("myloans.state", { cursor: null, cap: null, runs: [] });
-    // Just opened, their first check is 4 hours away (tier B): make them due now.
-    await prisma.loan.updateMany({ data: { nextCheckAt: new Date(Date.now() - 60_000) } });
-    const sleep = vi.fn(async () => {});
-    const r = await runMyLoansSync({ trigger: "cron", sleep });
-    expect(r).toMatchObject({ ran: true, mode: "poll", due: 1, checked: 1, calls: 1, ok: true });
-    expect(await getSetting("myloans.lastRun")).toMatchObject({ checked: 1, trigger: "cron" });
-    expect(await runMyLoansSync({ trigger: "cron", now: new Date(Date.now() + 10 * 60_000) })).toMatchObject({ ran: false }); // ran 10 minutes ago
-    // Poll mode again (no feed cursor), cap 5: both due loans, with the jittered pause between calls.
-    await setSetting("myloans.maxPerRun", 5);
-    await setSetting("myloans.state", { cursor: null, cap: null, runs: [] });
-    await prisma.loan.updateMany({ data: { nextCheckAt: new Date(Date.now() - 60_000) } });
-    expect(await runMyLoansSync({ trigger: "cron", force: true, sleep, rnd: () => 0.5 })).toMatchObject({ checked: 2 });
-    expect(sleep).toHaveBeenCalledWith(313); // 250 + half of the 50% jitter
-    // A checked loan is due again only after its tier interval (B: 4 hours).
-    const l = await prisma.loan.findUniqueOrThrow({ where: { pn: PN } });
-    expect(l.syncTier).toBe("B");
-    expect(l.nextCheckAt!.getTime() - l.lastCheckedAt!.getTime()).toBe(240 * 60_000);
-    // With the changed-since feed (the mock has one; the cursor is set now): one call, only loans MyLoans changed.
-    expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 0, calls: 1 });
-    // A field the agreed contract sends (D-050: it sends no address).
-    await change("GD1012026901001", { areaName: "LUZON 1 - RIZAL (corrected)" });
-    expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ mode: "feed", checked: 1, changes: 1, calls: 1 });
-    await expect(runSyncNow(la)).rejects.toThrow('Ask a Superadmin to turn on "Run the MyLoans sync now" for your role.');
-    await runSyncNow(admin);
-    expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run" } })).toBeGreaterThan(0);
-    // A loan closed as cancelled is not checked again (no tier).
-    const l1 = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026901001" } });
-    await prisma.loan.update({ where: { id: l1.id }, data: { cancelledAt: new Date(), syncTier: null, nextCheckAt: null } });
-    await change("GD1012026901001", { areaName: "6 Mabini St" });
-    expect(await runMyLoansSync({ trigger: "cron", force: true, sleep })).toMatchObject({ checked: 0 });
-  });
-
-  it("sync settings: Admin only, checked, audited", async () => {
-    const ok = { refreshOnOpenMinutes: "15", backgroundMinutes: "60", businessHoursOnly: true, maxPerRun: "50", pauseMs: "500" };
-    await expect(saveSyncSettings(la, ok)).rejects.toThrow(/Ask a Superadmin to turn on "Change MyLoans sync settings"/);
-    await expect(saveSyncSettings(admin, { ...ok, backgroundMinutes: "1" })).rejects.toThrow("At least 5 minutes.");
-    await saveSyncSettings(admin, { ...ok, refreshOnOpenMinutes: "30" });
-    expect(await getSetting("myloans.refreshOnOpenMinutes")).toBe(30);
-    expect(await prisma.auditLog.count({ where: { action: "myloans_sync_settings" } })).toBeGreaterThan(0);
-  });
+  // The sync itself (API 2, the catch-up, the lock, the run log, its settings): myloans-sync-run.test.ts (piece 7).
 });
 
 describe("Changes and the review item", () => {

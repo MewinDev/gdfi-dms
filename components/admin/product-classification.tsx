@@ -6,12 +6,13 @@ import { refreshProductsAction, setProductClassificationAction } from "@/app/act
 
 /**
  * Settings, Product classification (D-049): every active myloans product, what it is now and (while testing keyword
- * rules) what it would become; "Please confirm" on the ones the business has not decided; and, with "Manage product
+ * rules) what it would become; its history (each change with who, when and why); and, with "Manage product
  * classification", Set to Financing or Refinancing (overrides the keywords) or Use the keywords, with a reason.
  */
 export interface ProductView {
   id: string; code: string; name: string; manual: "FINANCING" | "REFINANCING" | null; note: string; by: string; atText: string | null;
-  beforeText: string; afterText: string; changes: boolean; confirm: string | null;
+  beforeText: string; afterText: string; changes: boolean;
+  history: { atText: string; by: string; text: string }[];
 }
 
 export function ProductClassificationList({ rows, moving, testing, canEdit }: { rows: ProductView[]; moving: { from: string; to: string; n: number }[]; testing: boolean; canEdit: boolean }) {
@@ -21,7 +22,6 @@ export function ProductClassificationList({ rows, moving, testing, canEdit }: { 
   const [q, setQ] = useState("");
   const id = useId();
   const shown = rows.filter((r) => !q.trim() || `${r.name} ${r.code}`.toLowerCase().includes(q.trim().toLowerCase()));
-  const confirmN = rows.filter((r) => r.confirm).length;
   return (
     <section aria-labelledby={`${id}-h`} className="mt-5 flex flex-col gap-2" data-products>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -33,7 +33,6 @@ export function ProductClassificationList({ rows, moving, testing, canEdit }: { 
           {moving.length === 0 ? "No product changes classification." : moving.map((m) => `${m.n} product${m.n === 1 ? "" : "s"} move from ${m.from} to ${m.to}`).join("; ") + "."}
         </p>
       )}
-      {confirmN > 0 && <p className="text-[13px] text-act-fg" data-confirm-count>{confirmN} product{confirmN === 1 ? " is" : "s are"} not decided yet: marked &ldquo;Please confirm&rdquo;. Set {confirmN === 1 ? "it" : "each one"} once the business decides.</p>}
       <FormMessage state={refreshState} />
       <FormMessage state={state} />
       {rows.length > 8 && (
@@ -48,7 +47,6 @@ export function ProductClassificationList({ rows, moving, testing, canEdit }: { 
             <li key={r.id} className="flex flex-col gap-1 px-3 py-2" data-product={r.name} data-changes={r.changes ? "true" : undefined}>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="min-w-0 flex-1"><span className="font-semibold">{r.name}</span> <span className="text-ink-2">· {r.code}</span></span>
-                {r.confirm && <span className="chip c-act h-6 text-xs" data-please-confirm>Please confirm</span>}
                 {r.manual && <span className="chip c-wait h-6 text-xs" title={`${r.by}, ${r.atText}: ${r.note}`} data-set-by-hand>Set by hand</span>}
                 {testing && r.changes
                   ? <span data-product-result><span className="text-ink-2 line-through">{r.beforeText}</span> → <strong>{r.afterText}</strong></span>
@@ -56,6 +54,12 @@ export function ProductClassificationList({ rows, moving, testing, canEdit }: { 
                 {canEdit && <button type="button" className="link inline-flex min-h-11 items-center text-[13px]" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}>Set</button>}
               </div>
               {r.manual && <p className="text-[13px] text-ink-2">Set by {r.by}{r.atText ? `, ${r.atText}` : ""}: {r.note}</p>}
+              {r.history.length > 0 && (
+                <details className="text-[13px] text-ink-2" data-product-history>
+                  <summary className="cursor-pointer">History ({r.history.length})</summary>
+                  <ul className="mt-1 flex flex-col gap-0.5">{r.history.map((h, i) => <li key={i}>{h.atText} · {h.by}: {h.text}</li>)}</ul>
+                </details>
+              )}
               {canEdit && open === r.id && (
                 <form action={action} className="flex flex-wrap items-end gap-3 rounded-xl border border-line p-3" data-set-form>
                   <input type="hidden" name="productId" value={r.id} />

@@ -42,45 +42,41 @@ async function refresh(page: Page) {
 test.beforeEach(async () => {
   await resetLoans();
   await setting("myloans.refreshOnOpenMinutes", 15);
-  await setting("myloans.lastRun", null);
-  await setting("myloans.state", { cursor: null, cap: null, runs: [] });
 });
 test.afterAll(async () => {
   await resetLoans();
   await setting("simulator.enabled", false);
 });
 
-test("Settings: the MyLoans sync card (health, run statistics, tiers, last runs, settings)", async ({ page }) => {
-  // One loan file, due now.
+test("Settings: the MyLoans sync card (piece 7): Run now raises a review item and applies nothing; the run log; settings", async ({ page }) => {
   await signInWith(page, BUTTONS.la);
   await openPn(page);
-  await db.loan.update({ where: { pn: PN }, data: { nextCheckAt: new Date(Date.now() - 60_000) } });
+  await change(PN, { totalReleasedAmount: 1_020_000 });
   await signInWith(page, BUTTONS.admin);
   await page.goto("/admin/settings");
-  await expect(page.getByRole("link", { name: /^MyLoans sync/ })).toContainText("Mock · Healthy");
+  await expect(page.getByRole("link", { name: /^MyLoans sync/ })).toContainText("Mock · Not run yet");
   await page.goto("/admin/settings?open=myloans-sync");
   const d = page.locator("dialog#settings-modal");
-  await expect(d.locator("[data-sync-health]")).toHaveText("Healthy");
+  await expect(d.locator("[data-sync-health]")).toHaveText("Not run yet");
   await expect(d.locator("[data-sync-status]")).toContainText("Mock (sample loans)");
-  await expect(d.locator("[data-sync-status]")).toContainText("Never");
-  await expect(d.locator("[data-sync-tiers]")).toContainText("B: Not yet sent");
+  await expect(d.locator("[data-sync-status]")).toContainText("Not started (the first run reads the last 26 hours)");
   await d.getByRole("button", { name: "Run now" }).click();
-  // 0 or 1 call: the answer Find loan just got may still be in the short cache (shared, not asked again).
-  await expect(d.getByText(/^Checked 1 loan: 0 with changes, [01] calls? to MyLoans\.$/)).toBeVisible();
-  await expect(d.locator("[data-sync-status]")).toContainText("Run now, due loans");
-  await expect(d.locator("[data-sync-status]")).toContainText("1 / 1");
+  await expect(d.getByText(/read from myloans: 1 review item, \d+ released not yet in the DMS\.$/)).toBeVisible();
+  await expect(d.locator("[data-sync-health]")).toHaveText("Healthy");
+  await expect(d.locator("[data-sync-status]")).toContainText("Run now, changes): done");
   await expect(d.locator("[data-sync-runs]").getByRole("row")).toHaveCount(2);
-  await expect(d.locator("[data-sync-runs]")).toContainText("Healthy");
-  await d.getByLabel("Loans per run (at most)").fill("40");
-  await d.getByLabel("Not yet sent: check every (minutes)").fill("180");
+  await expect(d.locator("[data-sync-runs]")).toContainText("Done");
+  // Strict v2: the change waits for an approver; the loan keeps its amount.
+  expect(await db.sourceChange.count({ where: { loan: { pn: PN }, state: "OPEN" } })).toBe(1);
+  expect(Number((await db.loan.findUniqueOrThrow({ where: { pn: PN } })).totalReleasedAmount)).toBe(1_000_000);
+  await d.getByLabel("Run the sync every (minutes)").fill("45");
   await d.getByRole("button", { name: "Save" }).click();
-  await expect.poll(async () => (await db.setting.findUnique({ where: { key: "myloans.maxPerRun" } }))?.value).toBe(40);
-  expect((await db.setting.findUniqueOrThrow({ where: { key: "myloans.tierMinutes" } })).value).toEqual({ A: 60, B: 180, C: 1440 });
+  await expect.poll(async () => ((await db.setting.findUnique({ where: { key: "myloans.sync" } }))?.value as { intervalMinutes?: number } | undefined)?.intervalMinutes).toBe(45);
+  await page.goto("/admin/settings?open=myloans-sync");
   await d.locator("[data-sync-runs]").scrollIntoViewIfNeeded();
   await shot(page, "myloans-sync-card");
   await noSideways(page);
-  await setting("myloans.maxPerRun", 50);
-  await setting("myloans.tierMinutes", { A: 60, B: 240, C: 1440 });
+  await db.setting.deleteMany({ where: { key: "myloans.sync" } });
 });
 
 test("Find loan: suggestions from the DMS from 3 characters, at most 8; nothing for no match", async ({ page }) => {
