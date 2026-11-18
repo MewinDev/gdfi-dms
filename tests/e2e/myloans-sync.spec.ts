@@ -190,7 +190,8 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
 
   await signInWith(page, BUTTONS.la);
   await page.goto(`/search?q=${newPn}`);
-  await expect(page.locator("[data-preview-warnings] [data-other-loans]")).toContainText(`This borrower has another loan: ${PN}`);
+  // D-051: no "other loans of this borrower" warning; only the redo myloans names.
+  await expect(page.locator("[data-other-loans]")).toHaveCount(0);
   await expect(page.locator("[data-preview-warnings]")).toContainText(`replaces ${PN}`);
   await shot(page, "find-loan-replacement-preview");
   await openPn(page, newPn);

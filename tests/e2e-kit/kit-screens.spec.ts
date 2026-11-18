@@ -30,7 +30,7 @@ test("sign-in list: each sample account with its role and branches", async ({ pa
   const list = page.locator("[data-kit-accounts]");
   await expect(list.getByRole("button")).toHaveCount(9); // the inactive LA is not listed
   await expect(list.getByRole("button", { name: /^Continue as LA 1\b/ })).toContainText("Angono, Antipolo");
-  await expect(list.getByRole("button", { name: /^Continue as Branch Supervisor\b/ })).toContainText("Angono, Antipolo");
+  await expect(list.getByRole("button", { name: /^Continue as LA Supervisor\/Head(?! Luzon)/ })).toContainText("Angono, Antipolo");
   await expect(list.getByRole("button", { name: /^Continue as Receiving LA A. Mabini\b/ })).toContainText("A. Mabini");
   await expect(list.getByRole("button", { name: /Inactive LA/ })).toHaveCount(0);
   await shot(page, "sign-in-list");

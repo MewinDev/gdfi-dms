@@ -17,6 +17,9 @@ export async function proxy(request: NextRequest) {
   }
   // Scheduled jobs have no session: the route checks the CRON_SECRET header itself.
   if (pathname.startsWith("/api/cron/")) return NextResponse.next();
+  // The myloans mock (piece 6): machine to machine like the real API; the route checks its Bearer key and answers
+  // only while MYLOANS_MODE=mock outside production (404 otherwise).
+  if (pathname.startsWith("/api/dev/myloans/")) return NextResponse.next();
   if (!session) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Sign in required." }, { status: 401 });

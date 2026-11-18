@@ -202,12 +202,17 @@ describe("Pressing Find loan", () => {
   });
 });
 
+/**
+ * D-050: API 1 answers 422 for a PN in myloans that is not a released loan, with only the reason (FeedState and the
+ * status id) and, after a redo, the PN that replaced it. The card says why with the real status name; no borrower name
+ * or branch (API 1 sends none for it). IsSelectable replaces the old "statuses 15 to 19 are not loans" rule.
+ */
 describe("Find loan on a PN MyLoans has not released: a status card, never a loan file", () => {
   const CASES = [
-    { pn: "GD1652026901008", statusKind: "before_release", statusName: "Check Prepared", borrowerName: "Roberto Cruz", branchName: "Angono" },
-    { pn: "GD1652026901012", statusKind: "before_release", statusName: "For Approval (Loan Released)", borrowerName: "Gloria Navarro", branchName: "Angono" },
-    { pn: "GD1652026901014", statusKind: "before_release", statusName: "Check Assignment (Transaction)", borrowerName: "Rosa Dizon", branchName: "Angono" },
-    { pn: "GD1012026901013", statusKind: "cancelled", statusName: "Cancelled", borrowerName: "Andres Lim", branchName: "Antipolo" },
+    { pn: "GD1652026901008", feedState: "NotReleased", statusName: "Check Prepared" },
+    { pn: "GD1652026901012", feedState: "NotReleased", statusName: "For Approval (Loan Released)" },
+    { pn: "GD1652026901014", feedState: "NotReleased", statusName: "Check Assignment (Transaction)" },
+    { pn: "GD1012026901013", feedState: "Cancelled", statusName: "Cancelled" },
   ] as const;
   const noCopy = async (pn: string) => {
     expect(await prisma.loan.count({ where: { pn } })).toBe(0);
@@ -216,28 +221,30 @@ describe("Find loan on a PN MyLoans has not released: a status card, never a loa
 
   for (const c of CASES) {
     it(`${c.pn} (${c.statusName}): the card with the real name; one call; nothing saved; Open refuses`, async () => {
-      expect(await lookupPn(la, c.pn)).toMatchObject({ kind: "status", pn: c.pn, statusKind: c.statusKind, statusName: c.statusName, borrowerName: c.borrowerName, branchName: c.branchName });
+      expect(await lookupPn(la, c.pn)).toMatchObject({ kind: "not_selectable", pn: c.pn, feedState: c.feedState, statusName: c.statusName, replacedByPn: null });
       expect(callCount()).toBe(1);
       // The card shown again (a reload within the short cache time): no second call.
       await lookupPn(la, c.pn);
       expect(callCount()).toBe(1);
       await noCopy(c.pn);
-      await expect(openLoanFile(la, { pn: c.pn, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" })).rejects.toThrow(/Not yet released/);
+      await expect(openLoanFile(la, { pn: c.pn, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" })).rejects.toThrow(/in myloans/);
       await noCopy(c.pn);
     });
   }
 
-  it("status 15 (a disbursement-check record) and a PN with no row: 'No loan with this PN was found in MyLoans.'", async () => {
+  it("status 15 (a disbursement-check record) is not a released loan (IsSelectable, D-050); a PN with no row is 'No loan with this PN was found in MyLoans.'", async () => {
+    expect(await lookupPn(la, "GD1652026901015")).toMatchObject({ kind: "not_selectable", feedState: "NotReleased" });
+    expect(await lookupPn(la, "GD1012026999999")).toEqual({ kind: "not_found", pn: "GD1012026999999", message: "No loan with this PN was found in MyLoans." });
     for (const pn of ["GD1652026901015", "GD1012026999999"]) {
-      expect(await lookupPn(la, pn)).toEqual({ kind: "not_found", pn, message: "No loan with this PN was found in MyLoans." });
       await expect(openLoanFile(la, { pn })).rejects.toThrow();
       await noCopy(pn);
     }
   });
 
-  it("outside the person's branches: the outside message with the PN and branch only, never the name (decided 12 November 2026)", async () => {
+  it("outside the person's branches: a cancelled PN shows only why, never the name or details (API 1 sends none for it, D-050)", async () => {
     const r = await lookupPn(angonoOnly, "GD1012026901013");
-    expect(r).toMatchObject({ kind: "refused", field: "branch", message: "Outside your branch access.", record: { pn: "GD1012026901013", borrowerName: "", branchName: "Antipolo", status: null, loanType: null, productName: null, totalReleasedAmount: null, releaseDate: null, cin: null, cif: null } });
+    expect(r).toMatchObject({ kind: "not_selectable", pn: "GD1012026901013", feedState: "Cancelled" });
+    expect(JSON.stringify(r)).not.toContain("Andres");
     await noCopy("GD1012026901013");
   });
 

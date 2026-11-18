@@ -22,7 +22,7 @@ export function DueHistory({ lines }: { lines: DueHistoryLine[] }) {
  * "Correct due date" (D-042): one item at a time, a working day of the item's branch, a reason. Only for people
  * with "Correct due dates"; the change is logged in the item's history and its owner is told.
  */
-export function CorrectDueDate({ subjectType, subjectId, current }: { subjectType: "DpAssignment" | "CashAdvance"; subjectId: string; current: string }) {
+export function CorrectDueDate({ subjectType, subjectId, current }: { subjectType: "DpAssignment" | "CashAdvance" | "WorkItem"; subjectId: string; current: string }) {
   const [state, action, pending] = useActionState(correctDueDateAction, null);
   const [open, setOpen] = useState(false);
   const id = useId();

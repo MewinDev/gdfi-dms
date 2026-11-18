@@ -616,3 +616,124 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - **Removed:** the setting `funds.liquidationDueDays` (10), the TAT row `P4_LIQUIDATE` (5) and its fallback, the column `CashAdvanceRule.liquidationDays`.
   - **UX (the user's instruction):** keep it simple. One line per advance in plain words: "Due Fri 27 Nov", "Due 2 working days after the LTO pickup (1 of 3 left)", "LTO not done. Liquidation due by fallback: Mon 30 Nov", "Liquidated 2 working days late". No new screens; the two values are on Settings, Funds types.
 - **Reason:** D-017 and the user's answers to the six open questions.
+
+## D-045 Build order: the myloans pieces wait for staging access
+
+- **Date:** 18 November 2026
+- **Decision (the user's):** pieces **6, 7, 8 and 10** (myloans mock APIs, the sync, Open Items, PN # search) are **on hold, waiting for myloans staging access (C5)**: we test against the real myloans API before building more of it. The new order: **piece 9 next** (Accept / Forward, inbox, TAT); then 6, 7, 8 and 10 when staging access arrives; piece 11 when the product list (R2-3) arrives.
+  - Piece 9 is built on the loans already in the DMS. The branch pool's "Released, not yet in the DMS" loans come from the sync later: piece 9 leaves one clear hook for that feed and builds no sync.
+  - Piece 9 scope also includes **Correct due date on LA work items** (the same rule as D-042: one item, a reason, the tick, in its history).
+  - The funds-types CSV import gains "liquidation_due_days" (whole number 0 to 30; blank keeps it, new types 2).
+- **Reason:** testing against the real API first avoids building twice; staging access is not there yet.
+
+## D-046 Piece 9: inbox, branch pool, Accept / Forward, TAT per person (builds D-014, D-015)
+
+- **Date:** 18 November 2026
+- **Decision (the user's, after six worked examples):**
+  - **Inbox items:** every hand-off is an item with its history (arrive, accept, forward, return, move), times set by the server. New work lands in a **branch pool** or, when a person is named, in that person's **inbox**; **Accept** makes it theirs and starts their round. One list per person ("My items") sorted by least time left, with the green / amber / red / Paused colours; one **Branch pool** list with Accept.
+  - **TAT per person:** accept to forward, on the work's branch calendar (D-041); **waiting time** (arrival to accept) recorded separately and never counted against the person.
+  1. **Pool waiting is coloured:** amber after 1 working day, red after 2 (settings). The supervisors' Home says "N items waiting in the pool too long".
+  2. **Returns:** a reason is **required** (the existing return reasons; decline keeps its reasons). The next round gets a **fresh full target**. Returns per person appear in the TAT report.
+  3. **Away and moving work:** each user has an **Away** status with from / to dates, set by the person or by someone with the tick "Set who is away". While away the person cannot be named for new work, and supervisors see "N items are with people who are away". **"Move work items"** (default LA Supervisor/Head and Admin): **Back to the pool** or **Give to…** someone of the same work role with access to the branch. A move closes the old person's round as **"Moved (away)"**, never counted late; the new person's round starts at the move with a fresh target; the item's overall due date is unchanged; each move is logged and both people are told.
+  4. **Find loan** (until the feed exists): arrive and accept at the same moment (waiting 0; the LA's TAT starts).
+  5. **"Counts as Accept":** Finance's Approve / Release and the receiving LA's Receive take the item; there is no extra click. For these the reports measure **waiting time** (arrival to the action), labelled so.
+  6. **DP jobs:** a **named DP** (the default, as today) or the **Branch DP pool** (any processor with access to that branch can accept; the first accept wins). Built so that a pool job waits as an inbox item holding the send details; Accept creates the normal named job for that processor and accepts it in the same moment, so everything after it works as today.
+  7. **Existing open work** becomes inbox items from the recorded times; where a time is missing the item is marked **"Migrated"** and left out of TAT performance reports.
+  - **Correct due date** also on LA items (D-042 rule).
+  - **The feed hook:** one function receives "Released, not yet in the DMS" loans into the branch pool; the sync (piece 7, on hold) will call it. No sync is built.
+- **Reason:** D-014, D-015 and the user's answers.
+
+## D-047 Build order: the myloans pieces are built on the mock (replaces D-045)
+
+- **Date:** 18 November 2026
+- **Decision (the user's, after piece 9 was approved):** pieces **6, 7, 8 and 10 are un-held** and built on the myloans mock, in this order:
+  1. **6:** mock APIs 1 to 5 (plan first, confirmed before building);
+  2. **10a:** PN # search and the Search Log, through API 1 on the mock;
+  3. **7:** the sync on API 2;
+  4. **8:** Open Items per field;
+  5. **10b:** connect the piece 9 feed hook ("Released, not yet in the DMS") to the branch LA pool;
+  6. **11** when the product list (R2-3) arrives;
+  7. **12** (docs, kit, e2e, final checks) with each piece.
+- Two items stay **separate and blocked**: **Real API verification** (the contract tests and a sync dry run against myloans staging; blocked on staging access, C5) and the **Production scheduler** (the sync and daily jobs on the real hosting; blocked on the hosting decision).
+- **Reason:** staging access is not in sight; building on the agreed contract with tests that can later run against staging keeps the foundation moving without building twice.
+
+## D-048 Before piece 6: pool colour settings, the mock's limits, the demo
+
+- **Date:** 18 November 2026
+- **Decision (the user's, approving the piece 6 plan, IMPLEMENTATION_PLAN.md section 7.4):**
+  - **Pool colour thresholds** get a small Settings card now, before piece 6: amber and red after N working days, validated (red after amber), audited.
+  - **(a)** The myloans **mock may run on staging**, never in production. While the mock is on, every page shows a clear **"MOCK myloans data"** banner.
+  - **(b)** The mock's data lives in **its own local-only table**, not in settings.
+  - **(c)** The **staging contract run is by hand**, read-only, and kept out of CI. The staging key is never stored in the repo.
+  - **Failure simulation** controls are refused and hidden in production.
+  - **Demo script:**
+    - show **both approval flows**, so the users can settle D-024 ("Which approval flow should we use?"):
+      - bands on: an approver approves, Finance releases;
+      - bands off: Finance approves and releases;
+    - use the **current role names** (LA Supervisor/Head; approvers by their ticks), renaming kit accounts where needed;
+    - seed a few **aged demo items**, so the Inbox and the pool show amber, red and Paused, not only green.
+- **Reason:** the user's answers to the piece 6 plan and the demo review.
+
+## D-049 Product classification kept simple; the daily catch-up sync; round 4 checks
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **Product classification** (amends D-031, D-034):
+     - **Keywords:** as before, plus the Financing keywords **"brand new"** and **"2nd hand"** (multi-word phrases are supported). "Test keyword rules" runs over **all active products**, before and after. Expected: 20 products move from "Refinancing (default)" to Financing, and nothing else changes.
+     - **One tick, "Manage product classification"** (the key `settings:classification`): edit the keywords **and** set any product to Financing or Refinancing. A setting on a product **overrides the keywords**. A reason is required, and every change is audit-logged. On by default for LA Supervisor/Head, Admin and Superadmin; customizable like every tick.
+     - **Only two choices:** Financing or Refinancing. No other states.
+     - **Unclear products are not pre-set.** The LA Supervisor/Head sets them on the screen once decided. The screen shows a small **"Please confirm"** note on:
+       - SME - Car Financing (R);
+       - Personal/SME REM Financing;
+       - the three real-estate "Take Out" products;
+       - the Doctors, Salary and Tricycle loans.
+     - **Data:** `docs/incoming/myloans-round4-results/pr_products.tsv` is the mock's API 5 data and the kit's product list.
+     - **Tests:**
+       - the 20 "2nd hand" / "brand new" products become Financing;
+       - "SME - Refinancing Heavy Truck" stays Refinancing;
+       - a manual setting overrides the keywords;
+       - a rename keeps the manual setting;
+       - a user without the tick cannot change it.
+  2. **Time-zone safety (added to the piece 7 plan, not built yet):** a **daily catch-up sync run**, by default at 02:00 Manila, asks API 2 for everything changed in the last **26 hours** (a setting). It uses the same logic as the normal run (the same hash means no action). It protects against wrong time labels, missed runs and clock problems, and it is logged in the sync run log like the other runs.
+  3. **Round 4 checks recorded:**
+     - **Cancel / deactivate update `updated_at`:** CONFIRMED. 37 of 42 changed within 18 ms; the other 5 were updated later.
+     - **The mid-June time offset change:** covered by the daily catch-up.
+- **Reason:** the user's decisions after the round 4 results.
+
+## D-050 Piece 10a: the plan's recommendations (the user said "continue with piece 10a")
+
+- **Date:** 18 November 2026
+- **Decision:** piece 10a is built as planned in `IMPLEMENTATION_PLAN.md` 11.1, with its three recommendations (the user approved continuing; open to change on review):
+  - **(a) Fields the agreed contract does not send:**
+    - **Address and contact number** stay DMS fields. myloans does not send them yet; a new request asks myloans to add them. Until then a Refresh never treats them as changed.
+    - **The vehicle** is a DMS-entered field.
+    - **The replacement guess** (previous PN) goes. A redo is read from myloans' own link (Superseded / Cancelled with "Replaced by"). The automatic "Link as replacement" suggestion goes with it.
+    - **Payment recorded** stays unknown.
+  - **(b) The PN search log:** a new tick **"See PN searches"** (`reports:pnsearch`), on by default for Admin and LA Supervisor/Head, limited to the reader's branches.
+  - **(c) Two small items:**
+    - exact decimals for rule 4 (refuse "1,000" and "1e6", compare as decimal strings);
+    - one active transaction per type on a loan (a partial unique index).
+- **Reason:** the user's instruction to continue after the 10a plan.
+
+## D-051 Piece 10a: the user's answers (replaces D-050 where they differ)
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **The replacement guess is removed.** The "additional unit / replacement" tags and the "payment recorded" check go for now. A redo shows only from myloans' own "Replaced by" link. The **existing manual linking** in Related loans stays (Admin, "Link as replacement", with a note and "I confirmed no payment was made on the old PN"). No new linking is built. STATUS, Phase B: "Related-loan tags (additional unit / replacement) return with vehicle data from myloans."
+  2. **The borrower's address and contact number are removed completely:** the fields, the database columns (by migration), the screens, the kit and seed, the docs and the demo script. They are not kept as empty fields. **Reason:** not needed; data minimization under the Data Privacy Act (RA 10173), as for the birth date (D-037). The borrower-details review covers name, CIF and CIN only.
+  3. **Find loan for a PN that is not a released loan** (API 1 422): approved as built. The card gives the reason only (myloans' status name and FeedState, "Replaced by" after a redo), with no borrower name or branch. Status 15 is "not a released loan".
+  4. **Earlier decisions confirmed:**
+     - **Vehicle details:** hidden, and moved to the Phase B Collateral module.
+     - **Renewal link** (previous loan / OldPNNo): deferred to Phase B. No "other loans of this borrower" warning on Find loan, and no new linking now.
+     - **Payment recorded:** unknown; the paid / closed source is parked for Phase C.
+  5. **Products:** `docs/incoming/myloans-round4-results/pr_products.tsv` (104 products, 88 active) is the mock's API 5 and the kit's product list.
+     - **"Test keyword rules"** over the 88 active products: exactly **20 move from Refinancing (default) to Financing** (the "2nd hand" and "Brand New" truck and van products), and nothing else changes. "SME - Refinancing Heavy Truck" and "WSME - Refinancing Heavy Truck" stay Refinancing.
+     - **"Please confirm"** marks the 12 undecided products:
+       - SME - Car Financing (R);
+       - Personal and SME REM Financing;
+       - the three real-estate take-outs (REF Developer In-House, REF Division / REM, Developer Real Estate In-House);
+       - the four Doctors loans;
+       - Personal Salary Loan;
+       - Tricycle Loan.
+- **Reason:** the user's answers after the 10a report.
+

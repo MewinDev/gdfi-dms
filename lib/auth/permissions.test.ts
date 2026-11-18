@@ -14,7 +14,7 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
     }
   });
 
-  it("LA Supervisor/Head (key SUP, D-002): every LA tick plus approving Open Items; never money, Settings, users, roles or branch imports", () => {
+  it("LA Supervisor/Head (key SUP, D-002, D-049): every LA tick plus approving Open Items and product classification; never money, other Settings, users, roles or branch imports", () => {
     const sup = ROLE_DEFAULTS.SUP;
     expect(sup.name).toBe("LA Supervisor/Head");
     expect(sup.branchAccess).toBe("ASSIGNED");
@@ -30,7 +30,8 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
       "Approve or reject myloans changes (Open Items) for their branches",
       "Move a hold to another person (within their branches)",
       "Reclassify a loan when the keyword rules changed (within their branches)",
-      "Resolve any problem, see the DP and LTO monitors and the TAT report (within their branches)",
+      "Resolve any problem, see the DP and LTO monitors, the TAT report and PN searches (within their branches)",
+      "Manage product classification: the keywords and setting a product to Financing or Refinancing (D-049)",
     ]);
   });
 });

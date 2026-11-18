@@ -88,10 +88,10 @@ export async function previewClassification(rules: ClassificationRules, db: Db =
  */
 export async function recheckClassifications(db: Db = prisma, rules?: ClassificationRules): Promise<{ flagged: number; cleared: number }> {
   const r = rules ?? (await getClassificationRules(db));
-  const loans = await db.loan.findMany({ where: OPEN_LOAN, select: { id: true, productName: true, classification: true, classificationNow: true, classifiedByDefault: true } });
+  const loans = await db.loan.findMany({ where: OPEN_LOAN, select: { id: true, productName: true, productCode: true, classification: true, classificationNow: true, classifiedByDefault: true } });
   let flagged = 0, cleared = 0;
   for (const l of loans) {
-    const res = classifyByKeywords(l.productName, r);
+    const res = classifyByKeywords(l.productName, r, l.productCode);
     const now = res.classification === l.classification ? null : res.classification;
     const data: Prisma.LoanUpdateInput = {};
     if (now !== l.classificationNow) { data.classificationNow = now; if (now) flagged++; else cleared++; }
@@ -149,7 +149,7 @@ export async function reclassifyLoan(u: CurrentUser, loanId: string, raw: unknow
     if (!p.ruleNext || !p.classificationNext) throw new UserError(p.sentences[0] ?? "The rules cannot run on this loan's data.");
     const locked = p.affected.filter((a) => a.locked);
     if (locked.length) throw new UserError(`${locked.map((a) => a.stateLine).join("; ")}. Reclassify never changes work that was sent. Ask the LA to pull it back or the processor to return it first.`);
-    const res = classifyByKeywords(loan.productName, rules);
+    const res = classifyByKeywords(loan.productName, rules, loan.productCode);
     await tx.loan.update({
       where: { id: loan.id },
       data: {

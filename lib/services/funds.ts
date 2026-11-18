@@ -1,4 +1,5 @@
 import "server-only";
+import { arriveItem, closeItem, takeItem } from "./work-items";
 import { recordLiquidated, refreshLiquidationDue, refreshOpenLiquidations, restartLiquidationWait } from "./liquidation";
 import { OPEN_ADVANCE } from "@/lib/funds/rules";
 import { z } from "zod";
@@ -204,6 +205,8 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_requested", entityType: "CashAdvance", entityId: adv.id, summary: `${number} (${type.name}) requested by ${u.name}: ${peso(total)} for ${d.lines.length} job line(s)${d.others.length ? ` and ${d.others.length} other expense(s)` : ""}${exceptionId ? " (with a one-time exception)" : ""}`, after: { total, lines: d.lines, others: d.others, fundsType: { id: type.id, code: type.code, name: type.name } } });
     const approvers = await typeBandApprovers(tx, total, { fundsTypeId: type.id, number }); // its branches limit who is told (D-019)
     await notify(tx, { email: { event: "advance_requested", to: approvers, amountCents: total, vars: { number, who: u.name, kind: type.name } }, userIds: approvers, title: `${number}: ${type.name} to approve`, body: `${u.name} asked for a ${type.name} of ${peso(total)}.`, link: "/funds?tab=approve" });
+    // D-046: Finance's pool for this type and branch (Approve / Release count as accept: time to act).
+    await arriveItem(tx, { kind: "FUND_REQUEST", subjectId: adv.id, role: "FIN", branchId, poolKey: type.code, label: `${number}: ${type.name} for ${u.name}`, measure: "WAITING", targetKey: "P3_CA_RELEASE", by: actorOf(u) });
     const loanIds = await tx.loanTransaction.findMany({ where: { id: { in: d.lines.map((l) => l.transactionId) } }, select: { loanId: true } });
     for (const l of new Set(loanIds.map((x) => x.loanId))) await recomputeStage(tx, l);
     return { id: adv.id, number, total };
@@ -326,6 +329,7 @@ export async function decideAdvance(u: CurrentUser, advanceId: string, raw: unkn
     }
     if (a.status !== "REQUESTED") throw new UserError("This request was already decided.");
     await requireApprover(tx, u, a.requestedCents, a.requestedById, a);
+    await takeItem(tx, "FUND_REQUEST", a.id, u); // Approve or Deny counts as accept (D-046)
     if (d.approve) await assertFundsNotHeld(tx, a.lines.map((l) => l.transactionId)); // denying puts no cash out
     const now = new Date();
     if (!d.approve) {
@@ -333,6 +337,7 @@ export async function decideAdvance(u: CurrentUser, advanceId: string, raw: unkn
       await tx.cashAdvance.update({ where: { id: a.id }, data: { status: "DENIED", deniedReason: d.note, approvedById: u.id, approvedAt: now } });
       await tx.cashAdvanceLine.updateMany({ where: { advanceId: a.id }, data: { denied: true, approvedCents: 0 } });
       await afterDenied(tx, a.lines, `${a.number} was denied: ${d.note}`);
+      await closeItem(tx, "FUND_REQUEST", a.id, "DONE", { by: actorOf(u), remarks: `Denied: ${d.note}` });
       await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_denied", entityType: "CashAdvance", entityId: a.id, summary: `${a.number} denied by ${u.name}: ${d.note}` });
       await notify(tx, { email: { event: "advance_decided", vars: { number: a.number, kind: a.fundsTypeName, status: "denied", who: u.name, reason: d.note ? `Note: ${d.note}` : "" } }, userIds: [a.requestedById], title: `${a.number} (${a.fundsTypeName}) denied`, body: d.note, link: "/my-funds?tab=advances" });
       return { status: "DENIED", approvedCents: 0, already: false };
@@ -429,6 +434,9 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
     });
     // The liquidation due date (D-044): N working days after the last LTO pickup; waiting until then.
     if (!settle) await refreshLiquidationDue(tx, a.id, now);
+    // D-046: Release counts as accept (if nobody took it yet) and sends it back to the processor.
+    await takeItem(tx, "FUND_REQUEST", a.id, u, now);
+    await closeItem(tx, "FUND_REQUEST", a.id, "FORWARDED", { at: now, by: actorOf(u) });
     const line = releaseLine({ releaseRef: ref, ...r });
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "advance_released", entityType: "CashAdvance", entityId: a.id, summary: `${a.number} (${a.fundsTypeName}) ${sent ? "sent" : "released"} by ${u.name}: ${peso(total)} (${line}); jobs Funded`, after: { released: total, ...r } });
     const loans = new Map<string, { pn: string; branchId: string }>();

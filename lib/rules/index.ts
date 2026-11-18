@@ -47,10 +47,10 @@ export interface ClassificationResult {
   byDefault: boolean;
 }
 
-export function classifyProductName(productName: string | null | undefined, rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES): ClassificationResult {
-  const r = classifyByKeywords(productName, rules);
-  const fired: RuleFiring = r.step === "DEFAULT"
-    ? { key: "PRODUCT_CLASSIFICATION", reason: "DEFAULT", result: r.classification }
+export function classifyProductName(productName: string | null | undefined, rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES, productCode?: string | null): ClassificationResult {
+  const r = classifyByKeywords(productName, rules, productCode);
+  const fired: RuleFiring = r.step === "DEFAULT" || r.step === "MANUAL"
+    ? { key: "PRODUCT_CLASSIFICATION", reason: r.step, result: r.classification }
     : { key: "PRODUCT_CLASSIFICATION", reason: r.step, keyword: r.keyword! };
   return { classification: r.classification, rule: encodeFiring(fired), fired, byDefault: r.step === "DEFAULT" };
 }
@@ -96,6 +96,8 @@ export interface RuleInputs {
   orcrStatus?: OrcrStatus | null;
   /** The keyword lists and the default (Settings, Product classification); the starting values when missing. */
   classificationRules?: ClassificationRules;
+  /** The myloans product code: a product set by hand is found by it first (D-049). */
+  productCode?: string | null;
 }
 
 export interface RuleOutcome {
@@ -124,7 +126,7 @@ export class RuleInputError extends Error {
 
 export function evaluateLoanRules(input: RuleInputs): RuleOutcome {
   const rulesFired: RuleFiring[] = [];
-  const cls = classifyProductName(input.productName, input.classificationRules);
+  const cls = classifyProductName(input.productName, input.classificationRules, input.productCode);
   rulesFired.push(cls.fired);
 
   if (cls.classification === "FINANCING") {

@@ -47,6 +47,13 @@ import { businessDate, fmtDate, fmtDateTime, fmtShort } from "@/lib/time";
 import { defaultCapacity, openJobCounts, processors } from "@/lib/services/monitoring";
 import { availability, leaveText } from "@/lib/monitoring/rules";
 import { DefaultCapacityForm, DpCapacityRow } from "@/components/monitoring/capacity-forms";
+import { PoolColoursForm } from "@/components/admin/pool-colours-form";
+import { poolColours } from "@/lib/services/pool-colours";
+import { productPreview, resultText } from "@/lib/services/products";
+import { ProductClassificationList, type ProductView } from "@/components/admin/product-classification";
+import { MyLoansMockPanel } from "@/components/admin/myloans-mock-panel";
+import { mockAllowed } from "@/lib/myloans/v1/mock-store";
+import { MOCK_SCENARIOS } from "@/lib/myloans/v1/mock-scenarios";
 import { syncStatus } from "@/lib/services/source-sync";
 import { accountFeedQuality, feedQualityLine } from "@/lib/services/feed-quality";
 import { MyLoansSyncForm, type SyncCardData } from "@/components/admin/myloans-sync";
@@ -71,6 +78,7 @@ const AREAS = [
   { key: "checklist", title: "Checklist items", desc: "The papers for each transaction, required or optional.", help: "Changes apply to loan files opened from now on. Open loan files keep their papers and settings.", Icon: ChecklistIcon },
   { key: "processing-stages", title: "Processing stages", desc: "The stages a processor works through, with evidence.", help: "Stages run in order. LTO drop off and LTO pickup are added while a type needs LTO processing; Check and verify is always last. Changes apply to jobs not yet started.", Icon: ListIcon },
   { key: "tat", title: "Turnaround times", desc: "Target working days for each step.", help: "Working days follow Settings, Holidays and working days. 0 means the same day.", Icon: ClockIcon },
+  { key: "pool-colours", title: "Inbox waiting colours", desc: "When work waiting in a branch pool turns amber, then red.", help: "Working days, on the item's branch calendar. Red items show on the supervisors' Home.", Icon: ClockIcon },
   { key: "loan-types", title: "Loan types", desc: "Display names for the MyLoans loan types.", help: `The Data Check accepts only New and Renewal. The mortgage thresholds are fixed by the rule “${RULE_NAMES.MORTGAGE_THRESHOLD.title}”: ${pesoWhole(MORTGAGE_THRESHOLDS.New)} for New, ${pesoWhole(MORTGAGE_THRESHOLDS.Renewal)} for Renewal.`, Icon: TagIcon },
   { key: "dp-capacity", title: "Processor capacity", desc: "How many open jobs a processor takes, and who is on leave.", help: "Used by the Monitoring page and the Send panel. Open jobs = assigned + in process + on hold. A processor on leave is shown disabled in the Send panel and counts as 0% available. A past \"until\" day ends the leave by itself.", Icon: UsersIcon },
   { key: "classification", title: "Product classification", desc: "Keywords that decide Financing or Refinancing.", help: "The product name decides it: a Refinancing keyword first, then a Financing keyword, else the default (D-031). Saving re-checks open loan files; a changed result is flagged, never applied by itself.", Icon: TagIcon },
@@ -207,6 +215,7 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     "test-data": { main: testMode ? "Test mode only" : "Off", extra: "" },
     "test-kit": { main: "Local test setup only", extra: "" },
     "dp-capacity": await capacityStatusLine(),
+    "pool-colours": await poolColours().then((c) => ({ main: `Amber after ${c.amber} · red after ${c.red} working days`, extra: "" })),
     permissions: { main: `${roles[0]} roles × ${VISIBLE_PERMISSION_GROUPS.reduce((s, g) => s + g.items.length, 0)} permissions`, extra: "" },
     roles: { main: `${roles[0]} role${roles[0] === 1 ? "" : "s"} · ${customRoles} custom`, extra: roles[1] > 0 ? `+${roles[1]} inactive` : "" },
   };
@@ -266,6 +275,10 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
         <CalendarArea canEdit={can(user, PERMISSIONS.SETTINGS_HOLIDAYS)} weekdays={[...cal.workingWeekdays]} branches={branches} rows={rows} today={businessDate(new Date())} backdateMax={backdateMax} importHref={can(user, PERMISSIONS.SETTINGS_IMPORT) ? importHref("holidays") : null} />
       </SettingsModal>
     );
+  }
+  if (area.key === "pool-colours") {
+    const c = await poolColours();
+    return <SettingsModal {...common} footer={{ kind: "done" }}><PoolColoursForm amber={c.amber} red={c.red} canEdit={can(user, PERMISSIONS.SETTINGS_TAT)} /></SettingsModal>;
   }
   if (area.key === "dp-capacity") {
     return <SettingsModal {...common} footer={{ kind: "done" }}><CapacityArea /></SettingsModal>;
@@ -757,7 +770,11 @@ async function ClassificationArea({ common, user, test }: { common: { id: string
   // The values being tested (from Test keyword rules), or the saved ones.
   const tried = test ? rulesFromForm(test) : null;
   const rules = tried && !tried.problem ? tried.rules : saved;
-  const preview = await previewClassification(rules);
+  const [preview, products] = await Promise.all([previewClassification(rules), productPreview(tried && !tried.problem ? tried.rules : undefined)]);
+  const productRows: ProductView[] = products.rows.map((r) => ({
+    id: r.id, code: r.code, name: r.name, manual: r.manual, note: r.note, by: r.by, atText: r.at ? fmtShort(r.at) : null,
+    beforeText: resultText(r.before), afterText: resultText(r.after), changes: r.changes, confirm: r.confirm,
+  }));
   return (
     <SettingsModal {...common} footer={canEdit ? { kind: "save", formId: "classification-form", cancelHref: BASE } : { kind: "done" }}>
       <ClassificationForm key={JSON.stringify(rules)} formId="classification-form" canEdit={canEdit} refinancing={rules.refinancing} financing={rules.financing} fallback={rules.fallback} />
@@ -782,6 +799,7 @@ async function ClassificationArea({ common, user, test }: { common: { id: string
           </ul>
         )}
       </section>
+      <ProductClassificationList rows={productRows} moving={products.moving} testing={!!test} canEdit={canEdit} />
     </SettingsModal>
   );
 }
@@ -885,6 +903,9 @@ async function SystemArea({ user }: { user: CurrentUser }) {
           <ToggleForm settingKey="simulator.enabled" label="Test-mode simulator" on={sim}
             description="Shows the simulator on each Loan File's Journey tab so Admin can push transactions through Phases 4 to 6. Every event is labelled Simulated." />
           {mode !== "live" && <MockOverrideForm current={Object.entries(overrides)} />}
+          {mockAllowed() && (
+            <MyLoansMockPanel failures={await getSetting("myloans.mockFailures")} scenarios={Object.entries(MOCK_SCENARIOS)} loans={await prisma.mockMyLoansTxn.count()} />
+          )}
         </>
       )}
     </div>

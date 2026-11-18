@@ -20,7 +20,7 @@ describe("every server action and route handler checks a permission", () => {
   });
 
   it("the allow-list is short and every entry still exists", () => {
-    expect(ALLOW_LIST.length).toBeLessThanOrEqual(8);
+    expect(ALLOW_LIST.length).toBeLessThanOrEqual(9); // + the myloans mock (piece 6, D-048)
     for (const a of ALLOW_LIST) expect(results.find((r) => r.file === a.file && r.name === a.name), `${a.file} ${a.name}`).toBeTruthy();
   });
 

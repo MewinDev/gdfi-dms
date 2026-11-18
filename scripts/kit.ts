@@ -8,6 +8,7 @@
  *   npm run kit:list                  the baselines and the backups
  *   npm run kit:restore -- <name>     put a backup back (type RESET; an automatic backup first)
  *   npm run kit:rebuild               build the clean kit's baseline again (after a new migration)
+ *   npm run kit:demo                  add the demo's aged inbox items to the clean kit (docs/DEMO_SCRIPT.md)
  *
  * Add --with-scenarios to start, reset or rebuild for the old scenario data (docs/MANUAL-TEST-KIT-SCENARIOS.md)
  * instead of the clean kit. Without a console to type in (a script), add --confirm=RESET.
@@ -107,6 +108,15 @@ async function main() {
       say(`Done: ${db} is back to ${what}. The dev server reconnects by itself; refresh the page.`);
       return;
     }
+    case "demo": {
+      const loaded = core.loadedKit(db);
+      if (loaded?.variant !== "clean") { console.error("Load the clean kit first: npm run kit:reset"); process.exitCode = 1; return; }
+      say(`Will: add the demo's aged inbox items to ${db} (a few loan files opened by LA Angono and two loans in the Angono pool; see docs/DEMO_SCRIPT.md).`);
+      const { prisma } = await import("@/lib/db");
+      try { await (await import("@/lib/kit/demo")).seedDemoItems(done); } finally { await prisma.$disconnect(); }
+      say("Done. Refresh the page.");
+      return;
+    }
     case "backup": {
       const bad = backupNameRefusal(name);
       if (bad) { console.error(`${bad} Use: npm run kit:backup -- <name>`); process.exitCode = 1; return; }
@@ -129,7 +139,7 @@ async function main() {
       return;
     }
     default:
-      say("Use: npm run kit:start | kit:reset | kit:backup -- <name> | kit:list | kit:restore -- <name> | kit:rebuild (add --with-scenarios to start, reset or rebuild for the scenario data)");
+      say("Use: npm run kit:start | kit:reset | kit:backup -- <name> | kit:list | kit:restore -- <name> | kit:rebuild | kit:demo (add --with-scenarios to start, reset or rebuild for the scenario data)");
       process.exitCode = 2;
   }
 }

@@ -23,12 +23,21 @@ export interface ClassificationRules {
   financing: Keyword[];
   /** Step 3: what a name with no keyword becomes. */
   fallback: ClassificationValue;
+  /**
+   * D-049: products set by hand (Settings, Product classification). A setting overrides the keywords. Matched by the
+   * myloans product code when the loan has one, else by the product's current name.
+   */
+  manual?: ManualProduct[];
 }
+
+/** A product set to Financing or Refinancing by hand (D-049). */
+export interface ManualProduct { code: string | null; name: string; value: ClassificationValue }
 
 /** The starting values (D-034): "refinanc" starts a word; "refi" whole word only; "financ" starts a word. */
 export const DEFAULT_CLASSIFICATION_RULES: ClassificationRules = {
   refinancing: [{ text: "refinanc", wholeWord: false }, { text: "refi", wholeWord: true }],
-  financing: [{ text: "financ", wholeWord: false }],
+  // D-049: "brand new" and "2nd hand" (multi-word phrases) are Financing too.
+  financing: [{ text: "financ", wholeWord: false }, { text: "brand new", wholeWord: false }, { text: "2nd hand", wholeWord: false }],
   fallback: "REFINANCING",
 };
 
@@ -68,12 +77,27 @@ function matchesWords(words: string[], kw: Keyword): boolean {
 export interface ClassifyResult {
   classification: ClassificationValue;
   /** Which step decided it. */
-  step: "REFINANCING_KEYWORD" | "FINANCING_KEYWORD" | "DEFAULT";
+  step: "MANUAL" | "REFINANCING_KEYWORD" | "FINANCING_KEYWORD" | "DEFAULT";
   /** The keyword that matched (its text as saved), for steps 1 and 2. */
   keyword: string | null;
 }
 
-export function classifyByKeywords(productName: string | null | undefined, rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES): ClassifyResult {
+/** The manual setting for this product, if any: by code first, else by name (case and spaces ignored). */
+export function manualFor(rules: ClassificationRules, productName: string | null | undefined, productCode?: string | null): ManualProduct | null {
+  const list = rules.manual ?? [];
+  if (!list.length) return null;
+  const code = productCode?.trim();
+  if (code) {
+    const byCode = list.find((m) => m.code && m.code.trim().toLowerCase() === code.toLowerCase());
+    if (byCode) return byCode;
+  }
+  const name = normalizeForMatch(productName);
+  return name ? list.find((m) => normalizeForMatch(m.name) === name) ?? null : null;
+}
+
+export function classifyByKeywords(productName: string | null | undefined, rules: ClassificationRules = DEFAULT_CLASSIFICATION_RULES, productCode?: string | null): ClassifyResult {
+  const set = manualFor(rules, productName, productCode);
+  if (set) return { classification: set.value, step: "MANUAL", keyword: null };
   const forms = wordsOf(productName);
   const hit = (list: Keyword[]) => list.find((k) => forms.some((ws) => matchesWords(ws, k)))?.text ?? null;
   const refi = hit(rules.refinancing);

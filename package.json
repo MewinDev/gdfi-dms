@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:contract": "tsx scripts/contract.ts",
     "test:e2e": "playwright test",
     "e2e:groups": "tsx scripts/e2e-groups.ts",
     "docs:screenshots": "tsx scripts/e2e-groups.ts --screenshots",
@@ -34,8 +35,10 @@
     "kit:list": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts list",
     "kit:restore": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts restore",
     "kit:rebuild": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts rebuild",
+    "kit:demo": "tsx --require=./scripts/server-only-stub.cjs scripts/kit.ts demo",
     "email:reminders": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/email.ts reminders",
     "myloans:sync": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/myloans-sync.ts",
+    "work:backfill": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/work-backfill.ts",
     "email:test": "tsx --require=./scripts/server-only-stub.cjs --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/email.ts test",
     "postinstall": "prisma generate"
   },

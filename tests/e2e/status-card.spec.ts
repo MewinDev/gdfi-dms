@@ -3,9 +3,10 @@ import { db, resetLoans } from "./db";
 import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
- * Find a loan on a PN MyLoans has not released: a status card (PN, borrower, branch, the MyLoans status
- * by name), never a loan file, no Open button, nothing saved. Status 8 (Check Prepared) and status 14
- * (Cancelled). Screenshots at 1440, 820 and 390: docs/screenshots/status-card/.
+ * Find a loan on a PN myloans has not released (API 1 answers 422, D-050 / D-051): a card that gives the reason only
+ * (myloans' status name and why), never the borrower's name, the branch or other details, never a loan file, no Open
+ * button, nothing saved. Status 8 (Check Prepared), status 14 (Cancelled), status 15 (a disbursement-check record:
+ * "not a released loan", without its internal status name). Screenshots: docs/screenshots/status-card/.
  */
 const DIR = "docs/screenshots/status-card";
 const width = (page: Page) => page.viewportSize()?.width ?? 0;
@@ -24,38 +25,29 @@ test.beforeEach(async () => {
 });
 
 const CASES = [
-  {
-    name: "not-released", pn: "GD1652026901008", kind: "before_release",
-    text: "This loan is not released yet.", borrower: "Roberto Cruz", branch: "Angono", status: "Check Prepared", releasedOn: "Not released yet",
-  },
-  {
-    name: "cancelled", pn: "GD1012026901013", kind: "cancelled",
-    text: "This loan was cancelled in MyLoans.", borrower: "Andres Lim", branch: "Antipolo", status: "Cancelled", releasedOn: null,
-  },
+  { name: "not-released", pn: "GD1652026901008", feed: "NotReleased", text: /^Not released in myloans/, chip: "Check Prepared", borrower: "Roberto Cruz" },
+  { name: "cancelled", pn: "GD1012026901013", feed: "Cancelled", text: /^Cancelled in myloans\./, chip: "Cancelled", borrower: "Andres Lim" },
+  { name: "status-15", pn: "GD1652026901015", feed: "NotReleased", text: /^Not released in myloans/, chip: "Not released", borrower: null },
 ] as const;
 
 for (const c of CASES) {
-  test(`status card: ${c.name} (${c.status})`, async ({ page }) => {
+  test(`not a released loan: ${c.name} (${c.chip})`, async ({ page }) => {
     const clean = watchConsole(page);
     await signIn(page, "la");
     await page.goto(`/search?q=${c.pn}`);
-    const card = main(page).locator(`[data-find-status="${c.kind}"]`);
+    const card = main(page).locator('[data-find-status="not_selectable"]');
     await expect(card).toBeVisible();
+    await expect(card).toHaveAttribute("data-feed-state", c.feed);
     await expect(card.locator("[data-status-text]")).toHaveText(c.text);
-    for (const v of [c.pn, c.borrower, c.branch, c.status]) await expect(card.getByText(v, { exact: true }).first()).toBeVisible();
-    // The same layout as a released loan: name and PN on the left, the status and MyLoans as chips on the right.
     await expect(card.locator("[data-find-pn]")).toHaveText(c.pn);
-    await expect(card.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText([c.status, "MyLoans"]);
-    await expect(card).not.toContainText("MyLoans status:");
-    // The same eight details; no release date is said in words.
-    await expect(card.locator("dt")).toHaveText(["Amount released", "Released on", "Loan type", "Product", "Branch", "Area", "Division", "Company"]);
-    const releasedOn = await card.locator("dd").nth(1).textContent();
-    if (c.releasedOn) expect(releasedOn).toBe(c.releasedOn);
-    else expect(releasedOn).toMatch(/\d{4}|Not released yet|^-$/);
-    // Never a loan file: no Open button, no preview, no questions, nothing saved.
+    await expect(card.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText([c.chip, "MyLoans"]);
+    // The reason only: no borrower name, no branch, no loan details (API 1 sends none for it).
+    if (c.borrower) await expect(card).not.toContainText(c.borrower);
+    await expect(card.locator("dt")).toHaveCount(0);
+    await expect(main(page).getByText(/Disbursement check|Check Record Only/)).toHaveCount(0);
+    // Never a loan file: no Open button, no preview, nothing saved.
     await expect(main(page).getByRole("button", { name: "Open loan file" })).toHaveCount(0);
     await expect(main(page).locator("[data-find-preview]")).toHaveCount(0);
-    await expect(main(page).locator("[data-find-problem]")).toHaveCount(0);
     await expect(card.getByRole("link", { name: "Try again" })).toBeVisible();
     await noSideways(page);
     await shot(page, c.name);
@@ -63,16 +55,3 @@ for (const c of CASES) {
     clean();
   });
 }
-
-test("status 15 (not a loan) shows only 'No loan with this PN was found in MyLoans.', never the status", async ({ page }) => {
-  const clean = watchConsole(page);
-  await signIn(page, "la");
-  await page.goto("/search?q=GD1652026901015");
-  const n = main(page).locator('[data-find-problem="not_found"]');
-  await expect(n).toBeVisible();
-  await expect(n.getByText("No loan with this PN was found in MyLoans.")).toHaveCount(1);
-  await expect(main(page).locator("[data-find-status]")).toHaveCount(0);
-  await expect(main(page).getByText(/Disbursement check|Check Record Only/)).toHaveCount(0);
-  await noSideways(page);
-  clean();
-});

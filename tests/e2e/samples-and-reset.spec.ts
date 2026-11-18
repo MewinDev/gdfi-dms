@@ -49,10 +49,10 @@ test("Find a loan: only the 3 samples are listed; a card fills the box; other mo
   await expect(box).toHaveValue("GD1012026901001");
   expect(await db.loan.count()).toBe(0);
 
-  // Not listed, but still works when typed: refused by the Data Check, nothing saved.
+  // Not listed, but still works when typed: myloans says it is not a released loan (D-051), nothing saved.
   await box.fill("GD1652026901008");
   await page.getByRole("main").getByRole("button", { name: /^Find/ }).click();
-  await expect(page.getByText("This loan is not released yet.")).toBeVisible();
+  await expect(page.locator('[data-find-status="not_selectable"] [data-status-text]')).toHaveText(/^Not released in myloans/);
   expect(await db.loan.count()).toBe(0);
 });
 

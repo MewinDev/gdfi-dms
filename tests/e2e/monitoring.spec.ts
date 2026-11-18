@@ -28,11 +28,11 @@ async function noSideways(page: Page) {
 }
 
 const H = 3_600_000, DAY = 86_400_000;
-/** Business days before now at 10:00 PHT (weekends skipped; good enough for a fixture). */
+/** Working days before now at 10:00 PHT: Monday to Saturday, as the app counts them (D-041; Sundays skipped). */
 function bdAgo(n: number): Date {
   const d = new Date();
   let left = n;
-  while (left > 0) { d.setTime(d.getTime() - DAY); const w = new Date(d.getTime() + 8 * H).getUTCDay(); if (w !== 0 && w !== 6) left--; }
+  while (left > 0) { d.setTime(d.getTime() - DAY); const w = new Date(d.getTime() + 8 * H).getUTCDay(); if (w !== 0) left--; }
   return n === 0 ? new Date(Date.now() - 10 * 60_000) : new Date(`${new Date(d.getTime() + 8 * H).toISOString().slice(0, 10)}T10:00:00+08:00`);
 }
 

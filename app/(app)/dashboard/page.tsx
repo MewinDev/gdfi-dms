@@ -17,6 +17,8 @@ import { FinanceHome } from "@/components/funds/finance-home";
 import { TatProblemsCard, tatToDo } from "@/components/jobs/tat-report";
 import { SourceChangesCard, sourceChangesToDo } from "@/components/loan/source-changes-card";
 import { SetupWarningsCard, setupWarnings } from "@/components/home/setup-warnings";
+import { WorkCountsCard } from "@/components/home/work-counts";
+import { supervisorWorkCounts } from "@/lib/services/work-items";
 import { BorrowerCorrectionsCard } from "@/components/loan/borrower-corrections-card";
 import { BranchReviewCard, branchReviewToDo } from "@/components/admin/branches/review-card";
 import { PackagesToReceive, packagesFor } from "@/components/jobs/packages-to-receive";
@@ -42,7 +44,7 @@ export default async function HomePage() {
 
   // The attention blocks, each only for the ticks that show it today (permission ticks, never a role name).
   const none = { count: 0, items: [] };
-  const [rows, cal, updates, samples, packages, sentBack, source, corrections, branches, tat, setup] = await Promise.all([
+  const [rows, cal, updates, samples, packages, sentBack, source, corrections, branches, tat, setup, work] = await Promise.all([
     listLoans(user, { tab: "all" }),
     getCalendar(),
     prisma.notification.findMany({ where: notificationWhere(user), orderBy: { createdAt: "desc" }, take: 3, include: { loan: { select: { borrowerName: true } } } }),
@@ -56,6 +58,8 @@ export default async function HomePage() {
     can(user, PERMISSIONS.REPORTS_TAT) ? tatToDo(user) : null,
     // The Superadmin (Manage permissions): setup gaps only they can fix (D-028, D-029).
     can(user, PERMISSIONS.ROLES_MANAGE) ? setupWarnings() : [],
+    // Supervisors (Move work items): the pool and the people who are away (D-046).
+    supervisorWorkCounts(user),
   ]);
   const cards = rows.map((r) => cardFor(r, cal));
   const need = sortByUrgency(cards.filter((c) => c.group === "need"));
@@ -76,6 +80,7 @@ export default async function HomePage() {
 
   const alerts = [
     setup.length > 0 && <SetupWarningsCard key="setup" lines={setup} />,
+    work.poolTooLong + work.withAway > 0 && <WorkCountsCard key="work" poolTooLong={work.poolTooLong} withAway={work.withAway} />,
     packages.length > 0 && <PackagesToReceive key="packages" rows={packages} />,
     sentBack.length > 0 && <SentBackToYou key="sent" rows={sentBack} />,
     source && source.count > 0 && <SourceChangesCard key="source" data={source} />,

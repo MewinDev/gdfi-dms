@@ -88,9 +88,10 @@ export async function entryActiveAction(_p: ActionState, fd: FormData): Promise<
 export async function correctDueDateAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const user = await requirePermission(PERMISSIONS.DUEDATES_CORRECT);
-    const subjectType = str(fd, "subjectType") === "CashAdvance" ? "CashAdvance" : "DpAssignment";
+    const raw = str(fd, "subjectType");
+    const subjectType = raw === "CashAdvance" || raw === "WorkItem" ? raw : "DpAssignment";
     const r = await correctDueDate(user, { subjectType, subjectId: str(fd, "subjectId"), date: str(fd, "date"), reason: str(fd, "reason") });
-    revalidatePath(subjectType === "CashAdvance" ? "/funds" : `/jobs/${str(fd, "subjectId")}`);
+    revalidatePath(subjectType === "CashAdvance" ? "/funds" : subjectType === "WorkItem" ? "/inbox" : `/jobs/${str(fd, "subjectId")}`);
     return `Due date corrected from ${r.from} to ${r.to}. The owner was told.`;
   });
 }

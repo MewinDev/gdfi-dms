@@ -50,7 +50,7 @@ export type CheckedEntry = z.output<typeof entrySchema>;
 
 /** One saved due date that a calendar change moves. */
 export interface DueMove {
-  subjectType: "DpAssignment" | "CashAdvance";
+  subjectType: "DpAssignment" | "CashAdvance" | "WorkItem";
   subjectId: string;
   label: string;
   loanId: string | null;
@@ -109,7 +109,7 @@ export async function checkEntry(raw: EntryInput, today: string, db: Tx | typeof
 
 /** Every open saved due date, with its window and its branch. */
 async function openDueDates(db: Tx | typeof prisma) {
-  const [jobs, advances] = await Promise.all([
+  const [jobs, advances, items] = await Promise.all([
     db.dpAssignment.findMany({
       where: { dueDate: { not: null }, status: "ACCEPTED", transaction: { status: "IN_PROCESS" } },
       select: { id: true, dueDate: true, decidedAt: true, dueBranchId: true, dpBranchId: true, dpUserId: true, secondaryDpUserId: true, loanId: true, loan: { select: { pn: true } }, transaction: { select: { type: { select: { name: true } } } } },
@@ -119,6 +119,8 @@ async function openDueDates(db: Tx | typeof prisma) {
       where: { status: { in: OPEN_ADVANCE as never }, liquidationDueAt: { not: null }, OR: [{ liquidationBasis: null }, { liquidationBasis: { not: "FALLBACK" } }] },
       select: { id: true, number: true, branchId: true, requestedById: true, liquidationDueAt: true, liquidationDueFrom: true, releasedAt: true },
     }),
+    // D-046: inbox items with their own saved due date (LA work, funds requests, packages); a DP job's is on the job.
+    db.workItem.findMany({ where: { state: { in: ["POOL", "INBOX", "HELD"] }, dueDate: { not: null }, kind: { not: "DP_JOB" } }, select: { id: true, label: true, loanId: true, pn: true, branchId: true, holderUserId: true, dueDate: true, measure: true, arrivedAt: true, acceptedAt: true } }),
   ]);
   return [
     ...jobs.filter((j) => j.decidedAt).map((j) => ({
@@ -130,6 +132,10 @@ async function openDueDates(db: Tx | typeof prisma) {
       subjectType: "CashAdvance" as const, subjectId: a.id, label: `${a.number}: liquidation`, loanId: null, pn: null,
       branchId: a.branchId, ownerIds: [a.requestedById],
       start: a.liquidationDueFrom ?? businessDate(a.releasedAt ?? a.liquidationDueAt!), due: businessDate(a.liquidationDueAt!), link: "/my-funds?tab=liquidation",
+    })),
+    ...items.map((w) => ({
+      subjectType: "WorkItem" as const, subjectId: w.id, label: w.label, loanId: w.loanId, pn: w.pn, branchId: w.branchId, ownerIds: w.holderUserId ? [w.holderUserId] : [],
+      start: businessDate(w.measure === "WAITING" ? w.arrivedAt : w.acceptedAt ?? w.arrivedAt), due: w.dueDate!, link: "/inbox",
     })),
   ];
 }
@@ -181,6 +187,7 @@ async function applyMoves(tx: Tx, moves: DueMove[], cause: Cause, why: string, a
       const j = await tx.dpAssignment.update({ where: { id: m.subjectId }, data: { dueDate: m.to }, select: { transactionId: true } });
       await refreshLiquidationForTransaction(tx, j.transactionId); // a fallback liquidation date follows the TAT due date (D-044)
     }
+    else if (m.subjectType === "WorkItem") await tx.workItem.update({ where: { id: m.subjectId }, data: { dueDate: m.to } });
     else await tx.cashAdvance.update({ where: { id: m.subjectId }, data: { liquidationDueAt: endOfBusinessDay(m.to), overdueNotifiedAt: null } });
     await tx.dueDateChange.create({ data: { subjectType: m.subjectType, subjectId: m.subjectId, loanId: m.loanId, pn: m.pn, fromDate: m.from, toDate: m.to, cause, calendarEntryId: entryId, reversesChangeId: m.reverses ?? null, wasOverdue: m.wasOverdue, note: why, byId: actor.id, byLabel: actor.label } });
     await writeAudit(tx, {
@@ -327,7 +334,7 @@ export async function saveWorkingDays(u: CurrentUser, weekdays: boolean[], now: 
 // ---------------------------------------------------------------------------
 
 export const correctionSchema = z.object({
-  subjectType: z.enum(["DpAssignment", "CashAdvance"]),
+  subjectType: z.enum(["DpAssignment", "CashAdvance", "WorkItem"]),
   subjectId: z.string().min(1),
   date: ymd,
   reason: z.string().trim().min(5, "Say why the due date is corrected (at least 5 characters).").max(300, "Keep the reason under 300 characters."),
@@ -360,7 +367,7 @@ export async function calendarRows() {
 }
 
 /** An item's due-date history (holidays, closures, pauses, reversals, corrections), oldest first. */
-export async function dueChanges(subjectType: "DpAssignment" | "CashAdvance", subjectId: string) {
+export async function dueChanges(subjectType: "DpAssignment" | "CashAdvance" | "WorkItem", subjectId: string) {
   return prisma.dueDateChange.findMany({ where: { subjectType, subjectId }, orderBy: { at: "asc" } });
 }
 

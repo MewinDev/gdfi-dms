@@ -133,7 +133,8 @@ export async function lookupPn(adapter: MyLoansAdapter, pn: string, o: { fresh?:
     const r = await adapter.getByPn(cleanPn(pn));
     stats.ms.push(now() - started);
     if (!r.ok && r.reason === "UNAVAILABLE") { stats.failed++; if (r.retryAfterMs !== undefined) stats.rateLimited++; }
-    if (r.ok) cache.set(key, { at: now(), value: r });
+    // An answer is cached (found, not found, not selectable, several records); an outage never is.
+    if (r.ok || r.reason !== "UNAVAILABLE") cache.set(key, { at: now(), value: r });
     if (cache.size > 2_000) cache.delete(cache.keys().next().value!);
     return r;
   })().finally(() => inflight.delete(key));

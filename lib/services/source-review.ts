@@ -8,7 +8,7 @@ import { changeText, type FieldChange, type Proposed } from "@/lib/myloans/chang
 import { fmtDateTime } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
 import { outstandingCash, reusablePapers, recordFromPayload } from "./source-sync";
-import { relatedLoans, replacementCandidates } from "./related-loans";
+import { relatedLoans } from "./related-loans";
 import { paymentEvidence } from "@/lib/myloans/relation";
 import { resolveLoanBranch } from "./branches";
 import { openedAt } from "@/lib/pn/opened-at";
@@ -98,7 +98,8 @@ export async function reviewFor(user: CurrentUser, loanId: string): Promise<Revi
   const canReview = can(user, PERMISSIONS.SOURCE_REVIEW);
   const cash = item.category === "MATERIAL" ? [] : await outstandingCash(prisma, loanId);
   // Only loans in the person's branches (D-019), as on the Related loans card.
-  const same = item.category === "MATERIAL" ? [] : (await replacementCandidates(prisma, item.loan)).filter((r) => inScope(user, r.loan.branchId));
+  // D-051: the PNs myloans named for a redo (kept on the item), not a guess; in the person's branches only.
+  const same = item.category === "MATERIAL" ? [] : (await relatedLoans(prisma, item.loan)).filter((r) => item.candidates.includes(r.loan.pn) && inScope(user, r.loan.branchId));
   const oldCopy = item.category === "MATERIAL" ? null : (await relatedLoans(prisma, item.loan)).find((r) => r.oldPn === item.loan.pn);
   const branchNames = new Map((await prisma.branch.findMany({ where: { id: { in: [item.loan.branchId, ...same.map((r) => r.loan.branchId)] } }, select: { id: true, name: true } })).map((b) => [b.id, b.name]));
   const newLoan = item.loan.replacedByPn ? await prisma.loan.findUnique({ where: { pn: item.loan.replacedByPn }, select: { id: true } }) : null;
@@ -116,8 +117,8 @@ export async function reviewFor(user: CurrentUser, loanId: string): Promise<Revi
     canReview,
     needsPicks: p.needsPicks,
     candidates: same.map((r) => ({
-      pn: r.loan.pn, matched: r.relation?.matched.join(", ") ?? "",
-      text: `Possible replacement: ${r.loan.pn} · released ${fmtDateTime(r.loan.releasedAt).replace(/,? \d+:\d+.*$/, "")}`,
+      pn: r.loan.pn, matched: "",
+      text: `Replaced by in myloans: ${r.loan.pn} · released ${fmtDateTime(r.loan.releasedAt).replace(/,? \d+:\d+.*$/, "")}`,
       differentBranch: differentBranch(branchNames.get(item.loan.branchId), branchNames.get(r.loan.branchId), item.loan.branchId, r.loan.branchId),
     })),
     payment: paymentEvidence(oldCopy?.paymentRecorded ?? (await paymentOf(item.loanId))),
@@ -144,13 +145,13 @@ export async function reusableFor(user: CurrentUser, loanId: string) {
 /** The Related loans card: every other loan of the same borrower (CIN or CIF), scope respected. */
 export interface RelatedRow {
   pn: string; product: string; stage: string; status: string; amount: string | null;
-  tag: "REPLACES" | "REPLACED_BY" | "POSSIBLE" | "ADDITIONAL"; tagText: string; reason: string | null;
+  tag: "REPLACES" | "REPLACED_BY" | "SAME_BORROWER"; tagText: string; reason: string | null;
   /** Admin: link by hand (same confirmation, plus a note). */
   canLink: boolean; payment: { known: boolean; recorded: boolean; text: string | null }; oldPn: string; newPn: string;
   /** The old and new loans are at different branches (a line in the Link confirmation; never a block). */
   differentBranch: string | null;
 }
-const TAG_TEXT = { REPLACES: "Replaces this loan", REPLACED_BY: "Replaced by this loan", POSSIBLE: "Possible replacement", ADDITIONAL: "Additional" } as const;
+const TAG_TEXT = { REPLACES: "Replaces this loan", REPLACED_BY: "Replaced by this loan", SAME_BORROWER: "Same borrower" } as const;
 
 export async function relatedPanel(user: CurrentUser, loan: Parameters<typeof relatedLoans>[1]): Promise<{ rows: RelatedRow[]; hidden: number }> {
   const all = await relatedLoans(prisma, loan);
@@ -165,7 +166,7 @@ export async function relatedPanel(user: CurrentUser, loan: Parameters<typeof re
       pn: r.loan.pn, product: r.loan.productName || "No product name", stage: stageLabel(r.loan.stage), status: status(r.status),
       amount: seesAmounts ? peso(Math.round(Number(r.loan.totalReleasedAmount.toString()) * 100)) : null,
       tag: r.tag, tagText: TAG_TEXT[r.tag], reason: r.relation ? r.relation.reason : null,
-      canLink: canReview && (r.tag === "POSSIBLE" || r.tag === "ADDITIONAL") && !loan.replacesPn && !loan.replacedByPn && !r.loan.replacesPn && !r.loan.replacedByPn,
+      canLink: canReview && r.tag === "SAME_BORROWER" && !loan.replacesPn && !loan.replacedByPn && !r.loan.replacesPn && !r.loan.replacedByPn,
       payment: paymentEvidence(r.paymentRecorded), oldPn: r.oldPn, newPn: r.newPn,
       // Old → new, whichever of the two is the old one.
       differentBranch: r.oldPn === loan.pn

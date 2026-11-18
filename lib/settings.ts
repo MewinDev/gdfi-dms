@@ -14,6 +14,8 @@ export const SETTING_DEFAULTS = {
   "myloans.mockOverrides": {} as Record<string, MockOverride>,
   /** Mock-only: extra source loans (a replacement PN made by the simulator). */
   "myloans.mockExtra": [] as MyLoansRecord[],
+  /** Mock-only (D-048): failure simulation switches for the myloans mock (never in production). */
+  "myloans.mockFailures": [] as import("@/lib/myloans/v1/failures").MockFailure[],
   /** MyLoans sync: refresh a loan when it is opened if its copy is older than this (minutes; 0 = always). */
   "myloans.refreshOnOpenMinutes": 60 as number,
   /** MyLoans sync: when Find a loan shows a saved loan, refresh it in the background if last checked more than this many hours ago (0 = never). */
@@ -56,6 +58,9 @@ export const SETTING_DEFAULTS = {
   "calendar.workingDays": [false, true, true, true, true, true, true] as boolean[],
   /** A holiday or closure dated before today may be added this many days back at most (D-041), with a reason. */
   "calendar.backdateMaxDays": 7 as number,
+  /** Branch pool (D-046): an item waiting this many working days or more is amber, then red. */
+  "pool.amberAfterDays": 1 as number,
+  "pool.redAfterDays": 2 as number,
   /** Due-date colour (D-041): amber when this many working days are left or fewer (0 = only on the due day). */
   "tat.amberWithinDays": 1 as number,
   /** Monitoring: the default capacity of a processor, in open jobs (Settings, Processor capacity). */
@@ -98,5 +103,10 @@ export async function getTatMap(db: Tx | typeof prisma = prisma): Promise<Map<st
 
 /** Product classification (D-031, D-034): the saved keyword lists, older plain strings read as "starts a word". */
 export async function getClassificationRules(db: Tx | typeof prisma = prisma): Promise<ClassificationRules> {
-  return asRules(await getSetting("classification.rules", db));
+  // D-049: products set to Financing or Refinancing by hand override the keywords (matched by code, else name).
+  const [rules, manual] = await Promise.all([
+    getSetting("classification.rules", db),
+    db.product.findMany({ where: { classification: { not: null } }, select: { code: true, name: true, classification: true } }),
+  ]);
+  return { ...asRules(rules), manual: manual.map((p) => ({ code: p.code, name: p.name, value: p.classification! })) };
 }

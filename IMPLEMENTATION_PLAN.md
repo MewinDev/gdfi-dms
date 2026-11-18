@@ -42,6 +42,8 @@ Effort is in **developer-days** for one experienced developer.
 
 Pieces 4 and 6 have no dependencies and can be built early or in parallel. Each piece is committed on its own, with its tests.
 
+**Order now (D-047, 18 November 2026; replaces D-045):** 1 to 5 and 9 are done. Next 6 → 10a (PN # search and Search Log on API 1, mock) → 7 → 8 → 10b (the piece 9 feed hook to the branch LA pool) → 11 when R2-3 arrives → 12 with each piece. Separate, blocked items: **Real API verification** (myloans staging, C5) and the **Production scheduler** (hosting).
+
 ---
 
 ## 2. Piece 1: Sign-in hardening (priority #1)
@@ -464,6 +466,136 @@ myloans' answers are `docs/MYLOANS_ANSWERS_R3.md`; the query in `docs/myloans-ap
 | 5 | **Still open with myloans:** whether cancel and deactivate always touch `updated_at` (they will report the check); no other path changing status or `is_active` silently; R2-3, R2-4, R2-6, A4, A5, C2, C5 | HANDOVER |
 | 6 | **Mock scenarios added:** a redo WITHOUT a cancellation that reaches API 2 only through the suffix time; the redo chain of 3 now re-sends its oldest copy | `mock.ts`, `r2.test.ts` |
 
+### 7.4 Build plan (18 November 2026, D-047): for confirmation before building
+
+**What is built already (kept):**
+- `lib/myloans/r2/` holds the round 3 contract as pure, tested code:
+  - the API 1 / API 2 / API 5 types and `readApi1`;
+  - the 17-field hash;
+  - the in-memory mock with its scenarios;
+  - `fetchRun` and `planRun`.
+- `lib/myloans/` holds today's adapter seam (`getMyLoansAdapter`):
+  - the in-process mock (the kit's 44 sample PNs);
+  - a placeholder HTTP adapter;
+  - retries, Retry-After and the circuit breaker;
+  - the hourly call ceiling.
+- **Gap:** the screens (Find loan, Refresh, the old background sync) still use the old `MyLoansRecord` shape. No HTTP path is exercised locally.
+
+**What piece 6 builds:**
+
+1. **The full contract shape, validated once.**
+   - `lib/myloans/v1/schema.ts`: zod schemas for every response:
+     - API 1: 200, 404, 422, 409;
+     - API 2 change mode and pool mode;
+     - API 4 branches;
+     - API 5 products;
+     - the error body.
+   - The schemas carry every column of the query, in its order, with:
+     - names as parts (`null` when empty);
+     - `TotalLoanAmount` as a string;
+     - `ReleaseDate` in +08:00;
+     - the organization ids and names;
+     - `RunStartedAt` on every row.
+   - The adapter and the contract tests use the same schemas, so a drift fails in one place with one message: "myloans sent something we did not expect: <field>".
+2. **A contract client**, `lib/myloans/v1/client.ts`:
+   - `api1(pn)`;
+   - `changesPage({ since, afterId, limit })`;
+   - `poolPage({ releasedSince, afterId, limit })`;
+   - `branches()`;
+   - `products()`.
+
+   It is HTTP only. It sends the key as a Bearer header, has a timeout, uses the existing retries / Retry-After / breaker and counts towards the hourly ceiling. The address and the key never appear in an error, a log or the database.
+3. **The HTTP mock**, a route handler at `/api/dev/myloans/api/dms/v1/...` with the same paths as the contract:
+   - `GET /loans/{pn}`;
+   - `GET /loans/changes?since=&afterId=&limit=`;
+   - `GET /loans/changes?releasedSince=&afterId=&limit=` (the pool mode; URL still "proposed");
+   - `GET /branches`;
+   - `GET /products`.
+
+   Behaviour:
+   - It answers from the round 3 mock logic (`r2/mock.ts`, extended to the full columns).
+   - It checks the Bearer key, so a 401 can be tested.
+   - It refuses with 404 unless `APP_ENV` is `local` or `staging` and `MYLOANS_MODE=mock`. It is never available in production, where the startup check already refuses mock.
+   - Its data is a local-only table, `MockMyLoansTxn`, seeded from the kit's sample PNs plus the scenario rows.
+4. **One switch, two modes, the same code path.**
+   - `MYLOANS_MODE=mock`: the contract client calls the app's own mock (`MYLOANS_BASE_URL` defaults to `http://localhost:<port>/api/dev/myloans/api/dms/v1`).
+   - `MYLOANS_MODE=live`: the client calls `MYLOANS_BASE_URL` (staging, later production).
+
+   Nothing else changes between the modes. The in-process mock stays for the unit tests only (fast, no server).
+5. **Failure simulation** in Settings, Test data, "myloans mock" (local and staging only). Each failure can be set per endpoint, or for all:
+   - unavailable (503);
+   - slow (a delay over the timeout);
+   - busy (429 with Retry-After);
+   - server error (500);
+   - wrong key (401);
+   - a malformed body (a field missing or of the wrong type);
+   - "page N fails" (to prove a failed run keeps the checkpoint).
+
+   Each failure can be "next call only" or "until switched off". The panel shows what is on, and every switch is audited. The scenario buttons are:
+   - cancel-then-redo;
+   - redo without a cancellation;
+   - redo chain of 3;
+   - NotReleased;
+   - duplicate row;
+   - API 1 409;
+   - exactly 500 rows;
+   - pool mode with more than 500 rows;
+   - product rename;
+   - branch rename;
+   - timestamp-only change.
+6. **The screens switch over** where it is a direct swap: Find loan and Refresh read API 1 through the contract client and `readApi1`, with the plain words:
+   - 404: "PN not found in myloans";
+   - 422: "Cancelled in myloans. Replaced by …";
+   - 409: "Multiple records in myloans, contact Admin".
+
+   The Search Log is piece 10a, the sync (API 2) piece 7, and branches and products apply in piece 11. Piece 6 only reads them.
+7. **Contract tests**, `tests/contract/myloans.contract.test.ts`, run with `npm run test:contract`:
+   - The default target is the mock, through HTTP.
+   - `-- --target=staging` reads `MYLOANS_CONTRACT_URL`, `MYLOANS_CONTRACT_KEY` and optional known PNs (`MYLOANS_CONTRACT_PN_OK`, `_PN_CANCELLED`, `_PN_REDONE`).
+   - Against staging they are read-only GETs with small limits. A check that needs a scenario only the mock can make (409, duplicate row) is skipped there unless a PN for it is given.
+   - The checks:
+     - status codes and body shapes;
+     - `afterId` ascending with pages cut by loan;
+     - `since` fixed for the run;
+     - one `RunStartedAt` per page;
+     - `nextAfterId` null on the last page;
+     - an exactly-full page followed by an empty one;
+     - hash format (64 lowercase hex);
+     - amounts as strings;
+     - +08:00 dates;
+     - API 4 and API 5 shapes.
+
+   This suite becomes the **Real API verification** item when staging (C5) arrives. It is never part of CI until then.
+8. **Tests:**
+   - unit: schemas (each answer; a missing field is refused);
+   - integration: the client against the HTTP mock, through a test server, covering every failure switch and retries / breaker / ceiling;
+   - Find loan and Refresh through API 1 (200 / 404 / 422 / 409);
+   - e2e: Find loan with the mock's 404, 422 and 409, and the Test data panel turning a failure on and off.
+9. **Docs:**
+   - `docs/myloans/` contract notes;
+   - a new myloans mock section in the Manual Test Kit, with the failure panel;
+   - the workflow docs;
+   - STATUS.
+
+**Built 18 November 2026** (docs/myloans/mock-and-contract.md). One change from point 6: **Find loan and Refresh stay on the old adapter until 10a**. Today's screens read fields that are not in the agreed contract (vehicle, address, contact number, previous PN), so moving them is part of 10a (PN # search on API 1), not a plain swap.
+
+**Not in piece 6:**
+- the sync and its checkpoint (piece 7);
+- the Search Log (10a);
+- Open Items (8);
+- applying branches and products (11);
+- the production scheduler;
+- running against real staging (C5).
+
+**Effort:** 2 to 3 days.
+
+**To confirm:**
+- (a) the mock is also available on staging (never production), not only local;
+- (b) its data lives in a local-only table, not in settings;
+- (c) the staging contract run is by hand (read-only), not in CI, until C5.
+
+---
+
 ## 8. Piece 7: myloans sync (D-005, D-016 as amended by D-022)
 
 ### 8.1 Identity: linked on CIN
@@ -495,6 +627,19 @@ The external scheduler calls `POST /api/cron/myloans-sync` every 5 minutes (fixe
 8. **Run log.** Write a `SyncRun` row: start, end, pages, rows, Open Items created, timestamp-only updates, replacements, duplicates, errors, checkpoint before and after.
 
 The rotating-batch polling, tiers, `nextCheckAt` and the background hourly ceiling are removed. On-demand refresh (open, Refresh button) uses **API 1** (the query has no API 3; see §7) and acts only when the `ContentHash` differs from the saved one.
+
+### 8.2a Daily catch-up run (D-049, time-zone safety)
+
+- **What:** once a day, by default at **02:00 Manila** (a setting), the sync runs API 2 with `since` = now minus **26 hours** (a setting), as well as the normal checkpoint runs.
+- **Logic:** the same as a normal run, paged the same way. A loan whose hash equals the saved one needs no action, so the catch-up only finds what a normal run missed.
+- **Protects against:**
+  - wrong time labels (a `SourceUpdatedAt` in the wrong offset, such as the mid-June offset change in myloans);
+  - missed or failed runs;
+  - clock problems on either side.
+- **The checkpoint:** a catch-up run never moves the normal checkpoint backwards. It moves it forward only if the run would anyway (page 1's RunStartedAt minus 5 minutes, after every page succeeded).
+- **Logging:** in the sync run log like the other runs, marked "Daily catch-up", with the counts (rows, changed, unchanged) and any error. A failed catch-up alerts Admin like a failed run.
+- **Production scheduler:** runs with the other jobs (a separate item, blocked on hosting).
+- **Round 4 evidence (recorded in D-049):** cancel / deactivate update `updated_at` (CONFIRMED: 37 of 42 within 18 ms, the other 5 later). The mid-June offset change is covered by this run.
 
 ### 8.3 Row handling
 
@@ -580,6 +725,41 @@ The old sync settings (tiers, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hour
 | First load | Pool mode honours the cutoff; the first checkpoint is set |
 | Safeguards | API 1 two rows → selectable one picked and alert; duplicate ExternalLoanId → alert, no items, run completes |
 | Other | Failure alert after N runs; interval change live; warning band; lease |
+
+---
+
+### 8.10 Piece 7 build plan (18 November 2026): for confirmation before building
+
+On the mock, through the piece 6 client (`changesPage`, `poolPage`) and the round 3 logic already tested (`fetchRun`, `planRun`).
+
+1. **Run engine:**
+   - a `SyncRun` table (start, end, mode, pages, rows, decisions by kind, errors, checkpoint before and after) and a lease row (`SyncLease`), so two runs never overlap;
+   - the fixed `since` per run;
+   - pages by `afterId`;
+   - the checkpoint is saved only after every page succeeds (page 1's RunStartedAt minus 5 minutes);
+   - Retry-After and retries; Admin and Superadmin are alerted after N failed runs in a row (a setting, 3).
+2. **Modes:**
+   - **change** runs on an interval (a setting);
+   - the **daily catch-up** (02:00 Manila, the last 26 hours, D-049);
+   - the one-time **first load** (pool mode from the cutoff date, a Superadmin setting).
+   - The cron route calls one function; "Run now" stays for Admin.
+3. **Row handling** (8.3) **with what exists until piece 8:** the duplicate alert, "same hash, no action", redo (a) and (b), "away from Released", field differences and reference-name renames are each mapped onto **today's review items** (one per loan, the existing Apply / Keep current / Link screens). Piece 8 then splits them into per-field Open Items with approver queues.
+4. **Unknown released CINs** go into a `SourceLoanCandidate` table now. They appear in the branch pool in **10b** (the feed hook built in piece 9).
+5. **The old tiered background refresh retires** once API 2 runs: tiers, per-loan polling, `nextCheckAt` and the hourly background budget. Refresh on a loan file and Find loan stay on API 1.
+6. **Screens:** Settings, MyLoans sync shows the run log (last 50 runs, with counts and errors), the interval, the catch-up time and window, the alert threshold, the first-load cutoff and Run now. Each is audited.
+7. **Tests:**
+   - the mock scenarios: duplicate row, redo chain of 3, redo without a cancellation, NotReleased, exactly 500 rows, page 2 fails (no checkpoint), timestamp-only change, product and branch rename;
+   - the catch-up finding a change the normal run missed (a wrong time label);
+   - the lease against two concurrent runs;
+   - the old background refresh gone;
+   - e2e: Settings, MyLoans sync, run log and Run now.
+
+**Decisions needed:**
+- **(a)** Until piece 8, changes found by API 2 raise today's review items (one per loan). I recommend yes.
+- **(b)** Retire the tiered background refresh when API 2 runs. I recommend yes.
+- **(c)** Store unknown released loans now, and show them in the pool in 10b. I recommend yes.
+
+**Effort:** 5 to 7 days.
 
 ---
 
@@ -672,6 +852,8 @@ New items notify:
 
 ## 10. Piece 9: Accept / Forward engine, inbox, TAT (D-014, D-015)
 
+**Order (D-045, now D-047):** piece 9 was built first, before pieces 6, 7, 8 and 10. It works on the loans already in the DMS and leaves one hook where the branch pool will receive "Released, not yet in the DMS" loans from the sync (piece 7). **Also in scope:** Correct due date on LA work items (D-042 rule).
+
 ### 10.1 Model
 
 | Model | Purpose |
@@ -746,6 +928,59 @@ The existing `DpAssignment` / `DocumentMovement` records keep working. The engin
 - **Rule 4 exact decimals:** reject "1,000" and "1e6"; compare as decimal strings. Included here if you agree (Q16, still open).
 
 **Tests:** every outcome is logged; superseded handling; the unique constraints under concurrent opens; pool accept opens once.
+
+---
+
+### 11.1 Piece 10a build plan (18 November 2026, D-047): for confirmation before building
+
+**What 10a builds** (on the mock, through the piece 6 client):
+
+1. **Find loan and Refresh on API 1:**
+   - The order is unchanged: check the PN → the DMS → myloans (API 1).
+   - The answers, in plain words (`readApi1`):
+     - 404: "PN not found in myloans. Check the number."
+     - 422: a status card that says why from FeedState (Cancelled, Inactive, Not released, or "This copy was redone in myloans. Replaced by GD…"), with a link when that PN is already in the DMS.
+     - 409: the single selectable row is used and Admin is alerted; with none selectable: "Multiple records in myloans, contact Admin." and Admin is alerted.
+   - `IsSelectable` replaces the "status 12 only" and "statuses 15 to 19 are not loans" rules.
+   - `ReleaseDate` becomes the Manila date.
+   - The hourly limit, the breaker, the 60-second cache and the "MyLoans is busy" wording stay.
+2. **Identity saved on open:** `cin`, `externalLoanId` and `contentHash`, with a `LoanSourceIdentity` row (one per myloans copy, for redo history; piece 7 adds to it). The database prevents duplicates (`Loan.pn` unique and a unique `externalLoanId`), and a race between two people opening the same PN opens it once.
+3. **The PN search log** (`PnSearchLog`):
+   - What it records: who, the PN typed, the outcome (INVALID, FOUND_IN_DMS, NOT_FOUND, NOT_SELECTABLE, MULTIPLE, BUSY, OPENED), the myloans status and FeedState, the loan's branch when known, and when.
+   - Where: Reports, "PN searches", with filters and Download CSV.
+4. **"Released, not yet in the DMS"** (the pool's LOAN_CANDIDATE item): Accept opens Find loan with the PN (already built), and opening it closes the item.
+5. **The old adapter retires for Find loan and Refresh.** The background refresh (the old sync) stays until piece 7 replaces it with API 2. The kit and the tests use the mock's tables, and the simulator's "MyLoans change" buttons write to them, so the change shows on Refresh.
+6. **Tests:**
+   - every outcome logged;
+   - 404 / 422 (Replaced by) / 409 with one selectable / 409 with none;
+   - open twice at the same moment opens one file;
+   - the identity saved;
+   - the pool item opens and closes once;
+   - Refresh on a cancelled copy;
+   - e2e Find loan with each answer, and the Search log page.
+
+**Decisions needed:**
+
+- **(a) Fields not in the agreed contract.** Today's loan file reads 5 fields the agreed query does not send:
+  - the borrower's address;
+  - the borrower's contact number;
+  - the vehicle (plate, engine, chassis, make);
+  - previous PN (the replacement guess);
+  - payment recorded.
+
+  **Recommendation:**
+  - Keep address and contact as DMS fields, empty from myloans for now, and ask myloans to add `Address` and `ContactNo` to the query (a new request, R-item). The "Borrower details" review keeps working on name, CIF and CIN.
+  - The vehicle stays a DMS-entered field.
+  - The replacement guess is replaced by the contract's own redo link (`ReplacedByExternalLoanId` / `ReplacedByPNNo`), so the "Link as replacement" suggestion goes.
+  - Payment recorded stays unknown (as today).
+- **(b) Who sees the PN search log:** a new tick "See PN searches" (`reports:pnsearch`), on by default for Admin and LA Supervisor/Head, scoped to the reader's branches by the searcher's home branch (and the loan's branch when known). **Recommendation:** yes.
+- **(c) Two small items from the old plan.**
+  - Exact decimals for rule 4: refuse "1,000" and "1e6", and compare as decimal strings (Q16).
+  - A partial unique index on (`loanId`, `typeId`) for active transactions.
+
+  **Recommendation:** include both.
+
+**Effort:** 2 to 3 days (was 1 to 2; the identity table and the contract fields add a day).
 
 ---
 

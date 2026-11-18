@@ -165,6 +165,10 @@ function Problem({ r, q }: { r: PnLookupResult; q: string }) {
   if (r.kind === "preview" || r.kind === "existing" || r.kind === "invalid" || r.kind === "status") return null;
   // No row: one sentence, shown once.
   if (r.kind === "not_found") return <Notice tone="bad" pn={r.pn} title={r.message} q={q} data={{ "data-find-problem": "not_found" }} />;
+  // D-050: in myloans but not a released loan; after a redo, the PN that replaced it.
+  if (r.kind === "not_selectable") return <NotSelectable r={r} q={q} />;
+  // D-050: several records for one PN and none released: Admin was told.
+  if (r.kind === "multiple") return <Notice tone="bad" pn={r.pn} title={r.message} q={q} data={{ "data-find-problem": "multiple" }}>Admin was told. Nothing was saved.</Notice>;
   const title =
     r.kind === "unavailable" ? (r.busy ? "MyLoans is busy, please try again in a few minutes." : "MyLoans is not answering right now.")
     : r.fieldLabel.startsWith("Inactive") ? `This ${r.field === "branch" ? "branch" : "loan type"} is inactive in Settings.`
@@ -255,6 +259,39 @@ function StatusCard({ r, q }: { r: Extract<PnLookupResult, { kind: "status" }>; 
   );
 }
 
+/**
+ * D-050: API 1 says the PN is in myloans but not a released loan. Only what API 1 sends: why (myloans' FeedState) and,
+ * after a redo, the PN that replaced it, with a link to its loan file when it is already in the DMS, else to Find loan.
+ */
+function NotSelectable({ r, q }: { r: Extract<PnLookupResult, { kind: "not_selectable" }>; q: string }) {
+  // The real status name when myloans gives one ("Check Prepared"); else what FeedState says.
+  const chip = r.statusName ?? { Cancelled: "Cancelled", Superseded: "Redone", NotReleased: "Not released", Inactive: "Inactive", Released: "Released" }[r.feedState] ?? r.feedState;
+  return (
+    <section role="status" aria-labelledby="ns-title" className="card min-w-0 p-4 sm:px-5 sm:py-4" data-find-status="not_selectable" data-feed-state={r.feedState}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-mono text-sm text-ink-2" data-find-pn>{r.pn}</p>
+        <ul aria-label="Loan status" className="flex flex-wrap items-center gap-2"><li><ToneChip tone="act">{chip}</ToneChip></li><li><span className="chip c-mute">{SOURCE_NAME}</span></li></ul>
+      </div>
+      <div className="mt-3 flex items-center gap-3 rounded-xl bg-act-bg px-3 py-2">
+        <span className="flex shrink-0 text-act-fg"><AlertIcon size={18} /></span>
+        <div className="min-w-0 flex-1">
+          <p id="ns-title" className="text-[15px] font-bold leading-snug text-navy" data-status-text>{r.message}</p>
+          <p className="text-[13px] text-ink-2">Only released loans can be opened in the DMS. Nothing was saved.</p>
+        </div>
+        <Link href={`/search?q=${encodeURIComponent(q)}`} className="btn-ghost h-10 min-h-10 shrink-0 bg-white px-3 text-sm">Try again</Link>
+      </div>
+      {r.replacedByPn && (
+        <p className="mt-3 text-[15px]" data-replaced-by>
+          Replaced by <strong className="font-mono">{r.replacedByPn}</strong>.{" "}
+          {r.replacedInDms
+            ? <Link href={`/loans/${r.replacedByPn}`} className="link">Open its loan file</Link>
+            : <Link href={`/loans?fill=${encodeURIComponent(r.replacedByPn)}`} className="link">Find it</Link>}
+        </p>
+      )}
+    </section>
+  );
+}
+
 /** Name and PN on the left; the chips (status, source, any amber chip) on the right, under the name below 1024px. */
 function LoanHead({ name, pn, titleId, children }: { name: string; pn: string; titleId: string; children: React.ReactNode }) {
   return (
@@ -304,15 +341,10 @@ function Preview({ r, warnings }: { r: Extract<PnLookupResult, { kind: "preview"
   const amber = warnings.length > 0 ? ["Details incomplete"] : [];
   return (
     <section aria-labelledby="found-title" className="card min-w-0 p-4 sm:px-5 sm:py-4" data-find-preview>
-      {(r.otherLoans.length > 0 || r.otherHidden > 0 || r.replacesPn) && (
+      {/* D-051: no "other loans of this borrower" warning now (the renewal link is Phase B); only a redo myloans names. */}
+      {r.replacesPn && (
         <div className="mb-3 flex flex-col gap-1.5" data-preview-warnings>
-          {r.replacesPn && <p className="rounded-xl bg-fill px-3 py-2 text-sm font-semibold text-navy">MyLoans says this PN replaces {r.replacesPn}. Opening it does not link them: an approver reviews the old one and decides whether to link them.</p>}
-          {(r.otherLoans.length > 0 || r.otherHidden > 0) && (
-            <p className="rounded-xl bg-wait-bg px-3 py-2 text-sm font-semibold text-wait-fg" data-other-loans>
-              {r.otherLoans.length > 0 ? `This borrower has another loan: ${r.otherLoans.join(", ")}` : "This borrower has another loan"}
-              {r.otherHidden > 0 ? `${r.otherLoans.length ? "," : ":"} ${r.otherHidden} more in another branch` : ""}
-            </p>
-          )}
+          <p className="rounded-xl bg-fill px-3 py-2 text-sm font-semibold text-navy">MyLoans says this PN replaces {r.replacesPn}. Opening it does not link them: an approver reviews the old one and decides whether to link them.</p>
         </div>
       )}
       {/* As in the old design: name and PN on the left; the status (by name, never the number) and the

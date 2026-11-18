@@ -2,13 +2,15 @@ import { requireUser, can, hasAllBranches } from "@/lib/auth/current-user";
 import { canFundsAny } from "@/lib/funds/access";
 import { PERMISSIONS, SETTINGS_PERMISSIONS } from "@/lib/auth/permissions";
 import { unreadNotificationCount } from "@/lib/services/queries";
+import { inboxCount } from "@/lib/services/work-items";
 import { AppShell, type ShellNavItem } from "@/components/ui/app-shell";
 import { isTestMode } from "@/lib/test-mode";
 import { appEnv } from "@/lib/env";
+import { myLoansMode } from "@/lib/myloans";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const unread = await unreadNotificationCount(user);
+  const [unread, inbox] = await Promise.all([unreadNotificationCount(user), inboxCount(user)]);
   // Every item follows the person's permissions (no role names).
   const worksLoans = can(user, PERMISSIONS.CHECKLIST_TICK); // Loan Associate workspace: "My loans", Find loan
   const settings = SETTINGS_PERMISSIONS.some((p) => can(user, p));
@@ -19,6 +21,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const items: ShellNavItem[] = [
     ...(([PERMISSIONS.LOANS_VIEW, PERMISSIONS.JOBS_WORK].some((p) => can(user, p)) || canFundsAny(user)) ? [{ href: "/dashboard", label: "Home", icon: "home" as const }] : []),
     // The processor works from Jobs (and sees each loan file from there), so Loans is not in their nav.
+    // D-046: the inbox (my items and the branch pools) for whoever takes work: LA, DP, Finance, or moves it.
+    ...([PERMISSIONS.CHECKLIST_TICK, PERMISSIONS.JOBS_WORK, PERMISSIONS.WORKITEMS_MOVE].some((p) => can(user, p)) || canFundsAny(user) ? [{ href: "/inbox", label: "Inbox", icon: "inbox" as const, badge: inbox }] : []),
     ...(can(user, PERMISSIONS.JOBS_WORK) ? [{ href: "/jobs", label: "Jobs", icon: "jobs" as const }] : []),
     ...(can(user, PERMISSIONS.FUNDS_REQUEST) ? [{ href: "/my-funds", label: "My funds", short: "Funds", icon: "funds" as const }] : []),
     ...(canFundsAny(user) ? [{ href: "/funds", label: "Funds", icon: "funds" as const }] : []),
@@ -34,7 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <>
-      <AppShell items={items} user={{ name: user.name, subtitle }} unread={unread} testMode={isTestMode()} staging={appEnv() === "staging"} findLoan={worksLoans && can(user, PERMISSIONS.LOANS_SEARCH)}>
+      <AppShell items={items} user={{ name: user.name, subtitle }} unread={unread} testMode={isTestMode()} staging={appEnv() === "staging"} mockMyLoans={myLoansMode() === "mock"} findLoan={worksLoans && can(user, PERMISSIONS.LOANS_SEARCH)}>
         {children}
       </AppShell>
     </>

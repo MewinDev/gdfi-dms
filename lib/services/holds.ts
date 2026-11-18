@@ -111,6 +111,17 @@ export async function resumeHold(u: CurrentUser, holdId: string, note: string, n
  * and including the resume day, on the processor's branch calendar. One DueDateChange and audit row.
  */
 async function extendForPause(tx: Tx, transactionId: string, from: Date, to: Date, actor: { id: string; label: string }, reason: string) {
+  // D-046: the LA's own item on this transaction (saved due date) moves the same way.
+  const la = await tx.workItem.findFirst({ where: { kind: "TRANSACTION", subjectId: transactionId, state: "HELD", dueDate: { not: null } } });
+  if (la?.dueDate) {
+    const d = daysFor(await loadCalendar(tx), la.branchId);
+    const n = Math.max(0, workingDaysBetween(businessDate(from), businessDate(to), d));
+    if (n) {
+      const next = addWorkingDays(la.dueDate, n, d);
+      await tx.workItem.update({ where: { id: la.id }, data: { dueDate: next } });
+      await tx.dueDateChange.create({ data: { subjectType: "WorkItem", subjectId: la.id, loanId: la.loanId, pn: la.pn, fromDate: la.dueDate, toDate: next, cause: "HOLD_PAUSE", wasOverdue: businessDate(to) > la.dueDate, note: `On hold (${reason}): ${n} working day${n === 1 ? "" : "s"} paused. ${PAUSE_RULE_TEXT}`, byId: actor.id, byLabel: actor.label } });
+    }
+  }
   const job = await tx.dpAssignment.findFirst({ where: { transactionId, status: "ACCEPTED", dueDate: { not: null } }, include: { loan: { select: { pn: true } }, transaction: { select: { type: { select: { name: true } } } } } });
   if (!job?.dueDate) return;
   const days = daysFor(await loadCalendar(tx), job.dueBranchId ?? job.dpBranchId);

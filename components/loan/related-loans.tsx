@@ -16,7 +16,7 @@ function keepValues(e: React.FormEvent<HTMLFormElement>, action: (fd: FormData) 
 }
 
 const link = announcing(linkRelatedAction);
-const TAG_CLS: Record<RelatedRow["tag"], string> = { REPLACES: "c-navy", REPLACED_BY: "c-navy", POSSIBLE: "c-act", ADDITIONAL: "c-mute" };
+const TAG_CLS: Record<RelatedRow["tag"], string> = { REPLACES: "c-navy", REPLACED_BY: "c-navy", SAME_BORROWER: "c-mute" };
 
 /** Loan File, right column: other loans of the same borrower (CIN or CIF). Hidden when there are none. */
 export function RelatedLoansCard({ loanId, rows, hidden }: { loanId: string; rows: RelatedRow[]; hidden: number }) {
@@ -25,7 +25,7 @@ export function RelatedLoansCard({ loanId, rows, hidden }: { loanId: string; row
   return (
     <section aria-labelledby="related-h" className="card overflow-hidden" data-related-loans>
       <h2 id="related-h" className="px-4 pb-2 pt-3.5 text-[17px] font-bold text-navy">Related loans ({rows.length + hidden})</h2>
-      <p className="px-4 pb-2 text-[13px] text-ink-2">Same borrower (CIN or CIF). A replacement is the same loan under a new PN; an additional unit is a new loan.</p>
+      <p className="px-4 pb-2 text-[13px] text-ink-2">Same borrower (CIN or CIF). A redo in myloans shows as &ldquo;Replaced by&rdquo;; Admin can link a replacement by hand.</p>
       <ul className="border-t border-line">
         {rows.map((r) => (
           <li key={r.pn} className="border-b border-line-soft last:border-0" data-related-row={r.tag}>
@@ -36,7 +36,7 @@ export function RelatedLoansCard({ loanId, rows, hidden }: { loanId: string; row
               </span>
               <span className="text-[13px] text-ink">{r.product}{r.amount ? ` · ${r.amount}` : ""}</span>
               <span className="text-[12px] text-ink-2">{r.stage} · MyLoans: {r.status}</span>
-              {r.reason && r.tag !== "ADDITIONAL" && <span className="text-[12px] text-ink-2">{r.reason}</span>}
+              {r.reason && <span className="text-[12px] text-ink-2">{r.reason}</span>}
             </Link>
             {r.canLink && (
               <div className="px-4 pb-2.5">
@@ -61,7 +61,7 @@ function LinkSheet({ loanId, row, onClose }: { loanId: string; row: RelatedRow; 
       <form onSubmit={(e) => keepValues(e, action)} className="flex flex-col gap-3" data-link-sheet>
         <input type="hidden" name="loanId" value={loanId} />
         <input type="hidden" name="otherPn" value={row.pn} />
-        <p className="rounded-xl bg-fill px-3 py-2 text-[13px]">{row.newPn} replaces {row.oldPn}: the same loan under a new PN, only when no payment was made on {row.oldPn}. {row.tag === "ADDITIONAL" ? "The system sees this as an additional unit: link it only for an unusual case you have checked." : ""}</p>
+        <p className="rounded-xl bg-fill px-3 py-2 text-[13px]">{row.newPn} replaces {row.oldPn}: the same loan under a new PN, only when no payment was made on {row.oldPn}. </p>
         {row.reason && <p className="text-[13px] text-ink-2">{row.reason}</p>}
         {row.differentBranch && <p className="rounded-xl bg-wait-bg px-3 py-2 text-[14px] font-semibold text-wait-fg" data-different-branch>{row.differentBranch}. You can still link it.</p>}
         {row.payment.known ? (

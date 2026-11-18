@@ -156,15 +156,15 @@ describe("2. Material: amount raised across the mortgage threshold", () => {
 });
 
 describe("3. Borrower details", () => {
-  it("name, address and contact in one change: one item, old and new; the loan keeps the old details; nothing blocked; read-only for LA and DP; the deciders are told without values", async () => {
+  it("name and CIF in one change (no address or contact number, D-051): one item, old and new; the loan keeps the old details; nothing blocked; read-only for LA and DP; the deciders are told without values", async () => {
     const { loan, job } = await setup();
     await setSetting("email.active", true);
-    await change(PN, { borrowerName: "Ana Villanueva-Reyes", address: "12 Rizal Ave, Angono", contactNo: "09171234567" });
+    await change(PN, { borrowerName: "Ana Villanueva-Reyes", cif: "CIF-NEW-1003" });
     expect(await refreshLoan(loan.id, sys)).toMatchObject({ ok: true, outcome: "review", category: "BORROWER", borrower: true });
     const items = await openItems(loan.id);
     expect(items.map((i) => i.category)).toEqual(["BORROWER"]);
     const rows = (await borrowerReviewFor(supAngono, loan.id))!.rows;
-    expect(rows.map((r) => [r.label, r.dms, r.myloans])).toEqual([["Name", "Ana Villanueva", "Ana Villanueva-Reyes"], ["Address", "blank", "12 Rizal Ave, Angono"], ["Contact number", "blank", "09171234567"]]);
+    expect(rows.map((r) => [r.label, r.dms, r.myloans])).toEqual([["Name", "Ana Villanueva", "Ana Villanueva-Reyes"], ["CIF", "CIF-551003", "CIF-NEW-1003"]]);
     // The DMS keeps the old details everywhere until it is decided.
     expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).borrowerName).toBe("Ana Villanueva");
     // Nothing blocked: Send, Accept, funds.
@@ -201,7 +201,7 @@ describe("3. Borrower details", () => {
 
   it("Accept the correction (supervisor): details update, one Journey line with old → new, audit with old and new, note 5 to 500", async () => {
     const { loan } = await setup();
-    await change(PN, { borrowerName: "Ana Villanueva-Reyes", address: "12 Rizal Ave, Angono" });
+    await change(PN, { borrowerName: "Ana Villanueva-Reyes", cif: "CIF-NEW-1003" });
     await refreshLoan(loan.id, sys);
     const id = (await borrowerReviewFor(supAngono, loan.id))!.id;
     await expect(acceptBorrowerCorrection(supAngono, id, "ok")).rejects.toThrow(/at least 5/);
@@ -209,10 +209,10 @@ describe("3. Borrower details", () => {
     await expect(keepCurrent(admin, id, "Admin path")).rejects.toThrow(/borrower details correction/);
     await acceptBorrowerCorrection(supAngono, id, "Checked the valid ID");
     const l = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } });
-    expect(l).toMatchObject({ borrowerName: "Ana Villanueva-Reyes", borrowerAddress: "12 Rizal Ave, Angono" });
+    expect(l).toMatchObject({ borrowerName: "Ana Villanueva-Reyes", cif: "CIF-NEW-1003" });
     const a = await prisma.auditLog.findFirstOrThrow({ where: { loanId: loan.id, action: "borrower_details_corrected" } });
-    expect(a.summary).toBe("Borrower details corrected: Name: Ana Villanueva → Ana Villanueva-Reyes; Address: blank → 12 Rizal Ave, Angono. Note: Checked the valid ID");
-    expect(a).toMatchObject({ actorId: supAngono.id, before: { Name: "Ana Villanueva", Address: null }, after: { Name: "Ana Villanueva-Reyes", Address: "12 Rizal Ave, Angono" } });
+    expect(a.summary).toBe("Borrower details corrected: Name: Ana Villanueva → Ana Villanueva-Reyes; CIF: CIF-551003 → CIF-NEW-1003. Note: Checked the valid ID");
+    expect(a).toMatchObject({ actorId: supAngono.id, before: { Name: "Ana Villanueva", CIF: "CIF-551003" }, after: { Name: "Ana Villanueva-Reyes", CIF: "CIF-NEW-1003" } });
     expect(await openItems(loan.id)).toEqual([]);
     // The same MyLoans value does not alert again.
     expect(await refreshLoan(loan.id, sys)).toMatchObject({ outcome: "none" });
@@ -243,7 +243,7 @@ describe("3. Borrower details", () => {
     const { loan } = await setup();
     await prisma.user.updateMany({ where: { email: { in: [SUP_A, APPR_A, "test.lahead@gdfi.ph"] } }, data: { active: false } });
     try {
-      await change(PN, { address: "1 New St" });
+      await change(PN, { borrowerName: "Ana V. Villanueva" });
       await refreshLoan(loan.id, sys);
       const r = (await borrowerReviewFor(admin, loan.id))!;
       expect(r).toMatchObject({ noBranchApprover: true, canDecide: true });
@@ -351,7 +351,7 @@ describe("6. Replacement PN: only suggested, a person links", () => {
     expect((await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026909101" } })).replacesPn).toBe(PN);
   });
 
-  it("two new PNs with the same CIF as one cancelled loan: both suggested, none linked", async () => {
+  it("two new PNs with the same CIF as one cancelled loan: none suggested (no guess, D-051), none linked", async () => {
     const { loan: old } = await setup();
     await setSetting("myloans.mockExtra", [
       base("GD1652026909201", { cin: "CIN-NEW-9201", cif: "CIF-551003" }),
@@ -361,7 +361,7 @@ describe("6. Replacement PN: only suggested, a person links", () => {
     await refreshLoan(old.id, sys);
     for (const pn of ["GD1652026909201", "GD1652026909202"]) await openLoanFile(la, { pn, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     const item = (await openItems(old.id)).find((i) => i.category === "STATUS")!;
-    expect([...item.candidates].sort()).toEqual(["GD1652026909201", "GD1652026909202"]);
+    expect(item.candidates).toEqual([]);
     expect(await prisma.loan.count({ where: { OR: [{ replacesPn: { not: null } }, { replacedByPn: { not: null } }] } })).toBe(0);
   });
 

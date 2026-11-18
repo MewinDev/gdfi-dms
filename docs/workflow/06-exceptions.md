@@ -14,7 +14,7 @@ flowchart TD
   X -->|"Waiting on someone outside our hands"| H1["On hold: reason and remarks required, start time automatic"]:::hold
   H1 --> H1L["Locked: nobody can change it until it is resumed"]:::hold
   H1L --> H2["Resume: only the hold owner, remarks required, time automatic"]:::hold
-  H1L -->|"Owner away"| HT["Transfer hold: Branch Supervisor or Admin gives it to another owner in their branches, never resumes"]:::admin
+  H1L -->|"Owner away"| HT["Transfer hold: LA Supervisor/Head or Admin gives it to another owner in their branches, never resumes"]:::admin
   HT --> H2
   X -->|"A fault: system down, wrong paper, closed office"| P1["Problem: red, own timer"]:::prob
   P1 --> P2["Resolved with a note. Admin may tag Outside our control"]:::prob

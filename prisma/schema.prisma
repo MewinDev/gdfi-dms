@@ -261,6 +261,11 @@ model User {
   ltoAdvisoriesFiled LtoAdvisory[]        @relation("AdvisoryFiledBy")
   exceptionsResolved LoanException[]      @relation("ExceptionResolvedBy")
   fileAccesses       FileAccessLog[]      @relation("FileAccessBy")
+  workItems          WorkItem[]           @relation("WorkItemHolder")
+  /// Away (D-046): from / to (YYYY-MM-DD, inclusive). While away the person cannot be named for new work.
+  awayFrom           String?
+  awayTo             String?
+  awayNote           String               @default("")
 }
 
 /// Where a record comes from: the MyLoans branch list (code, name, area, division and status are
@@ -678,6 +683,75 @@ model HolidayBranch {
 
 /// A saved due date moved (D-041): a holiday or closure added inside its counting window, a hold that paused
 /// the clock, or an admin correction. Append-only history; the record keeps only its current due date.
+/// Piece 9 (D-014, D-015, D-046): one hand-off of work, its round and its clock. Every hand-off is an item: the LA's
+/// work on a transaction, a DP job, a funds request for Finance, a package for the receiving LA, and (from the
+/// sync, later) a loan released but not yet in the DMS. One row per round: a return, a move or a re-send opens the
+/// next round. History is in WorkMovement.
+model WorkItem {
+  id             String         @id @default(cuid())
+  /// TRANSACTION (LA work), DP_JOB, FUND_REQUEST, PACKAGE, LOAN_CANDIDATE.
+  kind           String
+  /// The transaction (TRANSACTION, DP_JOB), the cash advance (FUND_REQUEST), the job (PACKAGE), or the PN (LOAN_CANDIDATE).
+  subjectId      String
+  round          Int            @default(1)
+  /// LA, DP or FIN: who can take it from the pool.
+  role           String
+  /// The branch of the pool and of the calendar that counts it (D-041).
+  branchId       String
+  /// Narrows a pool (for example a funds type code for Finance).
+  poolKey        String         @default("")
+  loanId         String?
+  pn             String?
+  label          String         @default("")
+  /// POOL (nobody yet), INBOX (named, not accepted), HELD (accepted), DONE.
+  state          String
+  holderUserId   String?
+  holder         User?          @relation("WorkItemHolder", fields: [holderUserId], references: [id])
+  arrivedAt      DateTime       @default(now())
+  acceptedAt     DateTime?
+  /// This round's due date (YYYY-MM-DD) and target; the overall due date carries over a move unchanged.
+  dueDate        String?
+  targetDays     Int?
+  overallDueDate String?
+  /// TAT (accept to forward) or WAITING (arrival to the action, for "counts as accept" steps).
+  measure        String         @default("TAT")
+  /// FORWARDED, RETURNED, DONE, MOVED_AWAY, BACK_TO_POOL, CANCELLED, PULLED_BACK.
+  outcome        String?
+  doneAt         DateTime?
+  returnReason   String         @default("")
+  /// Made from older records with a time missing: left out of TAT performance reports.
+  migrated       Boolean        @default(false)
+  /// A DP job sent to the Branch DP pool: the send details, used when a processor accepts it.
+  sendInput      Json?
+  createdAt      DateTime       @default(now())
+  movements      WorkMovement[]
+
+  @@unique([kind, subjectId, round])
+  @@index([state, branchId, role])
+  @@index([holderUserId, state])
+  @@index([loanId])
+}
+
+/// The append-only history of a work item: arrive, accept, forward, return, move, back to the pool, cancel.
+model WorkMovement {
+  id          String   @id @default(cuid())
+  workItemId  String
+  workItem    WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  action      String
+  fromUserId  String?
+  toUserId    String?
+  byId        String?
+  byLabel     String   @default("")
+  at          DateTime @default(now())
+  remarks     String   @default("")
+  waitingDays Int?
+  tatDaysUsed Int?
+  isLate      Boolean?
+
+  @@index([workItemId])
+  @@index([at])
+}
+
 model DueDateChange {
   id               String   @id @default(cuid())
   /// "DpAssignment" (a DP job's TAT) or "CashAdvance" (the liquidation due date).
@@ -722,10 +796,6 @@ model Loan {
   cif                 String?
   sourceLoanId        String?
   borrowerName        String
-  /// The borrower's address and contact number as the DMS shows them (MyLoans' values, changed only when a
-  /// "Borrower details" correction is accepted).
-  borrowerAddress     String?
-  borrowerContactNo   String?
   branchId            String
   branch              Branch   @relation(fields: [branchId], references: [id])
   loanType            String
@@ -802,6 +872,8 @@ model Loan {
   snapshots        LoanSourceSnapshot[]
   sourceChanges    SourceChange[]
   transactions     LoanTransaction[]
+  /// D-050: every myloans copy this loan file was read from (one row per ExternalLoanId; piece 7 adds redo copies).
+  sourceIdentities LoanSourceIdentity[]
   documents        DocumentItem[]
   dpAssignments    DpAssignment[]
   problems         Problem[]
@@ -817,6 +889,10 @@ model Loan {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// D-050: myloans' transaction id (ExternalLoanId) and the contract hash, saved when the loan file is opened.
+  externalLoanId      Int?     @unique
+  contentHash         String?
 
   @@index([branchId, stage])
   @@index([cin])
@@ -2096,4 +2172,124 @@ model FileAccessLog {
   @@index([userId, at])
   @@index([branchId, at])
   @@index([pn])
+}
+
+/// Piece 6 (D-047, D-048): the myloans MOCK's own data, used only while MYLOANS_MODE=mock on local or staging (never
+/// production). One row per myloans transaction (ExternalLoanId); the mock builds the agreed API rows from it.
+model MockMyLoansTxn {
+  id                  Int       @id
+  cin                 String?
+  pnNo                String?
+  statusId            Int       @default(12)
+  isActive            Boolean   @default(true)
+  /// The transaction code: 20 characters, plus "x<yyyymmddhhmmss>" once redone.
+  code                String
+  /// The newest updated_at of the loan's parts; created_at (a replacement's creation refreshes the old copy).
+  updatedAt           DateTime
+  createdAt           DateTime
+  /// The live transaction that replaced this one (redo).
+  replacedById        Int?
+  /// A duplicate LOANS.CIN row: the loan comes back twice.
+  duplicate           Boolean   @default(false)
+  releaseDate         DateTime?
+  amount              String?
+  cifNo               String?
+  firstName           String?
+  middleName          String?
+  lastName            String?
+  suffix              String?
+  loanId              String?
+  loanTypeId          String?
+  loanType            String?
+  borrowerCompanyName String?
+  productId           Int?
+  branchId            Int?
+  /// Where the row came from: "kit", "test", or a scenario name.
+  source              String    @default("")
+
+  @@index([pnNo])
+  @@index([cin])
+}
+
+/// API 5 of the mock: products.
+model MockMyLoansProduct {
+  productId   Int     @id
+  productCode String
+  name        String
+  active      Boolean @default(true)
+}
+
+/// API 4 of the mock: the organization (branch, area, division, company).
+model MockMyLoansBranch {
+  branchId     Int       @id
+  branchCode   String?
+  branchName   String
+  areaId       Int?
+  areaName     String?
+  divisionId   Int?
+  divisionName String?
+  companyId    Int?
+  companyName  String?
+  isActive     Boolean   @default(true)
+  updatedAt    DateTime?
+}
+
+/// D-049: myloans products (from API 5), with the optional manual classification that overrides the keywords.
+/// Matched by myloans' ProductID, so a rename keeps the manual setting.
+model Product {
+  id                  String          @id @default(cuid())
+  sourceProductId     Int             @unique
+  code                String
+  name                String
+  active              Boolean         @default(true)
+  /// Set by someone with "Manage product classification"; null: the keywords decide.
+  classification      Classification?
+  classificationNote  String          @default("")
+  classifiedById      String?
+  classifiedByLabel   String          @default("")
+  classifiedAt        DateTime?
+  /// When API 5 last sent it (the list is read whole each time).
+  seenAt              DateTime        @default(now())
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([code])
+}
+
+/// D-050: a myloans copy (ExternalLoanId) a loan file was read from. The first is saved on open; piece 7 adds redo copies.
+model LoanSourceIdentity {
+  id             String   @id @default(cuid())
+  loanId         String
+  loan           Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  externalLoanId Int
+  cin            String?
+  pnNo           String?
+  contentHash    String?
+  feedState      String?
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+
+  @@unique([loanId, externalLoanId])
+  @@index([externalLoanId])
+}
+
+/// D-050: every PN # search on Find loan (who, the PN typed, the outcome, when). Reports, PN searches.
+model PnSearchLog {
+  id               String   @id @default(cuid())
+  userId           String
+  userLabel        String
+  /// The searcher's home branch at the time (the log is scoped by it, and by the loan's branch when known).
+  searcherBranchId String?
+  pn               String
+  /// INVALID, FOUND_IN_DMS, NOT_FOUND, NOT_SELECTABLE, MULTIPLE, BUSY, UNAVAILABLE, REFUSED, PREVIEW, OPENED.
+  outcome          String
+  statusId         String?
+  feedState        String?
+  loanBranchId     String?
+  at               DateTime @default(now())
+
+  @@index([at])
+  @@index([pn])
+  @@index([loanBranchId, at])
+  @@index([searcherBranchId, at])
 }

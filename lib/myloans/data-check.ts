@@ -48,11 +48,20 @@ const fail = (field: DataCheckField, fieldLabel: string, message: string): DataC
   message,
 });
 
+/**
+ * The amount as myloans sends it (D-050 item c, Q16): a plain decimal string ("219590.00") or a number. A string with a
+ * comma ("1,000"), an exponent ("1e6"), a sign or anything else is refused, never guessed. Exact to the centavo: the
+ * value is built from the digits, so 500000.00 compares as exactly 500000 against the Rule 4 thresholds.
+ */
+export const AMOUNT_TEXT = /^\d+(\.\d{1,4})?$/;
 export function parseAmount(v: unknown): number | null {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v.replace(/,/g, ""));
-    return Number.isFinite(n) ? n : null;
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (!AMOUNT_TEXT.test(t)) return null;
+    const [whole, frac = ""] = t.split(".");
+    const cents = BigInt(whole) * BigInt(100) + BigInt((frac + "00").slice(0, 2));
+    return Number(cents) / 100;
   }
   return null;
 }

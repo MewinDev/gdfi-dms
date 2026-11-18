@@ -173,12 +173,13 @@ test("3. Borrower details: chip, old and new side by side, read-only for the LA;
   await db.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
   await signInWith(page, BUTTONS.la);
   await openPn(page, PN);
-  await change(PN, { borrowerName: "Ana Villanueva-Reyes", address: "12 Rizal Ave, Angono", contactNo: "09171234567" });
+  // D-051: no address or contact number; name and CIF are borrower details.
+  await change(PN, { borrowerName: "Ana Villanueva-Reyes", cif: "CIF-NEW-1003" });
   await refresh(page, PN);
   await page.reload();
   await expect(page.locator("[data-borrower-chip]")).toContainText("MyLoans changed borrower details, waiting for review");
   const entry = page.locator("[data-borrower-entry]");
-  await expect(entry).toContainText("Changed: Name, Address, Contact number.");
+  await expect(entry).toContainText("Changed: Name, CIF.");
   await entry.getByRole("button", { name: "See the change" }).click();
   const sheet = page.getByRole("dialog", { name: /^MyLoans corrected the borrower's details/ });
   await expect(sheet.locator("[data-borrower-waiting]")).toHaveText("Waiting for review by an approver for this branch."); // D-029: Admin (All branches) decides; no fallback

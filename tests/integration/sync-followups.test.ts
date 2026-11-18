@@ -166,7 +166,8 @@ describe("3. The renamed tick", () => {
 
 describe("4. Replacement suggestion at another branch: a line, never a block", () => {
   const extra = (pn: string, branchCode: string, branchName: string): MyLoansRecord => ({
-    pn, cin: `CIN-${pn}`, cif: "CIF-551003", sourceLoanId: `ML-${pn}`, borrowerName: "Ana Villanueva", branchName, branchCode, status: "RELEASED", statusId: "12", statusName: "Loan Released",
+    // A redo in myloans keeps the CIN on a new PN (D-051: no guess from the CIF alone).
+    pn, cin: "CIN-771003", cif: "CIF-551003", sourceLoanId: `ML-${pn}`, borrowerName: "Ana Villanueva", branchName, branchCode, status: "RELEASED", statusId: "12", statusName: "Loan Released",
     loanType: "Renewal", productName: "Auto Financing", totalReleasedAmount: 1_000_000, releaseDate: new Date().toISOString().slice(0, 10),
   });
 

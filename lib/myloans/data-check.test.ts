@@ -36,8 +36,21 @@ describe("Data Check on section 9 PNs", () => {
   it("no branch restriction when allowedBranches is null", () => {
     expect(runDataCheck(rec("GD3902026901007"), { allowedBranches: null, today }).ok).toBe(true);
   });
-  it("string amounts with commas are read", () => {
-    const r = runDataCheck({ ...rec("GD1012026901001"), totalReleasedAmount: "450,000.00" }, la);
+  it("a plain decimal string is read; one with commas is refused (D-050 item c, Q16)", () => {
+    const r = runDataCheck({ ...rec("GD1012026901001"), totalReleasedAmount: "450000.00" }, la);
     expect(r.ok && r.normalized.totalReleasedAmount).toBe(450000);
+    const bad = runDataCheck({ ...rec("GD1012026901001"), totalReleasedAmount: "450,000.00" }, la);
+    expect(bad).toMatchObject({ ok: false, field: "totalReleasedAmount" });
+  });
+});
+
+describe("exact amounts (D-050 item c)", () => {
+  it("a plain decimal string is exact; a comma, an exponent or a sign is refused, never guessed", async () => {
+    const { parseAmount } = await import("./data-check");
+    expect(parseAmount("219590.00")).toBe(219590);
+    expect(parseAmount("500000.00")).toBe(500000);
+    expect(parseAmount("500000.01")).toBe(500000.01);
+    expect(parseAmount(450000)).toBe(450000);
+    for (const bad of ["1,000", "1e6", "-5", " ", "abc", "1.2.3", "₱1000"]) expect(parseAmount(bad), bad).toBeNull();
   });
 });

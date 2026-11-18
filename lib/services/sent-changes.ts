@@ -1,4 +1,5 @@
 import "server-only";
+import { arriveItem, closeItem } from "./work-items";
 import { z } from "zod";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
@@ -79,6 +80,9 @@ export async function changeProcessor(u: CurrentUser, transactionId: string, raw
     const branchId = dp.allBranches || dp.branches.some((b) => b.branchId === job.dpBranchId) ? job.dpBranchId : dp.homeBranchId ?? dp.branches[0]?.branchId ?? job.dpBranchId;
     // Same job, same clock (sent time kept): only who does it changes.
     await tx.dpAssignment.update({ where: { id: job.id }, data: { dpUserId: dp.id, dpBranchId: branchId, secondaryDpUserId: second?.id ?? null, pasuyoReason: second ? d.reason : null } });
+    // D-046: the item goes to the new processor's inbox (the old one's round closes, not late).
+    await closeItem(tx, "DP_JOB", t.id, "MOVED_AWAY", { by: { id: u.id, label: u.name }, remarks: d.reason });
+    await arriveItem(tx, { kind: "DP_JOB", subjectId: t.id, role: "DP", branchId, loanId: t.loanId, pn: t.loan.pn, label: `${t.loan.pn}: ${t.type.name}`, holderUserId: dp.id, by: { id: u.id, label: u.name } });
     if (second && second.id !== job.secondaryDpUserId) {
       await tx.pasuyoEvent.create({ data: { assignmentId: job.id, toUserId: second.id, toLabel: second.name, byUserId: u.id, byLabel: u.name, reason: d.reason } });
     }
@@ -118,6 +122,9 @@ export async function pullBack(u: CurrentUser, transactionId: string, raw: unkno
     const job = await pendingJobInLock(tx, t.id);
     const now = new Date();
     await tx.dpAssignment.update({ where: { id: job.id }, data: { status: "PULLED_BACK", closedAt: now, returnReasons: `Pulled back by ${u.name}: ${p.data.reason}` } });
+    // D-046: the DP item ends (pulled back, not late); the LA has the work again at once.
+    await closeItem(tx, "DP_JOB", t.id, "PULLED_BACK", { at: now, by: { id: u.id, label: u.name }, remarks: p.data.reason });
+    await arriveItem(tx, { kind: "TRANSACTION", subjectId: t.id, role: "LA", branchId: t.loan.branchId, loanId: t.loanId, pn: t.loan.pn, label: `${t.loan.pn}: ${t.type.name}`, holderUserId: u.id, accepted: true, targetKey: "P3_ASSIGN", at: now, by: { id: u.id, label: u.name } });
     const checks = await tx.checklistCheck.findMany({ where: { transactionId: t.id }, include: { rule: true } });
     // Back to where it was before Send (Ready to send); the clock keeps its start (when it became ready).
     const ready = await tx.auditLog.findFirst({ where: { action: "checklist_saved", journeyStep: "3.1", entityId: t.id, at: { lte: job.endorsedAt } }, orderBy: { at: "desc" } });

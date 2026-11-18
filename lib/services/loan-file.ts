@@ -1,15 +1,17 @@
 import "server-only";
+import { arriveItem, closeItem, openItem, takeItem } from "./work-items";
 import { Prisma } from "@prisma/client";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
 import { writeAudit, SYSTEM_ACTOR, type Actor } from "@/lib/audit";
 import { can, hasAllBranches, inScope, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { logPnSearch, type PnOutcome } from "./pn-search-log";
 import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloans";
 import { getPnFormat, parsePn, pnHeadline } from "@/lib/pn";
 import { reportUnknownBranchCode, resolveLoanBranch } from "./branches";
 import { inBranches, runDataCheck, type DataCheckField } from "@/lib/myloans/data-check";
 import { hasCached, lookupPn as cachedLookup } from "@/lib/myloans/client";
-import { recordStatusKind, statusLabel, type StatusKind } from "@/lib/myloans/status";
+import { recordStatusKind, statusFromId, statusLabel, type StatusKind } from "@/lib/myloans/status";
 import { accountColumns } from "@/lib/myloans/account";
 import {
   classifyProductName,
@@ -25,7 +27,7 @@ import {
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { recomputeStage } from "./stage";
 import { getClassificationRules, getSetting, setSetting } from "@/lib/settings";
-import { linkOnOpen, refreshLoan, sameBorrowerLoans, suggestOnOpen } from "./source-sync";
+import { linkOnOpen, refreshLoan } from "./source-sync";
 import { hashTracked, trackedOf } from "@/lib/myloans/changes";
 import { UserError } from "./errors";
 
@@ -43,6 +45,13 @@ export type PnLookupResult =
    * a card with the real status name, never a loan file and never a saved copy.
    */
   | { kind: "status"; pn: string; statusKind: Exclude<StatusKind, "released" | "not_a_loan">; statusName: string; borrowerName: string; branchName: string | null; /** The MyLoans record (in the person's branches only): the same eight details as a released loan. */ record: MyLoansRecord }
+  /**
+   * D-050: in myloans but not a released loan (API 1 422): why, in myloans' words (FeedState), and after a redo the PN
+   * that replaced it (with a link when that PN is already in the DMS). No borrower details: API 1 sends none for it.
+   */
+  | { kind: "not_selectable"; pn: string; message: string; feedState: string; statusName: string | null; replacedByPn: string | null; replacedInDms: boolean }
+  /** D-050: several records for one PN and none released (API 1 409): Admin is told. */
+  | { kind: "multiple"; pn: string; message: string }
   /** busy: the hourly limit or the circuit breaker stopped the call ("MyLoans is busy..."). */
   | { kind: "unavailable"; pn: string; message: string; busy?: boolean }
   | { kind: "refused"; pn: string; field: DataCheckField; fieldLabel: string; message: string; record: MyLoansRecord }
@@ -62,8 +71,6 @@ export type PnLookupResult =
       outcome: RuleOutcome | null;
       canOpen: boolean;
       /** Same borrower (CIN or CIF), any loan file: "This borrower has another loan: PN-...". Others outside the user's branches are only counted. */
-      otherLoans: string[];
-      otherHidden: number;
       /** MyLoans says this PN replaces another one. */
       replacesPn: string | null;
     };
@@ -108,7 +115,22 @@ async function noteUnknownCodes(rec: MyLoansRecord) {
   for (const [code, name] of codes) await reportUnknownBranchCode(code, rec.pn, name).catch(() => null);
 }
 
+/** Find loan (D-050): the lookup, and one line in the PN search log for what happened. */
 export async function lookupPn(user: CurrentUser, input: string): Promise<PnLookupResult> {
+  const r = await lookupPnInner(user, input);
+  const pn = "pn" in r ? r.pn : input.trim().toUpperCase();
+  const rec = "record" in r ? r.record : null;
+  const outcome: PnOutcome = r.kind === "invalid" ? "INVALID" : r.kind === "existing" ? "FOUND_IN_DMS" : r.kind === "not_found" ? "NOT_FOUND"
+    : r.kind === "status" || r.kind === "not_selectable" ? "NOT_SELECTABLE" : r.kind === "multiple" ? "MULTIPLE"
+    : r.kind === "unavailable" ? (r.busy ? "BUSY" : "UNAVAILABLE") : r.kind === "refused" ? "REFUSED" : "PREVIEW";
+  const loanBranchId = r.kind === "existing" || (r.kind === "refused" && r.field === "branch")
+    ? (await prisma.loan.findUnique({ where: { pn }, select: { branchId: true } }))?.branchId ?? null
+    : rec?.branchCode ? (await prisma.branch.findUnique({ where: { code: rec.branchCode }, select: { id: true } }))?.id ?? null : null;
+  await logPnSearch(user, pn, outcome, { statusId: rec?.statusId ?? null, feedState: r.kind === "not_selectable" ? r.feedState : rec?.feedState ?? null, loanBranchId });
+  return r;
+}
+
+async function lookupPnInner(user: CurrentUser, input: string): Promise<PnLookupResult> {
   if (!can(user, PERMISSIONS.LOANS_SEARCH)) throw new UserError("You do not have permission to search MyLoans.");
   const checked = await pnOf(input);
   if (!checked.ok) return { kind: "invalid", message: checked.message, part: checked.part };
@@ -134,15 +156,27 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   const ceiling = await getSetting("myloans.hourlyCeiling");
   const stopped = (await adapter.breakerState()).open;
   // The sample MyLoans: a simulated change to this PN is a new answer (not hidden by the cache).
-  const variant = myLoansMode() === "mock" ? `find:${JSON.stringify([(await getSetting("myloans.mockOverrides"))[pn] ?? null, (await getSetting("myloans.mockExtra")).find((r) => r.pn === pn) ?? null])}` : undefined;
+  const variant = myLoansMode() === "mock"
+    // The mock's rows and any simulated change for this PN (the overlay): a change is a new answer, not hidden by the cache.
+    ? `find:${JSON.stringify([
+        await prisma.mockMyLoansTxn.findMany({ where: { pnNo: pn }, select: { id: true, updatedAt: true, statusId: true, replacedById: true, amount: true, firstName: true, lastName: true, branchId: true, productId: true } }),
+        (await getSetting("myloans.mockOverrides"))[pn] ?? null,
+        (await getSetting("myloans.mockExtra")).find((r) => r.pn === pn) ?? null,
+      ])}`
+    : undefined;
   const lookup = stopped && !hasCached(pn, Date.now(), variant) ? null : await cachedLookup(adapter, pn, { variant, ceiling });
   if (!lookup || (!lookup.ok && (lookup.limited || (lookup.reason === "UNAVAILABLE" && (await adapter.breakerState()).open)))) {
     return { kind: "unavailable", pn, message: MYLOANS_BUSY, busy: true };
   }
   if (!lookup.ok) {
-    return lookup.reason === "NOT_FOUND"
-      ? { kind: "not_found", pn, message: NOT_IN_MYLOANS }
-      : { kind: "unavailable", pn, message: lookup.message };
+    if (lookup.reason === "NOT_FOUND") return { kind: "not_found", pn, message: NOT_IN_MYLOANS };
+    if (lookup.reason === "NOT_SELECTABLE") {
+      const rep = lookup.replacedByPnNo ?? null;
+      const inDms = rep ? !!(await prisma.loan.findUnique({ where: { pn: rep }, select: { id: true } })) : false;
+      return { kind: "not_selectable", pn, message: lookup.message, feedState: lookup.feedState ?? "NotReleased", statusName: lookup.statusId === undefined || recordStatusKind({ statusId: String(lookup.statusId) }) === "not_a_loan" ? null : statusFromId(lookup.statusId).statusName, replacedByPn: rep, replacedInDms: inDms };
+    }
+    if (lookup.reason === "MULTIPLE") return { kind: "multiple", pn, message: lookup.message };
+    return { kind: "unavailable", pn, message: lookup.message };
   }
   // Statuses 15 to 19 are not loans (the adapter already answers "not found"; this is the second guard).
   const sk = recordStatusKind(lookup.record);
@@ -167,10 +201,10 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   if (off) return { kind: "refused", pn, ...off, record: lookup.record };
   // The keyword lists and default saved in Settings, Product classification (D-031).
   const classificationRules = await getClassificationRules();
-  const cls = classifyProductName(check.normalized.productName, classificationRules);
+  const cls = classifyProductName(check.normalized.productName, classificationRules, lookup.record.productCode);
   const outcome =
     cls.classification === "REFINANCING"
-      ? evaluateLoanRules({ productName: check.normalized.productName, loanType: check.normalized.loanType, totalReleasedAmount: check.normalized.totalReleasedAmount, classificationRules })
+      ? evaluateLoanRules({ productName: check.normalized.productName, loanType: check.normalized.loanType, totalReleasedAmount: check.normalized.totalReleasedAmount, classificationRules, productCode: lookup.record.productCode })
       : null;
   return {
     kind: "preview",
@@ -184,17 +218,27 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
     classifiedByDefault: cls.byDefault,
     outcome,
     canOpen: can(user, PERMISSIONS.LOANS_OPEN),
-    ...(await otherLoansOf(user, lookup.record)),
-    replacesPn: lookup.record.previousPn ?? null,
+    replacesPn: lookup.record.previousPn ?? (await redoneFrom(lookup.record)),
   };
 }
 
-async function otherLoansOf(user: CurrentUser, rec: { cin: string | null; cif: string | null }) {
-  const all = await sameBorrowerLoans(prisma, { cin: rec.cin, cif: rec.cif });
-  const branches = await prisma.loan.findMany({ where: { id: { in: all.map((l) => l.id) } }, select: { id: true, branchId: true } });
-  const mine = all.filter((l) => inScope(user, branches.find((b) => b.id === l.id)?.branchId ?? ""));
-  return { otherLoans: mine.map((l) => l.pn), otherHidden: all.length - mine.length };
+/**
+ * D-050: a redo in myloans keeps the CIN on a new PN. The PN this one replaces: another DMS loan file with the same CIN
+ * that myloans no longer has as a released loan (cancelled or redone: its saved status or an open status review says
+ * so). Two released loans that share a CIN are not treated as a replacement.
+ */
+async function redoneFrom(rec: { pn: string; cin: string | null }): Promise<string | null> {
+  if (!rec.cin) return null;
+  const other = await prisma.loan.findFirst({
+    where: {
+      cin: rec.cin, pn: { not: rec.pn },
+      OR: [{ sourceStatus: { not: "RELEASED" } }, { sourceChanges: { some: { decidedAt: null, category: { in: ["STATUS", "REPLACEMENT"] } } } }],
+    },
+    select: { pn: true },
+  });
+  return other?.pn ?? null;
 }
+
 
 /** Admin data check (Settings, MyLoans sync): the loans refused because MyLoans has no borrower name. */
 async function noteNoName(rec: MyLoansRecord) {
@@ -274,6 +318,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       financingType: input.financingType ?? null,
       orcrStatus: input.orcrStatus ?? null,
       classificationRules,
+      productCode: lookup.record.productCode,
     });
   } catch (e) {
     if (e instanceof RuleInputError) throw new UserError(e.message, e.field);
@@ -287,13 +332,14 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       const loan = await tx.loan.create({
         data: {
           pn,
+          // D-050: myloans' identity of this copy (API 1), and the first row of its identity history.
+          externalLoanId: rec.externalLoanId ?? null,
+          contentHash: rec.contentHash ?? null,
+          ...(rec.externalLoanId ? { sourceIdentities: { create: { externalLoanId: rec.externalLoanId, cin: rec.cin, pnNo: pn, contentHash: rec.contentHash ?? null, feedState: rec.feedState ?? null } } } : {}),
           cin: rec.cin,
           cif: rec.cif,
           sourceLoanId: rec.sourceLoanId,
           borrowerName: rec.borrowerName,
-          // What the DMS shows until a MyLoans correction is accepted (Borrower details review).
-          borrowerAddress: rec.address?.trim() || null,
-          borrowerContactNo: rec.contactNo?.trim() || null,
           branchId: branch.id,
           loanType: check.normalized.loanType,
           productName: check.normalized.productName,
@@ -306,7 +352,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
           openedById: user.id,
           classification: outcome.classification,
           // Saved when the LA opens (accepts) it (D-031); a later keyword change only flags it.
-          classifiedByDefault: classifyProductName(check.normalized.productName, classificationRules).byDefault,
+          classifiedByDefault: classifyProductName(check.normalized.productName, classificationRules, lookup.record.productCode).byDefault,
           financingType: outcome.financingType,
           orcrStatus: outcome.orcrStatus,
           mortgageResult: outcome.mortgage,
@@ -359,7 +405,10 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
         after: { mortgageResult: outcome.mortgage },
         details: { inputs, rulesFired: outcome.rulesFired },
       });
-      await createTransactions(tx, { loanId: loan.id, pn, codes: outcome.transactions, origin: "AUTOMATIC" });
+      // Find loan (D-046 item 4): the LA's items arrive and are accepted at the same moment (waiting 0).
+      await createTransactions(tx, { loanId: loan.id, pn, codes: outcome.transactions, origin: "AUTOMATIC", holderUserId: user.id });
+      const candidate = await openItem(tx, "LOAN_CANDIDATE", pn);
+      if (candidate) { await takeItem(tx, "LOAN_CANDIDATE", pn, user); await closeItem(tx, "LOAN_CANDIDATE", pn, "DONE", { by: { id: user.id, label: user.name } }); }
       await writeAudit(tx, {
         actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "transactions_generated", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn,
         journeyStep: "2.6",
@@ -377,16 +426,18 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
     }
     throw e;
   }
-  // MyLoans says it replaces another PN: link both files and raise the review item on the old one.
-  if (rec.previousPn) await linkOnOpen(pn, rec.previousPn);
-  else await suggestOnOpen(pn);
+  // MyLoans says it replaces another PN: link both files and raise the review item on the old one. (D-050: the
+  // contract sends no previous PN and the replacement guess is gone; a redo is read from myloans' own link.)
+  const replaces = rec.previousPn ?? (await redoneFrom(rec));
+  if (replaces) await linkOnOpen(pn, replaces);
+  await logPnSearch(user, pn, "OPENED", { statusId: rec.statusId ?? null, feedState: rec.feedState ?? null, loanBranchId: branch.id });
   return { pn, alreadyOpen: false };
 }
 
 /** Creates transactions with their checklist rows and expected document items. */
 export async function createTransactions(
   tx: Tx,
-  args: { loanId: string; pn: string; codes: TransactionCode[]; origin: "AUTOMATIC" | "OVERRIDE" },
+  args: { loanId: string; pn: string; codes: TransactionCode[]; origin: "AUTOMATIC" | "OVERRIDE"; holderUserId?: string | null },
 ) {
   const types = await tx.transactionType.findMany({
     where: { code: { in: args.codes } },
@@ -395,7 +446,7 @@ export async function createTransactions(
   const ordered = TRANSACTION_ORDER.filter((c) => args.codes.includes(c)).map((c) => types.find((t) => t.code === c)!);
   for (const type of ordered) {
     if (!type) throw new Error("Transaction type missing from Settings");
-    await createTransactionOfType(tx, { loanId: args.loanId, type, origin: args.origin });
+    await createTransactionOfType(tx, { loanId: args.loanId, type, origin: args.origin, holderUserId: args.holderUserId });
   }
 }
 
@@ -409,9 +460,20 @@ export async function createTransactionOfType(
     loanId: string;
     type: { id: string; rules: { id: string; required: boolean; label: string; originality: "ORIGINAL" | "COPY"; documentType: { code: string } }[] };
     origin: "AUTOMATIC" | "OVERRIDE" | "ADDED";
+    /** D-046: the LA who opened the loan (or added it) has the work at once; null or missing: the branch LA pool. */
+    holderUserId?: string | null;
   },
 ) {
   const txn = await tx.loanTransaction.create({ data: { loanId: args.loanId, typeId: args.type.id, origin: args.origin } });
+  const [loan, type] = await Promise.all([
+    tx.loan.findUniqueOrThrow({ where: { id: args.loanId }, select: { pn: true, branchId: true } }),
+    tx.transactionType.findUniqueOrThrow({ where: { id: args.type.id }, select: { name: true, code: true, requiresDp: true } }),
+  ]);
+  // The LA's work on it (check the papers, then send or complete): an inbox item (D-046).
+  await arriveItem(tx, {
+    kind: "TRANSACTION", subjectId: txn.id, role: "LA", branchId: loan.branchId, loanId: args.loanId, pn: loan.pn, label: `${loan.pn}: ${type.name}`,
+    holderUserId: args.holderUserId ?? null, accepted: !!args.holderUserId, targetKey: type.requiresDp ? "P3_ASSIGN" : type.code === "EDST" ? "P3_EDST" : "P3_ASSIGN",
+  });
   for (const rule of args.type.rules) {
     // Copy the rule's Required flag: later Settings changes do not affect this loan file.
     const check = await tx.checklistCheck.create({ data: { transactionId: txn.id, ruleId: rule.id, required: rule.required } });
