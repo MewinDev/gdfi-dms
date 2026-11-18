@@ -990,6 +990,8 @@ The existing `DpAssignment` / `DocumentMovement` records keep working. The engin
 
 ## 12. Piece 11: Branches and products (APIs 4 and 5)
 
+> **Built 18 November 2026 (D-054).** API 4 and API 5 on the mock through the contract client, read daily; every branch match by myloans' BranchID (renames and code changes applied by themselves and logged); a closed branch keeps its work and stops new pool items (Admin Home warning); a new-product notice; a failed read keeps the last list; the LTO-PASIG sample badge (migration 031). Tests: `tests/integration/reference-sync.test.ts`.
+
 - **Branches:** the live adapter's `listBranches` uses API 4. The mock serves it. Renames are applied and logged (D-012). Existing Branch review is kept for new or unknown branches.
 - **Products:** the `Product` table is built in piece 3a. Here it is synced from API 5 (required before go-live, `docs/MYLOANS_REPLY_2.md`). A rename that flips a classification is handled by piece 3a (flag, then reclassify).
 - **LTO-PASIG** (D-020): seeded with a sample distance. New `LtoOffice.isSample` and `sampleNote` = "Sample. Verify with Operations". Settings and the Send panel show a warning badge on that office.

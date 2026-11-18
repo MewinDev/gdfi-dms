@@ -24,7 +24,8 @@ export interface SendOptions {
   /** Active LTO advisories by office id: warning lines under the office choice (never blocking). */
   ltoWarnings?: Record<string, string[]>;
   recommended: Record<string, string | null>;
-  ltoOffices: { id: string; name: string }[];
+  /** sample (D-020): a warning shown when this office is picked. */
+  ltoOffices: { id: string; name: string; sample?: string | null }[];
   /** The type needs LTO processing (Settings, Transaction types): the LTO office is asked and required. */
   needsLto?: boolean;
   /** Pre-selected office: the one last used on this loan, else the branch's usual LTO office. */
@@ -366,8 +367,9 @@ export function SendPanel(p: SendPanelProps) {
               <label htmlFor={`lto-${uid}`} className="label">LTO office</label>
               <select id={`lto-${uid}`} name="ltoOfficeId" required value={lto} onChange={(e) => setLto(e.target.value)} className="input" aria-invalid={err?.field === "ltoOfficeId"}>
                 <option value="">Pick the LTO office</option>
-                {o.ltoOffices.map((l) => <option key={l.id} value={l.id}>{l.name}{o.ltoWarnings?.[l.id]?.length ? " (advisory)" : ""}</option>)}
+                {o.ltoOffices.map((l) => <option key={l.id} value={l.id}>{l.name}{l.sample ? " (sample)" : ""}{o.ltoWarnings?.[l.id]?.length ? " (advisory)" : ""}</option>)}
               </select>
+              {lto && o.ltoOffices.find((l) => l.id === lto)?.sample && <p className="mt-1.5 inline-flex rounded-lg bg-act-bg px-2 py-1 text-[13px] font-semibold text-act-fg" data-lto-sample>{o.ltoOffices.find((l) => l.id === lto)!.sample}</p>}
               <AdvisoryWarnings lines={lto ? o.ltoWarnings?.[lto] : undefined} />
               <p className="help">Where the processor takes it. The approver uses it to judge transport and time.</p>
             </div>

@@ -523,7 +523,7 @@ async function sendOptions(loan: LoanDetail, ctx: Ctx, t: Txn): Promise<SendOpti
     }),
     ltoWarnings,
     recommended,
-    ltoOffices: ltoOffices.map((l) => ({ id: l.id, name: l.name })),
+    ltoOffices: ltoOffices.map((l) => ({ id: l.id, name: l.name, sample: l.isSample ? l.sampleNote || "Sample. Verify with Operations" : null })),
     defaultBranchId: previous?.dpBranchId ?? loan.branchId,
     previousDpId: previous?.dpUserId ?? null,
     resend: t.status === "RETURNED",

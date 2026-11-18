@@ -79,7 +79,7 @@ export default async function HomePage() {
     packages.length > 0 && <PackagesToReceive key="packages" rows={packages} />,
     sentBack.length > 0 && <SentBackToYou key="sent" rows={sentBack} />,
     openItems && openItems.waiting + openItems.unassigned > 0 && <OpenItemsCard key="open-items" data={openItems} />,
-    branches && branches.count > 0 && <BranchReviewCard key="branches" data={branches} />,
+    branches && (branches.count > 0 || branches.closedWithWork.length > 0) && <BranchReviewCard key="branches" data={branches} />,
     tat?.attention && <TatProblemsCard key="tat" data={tat} />,
   ].filter(Boolean);
 

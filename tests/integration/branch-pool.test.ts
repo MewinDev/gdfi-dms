@@ -27,7 +27,10 @@ const quick = () => myLoansClientV1({ ceiling: false, retries: 0, timeoutMs: 200
 const sync = () => runMyLoansSync({ mode: "CHANGE", trigger: "test", client: quick() });
 const PN_A = "GD1012026970001", PN_B = "GD1012026970002", PN_X = "GD7772026970003", PN_C = "GD3902026970004";
 
-async function released(id: number, pn: string, branchId: number, releasedDaysAgo: number, extra: Record<string, unknown> = {}) {
+/** myloans' BranchID of a DMS branch (D-054: every match uses it). */
+const mlId = async (code: string) => (await prisma.branch.findUniqueOrThrow({ where: { code } })).myloansBranchId!;
+async function released(id: number, pn: string, branchCode: string | number, releasedDaysAgo: number, extra: Record<string, unknown> = {}) {
+  const branchId = typeof branchCode === "number" ? branchCode : await mlId(branchCode);
   const now = new Date();
   await prisma.mockMyLoansTxn.create({ data: {
     id, cin: `CIN-FAKE-POOL-${id}`, pnNo: pn, code: `TXN-FAKE-P${String(id).padStart(10, "0")}`, statusId: 12, isActive: true, updatedAt: now, createdAt: now,
@@ -61,7 +64,7 @@ afterAll(async () => {
 
 describe("the branch pool (10b)", () => {
   it("enters the branch's LA pool once per PN; waiting starts at the sync, not the release date; the release date and amount on the card", async () => {
-    await released(970_001, PN_A, 101, 20); // released 20 days ago: still green today (D-053)
+    await released(970_001, PN_A, "101", 20); // released 20 days ago: still green today (D-053)
     await sync();
     await sync(); // the same loan again: still one item
     expect(await prisma.workItem.count({ where: { kind: "LOAN_CANDIDATE", subjectId: PN_A } })).toBe(1);
@@ -77,7 +80,7 @@ describe("the branch pool (10b)", () => {
   });
 
   it("Accept opens Find loan with the PN; opening the loan file closes the item and the candidate", async () => {
-    await released(970_002, PN_B, 101, 3);
+    await released(970_002, PN_B, "101", 3);
     await sync();
     const it = (await item(PN_B))!;
     expect(await acceptWork(la, it.id)).toBe(`/loans?fill=${PN_B}`);
@@ -87,7 +90,7 @@ describe("the branch pool (10b)", () => {
   });
 
   it("leaves the pool when myloans says it is no longer released (cancelled), with the reason", async () => {
-    await released(970_001, PN_A, 101, 5);
+    await released(970_001, PN_A, "101", 5);
     await sync();
     await prisma.mockMyLoansTxn.update({ where: { id: 970_001 }, data: { statusId: 14, updatedAt: new Date() } });
     await sync();
@@ -104,7 +107,7 @@ describe("the branch pool (10b)", () => {
     expect(await unmatchedCandidates()).toBe(1);
     // The branch is accepted (here: created directly): the next sync puts the loan in its pool.
     const area = await prisma.branch.findFirstOrThrow({ where: { code: "101" }, select: { areaId: true, divisionId: true } });
-    const b = await prisma.branch.create({ data: { code: "777", name: "Newtown", areaId: area.areaId, divisionId: area.divisionId } as never });
+    const b = await prisma.branch.create({ data: { code: "777", name: "Newtown", areaId: area.areaId, divisionId: area.divisionId, myloansBranchId: 777 } as never });
     try {
       await sync();
       expect(await item(PN_X)).toMatchObject({ state: "POOL", branchId: b.id });
@@ -116,7 +119,7 @@ describe("the branch pool (10b)", () => {
   });
 
   it("branch scope: an LA of Antipolo and Angono does not see an Alaminos candidate", async () => {
-    await released(970_004, PN_C, 390, 1);
+    await released(970_004, PN_C, "390", 1);
     await sync();
     expect(await item(PN_C)).toMatchObject({ state: "POOL" });
     expect((await poolItems(la)).map((r) => r.pn)).not.toContain(PN_C);

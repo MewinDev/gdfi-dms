@@ -25,6 +25,8 @@ export interface Tracked {
   branchName: string | null;
   /** The loan's CURRENT branch code in MyLoans (the PN's code only says where it was opened). */
   branchCode: string | null;
+  /** D-054: myloans' BranchID (a code or name change with the same id is a rename, not a move). */
+  branchId?: string | null;
   previousPn: string | null;
   // The account details added with docs/myloans/field-map.md. A copy saved before them has none of these
   // keys, so their first appearance is not a change (detectChanges skips keys the previous copy lacks).
@@ -60,6 +62,7 @@ export const FIELDS: Record<TrackedKey, { label: string; kind: FieldKind }> = {
   releaseDate: { label: "Release date", kind: "material" },
   branchName: { label: "Branch", kind: "material" },
   branchCode: { label: "Branch code", kind: "material" },
+  branchId: { label: "Branch ID", kind: "material" },
   previousPn: { label: "Replaces PN", kind: "replacement" },
   sourceLoanId: { label: "Source loan ID", kind: "material" },
   productCode: { label: "Product code", kind: "material" },
@@ -88,7 +91,7 @@ export function trackedOf(r: MyLoansRecord): Tracked {
     cin: txt(r.cin), cif: txt(r.cif), status: txt(r.status)?.toUpperCase() ?? null,
     loanType: txt(r.loanType), productName: txt(r.productName),
     amount: n !== null ? Math.round(n * 100) : txt(r.totalReleasedAmount),
-    releaseDate: txt(r.releaseDate)?.slice(0, 10) ?? null, branchName: txt(r.branchName), branchCode: txt(r.branchCode), previousPn: txt(r.previousPn)?.toUpperCase() ?? null,
+    releaseDate: txt(r.releaseDate)?.slice(0, 10) ?? null, branchName: txt(r.branchName), branchCode: txt(r.branchCode), ...(r.myloansBranchId !== undefined ? { branchId: r.myloansBranchId === null ? null : String(r.myloansBranchId) } : {}), previousPn: txt(r.previousPn)?.toUpperCase() ?? null,
     sourceLoanId: txt(r.sourceLoanId), productCode: txt(r.productCode),
     areaId: txt(r.areaId), areaName: txt(r.areaName), divisionId: txt(r.divisionId), divisionName: txt(r.divisionName),
     companyId: txt(r.companyId), companyName: txt(r.companyName),

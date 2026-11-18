@@ -32,6 +32,8 @@ export const SETTING_DEFAULTS = {
    * loans not yet in the DMS are kept from the branch-pool cutoff (cutoffDate, else go-live minus 30 days).
    */
   "myloans.sync": { intervalMinutes: 30, catchUpTime: "02:00", catchUpHours: 26, alertAfterFailedRuns: 3, goLiveDate: null, cutoffDate: null } as import("@/lib/services/myloans-sync").SyncConfig,
+  /** Piece 11 (D-054): when the product list (API 5) was last read. */
+  "products.lastReadAt": null as string | null,
   /** Piece 8 (D-012, D-053): the fields that raise Open Items (the status always does: it blocks Forward). */
   "openItems.monitoredFields": ["loanType", "amount", "productCode", "releaseDate", "branchCode", "sourceLoanId", "borrowerName", "cif", "cin"] as string[],
   /** Piece 7: the checkpoint (moves only after a whole good run), failed runs in a row, the last catch-up and run. */

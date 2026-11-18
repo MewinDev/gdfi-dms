@@ -7,6 +7,9 @@ import { myLoansClientV1 } from "@/lib/myloans/v1";
 import { classifyByKeywords, classificationWord, type ClassificationRules, type ClassificationValue, type ClassifyResult } from "@/lib/rules/classify";
 import { getClassificationRules, recheckClassifications } from "./classification";
 import { UserError } from "./errors";
+import { notify } from "@/lib/notify";
+import { holdsWhere } from "@/lib/auth/holders";
+import { setSetting } from "@/lib/settings";
 import { recordReferenceChange } from "./reference-changes";
 
 /**
@@ -22,9 +25,22 @@ export async function refreshProducts(now: Date = new Date()): Promise<{ added: 
   if (!r.ok) throw new UserError(r.message);
   const known = new Map((await prisma.product.findMany()).map((p) => [p.sourceProductId, p]));
   let added = 0, renamed = 0;
+  const firstRead = known.size === 0;
+  const rules = await getClassificationRules();
+  const classifiers = firstRead ? [] : (await prisma.user.findMany({ where: holdsWhere(PERMISSIONS.SETTINGS_CLASSIFICATION), select: { id: true } })).map((u) => u.id);
   for (const p of r.data.items) {
     const was = known.get(p.productId);
-    if (!was) { await prisma.product.create({ data: { sourceProductId: p.productId, code: p.productCode, name: p.name, active: p.active, seenAt: now } }); added++; continue; }
+    if (!was) {
+      await prisma.product.create({ data: { sourceProductId: p.productId, code: p.productCode, name: p.name, active: p.active, seenAt: now } });
+      added++;
+      // D-054: a new product is classified by the keywords; the people who manage classification are told.
+      // (Not on the very first read, which brings the whole list.)
+      if (p.active && classifiers.length) {
+        const c = classifyByKeywords(p.name, rules, p.productCode);
+        await prisma.$transaction((tx) => notify(tx, { userIds: classifiers, title: `New product: ${p.name}`, body: `New product: ${p.name}, classified as ${classificationWord(c.classification)}${c.step === "DEFAULT" ? " by default" : ""}. Change it in Settings, Product classification if it is wrong.`, link: "/admin/settings?open=classification" }));
+      }
+      continue;
+    }
     if (was.name !== p.name) {
       renamed++;
       // D-012, D-053: a product rename is reference data: logged in Reference data changes (with a notice).
@@ -35,6 +51,7 @@ export async function refreshProducts(now: Date = new Date()): Promise<{ added: 
   const sent = new Set(r.data.items.map((p) => p.productId));
   const gone = await prisma.product.updateMany({ where: { active: true, sourceProductId: { notIn: [...sent] } }, data: { active: false } });
   if (renamed) await recheckClassifications(prisma);
+  await setSetting("products.lastReadAt", now.toISOString());
   return { added, renamed, inactive: gone.count, total: r.data.items.length };
 }
 

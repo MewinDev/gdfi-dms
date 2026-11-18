@@ -580,6 +580,9 @@ model LtoOffice {
   /// Inactive instead of delete: when and by whom it was made inactive (null while active).
   deactivatedAt   DateTime?
   deactivatedById String?
+  /// D-020: a sample office (LTO-PASIG, seeded with a sample distance): a warning badge in Settings and on Send.
+  isSample        Boolean   @default(false)
+  sampleNote      String    @default("")
 
   /// Optional estimates, used only to help the approver judge the cash advance (transport and time).
   distanceKm              Float?
@@ -2357,18 +2360,20 @@ model SyncLease {
 /// Piece 7 (D-052 (c)): a loan myloans released that has no loan file here yet, released on or after the branch-pool
 /// cutoff. Only what the pool card needs. Shown in the branch pool in piece 10b.
 model SourceLoanCandidate {
-  id             String   @id @default(cuid())
-  externalLoanId Int      @unique
-  cin            String?
-  pn             String
-  borrowerName   String
-  branchCode     String?
-  branchName     String?
-  productName    String?
-  amount         String?
-  releaseDate    DateTime
-  firstSeenAt    DateTime @default(now())
-  lastSeenAt     DateTime @default(now())
+  id              String   @id @default(cuid())
+  externalLoanId  Int      @unique
+  cin             String?
+  pn              String
+  borrowerName    String
+  /// D-054: myloans' BranchID (every match uses it; the code is for display).
+  myloansBranchId Int?
+  branchCode      String?
+  branchName      String?
+  productName     String?
+  amount          String?
+  releaseDate     DateTime
+  firstSeenAt     DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
 
   @@index([pn])
   @@index([branchCode, releaseDate])

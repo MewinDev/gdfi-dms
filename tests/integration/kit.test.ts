@@ -233,13 +233,15 @@ describe("Manual Test Kit on the test database", () => {
     // Borrower name: an Open Item for the borrower approvers; the loan keeps the old name.
     expect(await prisma.openItem.count({ where: { loan: { pn: "GD1012026902041" }, status: "PENDING", audience: "BORROWER" } })).toBe(1);
     // Branches: a branch change waiting, one applied (opened at Antipolo, now at Angono), an open loan at
-    // a branch MyLoans closed, a rename and a code change waiting in the Branch review.
+    // a branch MyLoans closed; a rename and a code change applied by themselves (D-054).
     expect(await prisma.openItem.findFirstOrThrow({ where: { loan: { pn: "GD1012026902071" }, status: "PENDING" } })).toMatchObject({ field: "branchCode" });
     expect((await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026902072" }, include: { branch: true } })).branch.code).toBe("165");
     const closed = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD7182026902073" }, include: { branch: true } });
     expect(closed.branch).toMatchObject({ code: "718", active: false });
-    const open = await prisma.branchReview.findMany({ where: { state: "OPEN" } });
-    expect(open.map((r) => `${r.kind} ${r.code}`)).toEqual(expect.arrayContaining(["RENAMED 174", `CODE_CHANGED ${KIT_BRANCH_CHANGES.code.to}`]));
+    // D-054: the rename and the code change (matched by the BranchID) were applied by themselves and logged.
+    expect((await prisma.branch.findUniqueOrThrow({ where: { myloansBranchId: KIT_BRANCH_CHANGES.rename.branchId } })).name).toBe(KIT_BRANCH_CHANGES.rename.to);
+    expect((await prisma.branch.findUniqueOrThrow({ where: { myloansBranchId: KIT_BRANCH_CHANGES.code.branchId } })).code).toBe(KIT_BRANCH_CHANGES.code.to);
+    expect(await prisma.referenceChange.count({ where: { entity: { in: ["BRANCH", "BRANCH_CODE"] } } })).toBeGreaterThanOrEqual(2);
     expect(await prisma.loan.findUnique({ where: { pn: "GD7772026902070" } })).toBeNull();
     // Monitoring: capacity and leave, finished jobs with different times, an overdue job, three advisories.
     const dp3 = await prisma.user.findUniqueOrThrow({ where: { email: "kit.dp3@example.test" } });

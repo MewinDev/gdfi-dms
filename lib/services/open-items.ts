@@ -15,7 +15,7 @@ import { MINOR_ACCOUNT_COLUMNS } from "@/lib/myloans/account";
 import { proposeEffect, type FieldChange, type Proposed, type Tracked } from "@/lib/myloans/changes";
 import { classifyProductName, type FinancingType, type OrcrStatus } from "@/lib/rules";
 import {
-  OI_FIELDS, dmsValue, myloansValue, referenceOf, splitChanges, statusOutcome, waitingTone, STATUS_WORDS,
+  OI_FIELDS, dmsValue, myloansValue, referenceOf, sameValue, splitChanges, statusOutcome, waitingTone, STATUS_WORDS,
   type DmsLoan, type FeedStateWord, type OpenItemField,
 } from "@/lib/open-items/fields";
 import { recheckClassifications } from "./classification";
@@ -100,6 +100,7 @@ async function applyLookup(tx: Tx, a: RaiseInput, lookup: FieldChange[]) {
     const v = c.now === null ? null : String(c.now);
     if (c.field in MINOR_ACCOUNT_COLUMNS) data[MINOR_ACCOUNT_COLUMNS[c.field as keyof typeof MINOR_ACCOUNT_COLUMNS]] = v;
     if (c.field === "branchName") data.sourceBranchName = v;
+    if (c.field === "branchCode") data.sourceBranchCode = v;
     if (c.field === "productName" && v) data.productName = v;
   }
   if (Object.keys(data).length) await tx.loan.update({ where: { id: a.loan.id }, data });
@@ -117,14 +118,14 @@ async function applyLookup(tx: Tx, a: RaiseInput, lookup: FieldChange[]) {
 
 export async function raiseOpenItems(tx: Tx, a: RaiseInput): Promise<RaiseResult> {
   const out: RaiseResult = { raised: 0, superseded: 0, reverted: 0, lookup: 0 };
-  const split = splitChanges(a.changes);
+  const split = splitChanges(a.changes, { branchIdTracked: !!a.previous && "branchId" in a.previous && !!a.current.branchId });
   await applyLookup(tx, a, split.lookup);
   out.lookup = split.lookup.length;
   const monitored = new Set<string>([...(await getSetting("openItems.monitoredFields", tx)), "status"]);
   const fields = split.fields.filter((f) => monitored.has(f));
   if (!fields.length) return out;
   const loan = await tx.loan.findUniqueOrThrow({ where: { id: a.loan.id } });
-  const dms = dmsLoanOf(loan);
+  const dms = { ...dmsLoanOf(loan), branchMyloansId: (await tx.branch.findUnique({ where: { id: loan.branchId }, select: { myloansBranchId: true } }))?.myloansBranchId ?? null };
   const told: string[] = [];
   for (const f of fields) {
     const my = myloansValue(f, a.current, { replacedByPn: a.replacedByPn });
@@ -141,7 +142,7 @@ export async function raiseOpenItems(tx: Tx, a: RaiseInput): Promise<RaiseResult
       if (pending) await tx.openItem.update({ where: { id: pending.id }, data: { status: "REVERTED", decidedAt: a.now, decidedByLabel: "myloans", remarks: REVERTED_TEXT } });
       continue;
     }
-    if (my.key === was.key) {
+    if (sameValue(f, my, was)) {
       // myloans has the DMS value again: nothing to decide (D-053).
       if (pending) {
         await tx.openItem.update({ where: { id: pending.id }, data: { status: "REVERTED", decidedAt: a.now, decidedByLabel: "myloans", remarks: REVERTED_TEXT } });
@@ -311,8 +312,8 @@ async function approve(tx: Tx, u: CurrentUser, loan: Loan, items: { field: strin
   }
   const v = items[0].newRaw;
   if (f === "branchCode") {
-    const b = (v ?? {}) as { code: string | null; name: string | null };
-    const br = await resolveLoanBranch(tx, { branchCode: b.code, branchName: b.name });
+    const b = (v ?? {}) as { code: string | null; name: string | null; id?: number | null };
+    const br = await resolveLoanBranch(tx, { myloansBranchId: b.id ?? null, branchCode: b.code, branchName: b.name });
     if (!br) throw new UserError(`myloans moved the loan to ${b.name ?? "a branch"}${b.code ? ` (${b.code})` : ""}, which is not a branch here. Accept it in Settings, Branches (Branch review) first, or reject it.`);
     await tx.loan.update({ where: { id: loan.id }, data: { sourceBranchCode: b.code, sourceBranchName: b.name, ...(br.id !== loan.branchId ? { branch: { connect: { id: br.id } } } : {}) } });
     // The loan's other pending items follow it to the new branch (its approvers decide them now).

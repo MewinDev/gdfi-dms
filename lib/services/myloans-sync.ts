@@ -83,7 +83,9 @@ export interface RunResult {
  */
 async function enterPool(pn: string, r: FeedRowV1, borrowerName: string, now: Date): Promise<"pool" | "unmatched" | "already"> {
   if (await prisma.workItem.findFirst({ where: { kind: "LOAN_CANDIDATE", subjectId: pn, state: { not: "DONE" } }, select: { id: true } })) return "already";
-  const branch = await resolveLoanBranch(prisma, { branchCode: r.branchCode, branchName: r.branchName });
+  const branch = await resolveLoanBranch(prisma, { myloansBranchId: r.branchId, branchCode: r.branchCode, branchName: r.branchName });
+  // D-054: a branch closed in myloans (inactive here) takes no NEW pool items; its existing work is untouched.
+  if (branch && !branch.active) return "unmatched";
   if (!branch) {
     if (r.branchCode) await reportUnknownBranchCode(r.branchCode, pn, r.branchName).catch(() => null);
     return "unmatched";
@@ -99,8 +101,8 @@ export async function poolWaitingCandidates(now: Date = new Date()): Promise<num
   let n = 0;
   for (const c of await prisma.sourceLoanCandidate.findMany({ orderBy: { firstSeenAt: "asc" } })) {
     if (open.has(c.pn) || held.has(c.pn)) continue;
-    const branch = await resolveLoanBranch(prisma, { branchCode: c.branchCode, branchName: c.branchName });
-    if (!branch) continue;
+    const branch = await resolveLoanBranch(prisma, { myloansBranchId: c.myloansBranchId, branchCode: c.branchCode, branchName: c.branchName });
+    if (!branch || !branch.active) continue;
     await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn: c.pn, branchId: branch.id, borrowerName: c.borrowerName, at: now }));
     n++;
   }
@@ -123,7 +125,7 @@ async function keepCandidate(r: FeedRowV1, cutoff: string, now: Date = new Date(
     return false;
   }
   const rec = recordOfRow(r);
-  const data = { cin: r.cin, pn: r.pnNo, borrowerName: rec.borrowerName, branchCode: r.branchCode, branchName: r.branchName, productName: r.productName, amount: r.totalLoanAmount, releaseDate: new Date(r.releaseDate), lastSeenAt: new Date() };
+  const data = { cin: r.cin, pn: r.pnNo, borrowerName: rec.borrowerName, myloansBranchId: r.branchId ?? null, branchCode: r.branchCode, branchName: r.branchName, productName: r.productName, amount: r.totalLoanAmount, releaseDate: new Date(r.releaseDate), lastSeenAt: new Date() };
   const was = await prisma.sourceLoanCandidate.findUnique({ where: { externalLoanId: r.externalLoanId }, select: { id: true } });
   if (was) await prisma.sourceLoanCandidate.update({ where: { id: was.id }, data });
   else await prisma.sourceLoanCandidate.create({ data: { externalLoanId: r.externalLoanId, ...data } });

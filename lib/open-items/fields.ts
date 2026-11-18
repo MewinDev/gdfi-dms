@@ -36,7 +36,7 @@ export const MONITORABLE_FIELDS = OI_FIELD_KEYS.filter((f) => f !== "status");
 const SOURCE_KEYS: Record<OpenItemField, TrackedKey[]> = {
   status: ["status", "statusId", "statusName", "isActive"],
   loanType: ["loanType"], amount: ["amount"], productCode: ["productCode", "productName"], releaseDate: ["releaseDate"],
-  branchCode: ["branchCode", "branchName"], sourceLoanId: ["sourceLoanId"], borrowerName: ["borrowerName"], cif: ["cif"], cin: ["cin"],
+  branchCode: ["branchId", "branchCode", "branchName"], sourceLoanId: ["sourceLoanId"], borrowerName: ["borrowerName"], cif: ["cif"], cin: ["cin"],
 };
 
 export type FeedStateWord = "Released" | "Cancelled" | "Superseded" | "NotReleased" | "Inactive";
@@ -73,7 +73,7 @@ export function myloansValue(f: OpenItemField, t: Tracked, extra: { replacedByPn
   switch (f) {
     case "amount": return typeof t.amount === "number" ? { raw: t.amount, text: pesoText(t.amount), key: String(t.amount) } : plain(t.amount);
     case "productCode": return named(t.productCode ?? null, t.productName ?? null);
-    case "branchCode": return named(t.branchCode ?? null, t.branchName ?? null);
+    case "branchCode": { const v = named(t.branchCode ?? null, t.branchName ?? null); return { ...v, raw: { ...(v.raw as object), id: t.branchId ? Number(t.branchId) : null } }; }
     case "status": {
       const state = feedStateOf(t);
       const rep = state === "Superseded" ? extra.replacedByPn ?? null : null;
@@ -87,6 +87,8 @@ export interface DmsLoan {
   borrowerName: string; cif: string | null; cin: string | null; loanType: string; totalReleasedAmount: number | string | { toString(): string };
   productCode: string | null; productName: string; releasedYmd: string | null; sourceBranchCode: string | null; sourceBranchName: string | null;
   sourceLoanId: string | null; cancelledAt: Date | null;
+  /** D-054: myloans' BranchID of the loan's DMS branch. */
+  branchMyloansId?: number | null;
   /** D-053: on hold because myloans no longer shows it released (NotReleased or Inactive). */
   sourceHold?: string | null;
 }
@@ -95,7 +97,7 @@ export function dmsValue(f: OpenItemField, l: DmsLoan): Value {
   switch (f) {
     case "amount": { const c = Math.round(Number(String(l.totalReleasedAmount)) * 100); return { raw: c, text: pesoText(c), key: String(c) }; }
     case "productCode": return named(l.productCode, l.productName || null);
-    case "branchCode": return named(l.sourceBranchCode, l.sourceBranchName);
+    case "branchCode": { const v = named(l.sourceBranchCode, l.sourceBranchName); return { ...v, raw: { ...(v.raw as object), id: l.branchMyloansId ?? null } }; }
     case "releaseDate": return plain(l.releasedYmd);
     case "status":
       if (l.cancelledAt) return { raw: { state: "Cancelled" }, text: "Closed in the DMS", key: "Cancelled" };
@@ -116,11 +118,17 @@ export interface Split {
   lookup: FieldChange[];
 }
 
-/** Splits a detected change into Open Item fields and lookup data. A name whose code also changed is a real change. */
-export function splitChanges(changes: FieldChange[]): Split {
+/**
+ * Splits a detected change into Open Item fields and lookup data. A name whose code also changed is a real change.
+ * D-054: when both copies carry myloans' BranchID, the branch is matched by it: a new code or name with the same id is
+ * a rename (lookup data, logged), and only a different BranchID moves the loan (an Open Item).
+ */
+export function splitChanges(changes: FieldChange[], o: { branchIdTracked?: boolean } = {}): Split {
   const moved = new Set(changes.map((c) => c.field));
+  const byId = !!o.branchIdTracked;
   const lookup = changes.filter((c) => LOOKUP_ALWAYS.includes(c.field)
-    || (c.field === "branchName" && !moved.has("branchCode"))
+    || (c.field === "branchName" && (byId ? !moved.has("branchId") : !moved.has("branchCode")))
+    || (c.field === "branchCode" && byId && !moved.has("branchId"))
     || (c.field === "productName" && !moved.has("productCode")));
   const lookupKeys = new Set(lookup.map((c) => c.field));
   const fields = OI_FIELD_KEYS.filter((f) => SOURCE_KEYS[f].some((k) => moved.has(k) && !lookupKeys.has(k)));
@@ -128,12 +136,13 @@ export function splitChanges(changes: FieldChange[]): Split {
 }
 
 /** The reference entity a lookup change belongs to, with the key that names it. */
-export function referenceOf(c: FieldChange, t: Tracked): { entity: "AREA" | "DIVISION" | "COMPANY" | "BRANCH" | "PRODUCT"; key: string } | null {
+export function referenceOf(c: FieldChange, t: Tracked): { entity: "AREA" | "DIVISION" | "COMPANY" | "BRANCH" | "BRANCH_CODE" | "PRODUCT"; key: string } | null {
   switch (c.field) {
     case "areaName": return { entity: "AREA", key: t.areaId ?? "" };
     case "divisionName": return { entity: "DIVISION", key: t.divisionId ?? "" };
     case "companyName": return { entity: "COMPANY", key: t.companyId ?? "" };
-    case "branchName": return { entity: "BRANCH", key: t.branchCode ?? "" };
+    case "branchName": return { entity: "BRANCH", key: t.branchId ?? t.branchCode ?? "" };
+    case "branchCode": return { entity: "BRANCH_CODE", key: t.branchId ?? "" };
     case "productName": return { entity: "PRODUCT", key: t.productCode ?? "" };
     default: return null; // ids and vehicle details: applied, not a rename to log
   }
@@ -147,6 +156,15 @@ export function statusOutcome(state: FeedStateWord, replacedByPn: string | null)
   if (state === "Superseded") return { kind: "relink", text: replacedByPn ? `This will move the loan file to PN ${replacedByPn}. Its papers, jobs and work stay with it; the old PN stays in its history.` : "This will move the loan file to the PN myloans names as the replacement." };
   if (state === "NotReleased" || state === "Inactive") return { kind: "hold", text: "The loan stays on hold until released again. Nothing is closed; it continues by itself when myloans shows it released." };
   return { kind: "close", text: "This will close the loan file." };
+}
+
+/** The same value on both sides? The branch by myloans' BranchID when both sides have it (D-054), else by key. */
+export function sameValue(f: OpenItemField, a: Value, b: Value): boolean {
+  if (f === "branchCode") {
+    const x = (a.raw as { id?: number | null } | null)?.id, y = (b.raw as { id?: number | null } | null)?.id;
+    if (x && y) return x === y;
+  }
+  return a.key === b.key;
 }
 
 /** Waiting colour of an Open Item, on the inbox thresholds (working days). */

@@ -15,7 +15,7 @@ export interface ProductView {
   history: { atText: string; by: string; text: string }[];
 }
 
-export function ProductClassificationList({ rows, moving, testing, canEdit }: { rows: ProductView[]; moving: { from: string; to: string; n: number }[]; testing: boolean; canEdit: boolean }) {
+export function ProductClassificationList({ rows, moving, testing, canEdit, lastRead = null }: { rows: ProductView[]; moving: { from: string; to: string; n: number }[]; testing: boolean; canEdit: boolean; lastRead?: string | null }) {
   const [refreshState, refresh, refreshing] = useActionState(refreshProductsAction, null);
   const [state, action, pending] = useActionState(setProductClassificationAction, null);
   const [open, setOpen] = useState<string | null>(null);
@@ -28,6 +28,7 @@ export function ProductClassificationList({ rows, moving, testing, canEdit }: { 
         <h3 id={`${id}-h`} className="text-[15px] font-bold text-navy">{testing ? `Test keyword rules: ${rows.length} active products, before and after (not saved)` : `Products from myloans (${rows.length} active)`}</h3>
         {canEdit && <form action={refresh}><button type="submit" className="btn-ghost btn-sm" disabled={refreshing}>{refreshing ? "Reading..." : "Read the list from myloans"}</button></form>}
       </div>
+      <p className="text-[13px] text-ink-2" data-products-last-read>{lastRead ? `Last read from myloans (API 5): ${lastRead}. Read again every day with the branch list.` : "Not read from myloans yet."}</p>
       {testing && (
         <p className="text-sm" data-products-moving>
           {moving.length === 0 ? "No product changes classification." : moving.map((m) => `${m.n} product${m.n === 1 ? "" : "s"} move from ${m.from} to ${m.to}`).join("; ") + "."}

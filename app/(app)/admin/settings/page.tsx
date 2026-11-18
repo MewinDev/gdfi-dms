@@ -609,7 +609,7 @@ async function loadListArea(key: AreaKey, opts: { btype?: TypeKey } = {}): Promi
       ];
       return {
         kind: "ltoOffice", statusKind: "ltoOffice", noun: "LTO office", addLabel: "Add LTO office", filterLabel: "Find an office",
-        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: `${r.code}${r.city ? ` · ${r.city}` : ""} · ${ltoEstimate(r) ?? "No estimate yet"}`, inactive: !r.active, href: editHref(key, r.id) })),
+        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: `${r.code}${r.city ? ` · ${r.city}` : ""} · ${ltoEstimate(r) ?? "No estimate yet"}`, inactive: !r.active, href: editHref(key, r.id), ...(r.isSample ? { tags: [{ text: r.sampleNote || "Sample. Verify with Operations", tone: "act" as const }] } : {}) })),
         fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
       };
     }
@@ -841,7 +841,7 @@ async function ClassificationArea({ common, user, test }: { common: { id: string
           </ul>
         )}
       </section>
-      <ProductClassificationList rows={productRows} moving={products.moving} testing={!!test} canEdit={canEdit} />
+      <ProductClassificationList rows={productRows} moving={products.moving} testing={!!test} canEdit={canEdit} lastRead={await getSetting("products.lastReadAt").then((t) => (t ? fmtDateTime(t) : null))} />
     </SettingsModal>
   );
 }

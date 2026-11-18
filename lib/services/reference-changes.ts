@@ -13,7 +13,7 @@ import { UserError } from "./errors";
  * an in-app notice for each new rename.
  */
 
-export const ENTITY_WORDS: Record<string, string> = { AREA: "Area", DIVISION: "Division", COMPANY: "Company", BRANCH: "Branch", PRODUCT: "Product" };
+export const ENTITY_WORDS: Record<string, string> = { AREA: "Area", DIVISION: "Division", COMPANY: "Company", BRANCH: "Branch", BRANCH_CODE: "Branch code", PRODUCT: "Product" };
 
 /** One rename: logged the first time it is seen (and noticed); later loan files only add to its count. */
 export async function recordReferenceChange(tx: Tx, r: { entity: string; key: string; oldValue: string | null; newValue: string | null; source: string; at?: Date }) {
