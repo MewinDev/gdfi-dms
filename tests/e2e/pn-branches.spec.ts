@@ -92,6 +92,9 @@ async function resetBranchSamples() {
   await db.setting.upsert({ where: { key: "branches.sync" }, create: { key: "branches.sync", value: { time: "02:00", paused: false, lastRunDate: null, lastSuccessAt: null, lastFullAt: null, lastLookupAt: null } }, update: { value: { time: "02:00", paused: false, lastRunDate: null, lastSuccessAt: null, lastFullAt: null, lastLookupAt: null } } });
   await db.user.deleteMany({ where: { email: { startsWith: "zz.pnb." } } });
   await db.branch.deleteMany({ where: { code: { in: ["999", "721"] } } });
+  // D-054: a rename or code change from myloans is applied by itself; put the two sample branches back.
+  await db.branch.updateMany({ where: { myloansBranchId: 3 }, data: { name: "Amang Rodriguez", active: true, deactivatedAt: null } });
+  await db.branch.updateMany({ where: { myloansBranchId: 398 }, data: { code: "709" } });
 }
 
 test("Settings, Branches: the list, and an inactive branch that still has a user and an open loan", async ({ page }) => {
@@ -142,9 +145,10 @@ test("Import from MyLoans: the preview (test-looking rows first, counts per Divi
   await shot(page, "import-from-myloans-suggestions");
 });
 
-test("Branch review: a rename and a code change from MyLoans, Accept shows the impact first", async ({ page }) => {
+test("Branches from MyLoans (D-054): a rename and a code change apply by themselves and are logged; a closed branch waits in the Branch review, Accept shows the impact first", async ({ page }) => {
   await resetBranchSamples();
-  const over = { overrides: { "3": { name: "Amang Rodriguez - Pasig", updatedAt: new Date().toISOString() }, "398": { code: "710", updatedAt: new Date().toISOString() } }, extra: [] };
+  const now = new Date().toISOString();
+  const over = { overrides: { "3": { name: "Amang Rodriguez - Pasig", updatedAt: now }, "398": { code: "710", updatedAt: now }, "4": { active: false, updatedAt: now } }, extra: [] };
   await db.setting.update({ where: { key: "myloans.mockBranches" }, data: { value: over } });
   try {
     await signIn(page, "admin");
@@ -153,26 +157,28 @@ test("Branch review: a rename and a code change from MyLoans, Accept shows the i
     await page.getByRole("button", { name: "Branches from MyLoans" }).click();
     await expect.poll(async () => db.branchSyncRun.count({ where: { trigger: "api", ok: true, at: { gte: started } } }), { timeout: 30_000 }).toBe(1);
     await expect(page.locator("[data-branch-runs]")).toContainText("MyLoans API");
+    // Matched by myloans' BranchID: applied by itself, listed in Reference data changes.
+    expect((await db.branch.findUniqueOrThrow({ where: { myloansBranchId: 3 } })).name).toBe("Amang Rodriguez - Pasig");
+    expect((await db.branch.findUniqueOrThrow({ where: { myloansBranchId: 398 } })).code).toBe("710");
+    await page.goto("/admin/settings?open=reference-changes");
+    const refs = page.locator("[data-refdata]");
+    await expect(refs).toContainText("Amang Rodriguez - Pasig");
+    await expect(refs).toContainText("710");
+    await shot(page, "reference-data-changes");
+    // The closed branch waits in the Branch review; Accept shows who gains or loses access first.
     await page.goto("/admin/settings?open=branches&step=review");
     const review = page.locator("[data-branch-review]");
-    await expect(review).toContainText("Amang Rodriguez - Pasig");
-    await expect(review).toContainText("710");
-    // The Branch review page keeps the codes: the Code changed item still shows the old and the new code.
-    await expect(review).toContainText("709");
+    await expect(review).toContainText("Angono");
+    expect(await db.branchReview.count({ where: { state: "OPEN", kind: { in: ["RENAMED", "CODE_CHANGED"] } } })).toBe(0); // nothing to decide for them
     await shot(page, "branch-review");
-    // Home: the Branch review card shows the branch name only (no brackets, no code); the pill stays.
     await page.goto("/dashboard");
     const card = page.locator("[data-branch-review-card]");
-    const names = card.locator("[data-review-name]");
-    await expect(names.filter({ hasText: "Amang Rodriguez - Pasig" })).toHaveCount(1);
-    await expect(names.filter({ hasText: /^Alicia$/ })).toHaveCount(1);
-    for (const t of await names.allInnerTexts()) expect(t).not.toMatch(/[()0-9]/);
-    await expect(card).toContainText("Code changed");
-    await expect(card).toContainText("Renamed");
+    await expect(card.locator("[data-review-name]").filter({ hasText: /^Angono$/ })).toHaveCount(1);
+    await expect(card).toContainText("Closed");
     await card.scrollIntoViewIfNeeded();
     await shot(page, "dashboard-branch-review");
     await page.goto("/admin/settings?open=branches&step=review");
-    await review.getByRole("button", { name: /^Accept Renamed/ }).click();
+    await review.getByRole("button", { name: /^Accept Closed/ }).click();
     const dlg = page.getByRole("alertdialog");
     await expect(dlg.locator("[data-review-impact]")).toBeVisible();
     await shot(page, "branch-review-impact");
