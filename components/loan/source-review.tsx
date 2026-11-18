@@ -84,6 +84,8 @@ export function SimulateSourceChange({ loanId }: { loanId: string }) {
           <option value="area">Correct the area name (minor)</option>
           <option value="product">Change the product name</option>
           <option value="cancel">Set the loan cancelled</option>
+          <option value="notreleased">Set the loan not released</option>
+          <option value="released">Set the loan released again</option>
           <option value="replace">Create a replacement PN</option>
           <option value="branch">Move the loan to another branch</option>
         </select>

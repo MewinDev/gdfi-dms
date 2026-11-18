@@ -217,6 +217,7 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 35. **Replacement at another branch.** As Admin, on a cancelled Angono loan whose borrower has a new loan at Antipolo (Related loans), open the Link form and read it before linking.
 36. **The sync from the console.** Run `npm run sync:myloans -- --now` in PowerShell, then open Settings, MyLoans sync and read the Run log.
 
+
 ### Find a loan card and rule names (12 November 2026)
 
 37. **The answer buttons.** As **LA Angono**, find an Angono PN from the list that asks the two questions (Auto Financing, Renewal) and nobody opened yet. Look at the card before answering, then choose **Non-Undertaking**, then **Undertaking**, click it again, use the arrow keys, and choose **Untransferred**, then **Transferred**. Read the line beside **Open loan file** each time. Then press **Open loan file**, open **More loan details** and read the last line.
@@ -237,6 +238,12 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 ### Stage names and next steps (12 November 2026)
 
 42. **The new stage names.** As **LA Angono**, open a loan file and read the progress line at the top; finish or send every transaction (EDST done, the others sent to a processor) and read it again. Open **My loans** and hover the Next step of a few rows. Then as **Admin** open **Loans**, All loans, read the Stage and Next step columns and hover a Next step. Look at the loan file on a tablet and a phone too.
+
+### Open Items: what approving a status does (18 November 2026)
+
+43. **Not released, then released again.** As LA Angono open an Angono PN. As Admin, on its Journey tab, simulate "Set the loan not released", then press **Refresh from MyLoans**. On Open Items, read the status card (what approving does is said first) and **Approve** with remarks. As LA Angono, try **Send** on the loan file. As Admin, simulate "Set the loan released again" and press **Refresh from MyLoans**; read the loan file again.
+44. **A redo (new PN).** As LA Angono open another Angono PN and tick a few papers. As Admin, simulate "Create a replacement PN". On Open Items, read the status card, then **Approve** with remarks. Look for the loan by the old PN and by the new PN.
+45. **Branch pool to loan file.** After `npm run kit:demo`, as LA Angono open **Inbox, Branch pool**: press **Accept** on the first released loan waiting there, then open it from **My items** and **Open loan file**. Look at the pool again.
 
 ## If the sign-in page keeps coming back
 

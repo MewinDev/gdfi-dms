@@ -553,7 +553,7 @@ export async function setMyLoansPaused(u: CurrentUser, on: boolean) {
 // Simulator (TEST_MODE only, mock MyLoans): "Simulate a MyLoans change"
 // ---------------------------------------------------------------------------
 
-export const SIM_SOURCE_KINDS = ["amount", "name", "cif", "area", "product", "cancel", "replace", "branch"] as const;
+export const SIM_SOURCE_KINDS = ["amount", "name", "cif", "area", "product", "cancel", "notreleased", "released", "replace", "branch"] as const;
 export type SimSourceKind = (typeof SIM_SOURCE_KINDS)[number];
 
 export async function simulateSourceChange(u: CurrentUser, loanId: string, kind: SimSourceKind): Promise<string> {
@@ -591,6 +591,12 @@ export async function simulateSourceChange(u: CurrentUser, loanId: string, kind:
   } else if (kind === "cancel") {
     over.status = "CANCELLED";
     message = "MyLoans now says the loan is cancelled.";
+  } else if (kind === "notreleased") {
+    over.status = "NOT_RELEASED";
+    message = "MyLoans now says the loan is not released.";
+  } else if (kind === "released") {
+    over.status = "RELEASED";
+    message = "MyLoans now says the loan is released again.";
   } else if (kind === "branch") {
     // Moved to another active branch of the same area (or any other active one).
     const cur = await prisma.branch.findUniqueOrThrow({ where: { id: loan.branchId } });
