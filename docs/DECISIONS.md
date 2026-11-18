@@ -815,3 +815,19 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   3. **At the end:** full vitest and full e2e, tsc, lint; commit; push; stop before piece 12 with a short plan and an updated STATUS.md (done, blocked and by whom, what remains to a Phase A go-live).
 - **Reason:** a branch code can change in myloans; the BranchID cannot. Closing a branch must not hide work already in the DMS. People who classify products should know when a new one arrives.
 
+## D-055 Piece 12: backups, security headers, volume test, runbook, UAT; no privacy notice; module checklists
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **Backup and restore cover the database AND the uploaded files** (receipts, stage evidence, LTO proof), with a timestamp and a checksum list; `npm run backup` and `npm run restore`. The target comes from configuration: a folder (a disk or NAS) or an S3-compatible bucket (keys from the environment, never in the repository). Retention is a setting. A rehearsal proves a restored receipt opens through the file route. The runbook has a section per hosting option (on-premise disk / NAS plus off-site; cloud object storage with versioning; Supabase) and the 3-2-1 rule.
+  2. **No privacy notice** is needed; it is removed from the plan and STATUS if listed.
+  3. **Security headers, minimal and compact:** one config with CSP (self and what the app truly needs), HSTS (production only), `X-Content-Type-Options: nosniff`, `frame-ancestors 'none'` / `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`; the session cookie Secure (production), HttpOnly, SameSite=Lax. One test. Nothing else.
+  4. **A volume test** on a separate seed variant (not the normal kit): about 15,000 loans with pool items, Open Items and file-log rows; the main screens measured; anything slower than about 2 seconds fixed; before and after timings reported.
+  5. **A go-live runbook** (with a rollback plan) and a **UAT checklist** per role.
+  6. **Module checklists** (`docs/checklists/`, one file per module, an index) and a **Phase A gap summary** (`docs/PHASE_A_GAPS.md`); docs only, no gap is fixed until the user decides. From now on every piece or fix updates the matching checklist file in the same commit (CLAUDE.md).
+- **How it was built (18 November 2026):**
+  - Backup target: `BACKUP_TARGET=folder` (`BACKUP_DIR`, default `./backups/sets`) or `s3` (`BACKUP_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_PREFIX`; path-style, Signature V4, so AWS S3, Cloudflare R2, Backblaze B2, Wasabi, MinIO and Supabase's S3 endpoint all work). Retention is the environment setting `BACKUP_KEEP_DAYS` (default 30; the newest set is always kept): it belongs to the server, not to an in-app screen, because backups run outside the app.
+  - A set is `gdfi-dms-YYYYMMDD-HHMMSS/`: `db.dump` (pg_dump custom format), `files/<storage root>/...`, `manifest.json` (database, migrations, every file with its size and SHA-256). Restore checks every checksum first and only ever goes into a clean copy (a new database and an empty folder), never over the database in use.
+  - pg_dump / pg_restore run from the server's PATH; on a developer PC, inside the Docker database container.
+- **Reason:** files without their database rows (or the reverse) cannot be used; a restore that can overwrite live data is a risk on the worst day.
+
