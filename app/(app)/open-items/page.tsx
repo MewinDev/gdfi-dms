@@ -6,7 +6,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db";
 import { fmtShort } from "@/lib/time";
 import { peso } from "@/lib/funds/rules";
-import { OI_FIELDS, type OpenItemField } from "@/lib/open-items/fields";
+import { OI_FIELDS, statusOutcome, type FeedStateWord, type OpenItemField } from "@/lib/open-items/fields";
 import { openItemsFor, ruleGroupEffect, seesUnassigned, outstandingCash, type Tab } from "@/lib/services/open-items";
 import { PageHeader } from "@/components/ui/basics";
 import { CashBackForm, DecideForm, MoveCashForm } from "@/components/open-items/decide-form";
@@ -113,8 +113,9 @@ export default async function OpenItemsPage({ searchParams }: { searchParams: Pr
                   </dl>
                   {c.group && <p className="text-[13px] text-ink-2" data-oi-group-note>Loan type, amount, product and release date are decided together.</p>}
                   {effect && <ul className="list-disc pl-5 text-sm" data-oi-effect>{effect.sentences.map((s) => <li key={s}>{s}</li>)}</ul>}
-                  {status && <p className="rounded-xl bg-bad-bg px-3 py-2 text-[13px] text-bad-fg" data-oi-blocked>Send, Forward and new cash wait until this is decided. Approve closes the loan; Reject keeps it open.</p>}
-                  {status && cash.length > 0 && head.canDecide && (
+                  {status && <p className="rounded-xl bg-bad-bg px-3 py-2 text-[13px] text-bad-fg" data-oi-blocked>Send, Forward and new cash wait until this is decided.</p>}
+                  {status && (() => { const raw = (head.newRaw ?? {}) as { state?: FeedStateWord; replacedByPn?: string | null }; const o = loan?.replacedByPn && loan.replacedByPn === raw.replacedByPn ? { kind: "close" as const, text: `This will close the loan file (it is linked to ${loan.replacedByPn} on Related loans).` } : statusOutcome(raw.state ?? "NotReleased", raw.replacedByPn ?? null); return <p className="rounded-xl bg-fill px-3 py-2 text-[13px] font-semibold" data-oi-outcome={o.kind}>If you approve: {o.text} Reject keeps the loan as it is in the DMS.</p>; })()}
+                  {status && cash.length > 0 && head.canDecide && (statusOutcome(((head.newRaw ?? {}) as { state?: FeedStateWord }).state ?? "NotReleased", null).kind === "close" || !!loan?.replacedByPn) && (
                     <div className="flex flex-col gap-2" data-oi-cash>
                       <p className="text-[13px]">Cash is still out: {cash.map((x) => `${x.number} (${x.dp.name}${seesAmounts ? `, ${peso(x.cents)}` : ""}${x.notReleased ? ", not released yet" : ""})`).join(", ")}.</p>
                       <CashBackForm loanId={head.loanId} />

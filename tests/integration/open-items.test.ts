@@ -9,9 +9,11 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getSetting, setSetting } from "@/lib/settings";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { refreshLoan } from "@/lib/services/source-sync";
+import { refreshLoan, simulateSourceChange } from "@/lib/services/source-sync";
 import { cashBlockReason, forwardBlockReason, loanBlockedReason, sendBlockReason } from "@/lib/services/source-blocks";
 import { decideOpenItem, openItemCounts, openItemsFor } from "@/lib/services/open-items";
+import { statusOutcome } from "@/lib/open-items/fields";
+import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { saveMonitoredFields } from "@/lib/services/open-items-settings";
 import { referenceChanges } from "@/lib/services/reference-changes";
 import { resetClient } from "@/lib/myloans/client";
@@ -184,14 +186,92 @@ describe("D-053 (2): a loan that left Released does not move on", () => {
     });
   }
 
-  it("Superseded (redone): the item says replaced by; Approve closes the loan (refused while cash is out)", async () => {
+  it("Cancelled: Approve closes the loan file (the outcome is said first)", async () => {
     const loan = await open();
-    await refreshLoan(loan.id, { ...sys, lookup: { ok: false, reason: "NOT_SELECTABLE", feedState: "Superseded", replacedByPnNo: "GD1652026999999", message: "This copy was redone in myloans." } });
+    await change(PN, { status: "CANCELLED" });
+    await refreshLoan(loan.id, sys);
     const item = (await pending(loan.id)).find((i) => i.field === "status")!;
-    expect(item.newValue).toBe("Redone in myloans (replaced): replaced by GD1652026999999");
-    expect(await loanBlockedReason(prisma, loan.id)).toContain("replaced by GD1652026999999");
-    await decideOpenItem(head, item.id, { decision: "APPROVE", remarks: "Redone as a new PN in myloans" });
-    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).cancelReason).toBe("Replaced by GD1652026999999");
+    expect(statusOutcome("Cancelled", null)).toEqual({ kind: "close", text: "This will close the loan file." });
+    expect(await decideOpenItem(head, item.id, { decision: "APPROVE", remarks: "Cancelled in myloans" })).toMatch(/The loan is closed: Cancelled in MyLoans/);
+    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).cancelledAt).not.toBeNull();
+  });
+
+  it("Not released: Approve keeps the loan ON HOLD (blocked, not closed); released again in myloans: the hold ends by itself, logged, approvers told", async () => {
+    const loan = await open();
+    await change(PN, { status: "NOT_RELEASED" });
+    await refreshLoan(loan.id, sys);
+    const item = (await pending(loan.id)).find((i) => i.field === "status")!;
+    expect(statusOutcome("NotReleased", null).text).toMatch(/^The loan stays on hold until released again/);
+    expect(await decideOpenItem(head, item.id, { decision: "APPROVE", remarks: "Confirmed with the branch" })).toMatch(/on hold: not released in myloans/);
+    let l = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } });
+    expect(l).toMatchObject({ cancelledAt: null, sourceHold: "NotReleased" });
+    for (const why of [await sendBlockReason(prisma, loan.id, "NOTARY"), await forwardBlockReason(prisma, loan.id), await cashBlockReason(prisma, loan.id), await loanBlockedReason(prisma, loan.id)]) {
+      expect(why).toBe("On hold: not released in myloans. Send, Forward and new cash wait until myloans shows it released again.");
+    }
+    // The same state again: no new item.
+    await change(PN, { status: "NOT_RELEASED", statusName: "Not released (again)" });
+    await refreshLoan(loan.id, sys);
+    expect((await pending(loan.id)).filter((i) => i.field === "status")).toHaveLength(0);
+    // myloans shows it Released again: the hold ends by itself.
+    const before = await prisma.notification.count({ where: { userId: head.id, title: `${PN}: released again in myloans` } });
+    await change(PN, { status: "RELEASED", statusName: "Loan Released" });
+    await refreshLoan(loan.id, sys);
+    l = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } });
+    expect(l).toMatchObject({ sourceHold: null, cancelledAt: null });
+    expect(await sendBlockReason(prisma, loan.id, "NOTARY")).toBeNull();
+    expect(await prisma.auditLog.count({ where: { action: "loan_hold_reverted", loanId: loan.id } })).toBe(1);
+    expect(await prisma.notification.count({ where: { userId: head.id, title: `${PN}: released again in myloans` } })).toBe(before + 1);
+    expect(await pending(loan.id)).toHaveLength(0);
+  });
+
+  it("Inactive: Approve keeps the loan on hold too", async () => {
+    const loan = await open();
+    await change(PN, { isActive: false });
+    await refreshLoan(loan.id, sys);
+    const item = (await pending(loan.id)).find((i) => i.field === "status")!;
+    await decideOpenItem(head, item.id, { decision: "APPROVE", remarks: "Inactive in myloans" });
+    expect(await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).toMatchObject({ sourceHold: "Inactive", cancelledAt: null });
+    expect(await loanBlockedReason(prisma, loan.id)).toBe("On hold: inactive in myloans. Send, Forward and new cash wait until myloans shows it released again.");
+  });
+
+  it("Redone (same CIN, ReplacedBy): Approve RE-LINKS the same loan file to the new PN and ExternalLoanId; papers, jobs and work items stay; the old PN stays in its history; nothing closed", async () => {
+    const loan = await open();
+    // Papers ticked and one job sent on the old PN.
+    const notary = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code: "NOTARY" } }, include: { checks: true } });
+    await saveChecklist(la, { transactionId: notary.id, checkedIds: notary.checks.map((c) => c.id), newOthers: [] });
+    const dp = await asUser("test.dp@gdfi.ph");
+    const office = await prisma.ltoOffice.findFirstOrThrow({ where: { active: true }, orderBy: { code: "asc" } });
+    await assignToDp(la, { transactionId: notary.id, dpBranchId: loan.branchId, dpUserId: dp.id, ltoOfficeId: office.id, fundsNeeded: "NO", fundsKinds: [], beyondTatReason: "Integration test", pasuyo: false, secondaryDpUserId: null, pasuyoReason: null });
+    const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: notary.id } });
+    const msg = await simulateSourceChange(admin, loan.id, "replace");
+    const newPn = /now has (GD\d{13})/.exec(msg)![1];
+    const item = (await pending(loan.id)).find((i) => i.field === "status")!;
+    expect(item.newValue).toBe(`Redone in myloans (replaced): replaced by ${newPn}`);
+    expect(statusOutcome("Superseded", newPn).text).toMatch(new RegExp(`^This will move the loan file to PN ${newPn}\\.`));
+    const before = { checks: notary.checks.length, ticked: await prisma.checklistCheck.count({ where: { transactionId: notary.id, checked: true } }), docs: await prisma.documentItem.count({ where: { loanId: loan.id } }) };
+    expect(await decideOpenItem(head, item.id, { decision: "APPROVE", remarks: "Redone as a new PN in myloans" })).toMatch(new RegExp(`The loan file is now PN ${newPn} \\(was ${PN}\\)`));
+    const l = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id }, include: { sourceIdentities: { orderBy: { firstSeenAt: "asc" } } } });
+    expect(l).toMatchObject({ pn: newPn, cancelledAt: null, sourceHold: null });
+    expect(l.externalLoanId).not.toBe(loan.externalLoanId);
+    expect(l.sourceIdentities.map((i) => i.pnNo)).toEqual([PN, newPn]); // the old PN stays in its history
+    expect(await prisma.loan.findUnique({ where: { pn: PN } })).toBeNull(); // no second loan file
+    // Papers, jobs and work stay with the loan file.
+    expect(await prisma.checklistCheck.count({ where: { transactionId: notary.id, checked: true } })).toBe(before.ticked);
+    expect(await prisma.documentItem.count({ where: { loanId: loan.id } })).toBe(before.docs);
+    expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("PENDING_ACCEPTANCE");
+    expect(await prisma.workItem.count({ where: { loanId: loan.id, pn: PN } })).toBe(0);
+    expect(await prisma.workItem.count({ where: { loanId: loan.id, pn: newPn } })).toBeGreaterThan(0);
+    expect(await sendBlockReason(prisma, loan.id, "PPSR")).toBeNull();
+    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "loan_relinked", loanId: loan.id } })).summary).toContain(`from PN ${PN} to PN ${newPn}`);
+  });
+
+  it("Redone, but the new PN is already a loan file here: refused, link them from Related loans", async () => {
+    const loan = await open();
+    const msg = await simulateSourceChange(admin, loan.id, "replace");
+    const newPn = /now has (GD\d{13})/.exec(msg)![1];
+    await open(newPn);
+    const item = (await pending(loan.id)).find((i) => i.field === "status")!;
+    await expect(decideOpenItem(head, item.id, { decision: "APPROVE", remarks: "Redone as a new PN" })).rejects.toThrow(`${newPn} is already a loan file here. Link the two from Related loans instead.`);
   });
 });
 

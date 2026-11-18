@@ -87,6 +87,8 @@ export interface DmsLoan {
   borrowerName: string; cif: string | null; cin: string | null; loanType: string; totalReleasedAmount: number | string | { toString(): string };
   productCode: string | null; productName: string; releasedYmd: string | null; sourceBranchCode: string | null; sourceBranchName: string | null;
   sourceLoanId: string | null; cancelledAt: Date | null;
+  /** D-053: on hold because myloans no longer shows it released (NotReleased or Inactive). */
+  sourceHold?: string | null;
 }
 /** The value the DMS has for a field (what an approval would replace). */
 export function dmsValue(f: OpenItemField, l: DmsLoan): Value {
@@ -95,7 +97,10 @@ export function dmsValue(f: OpenItemField, l: DmsLoan): Value {
     case "productCode": return named(l.productCode, l.productName || null);
     case "branchCode": return named(l.sourceBranchCode, l.sourceBranchName);
     case "releaseDate": return plain(l.releasedYmd);
-    case "status": return l.cancelledAt ? { raw: { state: "Cancelled" }, text: "Closed in the DMS", key: "Cancelled" } : { raw: { state: "Released" }, text: STATUS_WORDS.Released, key: "Released" };
+    case "status":
+      if (l.cancelledAt) return { raw: { state: "Cancelled" }, text: "Closed in the DMS", key: "Cancelled" };
+      if (l.sourceHold) return { raw: { state: l.sourceHold }, text: `On hold: ${STATUS_WORDS[l.sourceHold as FeedStateWord]?.toLowerCase() ?? "not released in myloans"}`, key: l.sourceHold };
+      return { raw: { state: "Released" }, text: STATUS_WORDS.Released, key: "Released" };
     case "borrowerName": return plain(l.borrowerName);
     default: return plain(l[f]);
   }
@@ -132,6 +137,16 @@ export function referenceOf(c: FieldChange, t: Tracked): { entity: "AREA" | "DIV
     case "productName": return { entity: "PRODUCT", key: t.productCode ?? "" };
     default: return null; // ids and vehicle details: applied, not a rename to log
   }
+}
+
+/**
+ * D-053: what approving a status item does, said before it is pressed. Cancelled: the loan file is closed. Redone
+ * (replaced): the same loan file moves to the new PN. Not released or inactive: the loan stays on hold.
+ */
+export function statusOutcome(state: FeedStateWord, replacedByPn: string | null): { kind: "close" | "relink" | "hold"; text: string } {
+  if (state === "Superseded") return { kind: "relink", text: replacedByPn ? `This will move the loan file to PN ${replacedByPn}. Its papers, jobs and work stay with it; the old PN stays in its history.` : "This will move the loan file to the PN myloans names as the replacement." };
+  if (state === "NotReleased" || state === "Inactive") return { kind: "hold", text: "The loan stays on hold until released again. Nothing is closed; it continues by itself when myloans shows it released." };
+  return { kind: "close", text: "This will close the loan file." };
 }
 
 /** Waiting colour of an Open Item, on the inbox thresholds (working days). */

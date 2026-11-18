@@ -123,6 +123,11 @@ test("Amount change (piece 8): the LA sees the banner and the Open items row; Se
   await expect(page.locator('[id^="send-why-"]')).toHaveText("myloans changed this loan. An approver decides the Open Item first.");
 
   await signInWith(page, BUTTONS.admin);
+  await page.goto("/dashboard");
+  // D-053: Open Items in the top menu, with the pending count, for the approvers.
+  const menu = page.getByRole("navigation", { name: "Main" }).filter({ visible: true }).first().getByRole("link", { name: /Open Items/ });
+  await expect(menu).toHaveAttribute("href", "/open-items");
+  await expect(menu).toContainText("1");
   await page.goto(`/open-items?pn=${PN}`);
   const card = page.locator(`[data-oi-card="rules"][data-pn="${PN}"]`);
   await expect(card.locator('[data-oi-item="amount"]')).toContainText("₱1,000,000.00");
@@ -225,4 +230,19 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   await sheet.getByRole("button", { name: /^Copy 1 paper$/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Copy" }).click();
   await expect.poll(async () => db.documentMovement.count({ where: { action: "REASSIGNED" } })).toBe(2);
+});
+
+test("Released, not yet in the DMS (10b): the LA's branch pool shows it with the release date; waiting counts from when it entered the pool", async ({ page }) => {
+  const branch = await db.branch.findUniqueOrThrow({ where: { code: "165" } });
+  const pn = "GD1652026980001";
+  await db.sourceLoanCandidate.create({ data: { externalLoanId: 980_001, cin: "CIN-FAKE-980001", pn, borrowerName: "Pool Borrower", branchCode: "165", branchName: "Angono", amount: "350000.00", releaseDate: new Date(Date.now() - 20 * 86_400_000) } });
+  await db.workItem.create({ data: { kind: "LOAN_CANDIDATE", subjectId: pn, role: "LA", branchId: branch.id, pn, label: `${pn}: Pool Borrower`, state: "POOL", measure: "WAITING" } });
+  await signInWith(page, BUTTONS.la);
+  await page.goto("/inbox?tab=pool");
+  const row = page.locator("main").getByText(pn).first();
+  await expect(row).toBeVisible();
+  await expect(page.locator("[data-candidate]").first()).toContainText("released");
+  await expect(page.locator("[data-pool-tone]").first()).toHaveAttribute("data-pool-tone", "green");
+  await shot(page, "branch-pool-candidate");
+  await noSideways(page);
 });

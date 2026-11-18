@@ -15,14 +15,19 @@ import { MINOR_ACCOUNT_COLUMNS } from "@/lib/myloans/account";
 import { proposeEffect, type FieldChange, type Proposed, type Tracked } from "@/lib/myloans/changes";
 import { classifyProductName, type FinancingType, type OrcrStatus } from "@/lib/rules";
 import {
-  OI_FIELDS, dmsValue, myloansValue, referenceOf, splitChanges, waitingTone, STATUS_WORDS,
+  OI_FIELDS, dmsValue, myloansValue, referenceOf, splitChanges, statusOutcome, waitingTone, STATUS_WORDS,
   type DmsLoan, type FeedStateWord, type OpenItemField,
 } from "@/lib/open-items/fields";
 import { recheckClassifications } from "./classification";
 import { resolveLoanBranch } from "./branches";
 import { recomputeStage } from "./stage";
-import { closeLoanEnded, outstandingCash, txnsNow, applyTransactionChanges } from "./source-sync";
+import { closeLoanEnded, outstandingCash, recordFromPayload, txnsNow, applyTransactionChanges } from "./source-sync";
 import { recordReferenceChange } from "./reference-changes";
+import { closeItem } from "./work-items";
+import { getMyLoansAdapter } from "@/lib/myloans";
+import { lookupPn } from "@/lib/myloans/client";
+import { detectChanges, hashTracked, trackedOfSaved, trackedOfSent } from "@/lib/myloans/changes";
+import type { MyLoansLookup } from "@/lib/myloans/types";
 import { UserError, NotInScopeError } from "./errors";
 
 /**
@@ -42,10 +47,10 @@ export const REVERTED_TEXT = "Reverted in myloans";
 export const deciderKey = (audience: string): Permission => (audience === "BORROWER" ? PERMISSIONS.SOURCE_REVIEW_BORROWER : PERMISSIONS.SOURCE_REVIEW);
 export const mayDecide = (u: CurrentUser, item: { audience: string; branchId: string }) => can(u, deciderKey(item.audience)) && inScope(u, item.branchId);
 
-export function dmsLoanOf(l: Pick<Loan, "borrowerName" | "cif" | "cin" | "loanType" | "totalReleasedAmount" | "productCode" | "productName" | "releasedAt" | "sourceBranchCode" | "sourceBranchName" | "sourceLoanId" | "cancelledAt">): DmsLoan {
+export function dmsLoanOf(l: Pick<Loan, "borrowerName" | "cif" | "cin" | "loanType" | "totalReleasedAmount" | "productCode" | "productName" | "releasedAt" | "sourceBranchCode" | "sourceBranchName" | "sourceLoanId" | "cancelledAt"> & { sourceHold?: string | null }): DmsLoan {
   return {
     borrowerName: l.borrowerName, cif: l.cif, cin: l.cin, loanType: l.loanType, totalReleasedAmount: l.totalReleasedAmount, productCode: l.productCode, productName: l.productName,
-    releasedYmd: l.releasedAt ? businessDate(l.releasedAt) : null, sourceBranchCode: l.sourceBranchCode, sourceBranchName: l.sourceBranchName, sourceLoanId: l.sourceLoanId, cancelledAt: l.cancelledAt,
+    releasedYmd: l.releasedAt ? businessDate(l.releasedAt) : null, sourceBranchCode: l.sourceBranchCode, sourceBranchName: l.sourceBranchName, sourceLoanId: l.sourceLoanId, cancelledAt: l.cancelledAt, sourceHold: l.sourceHold ?? null,
   };
 }
 
@@ -126,6 +131,16 @@ export async function raiseOpenItems(tx: Tx, a: RaiseInput): Promise<RaiseResult
     const was = dmsValue(f, dms);
     const pending = await tx.openItem.findFirst({ where: { loanId: loan.id, field: f, status: "PENDING" } });
     const def = OI_FIELDS[f];
+    if (f === "status" && loan.sourceHold && my.key === "Released") {
+      // D-053: on hold (not released / inactive) and now released again: the hold ends by itself.
+      await tx.loan.update({ where: { id: loan.id }, data: { sourceHold: null, sourceHoldSince: null } });
+      await writeAudit(tx, { actor: SYSTEM_ACTOR, mode: a.mode, action: "loan_hold_reverted", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn: loan.pn, summary: `${REVERTED_TEXT}: released again. The hold ended by itself; Send, Forward and new cash work again.` });
+      const who = await approverIds(tx, loan.branchId, "LOAN");
+      await notify(tx, { userIds: [...who.ids, ...(await holderIds(tx, loan.id))], loanId: loan.id, title: `${loan.pn}: released again in myloans`, body: `${REVERTED_TEXT}. The hold ended by itself.`, link: `/loans/${loan.pn}` });
+      out.reverted++;
+      if (pending) await tx.openItem.update({ where: { id: pending.id }, data: { status: "REVERTED", decidedAt: a.now, decidedByLabel: "myloans", remarks: REVERTED_TEXT } });
+      continue;
+    }
     if (my.key === was.key) {
       // myloans has the DMS value again: nothing to decide (D-053).
       if (pending) {
@@ -221,10 +236,16 @@ export async function decideOpenItem(u: CurrentUser, id: string, raw: DecideInpu
   const p = decideSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   const d = p.data;
-  const first = await prisma.openItem.findUnique({ where: { id }, select: { loanId: true, branchId: true, audience: true } });
+  const first = await prisma.openItem.findUnique({ where: { id }, select: { loanId: true, branchId: true, audience: true, field: true, newRaw: true } });
   if (!first || !inScope(u, first.branchId)) throw new NotInScopeError();
   if (!can(u, deciderKey(first.audience))) {
     throw new UserError(first.audience === "BORROWER" ? "Only people with \"Review borrower detail corrections\" decide this. Your view is read-only." : "Only approvers decide Open Items. Your view is read-only. Ask a Superadmin for the approver tick if you should decide these.");
+  }
+  // A redo: myloans' answer for the replacement PN, asked before the lock (D-053: the loan file moves to it).
+  let replacement: MyLoansLookup | null = null;
+  if (d.decision === "APPROVE" && first.field === "status") {
+    const raw = (first.newRaw ?? {}) as { state?: FeedStateWord; replacedByPn?: string | null };
+    if (raw.state === "Superseded" && raw.replacedByPn) replacement = await lookupPn(getMyLoansAdapter(), raw.replacedByPn, { fresh: true });
   }
   return withLoanLock(first.loanId, async (tx) => {
     const item = await tx.openItem.findUniqueOrThrow({ where: { id } });
@@ -235,7 +256,7 @@ export async function decideOpenItem(u: CurrentUser, id: string, raw: DecideInpu
     const now = new Date();
     const actor: Actor = { id: u.id, label: u.name };
     let effect = "";
-    if (d.decision === "APPROVE") effect = await approve(tx, u, loan, items, d, now);
+    if (d.decision === "APPROVE") effect = await approve(tx, u, loan, items, d, now, replacement);
     await tx.openItem.updateMany({ where: { id: { in: items.map((i) => i.id) } }, data: { status: d.decision === "APPROVE" ? "APPROVED" : "REJECTED", decidedById: u.id, decidedByLabel: u.name, decidedAt: now, remarks: d.remarks } });
     const names = listWords(items.map((i) => i.fieldLabel.toLowerCase()));
     const numbers = items.map((i) => i.number).join(", ");
@@ -245,12 +266,13 @@ export async function decideOpenItem(u: CurrentUser, id: string, raw: DecideInpu
     for (const i of items) {
       await writeAudit(tx, { actor, mode: "MANUAL", action: d.decision === "APPROVE" ? "open_item_approved" : "open_item_rejected", entityType: "OpenItem", entityId: i.id, loanId: loan.id, pn: loan.pn, summary, details: { field: i.field, remarks: d.remarks } });
     }
-    await notify(tx, { userIds: (await holderIds(tx, loan.id)).filter((x) => x !== u.id), loanId: loan.id, title: `${loan.pn}: ${numbers} ${d.decision === "APPROVE" ? "approved" : "rejected"}`, body: summary, link: `/loans/${loan.pn}` });
+    const pn = (await tx.loan.findUniqueOrThrow({ where: { id: loan.id }, select: { pn: true } })).pn; // a redo moves it to the new PN
+    await notify(tx, { userIds: (await holderIds(tx, loan.id)).filter((x) => x !== u.id), loanId: loan.id, title: `${pn}: ${numbers} ${d.decision === "APPROVE" ? "approved" : "rejected"}`, body: summary, link: `/loans/${pn}` });
     return d.decision === "APPROVE" ? `Approved ${numbers}.${effect ? ` ${effect}` : ""}` : `Rejected ${numbers}: the DMS keeps its value.`;
   });
 }
 
-async function approve(tx: Tx, u: CurrentUser, loan: Loan, items: { field: string; newRaw: Prisma.JsonValue; newValue: string | null }[], d: z.infer<typeof decideSchema>, now: Date): Promise<string> {
+async function approve(tx: Tx, u: CurrentUser, loan: Loan, items: { field: string; newRaw: Prisma.JsonValue; newValue: string | null }[], d: z.infer<typeof decideSchema>, now: Date, replacement: MyLoansLookup | null): Promise<string> {
   const f = items[0].field as OpenItemField;
   if (OI_FIELDS[f].group === "rules") {
     const { next, proposed } = await groupEffect(tx, loan, items, { financingType: d.financingType ?? null, orcrStatus: d.orcrStatus ?? null });
@@ -274,6 +296,13 @@ async function approve(tx: Tx, u: CurrentUser, loan: Loan, items: { field: strin
   }
   if (f === "status") {
     const raw = (items[0].newRaw ?? {}) as { state?: FeedStateWord; replacedByPn?: string | null };
+    const outcome = statusOutcome(raw.state ?? "NotReleased", raw.replacedByPn ?? null);
+    if (outcome.kind === "relink") return relink(tx, u, loan, raw.replacedByPn ?? null, replacement, d.remarks, now);
+    if (outcome.kind === "hold") {
+      // D-053: not closed; blocked until myloans shows it released again (then it continues by itself).
+      await tx.loan.update({ where: { id: loan.id }, data: { sourceHold: raw.state ?? "NotReleased", sourceHoldSince: now } });
+      return `The loan is on hold: ${STATUS_WORDS[raw.state ?? "NotReleased"].toLowerCase()}. It continues by itself when myloans shows it released. `;
+    }
     const cash = await outstandingCash(tx, loan.id);
     if (cash.length) throw new UserError(`Cash is still out: ${cash.map((c) => `${c.number} (${c.dp.name}${c.notReleased ? ", not released yet" : ""})`).join(", ")}. Ask for the cash back (or deny the request) before approving.`);
     const reason = raw.replacedByPn || loan.replacedByPn ? `Replaced by ${raw.replacedByPn ?? loan.replacedByPn}` : raw.state === "Cancelled" || !raw.state ? "Cancelled in MyLoans" : STATUS_WORDS[raw.state];
@@ -298,6 +327,58 @@ async function approve(tx: Tx, u: CurrentUser, loan: Loan, items: { field: strin
     await tx.loan.update({ where: { id: loan.id }, data: { [f]: text } });
   }
   return "";
+}
+
+/**
+ * D-053: a redo in myloans (the same CIN, a new PN): Approve moves the SAME loan file to the replacement. The new PN #
+ * and ExternalLoanId; the old ones stay in its history (its identities and the audit). Papers, jobs and work items
+ * stay with the loan file. myloans' new copy becomes the baseline; a field it changed is its own Open Item.
+ */
+async function relink(tx: Tx, u: CurrentUser, loan: Loan, newPn: string | null, answer: MyLoansLookup | null, remarks: string, now: Date): Promise<string> {
+  if (!newPn) throw new UserError("myloans has not named the replacement PN yet. Wait for the next sync, or link it from Related loans if you are sure.");
+  // The unclear case (D-053): both loan files exist and a person linked them on Related loans. Approve closes the
+  // old one as replaced (cash must be back or moved first), as before.
+  if (loan.replacedByPn === newPn) {
+    const cash = await outstandingCash(tx, loan.id);
+    if (cash.length) throw new UserError(`Cash is still out: ${cash.map((c) => `${c.number} (${c.dp.name}${c.notReleased ? ", not released yet" : ""})`).join(", ")}. Ask for the cash back or move it to ${newPn} before approving.`);
+    await closeLoanEnded(tx, { id: u.id, label: u.name }, loan, `Replaced by ${newPn}`, remarks, now);
+    return `The loan is closed: replaced by ${newPn} (linked on Related loans). `;
+  }
+  if (!answer || !answer.ok) throw new UserError(`myloans does not show ${newPn} as a released loan now${answer && !answer.ok ? ` (${answer.message.replace(/\.$/, "")})` : ""}. Try again after the next sync.`);
+  const rec = answer.record;
+  const taken = await tx.loan.findUnique({ where: { pn: newPn }, select: { id: true } });
+  if (taken && taken.id !== loan.id) throw new UserError(`${newPn} is already a loan file here. Link the two from Related loans instead.`);
+  if (rec.externalLoanId && (await tx.loan.findFirst({ where: { externalLoanId: rec.externalLoanId, id: { not: loan.id } }, select: { id: true } }))) throw new UserError(`${newPn} is already a loan file here. Link the two from Related loans instead.`);
+  const prev = await tx.loanSourceSnapshot.findFirst({ where: { loanId: loan.id }, orderBy: { retrievedAt: "desc" } });
+  const prevRecord = prev ? recordFromPayload(prev.payload) : null;
+  const previous = (prev?.tracked as Tracked | null) ?? (prevRecord ? trackedOfSaved(prevRecord) : null);
+  const current = trackedOfSent(rec);
+  const det = detectChanges(previous, current);
+  const oldPn = loan.pn;
+  await tx.loan.update({
+    where: { id: loan.id },
+    data: {
+      pn: newPn, externalLoanId: rec.externalLoanId ?? null, contentHash: rec.contentHash ?? null, retrievedAt: answer.retrievedAt, lastCheckedAt: now, sourceCurrent: true,
+      sourceIdentities: { create: { externalLoanId: rec.externalLoanId ?? 0, cin: rec.cin, pnNo: newPn, contentHash: rec.contentHash ?? null, feedState: rec.feedState ?? null } },
+    },
+  });
+  await tx.workItem.updateMany({ where: { loanId: loan.id }, data: { pn: newPn } });
+  await tx.loanSourceSnapshot.create({ data: { loanId: loan.id, retrievedAt: answer.retrievedAt, adapter: answer.adapter, payload: answer.raw as Prisma.InputJsonValue, tracked: current as unknown as Prisma.InputJsonValue, hash: hashTracked(current), kind: "BASE" } });
+  // The new PN was waiting in the branch pool as "Released, not yet in the DMS" (10b): it is this loan file now.
+  await tx.sourceLoanCandidate.deleteMany({ where: { pn: newPn } });
+  if (await tx.workItem.findFirst({ where: { kind: "LOAN_CANDIDATE", subjectId: newPn, state: { not: "DONE" } } })) await closeItem(tx, "LOAN_CANDIDATE", newPn, "DONE", { at: now, by: { id: u.id, label: u.name }, reason: `Became ${oldPn} (a redo in myloans)` });
+  await writeAudit(tx, {
+    actor: { id: u.id, label: u.name }, mode: "MANUAL", action: "loan_relinked", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn: newPn,
+    summary: `${u.name} moved the loan file from PN ${oldPn} to PN ${newPn} (redone in myloans). Papers, jobs and work stay with it. Remarks: ${remarks}`,
+    before: { pn: oldPn, externalLoanId: loan.externalLoanId }, after: { pn: newPn, externalLoanId: rec.externalLoanId ?? null },
+  });
+  // Fields the new copy changed (other than the status): their own Open Items, as for any change.
+  const changes = det.changes.filter((c) => !["status", "statusId", "statusName", "isActive"].includes(c.field));
+  if (changes.length) {
+    const fresh = await tx.loan.findUniqueOrThrow({ where: { id: loan.id } });
+    await raiseOpenItems(tx, { loan: fresh, previous, current, changes, now, mode: "AUTOMATIC", source: "myloans API 1" });
+  }
+  return `The loan file is now PN ${newPn} (was ${oldPn}). `;
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +430,15 @@ export async function openItemCounts(u: CurrentUser, now: Date = new Date()) {
   const rows = await openItemsFor(u, "mine", {}, now);
   const un = seesUnassigned(u) ? (await openItemsFor(u, "unassigned", {}, now)).length : 0;
   return { waiting: rows.length, tooLong: rows.filter((r) => r.tone === "bad").length, unassigned: un };
+}
+
+/** The menu badge: pending items the person decides (their branches, their ticks). One count query per tick. */
+export async function pendingOpenItemCount(u: CurrentUser): Promise<number> {
+  const ids = scopeIds(u);
+  const scope: Prisma.OpenItemWhereInput = ids === null ? {} : { branchId: { in: ids } };
+  const audiences = [...(can(u, PERMISSIONS.SOURCE_REVIEW) ? ["LOAN"] : []), ...(can(u, PERMISSIONS.SOURCE_REVIEW_BORROWER) ? ["BORROWER"] : [])];
+  if (!audiences.length) return 0;
+  return prisma.openItem.count({ where: { ...scope, status: "PENDING", audience: { in: audiences } } });
 }
 
 /** The loan file: its pending items (everyone who sees the loan sees that they exist). */

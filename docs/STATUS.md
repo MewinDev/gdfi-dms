@@ -1,6 +1,6 @@
 # GDFI-DMS: project status
 
-As of 18 November 2026 (PHT), after pieces 9, 6, 10a, 7 and 8, with the build order of D-047. Branch `feature/foundation-settings-rbac-myloans`.
+As of 18 November 2026 (PHT), after pieces 9, 6, 10a, 7, 8 and 10b, with the build order of D-047. Branch `feature/foundation-settings-rbac-myloans`.
 
 Effort is in **developer-days for one experienced developer**. Figures for the foundation pieces are the plan's estimates (`IMPLEMENTATION_PLAN.md`, section 1), adjusted for work already done. Figures for the later modules and go-live are **rough estimates** (no detailed plan yet); they will change once each module is planned.
 
@@ -8,11 +8,11 @@ Effort is in **developer-days for one experienced developer**. Figures for the f
 
 | | Remaining effort |
 |---|---|
-| Foundation (pieces 10b, 11, 12, real API verification, production scheduler, CI) | **10 to 15 days** |
+| Foundation (pieces 11, 12, real API verification, production scheduler, CI) | **9 to 14 days** |
 | Go-live preparation (phase A) | **10 to 15 days** |
-| **Phase A go-live: LA, DP and Funds on the live myloans feed** | **20 to 30 days** (about 4 to 6 weeks) |
+| **Phase A go-live: LA, DP and Funds on the live myloans feed** | **19 to 29 days** (about 4 to 6 weeks) |
 | v2 modules after the foundation (phases B and C) | **34 to 52 days** |
-| **Everything to the last phase** | **54 to 82 days** |
+| **Everything to the last phase** | **53 to 81 days** |
 
 Done so far: pieces 1, 2, 3, 3a, 4 and 5 (the plan estimated 18.5 to 24.5 days for them), plus the calendar fixes (D-042). Last full test run (18 November 2026): every automated test passes; see `docs/HANDOVER.md` for the numbers.
 
@@ -31,15 +31,15 @@ Done so far: pieces 1, 2, 3, 3a, 4 and 5 (the plan estimated 18.5 to 24.5 days f
 | 8 | Open Items per field: approver queues, Unassigned, superseded and reverted, every move away from Released blocks Forward, monitored fields, waiting time, Reference data changes for renames (D-053) | **Done** (18 November 2026, D-053) | 0 |
 | 9 | Accept / Forward engine: movement ledger, branch pool and personal inbox, per-user TAT and waiting time; Correct due date on LA items | **Done** (D-046; built on the loans already in the DMS, with a hook for the feed) | 0 |
 | 10a | PN # search on API 1 and the Search Log; Find loan and Refresh on the contract client; identity saved on open; product classification by hand (D-049) | **Done** (18 November 2026, D-049, D-051) | 0 |
-| 10b | "Released, not yet in the DMS": connect the feed hook (piece 9) to the branch LA pool | **Next** (plan first) | 1 |
+| 10b | "Released, not yet in the DMS": connect the feed hook (piece 9) to the branch LA pool; waiting from pool entry (D-053) | **Done** (18 November 2026, D-053) | 0 |
 | 11 | Products (API 5) and branches (API 4) | **Waiting for the product list and API 5 (R2-3)** | 2 to 3 |
 | 12 | Docs, Manual Test Kit, e2e update, final verification | **Pending** (ongoing with each piece) | 4 to 6 |
 | — | CI on GitHub (approved proposal) | **Blocked**: waiting for the GitHub setup (Actions, one secret, branch protection) | 1 |
 | — | Real API verification: the contract tests and a sync dry run against myloans staging | **Blocked: myloans staging access (C5)** | 2 to 3 |
 | — | Production scheduler for the sync and the daily jobs (cron on the real hosting; the entry point is ready, docs/SCHEDULER.md) | **Blocked: the hosting decision** | 1 |
-| | **Foundation remaining** | | **10 to 15** |
+| | **Foundation remaining** | | **9 to 14** |
 
-**Build order (D-047, replaces D-045):** pieces 9, 6, 10a, 7 and 8 done (18 November 2026); next **10b** (plan first). The order was **6** (mock APIs 1 to 5) → **10a** (PN # search and Search Log, API 1 on the mock) → **7** (sync on API 2) → **8** (Open Items per field) → **10b** (the feed hook to the branch pool) → **11** when the product list (R2-3) arrives → **12** with each piece. Built on the mock; **Real API verification** waits for myloans staging (C5) and the **Production scheduler** for the hosting decision, as separate items.
+**Build order (D-047, replaces D-045):** pieces 9, 6, 10a, 7, 8 and 10b done (18 November 2026); next **11** (plan first; the product list is in hand and myloans agreed to a branches API, so it is built on the mock). The order was **6** (mock APIs 1 to 5) → **10a** (PN # search and Search Log, API 1 on the mock) → **7** (sync on API 2) → **8** (Open Items per field) → **10b** (the feed hook to the branch pool) → **11** when the product list (R2-3) arrives → **12** with each piece. Built on the mock; **Real API verification** waits for myloans staging (C5) and the **Production scheduler** for the hosting decision, as separate items.
 
 ## Outside decisions and blockers
 
@@ -74,8 +74,8 @@ Done so far: pieces 1, 2, 3, 3a, 4 and 5 (the plan estimated 18.5 to 24.5 days f
 
 | Phase | Contents | Remaining effort (days) | Cumulative |
 |---|---|---|---|
-| **A** | Foundation (pieces 10b, 11, 12, real API verification, production scheduler, CI) and go-live preparation: production sign-in (Entra), staging, backups and monitoring, first load of open loans (branch pool cutoff), user acceptance testing, training, first weeks of support | 20 to 30 | 20 to 30 |
-| **B** | Vault transmittal, Collateral (with vehicle details), Quality Assurance; related-loan tags (additional unit / replacement) return with vehicle data from myloans; the renewal link (previous loan / OldPNNo) (D-051) | 17 to 25 | 37 to 55 |
-| **C** | Digital Records, archival and warehousing, closure, retention | 17 to 27 | 54 to 82 |
+| **A** | Foundation (pieces 11, 12, real API verification, production scheduler, CI) and go-live preparation: production sign-in (Entra), staging, backups and monitoring, first load of open loans (branch pool cutoff), user acceptance testing, training, first weeks of support | 19 to 29 | 19 to 29 |
+| **B** | Vault transmittal, Collateral (with vehicle details), Quality Assurance; related-loan tags (additional unit / replacement) return with vehicle data from myloans; the renewal link (previous loan / OldPNNo) (D-051) | 17 to 25 | 36 to 54 |
+| **C** | Digital Records, archival and warehousing, closure, retention | 17 to 27 | 53 to 81 |
 
 Phase A can go live without B and C: loans then stop at "For Vault Transmittal" until phase B. Any myloans item still open at that point delays only the parts listed under "Blocks".

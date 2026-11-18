@@ -407,6 +407,8 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       await createTransactions(tx, { loanId: loan.id, pn, codes: outcome.transactions, origin: "AUTOMATIC", holderUserId: user.id });
       const candidate = await openItem(tx, "LOAN_CANDIDATE", pn);
       if (candidate) { await takeItem(tx, "LOAN_CANDIDATE", pn, user); await closeItem(tx, "LOAN_CANDIDATE", pn, "DONE", { by: { id: user.id, label: user.name } }); }
+      // 10b: no longer "Released, not yet in the DMS".
+      await tx.sourceLoanCandidate.deleteMany({ where: { pn } });
       await writeAudit(tx, {
         actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "transactions_generated", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn,
         journeyStep: "2.6",

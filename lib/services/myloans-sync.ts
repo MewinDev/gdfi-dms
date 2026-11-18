@@ -18,6 +18,8 @@ import { feedStateWords, type FeedPage } from "@/lib/myloans/r2/contract";
 import { getMyLoansAdapter } from "@/lib/myloans";
 import { refreshLoan } from "./source-sync";
 import { UserError } from "./errors";
+import { closeItem, receiveReleasedLoan } from "./work-items";
+import { reportUnknownBranchCode, resolveLoanBranch } from "./branches";
 
 /**
  * Piece 7 (D-047, D-052; IMPLEMENTATION_PLAN.md 8.2, 8.2a, 8.3, 8.10): the one myloans sync, on API 2.
@@ -74,18 +76,59 @@ export interface RunResult {
   pages?: number; rows?: number; unchanged?: number; reviews?: number; duplicates?: number; candidates?: number; checkpoint?: string | null;
 }
 
+/**
+ * Piece 10b (D-046, D-053): a released loan not yet in the DMS waits in its branch's LA pool, one item per PN. Its
+ * waiting time starts when it ENTERED the pool (this sync), not at the release date. A branch code the DMS does not
+ * know goes to the Branch review instead (Admin sees it on Home); the loan enters the pool once the branch exists.
+ */
+async function enterPool(pn: string, r: FeedRowV1, borrowerName: string, now: Date): Promise<"pool" | "unmatched" | "already"> {
+  if (await prisma.workItem.findFirst({ where: { kind: "LOAN_CANDIDATE", subjectId: pn, state: { not: "DONE" } }, select: { id: true } })) return "already";
+  const branch = await resolveLoanBranch(prisma, { branchCode: r.branchCode, branchName: r.branchName });
+  if (!branch) {
+    if (r.branchCode) await reportUnknownBranchCode(r.branchCode, pn, r.branchName).catch(() => null);
+    return "unmatched";
+  }
+  await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn, branchId: branch.id, borrowerName, at: now }));
+  return "pool";
+}
+
+/** Candidates that waited for their branch (unknown code): they enter the pool once the branch is in the DMS. */
+export async function poolWaitingCandidates(now: Date = new Date()): Promise<number> {
+  const open = new Set((await prisma.workItem.findMany({ where: { kind: "LOAN_CANDIDATE", state: { not: "DONE" } }, select: { subjectId: true } })).map((w) => w.subjectId));
+  const held = new Set((await prisma.loan.findMany({ where: { pn: { in: (await prisma.sourceLoanCandidate.findMany({ select: { pn: true } })).map((c) => c.pn) } }, select: { pn: true } })).map((l) => l.pn));
+  let n = 0;
+  for (const c of await prisma.sourceLoanCandidate.findMany({ orderBy: { firstSeenAt: "asc" } })) {
+    if (open.has(c.pn) || held.has(c.pn)) continue;
+    const branch = await resolveLoanBranch(prisma, { branchCode: c.branchCode, branchName: c.branchName });
+    if (!branch) continue;
+    await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn: c.pn, branchId: branch.id, borrowerName: c.borrowerName, at: now }));
+    n++;
+  }
+  return n;
+}
+
+/** No longer a released loan in myloans (or before the cutoff): it leaves the pool, the reason kept in its history. */
+async function leavePool(pn: string, why: string, now: Date) {
+  if (!(await prisma.workItem.findFirst({ where: { kind: "LOAN_CANDIDATE", subjectId: pn, state: { not: "DONE" } }, select: { id: true } }))) return;
+  await prisma.$transaction((tx) => closeItem(tx, "LOAN_CANDIDATE", pn, "CANCELLED", { at: now, reason: why }));
+}
+
 /** Released and not in the DMS (from the cutoff): kept for the branch pool, only what its card needs. True: newly kept. */
-async function keepCandidate(r: FeedRowV1, cutoff: string): Promise<boolean> {
+async function keepCandidate(r: FeedRowV1, cutoff: string, now: Date = new Date()): Promise<boolean> {
   if (r.feedState !== "Released" || !r.releaseDate || r.releaseDate.slice(0, 10) < cutoff || !r.pnNo) {
+    const had = await prisma.sourceLoanCandidate.findUnique({ where: { externalLoanId: r.externalLoanId }, select: { pn: true } });
     await prisma.sourceLoanCandidate.deleteMany({ where: { externalLoanId: r.externalLoanId } });
+    const pn = had?.pn ?? r.pnNo;
+    if (pn) await leavePool(pn, r.feedState === "Released" ? "Released before the branch-pool cutoff" : feedStateWords(r.feedState).replace(/\.$/, ""), now);
     return false;
   }
   const rec = recordOfRow(r);
   const data = { cin: r.cin, pn: r.pnNo, borrowerName: rec.borrowerName, branchCode: r.branchCode, branchName: r.branchName, productName: r.productName, amount: r.totalLoanAmount, releaseDate: new Date(r.releaseDate), lastSeenAt: new Date() };
   const was = await prisma.sourceLoanCandidate.findUnique({ where: { externalLoanId: r.externalLoanId }, select: { id: true } });
-  if (was) { await prisma.sourceLoanCandidate.update({ where: { id: was.id }, data }); return false; }
-  await prisma.sourceLoanCandidate.create({ data: { externalLoanId: r.externalLoanId, ...data } });
-  return true;
+  if (was) await prisma.sourceLoanCandidate.update({ where: { id: was.id }, data });
+  else await prisma.sourceLoanCandidate.create({ data: { externalLoanId: r.externalLoanId, ...data } });
+  await enterPool(r.pnNo, r, rec.borrowerName, now);
+  return !was;
 }
 
 export async function runMyLoansSync(o: RunOptions): Promise<RunResult> {
@@ -146,7 +189,7 @@ export async function runMyLoansSync(o: RunOptions): Promise<RunResult> {
       if (d.kind === "not-held") {
         const r = rows.find((x) => x.externalLoanId === d.externalLoanId)!;
         if (r.pnNo && loans.some((l) => l.pn === r.pnNo)) continue; // a loan file we hold under another copy
-        if (await keepCandidate(r, cutoff)) counts.candidates++;
+        if (await keepCandidate(r, cutoff, now)) counts.candidates++;
         continue;
       }
       if (d.kind === "changed") {
@@ -167,6 +210,7 @@ export async function runMyLoansSync(o: RunOptions): Promise<RunResult> {
       await prisma.$transaction((tx) => notify(tx, { userIds: admins, title: `myloans sent ${dupIds.length} loan${dupIds.length === 1 ? "" : "s"} twice in one run`, body: `ExternalLoanId ${dupIds.join(", ")}: no review items from them this run. Ask the myloans team to check them.`, link: "/admin/settings?open=myloans-sync" }));
     }
 
+    await poolWaitingCandidates(now);
     // The checkpoint: every page succeeded. A catch-up never moves it back; the first load starts it if there is none.
     const next = fetched.checkpoint.toISOString();
     const checkpoint = o.mode === "CHANGE" || !state.checkpoint || next > state.checkpoint ? next : state.checkpoint;

@@ -746,7 +746,7 @@ On the mock, through the piece 6 client (`changesPage`, `poolPage`) and the roun
    - the one-time **first load** (pool mode from the cutoff date, a Superadmin setting).
    - The cron route calls one function; "Run now" stays for Admin.
 3. **Row handling** (8.3) **with what exists until piece 8:** the duplicate alert, "same hash, no action", redo (a) and (b), "away from Released", field differences and reference-name renames are each mapped onto **today's review items** (one per loan, the existing Apply / Keep current / Link screens). Piece 8 then splits them into per-field Open Items with approver queues.
-4. **Unknown released CINs** go into a `SourceLoanCandidate` table now. They appear in the branch pool in **10b** (the feed hook built in piece 9).
+4. **Unknown released CINs** go into a `SourceLoanCandidate` table now. They appear in the branch pool in **10b** (the feed hook built in piece 9). *Built 18 November 2026 (D-053): `enterPool`, `leavePool`, `poolWaitingCandidates` in `lib/services/myloans-sync.ts`; waiting from pool entry; tests in `tests/integration/branch-pool.test.ts`.*
 5. **The old tiered background refresh retires** once API 2 runs: tiers, per-loan polling, `nextCheckAt` and the hourly background budget. Refresh on a loan file and Find loan stay on API 1.
 6. **Screens:** Settings, MyLoans sync shows the run log (last 50 runs, with counts and errors), the interval, the catch-up time and window, the alert threshold, the first-load cutoff and Run now. Each is audited.
 7. **Tests:**

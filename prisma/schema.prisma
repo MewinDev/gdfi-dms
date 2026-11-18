@@ -887,8 +887,12 @@ model Loan {
   updatedAt DateTime @updatedAt
 
   /// D-050: myloans' transaction id (ExternalLoanId) and the contract hash, saved when the loan file is opened.
-  externalLoanId Int?    @unique
-  contentHash    String?
+  externalLoanId  Int?      @unique
+  /// D-053: myloans says the loan is no longer released (NotReleased or Inactive) and an approver approved it: the
+  /// loan is on hold (blocked, not closed) until myloans shows it Released again. The myloans state word.
+  sourceHold      String?
+  sourceHoldSince DateTime?
+  contentHash     String?
 
   @@index([branchId, stage])
   @@index([cin])

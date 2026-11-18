@@ -16,9 +16,13 @@ export const endedText = (state: FeedStateWord, rep: string | null) =>
 /** Kept for older callers: the words for a loan that left Released. */
 export const CANCELLED_REASON = endedText("Cancelled", null);
 
+export const holdText = (state: string) =>
+  `On hold: ${(STATUS_WORDS[state as FeedStateWord] ?? STATUS_WORDS.NotReleased).toLowerCase()}. Send, Forward and new cash wait until myloans shows it released again.`;
+
 async function closedOrEnded(db: Tx | typeof prisma, loanId: string): Promise<string | null> {
-  const loan = await db.loan.findUnique({ where: { id: loanId }, select: { cancelledAt: true, cancelReason: true } });
+  const loan = await db.loan.findUnique({ where: { id: loanId }, select: { cancelledAt: true, cancelReason: true, sourceHold: true } });
   if (loan?.cancelledAt) return `This loan was closed: ${loan.cancelReason ?? "Cancelled in MyLoans"}.`;
+  if (loan?.sourceHold) return holdText(loan.sourceHold);
   const st = await db.openItem.findFirst({ where: { loanId, field: "status", status: "PENDING" }, select: { newRaw: true } });
   if (!st) return null;
   const raw = (st.newRaw ?? {}) as { state?: FeedStateWord; replacedByPn?: string | null };
