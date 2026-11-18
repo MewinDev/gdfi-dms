@@ -674,3 +674,29 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
     - seed a few **aged demo items**, so the Inbox and the pool show amber, red and Paused, not only green.
 - **Reason:** the user's answers to the piece 6 plan and the demo review.
 
+## D-049 Product classification kept simple; the daily catch-up sync; round 4 checks
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **Product classification** (amends D-031, D-034):
+     - **Keywords:** as before, plus the Financing keywords **"brand new"** and **"2nd hand"** (multi-word phrases are supported). "Test keyword rules" runs over **all active products**, before and after. Expected: 20 products move from "Refinancing (default)" to Financing, and nothing else changes.
+     - **One tick, "Manage product classification"** (the key `settings:classification`): edit the keywords **and** set any product to Financing or Refinancing. A setting on a product **overrides the keywords**. A reason is required, and every change is audit-logged. On by default for LA Supervisor/Head, Admin and Superadmin; customizable like every tick.
+     - **Only two choices:** Financing or Refinancing. No other states.
+     - **Unclear products are not pre-set.** The LA Supervisor/Head sets them on the screen once decided. The screen shows a small **"Please confirm"** note on:
+       - SME - Car Financing (R);
+       - Personal/SME REM Financing;
+       - the three real-estate "Take Out" products;
+       - the Doctors, Salary and Tricycle loans.
+     - **Data:** `docs/incoming/myloans-round4-results/pr_products.tsv` is the mock's API 5 data and the kit's product list.
+     - **Tests:**
+       - the 20 "2nd hand" / "brand new" products become Financing;
+       - "SME - Refinancing Heavy Truck" stays Refinancing;
+       - a manual setting overrides the keywords;
+       - a rename keeps the manual setting;
+       - a user without the tick cannot change it.
+  2. **Time-zone safety (added to the piece 7 plan, not built yet):** a **daily catch-up sync run**, by default at 02:00 Manila, asks API 2 for everything changed in the last **26 hours** (a setting). It uses the same logic as the normal run (the same hash means no action). It protects against wrong time labels, missed runs and clock problems, and it is logged in the sync run log like the other runs.
+  3. **Round 4 checks recorded:**
+     - **Cancel / deactivate update `updated_at`:** CONFIRMED. 37 of 42 changed within 18 ms; the other 5 were updated later.
+     - **The mid-June time offset change:** covered by the daily catch-up.
+- **Reason:** the user's decisions after the round 4 results.
+

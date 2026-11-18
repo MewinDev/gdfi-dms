@@ -52,3 +52,20 @@ describe("classification by keywords (D-031, D-034)", () => {
     expect(cleanKeywords([{ text: "fi", wholeWord: false }]).problem).toMatch(/too short/);
   });
 });
+
+describe("D-049: brand new, 2nd hand, and products set by hand", () => {
+  it("\"brand new\" and \"2nd hand\" are Financing (multi-word); a Refinancing keyword still wins", () => {
+    expect(classifyByKeywords("SME - 2nd Hand Vehicle Loan")).toMatchObject({ classification: "FINANCING", keyword: "2nd hand" });
+    expect(classifyByKeywords("Brand New Motorcycle Loan")).toMatchObject({ classification: "FINANCING", keyword: "brand new" });
+    expect(classifyByKeywords("SME - Refinancing Heavy Truck")).toMatchObject({ classification: "REFINANCING", step: "REFINANCING_KEYWORD" });
+    expect(classifyByKeywords("Brandnew loan").step).toBe("DEFAULT"); // the phrase needs both words
+  });
+
+  it("a product set by hand overrides the keywords, by code first, else by name", () => {
+    const rules = { ...DEFAULT_CLASSIFICATION_RULES, manual: [{ code: "SME-RHT", name: "SME - Refinancing Heavy Truck", value: "FINANCING" as const }] };
+    expect(classifyByKeywords("SME - Refinancing Heavy Truck", rules)).toEqual({ classification: "FINANCING", step: "MANUAL", keyword: null });
+    // Renamed in myloans: the code still finds the setting.
+    expect(classifyByKeywords("SME Heavy Truck Refinancing", rules, "SME-RHT")).toMatchObject({ classification: "FINANCING", step: "MANUAL" });
+    expect(classifyByKeywords("SME - Refinancing Heavy Truck", { ...DEFAULT_CLASSIFICATION_RULES, manual: [] }).classification).toBe("REFINANCING");
+  });
+});

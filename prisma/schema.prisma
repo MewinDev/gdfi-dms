@@ -2231,3 +2231,25 @@ model MockMyLoansBranch {
   isActive     Boolean   @default(true)
   updatedAt    DateTime?
 }
+
+/// D-049: myloans products (from API 5), with the optional manual classification that overrides the keywords.
+/// Matched by myloans' ProductID, so a rename keeps the manual setting.
+model Product {
+  id                  String          @id @default(cuid())
+  sourceProductId     Int             @unique
+  code                String
+  name                String
+  active              Boolean         @default(true)
+  /// Set by someone with "Manage product classification"; null: the keywords decide.
+  classification      Classification?
+  classificationNote  String          @default("")
+  classifiedById      String?
+  classifiedByLabel   String          @default("")
+  classifiedAt        DateTime?
+  /// When API 5 last sent it (the list is read whole each time).
+  seenAt              DateTime        @default(now())
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([code])
+}

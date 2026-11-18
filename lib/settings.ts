@@ -103,5 +103,10 @@ export async function getTatMap(db: Tx | typeof prisma = prisma): Promise<Map<st
 
 /** Product classification (D-031, D-034): the saved keyword lists, older plain strings read as "starts a word". */
 export async function getClassificationRules(db: Tx | typeof prisma = prisma): Promise<ClassificationRules> {
-  return asRules(await getSetting("classification.rules", db));
+  // D-049: products set to Financing or Refinancing by hand override the keywords (matched by code, else name).
+  const [rules, manual] = await Promise.all([
+    getSetting("classification.rules", db),
+    db.product.findMany({ where: { classification: { not: null } }, select: { code: true, name: true, classification: true } }),
+  ]);
+  return { ...asRules(rules), manual: manual.map((p) => ({ code: p.code, name: p.name, value: p.classification! })) };
 }

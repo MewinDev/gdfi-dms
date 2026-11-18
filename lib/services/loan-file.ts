@@ -168,10 +168,10 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
   if (off) return { kind: "refused", pn, ...off, record: lookup.record };
   // The keyword lists and default saved in Settings, Product classification (D-031).
   const classificationRules = await getClassificationRules();
-  const cls = classifyProductName(check.normalized.productName, classificationRules);
+  const cls = classifyProductName(check.normalized.productName, classificationRules, lookup.record.productCode);
   const outcome =
     cls.classification === "REFINANCING"
-      ? evaluateLoanRules({ productName: check.normalized.productName, loanType: check.normalized.loanType, totalReleasedAmount: check.normalized.totalReleasedAmount, classificationRules })
+      ? evaluateLoanRules({ productName: check.normalized.productName, loanType: check.normalized.loanType, totalReleasedAmount: check.normalized.totalReleasedAmount, classificationRules, productCode: lookup.record.productCode })
       : null;
   return {
     kind: "preview",
@@ -275,6 +275,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       financingType: input.financingType ?? null,
       orcrStatus: input.orcrStatus ?? null,
       classificationRules,
+      productCode: lookup.record.productCode,
     });
   } catch (e) {
     if (e instanceof RuleInputError) throw new UserError(e.message, e.field);
@@ -307,7 +308,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
           openedById: user.id,
           classification: outcome.classification,
           // Saved when the LA opens (accepts) it (D-031); a later keyword change only flags it.
-          classifiedByDefault: classifyProductName(check.normalized.productName, classificationRules).byDefault,
+          classifiedByDefault: classifyProductName(check.normalized.productName, classificationRules, lookup.record.productCode).byDefault,
           financingType: outcome.financingType,
           orcrStatus: outcome.orcrStatus,
           mortgageResult: outcome.mortgage,

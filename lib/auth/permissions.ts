@@ -310,7 +310,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.FUNDS_TYPES_MANAGE, label: "Change funds types", help: "Rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off.", can: "change funds types", where: "Settings, Funds types", was: "fundtypes:manage" },
       { key: P.STAGES_MANAGE, label: "Change processing stages", help: "The stages of each transaction type, their evidence and targets.", can: "change processing stages", where: "Settings, Processing stages", was: "stages:manage" },
       { key: P.SETTINGS_SYSTEM, label: "Change system switches", help: "MyLoans test switches, the simulator switch, sample MyLoans changes.", can: "change system switches", where: "Settings, System", was: "settings:system" },
-      { key: P.SETTINGS_CLASSIFICATION, label: "Change product classification keywords", help: "The Refinancing and Financing keyword lists and the default for a product name with no keyword (D-031). Saving re-checks open loan files.", can: "change the product classification keywords", where: "Settings, Product classification", was: "new on 17 November 2026" },
+      { key: P.SETTINGS_CLASSIFICATION, label: "Manage product classification", help: "The Refinancing and Financing keyword lists, the default for a product name with no keyword, and setting any product to Financing or Refinancing (overrides the keywords; a reason is required) (D-031, D-049). Saving re-checks open loan files.", can: "manage product classification", where: "Settings, Product classification", was: "new on 17 November 2026" },
       { key: P.SETTINGS_PN_FORMAT, label: "Change the PN format", help: "The parts of a PN (prefix, branch code, year, system digit, running number) and the PN check.", can: "change the PN format", where: "Settings, System, PN format", was: "settings:system" },
       { key: P.SETTINGS_IMPORT, label: "Import data", help: "Import / Export files, for the lists this role may change.", can: "import data", where: "Settings, Import / Export", was: "settings:import" },
       { key: P.SIMULATOR_USE, label: "Use the test simulator", help: "Move sample loans through the processor and vault steps, and simulate MyLoans changes. Only in test mode.", requires: [P.LOANS_VIEW], can: "use the test simulator", where: "Loan File, Simulator (test mode)", was: "simulator:use (the MyLoans change simulator: checked in the service only)" },
@@ -481,7 +481,7 @@ export const ROLE_DEFAULTS: Record<string, { name: string; description: string; 
    * moving holds, for the branches in the person's access. The key SUP is the former Branch Supervisor
    * (also the Area Supervisor: the same role with Area access on the person). No per-user legacy grants.
    */
-  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission, approving or rejecting myloans changes (Open Items) and moving holds, for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.LOANS_RECLASSIFY, ...SUP_OVERSIGHT] },
+  SUP: { name: "LA Supervisor/Head", canSignIn: true, sortOrder: 10, branchAccess: "ASSIGNED", description: "Every Loan Associate permission, approving or rejecting myloans changes (Open Items) and moving holds, for their branches.", permissions: [...LA_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.LOANS_RECLASSIFY, ...SUP_OVERSIGHT, P.SETTINGS_CLASSIFICATION] },
 };
 /** The plain ticks of the LA Supervisor/Head role (key SUP) and their keys (the report and the role's docs). */
 export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
@@ -490,6 +490,7 @@ export const SUPERVISOR_TICKS: { plain: string; keys: Permission[] }[] = [
   { plain: "Move a hold to another person (within their branches)", keys: [P.HOLDS_TRANSFER] },
   { plain: "Reclassify a loan when the keyword rules changed (within their branches)", keys: [P.LOANS_RECLASSIFY] },
   { plain: "Resolve any problem, see the DP and LTO monitors and the TAT report (within their branches)", keys: SUP_OVERSIGHT },
+  { plain: "Manage product classification: the keywords and setting a product to Financing or Refinancing (D-049)", keys: [P.SETTINGS_CLASSIFICATION] },
 ];
 /** Finance's default ticks before D-034 (with "Review borrower detail corrections"). */
 export const FIN_DEFAULT_BEFORE_D034: Permission[] = [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW, P.SOURCE_REVIEW_BORROWER];

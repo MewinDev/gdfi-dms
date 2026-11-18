@@ -6,6 +6,17 @@ import { mockRecords } from "@/lib/myloans/mock-data";
 import { myLoansMode } from "@/lib/myloans";
 import type { MyLoansRecord } from "@/lib/myloans/types";
 import type { MockBranchRow, MockData, MockProductRow, MockTxnRow } from "./mock-rows";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { parseProductsTsv, PRODUCTS_FILE } from "./products-file";
+
+/** D-049: myloans' real product list (PR_PRODUCTS export), when the file is in the repo. */
+export function productsFromFile(root = process.cwd()): MockProductRow[] | null {
+  const f = path.join(root, PRODUCTS_FILE);
+  if (!existsSync(f)) return null;
+  const r = parseProductsTsv(readFileSync(f, "utf8"));
+  return r.problem ? null : r.rows.map((x) => ({ productId: x.productId, productCode: x.productCode, name: x.name, active: x.active }));
+}
 
 /**
  * Piece 6 (D-047, D-048): the myloans mock's own data (tables MockMyLoansTxn, MockMyLoansProduct, MockMyLoansBranch).
@@ -50,6 +61,9 @@ export async function seedMockFromSamples(db: Db = prisma, now: Date = new Date(
   const recs = await sampleRecords(db, now);
   const branches = new Map<string, MockBranchRow>();
   const products = new Map<string, MockProductRow>();
+  // The real product list first (D-049), so API 5 is myloans' list; sample loans use its ids by name.
+  for (const p of productsFromFile() ?? []) products.set(p.name.trim(), p);
+  const nextId = () => Math.max(0, ...[...products.values()].map((p) => p.productId)) + 1;
   const branchIdOf = (r: MyLoansRecord) => {
     const key = r.branchCode ?? r.branchName ?? "?";
     if (!branches.has(key)) {
@@ -64,7 +78,7 @@ export async function seedMockFromSamples(db: Db = prisma, now: Date = new Date(
   const productIdOf = (r: MyLoansRecord) => {
     const name = (r.productName ?? "").trim();
     if (!name) return null;
-    if (!products.has(name)) products.set(name, { productId: products.size + 1, productCode: r.productCode ?? `P-${String(products.size + 1).padStart(3, "0")}`, name, active: true });
+    if (!products.has(name)) { const id = nextId(); products.set(name, { productId: id, productCode: r.productCode ?? `P-${String(id).padStart(3, "0")}`, name, active: true }); }
     return products.get(name)!.productId;
   };
   const txns = recs.map((r, i) => txnOfRecord(r, 1001 + i, branchIdOf(r), productIdOf(r), now));

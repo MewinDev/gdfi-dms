@@ -628,6 +628,19 @@ The external scheduler calls `POST /api/cron/myloans-sync` every 5 minutes (fixe
 
 The rotating-batch polling, tiers, `nextCheckAt` and the background hourly ceiling are removed. On-demand refresh (open, Refresh button) uses **API 1** (the query has no API 3; see §7) and acts only when the `ContentHash` differs from the saved one.
 
+### 8.2a Daily catch-up run (D-049, time-zone safety)
+
+- **What:** once a day, by default at **02:00 Manila** (a setting), the sync runs API 2 with `since` = now minus **26 hours** (a setting), as well as the normal checkpoint runs.
+- **Logic:** the same as a normal run, paged the same way. A loan whose hash equals the saved one needs no action, so the catch-up only finds what a normal run missed.
+- **Protects against:**
+  - wrong time labels (a `SourceUpdatedAt` in the wrong offset, such as the mid-June offset change in myloans);
+  - missed or failed runs;
+  - clock problems on either side.
+- **The checkpoint:** a catch-up run never moves the normal checkpoint backwards. It moves it forward only if the run would anyway (page 1's RunStartedAt minus 5 minutes, after every page succeeded).
+- **Logging:** in the sync run log like the other runs, marked "Daily catch-up", with the counts (rows, changed, unchanged) and any error. A failed catch-up alerts Admin like a failed run.
+- **Production scheduler:** runs with the other jobs (a separate item, blocked on hosting).
+- **Round 4 evidence (recorded in D-049):** cancel / deactivate update `updated_at` (CONFIRMED: 37 of 42 within 18 ms, the other 5 later). The mid-June offset change is covered by this run.
+
 ### 8.3 Row handling
 
 The rules apply in this order:

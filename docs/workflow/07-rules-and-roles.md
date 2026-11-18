@@ -8,7 +8,7 @@ Last updated: 18 November 2026 (PHT)
 
 | Rule | Input | Result |
 |---|---|---|
-| 1 Classification | Product name (case, hyphens and extra spaces ignored) contains a Refinancing keyword, else a Financing keyword, else the default (D-031; keywords and default in Settings, Product classification) | Refinancing, Financing, or the default (Refinancing to start), labelled "Classified by default" |
+| 1 Classification | A product **set by hand** in Settings, Product classification (Financing or Refinancing, with a reason; it survives a myloans rename) comes first. Otherwise the product name (case, hyphens and extra spaces ignored) is checked: a Refinancing keyword, else a Financing keyword ("financ", "brand new", "2nd hand"; multi-word phrases allowed), else the default (D-031, D-049). Keywords and product settings need the one tick **"Manage product classification"** (on by default for LA Supervisor/Head, Admin and Superadmin). The screen lists every active myloans product, marks undecided ones "Please confirm", and "Test keyword rules" shows each product before and after | Refinancing or Financing (only these two), labelled "Classified by default" when no keyword matched, or "Set by hand" |
 | 2 Undertaking | Financing only, picked by the LA | Undertaking or Non-Undertaking |
 | 3 ORCR | Financing + Untransferred | Notary + EDST |
 | 4 Mortgage | New and amount at or below PHP 500,000; Renewal and amount at or below PHP 1,000,000 | Mortgage: Notary, EDST, Entry of PPSR, Mortgage. Otherwise Notary and EDST |

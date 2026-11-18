@@ -49,6 +49,8 @@ import { availability, leaveText } from "@/lib/monitoring/rules";
 import { DefaultCapacityForm, DpCapacityRow } from "@/components/monitoring/capacity-forms";
 import { PoolColoursForm } from "@/components/admin/pool-colours-form";
 import { poolColours } from "@/lib/services/pool-colours";
+import { productPreview, resultText } from "@/lib/services/products";
+import { ProductClassificationList, type ProductView } from "@/components/admin/product-classification";
 import { MyLoansMockPanel } from "@/components/admin/myloans-mock-panel";
 import { mockAllowed } from "@/lib/myloans/v1/mock-store";
 import { MOCK_SCENARIOS } from "@/lib/myloans/v1/mock-scenarios";
@@ -768,7 +770,11 @@ async function ClassificationArea({ common, user, test }: { common: { id: string
   // The values being tested (from Test keyword rules), or the saved ones.
   const tried = test ? rulesFromForm(test) : null;
   const rules = tried && !tried.problem ? tried.rules : saved;
-  const preview = await previewClassification(rules);
+  const [preview, products] = await Promise.all([previewClassification(rules), productPreview(tried && !tried.problem ? tried.rules : undefined)]);
+  const productRows: ProductView[] = products.rows.map((r) => ({
+    id: r.id, code: r.code, name: r.name, manual: r.manual, note: r.note, by: r.by, atText: r.at ? fmtShort(r.at) : null,
+    beforeText: resultText(r.before), afterText: resultText(r.after), changes: r.changes, confirm: r.confirm,
+  }));
   return (
     <SettingsModal {...common} footer={canEdit ? { kind: "save", formId: "classification-form", cancelHref: BASE } : { kind: "done" }}>
       <ClassificationForm key={JSON.stringify(rules)} formId="classification-form" canEdit={canEdit} refinancing={rules.refinancing} financing={rules.financing} fallback={rules.fallback} />
@@ -793,6 +799,7 @@ async function ClassificationArea({ common, user, test }: { common: { id: string
           </ul>
         )}
       </section>
+      <ProductClassificationList rows={productRows} moving={products.moving} testing={!!test} canEdit={canEdit} />
     </SettingsModal>
   );
 }

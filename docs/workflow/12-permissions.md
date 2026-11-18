@@ -193,7 +193,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Change funds types | Rename Cash advance or Fund transfer, add a type, set what Finance enters at release, or switch a type off. | Settings, Funds types | - | `fundtypes:manage` | SUPERADMIN, Admin |
 | Change processing stages | The stages of each transaction type, their evidence and targets. | Settings, Processing stages | - | `stages:manage` | SUPERADMIN, Admin |
 | Change system switches | MyLoans test switches, the simulator switch, sample MyLoans changes. | Settings, System | - | `settings:system` | SUPERADMIN, Admin |
-| Change product classification keywords | The Refinancing and Financing keyword lists and the default for a product name with no keyword (D-031). Saving re-checks open loan files. | Settings, Product classification | - | `settings:classification` | SUPERADMIN, Admin |
+| Manage product classification | The Refinancing and Financing keyword lists, the default for a product name with no keyword, and setting any product to Financing or Refinancing (overrides the keywords; a reason is required) (D-031, D-049). Saving re-checks open loan files. | Settings, Product classification | - | `settings:classification` | SUPERADMIN, Admin, LA Supervisor/Head |
 | Change the PN format | The parts of a PN (prefix, branch code, year, system digit, running number) and the PN check. | Settings, System, PN format | - | `settings:pn_format` | SUPERADMIN, Admin |
 | Import data | Import / Export files, for the lists this role may change. | Settings, Import / Export | - | `settings:import` | SUPERADMIN, Admin |
 | Use the test simulator | Move sample loans through the processor and vault steps, and simulate MyLoans changes. Only in test mode. | Loan File, Simulator (test mode) | See loan files | `simulator:use` | SUPERADMIN, Admin |
@@ -298,7 +298,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Change funds types | Settings, Funds types | fundtypes:manage | `fundtypes:manage` |  |
 | Change processing stages | Settings, Processing stages | stages:manage | `stages:manage` |  |
 | Change system switches | Settings, System | settings:system | `settings:system` |  |
-| Change product classification keywords | Settings, Product classification | new on 17 November 2026 | `settings:classification` | Split or renamed |
+| Manage product classification | Settings, Product classification | new on 17 November 2026 | `settings:classification` | Split or renamed |
 | Change the PN format | Settings, System, PN format | settings:system | `settings:pn_format` | Split or renamed |
 | Import data | Settings, Import / Export | settings:import | `settings:import` |  |
 | Use the test simulator | Loan File, Simulator (test mode) | simulator:use (the MyLoans change simulator: checked in the service only) | `simulator:use` | Split or renamed |
