@@ -60,18 +60,19 @@ test.beforeEach(async () => {
 });
 test.afterAll(resetLoans);
 
-test("Additional unit: Related loans says Additional; Copy reusable papers copies only copies, never Originals", async ({ page }) => {
+test("Same borrower: Related loans says Same borrower (no guessed tag, D-051); Copy reusable papers copies only copies, never Originals", async ({ page }) => {
   await signInWith(page, BUTTONS.la);
   await openPn(page, OLD);
   await tickAll(page, "NOTARY");
   await tickAll(page, "MORTGAGE");
-  await newPn("GD1012026909301", { totalReleasedAmount: 900_000, vehicle: { plateNo: "NEW 9301", engineNo: "E9301", chassisNo: "C9301", make: "Toyota Wigo" } });
+  await newPn("GD1012026909301", { cin: "CIN-UNIT-9301", totalReleasedAmount: 900_000 });
   await page.goto("/search?q=GD1012026909301");
-  await expect(page.locator("[data-other-loans]")).toContainText(`This borrower has another loan: ${OLD}`);
+  await expect(page.locator("[data-other-loans]")).toHaveCount(0); // D-051: no other-loans warning
   await openPn(page, "GD1012026909301");
   await page.goto("/loans/GD1012026909301?tab=todo");
   await expect(related(page)).toContainText("Related loans (1)");
-  await expect(related(page).locator('[data-related-row="ADDITIONAL"]')).toContainText(OLD);
+  await expect(related(page).locator('[data-related-row="SAME_BORROWER"]')).toContainText(OLD);
+  await expect(related(page).locator('[data-related-row="SAME_BORROWER"]')).toContainText("Same borrower");
   await expect(related(page)).not.toContainText("₱"); // no amounts without journey:view_amounts
   await related(page).scrollIntoViewIfNeeded();
   await shot(page, "related-additional");
@@ -95,24 +96,24 @@ test("Additional unit: Related loans says Additional; Copy reusable papers copie
   await expect.poll(async () => db.documentMovement.count({ where: { action: "REFERENCED", remarks: { startsWith: `Referenced from ${OLD}` } } })).toBe(1);
 });
 
-test("Replacement: the review pop-up asks to confirm no payment; linked, both files say so", async ({ page }) => {
+test("Replacement named by myloans (a redo: same CIN, the old copy cancelled): the review asks to confirm no payment; linked, both files say so", async ({ page }) => {
   await signInWith(page, BUTTONS.la);
   await openPn(page, OLD);
-  await newPn("GD1012026909302");
-  await openPn(page, "GD1012026909302");
-  await page.goto("/loans/GD1012026909302?tab=todo");
-  await expect(related(page).locator('[data-related-row="ADDITIONAL"]')).toContainText(OLD); // still active: not a replacement yet
   await change(OLD, { status: "CANCELLED" });
 
   await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${OLD}?tab=todo`);
   await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from MyLoans" }).click();
   await expect(page.getByText("Changes found: review.")).toBeVisible();
+  // myloans redid it: a new PN with the same CIN. Opening it offers the link on the old loan's review (D-051).
+  await newPn("GD1012026909302");
+  await signInWith(page, BUTTONS.la);
+  await openPn(page, "GD1012026909302");
+  await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${OLD}?tab=todo&review=1`);
   const review = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
   const repl = review.locator("[data-source-replacement]");
-  await expect(repl).toContainText("Possible replacement: GD1012026909302");
-  await expect(repl).toContainText("Matches: Product name, Loan type, Amount, Plate number, Chassis number, Engine number");
+  await expect(repl).toContainText("Replaced by in myloans: GD1012026909302");
   await expect(repl.locator("[data-confirm-no-payment]")).toContainText("I confirmed no payment was made on the old PN");
   await review.getByLabel("Note (required)").fill("Unit issue found after release");
   await shot(page, "review-replacement");

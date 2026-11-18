@@ -17,11 +17,12 @@ test.beforeEach(async () => {
   const [dp, branch] = await Promise.all([db.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } }), db.branch.findUniqueOrThrow({ where: { code: "165" } })]);
   const base = { requestedById: dp.id, branchId: branch.id, requestedCents: 100_000, approvedCents: 100_000, approvedAt: new Date(), releasedCents: 100_000, releasedAt: new Date(), fundsTypeId: "fundstype_ca", lines: { create: [{ kind: "TRANSPORT", requestedCents: 100_000, approvedCents: 100_000, releasedCents: 100_000, note: "Courier" }] } };
   // Waiting: two transactions whose LTO pickups are not done yet (their jobs are due far ahead: no fallback).
-  const [admin, mortgage] = await Promise.all([db.user.findUniqueOrThrow({ where: { email: "test.admin@gdfi.ph" } }), db.transactionType.findUniqueOrThrow({ where: { code: "MORTGAGE" } })]);
+  // Two different types: a loan file has at most one active transaction of each type (D-050).
+  const [admin, types] = await Promise.all([db.user.findUniqueOrThrow({ where: { email: "test.admin@gdfi.ph" } }), db.transactionType.findMany({ where: { requiresDp: true }, orderBy: { code: "asc" }, take: 2 })]);
   const loan = await db.loan.create({
     data: {
       pn: "GD999209995901", borrowerName: "Zz Liq Borrower", branchId: branch.id, loanType: "New", productName: "Auto Financing", totalReleasedAmount: 400000, releasedAt: new Date(), sourceStatus: "RELEASED", retrievedAt: new Date(), openedById: admin.id,
-      classification: "REFINANCING", mortgageResult: "MORTGAGE", ruleFired: "e2e", stage: "In process", transactions: { create: [{ typeId: mortgage.id, status: "IN_PROCESS" }, { typeId: mortgage.id, status: "IN_PROCESS" }] },
+      classification: "REFINANCING", mortgageResult: "MORTGAGE", ruleFired: "e2e", stage: "In process", transactions: { create: types.map((t) => ({ typeId: t.id, status: "IN_PROCESS" as const })) },
     },
     include: { transactions: true },
   });

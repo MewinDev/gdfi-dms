@@ -157,7 +157,12 @@ async function lookupPnInner(user: CurrentUser, input: string): Promise<PnLookup
   const stopped = (await adapter.breakerState()).open;
   // The sample MyLoans: a simulated change to this PN is a new answer (not hidden by the cache).
   const variant = myLoansMode() === "mock"
-    ? `find:${JSON.stringify(await prisma.mockMyLoansTxn.findMany({ where: { pnNo: pn }, select: { id: true, updatedAt: true, statusId: true, replacedById: true, amount: true, firstName: true, lastName: true, branchId: true, productId: true } }))}`
+    // The mock's rows and any simulated change for this PN (the overlay): a change is a new answer, not hidden by the cache.
+    ? `find:${JSON.stringify([
+        await prisma.mockMyLoansTxn.findMany({ where: { pnNo: pn }, select: { id: true, updatedAt: true, statusId: true, replacedById: true, amount: true, firstName: true, lastName: true, branchId: true, productId: true } }),
+        (await getSetting("myloans.mockOverrides"))[pn] ?? null,
+        (await getSetting("myloans.mockExtra")).find((r) => r.pn === pn) ?? null,
+      ])}`
     : undefined;
   const lookup = stopped && !hasCached(pn, Date.now(), variant) ? null : await cachedLookup(adapter, pn, { variant, ceiling });
   if (!lookup || (!lookup.ok && (lookup.limited || (lookup.reason === "UNAVAILABLE" && (await adapter.breakerState()).open)))) {
@@ -168,7 +173,7 @@ async function lookupPnInner(user: CurrentUser, input: string): Promise<PnLookup
     if (lookup.reason === "NOT_SELECTABLE") {
       const rep = lookup.replacedByPnNo ?? null;
       const inDms = rep ? !!(await prisma.loan.findUnique({ where: { pn: rep }, select: { id: true } })) : false;
-      return { kind: "not_selectable", pn, message: lookup.message, feedState: lookup.feedState ?? "NotReleased", statusName: lookup.statusId === undefined ? null : statusFromId(lookup.statusId).statusName, replacedByPn: rep, replacedInDms: inDms };
+      return { kind: "not_selectable", pn, message: lookup.message, feedState: lookup.feedState ?? "NotReleased", statusName: lookup.statusId === undefined || recordStatusKind({ statusId: String(lookup.statusId) }) === "not_a_loan" ? null : statusFromId(lookup.statusId).statusName, replacedByPn: rep, replacedInDms: inDms };
     }
     if (lookup.reason === "MULTIPLE") return { kind: "multiple", pn, message: lookup.message };
     return { kind: "unavailable", pn, message: lookup.message };

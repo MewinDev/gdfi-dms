@@ -163,7 +163,8 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
     const prev = await prisma.loanSourceSnapshot.findFirst({ where: { loanId: loan.id }, orderBy: { retrievedAt: "desc" } });
     const base = prev ? recordFromPayload(prev.payload) : null;
     if (base) {
-      const st = lookup.feedState === "Cancelled" ? statusFromId(lookup.statusId ?? 14)
+      // Cancelled keeps the DMS word (the review says "MyLoans now says the loan is cancelled.").
+      const st = lookup.feedState === "Cancelled" ? { status: "CANCELLED", statusId: String(lookup.statusId ?? 14), statusName: statusFromId(lookup.statusId ?? 14).statusName }
         : { status: `STATUS_${(lookup.feedState ?? "NOT_SELECTABLE").toUpperCase()}`, statusId: lookup.statusId === undefined ? base.statusId ?? null : String(lookup.statusId), statusName: lookup.message.replace(/\.$/, "") };
       lookup = { ok: true, record: { ...base, ...st, feedState: lookup.feedState ?? null, notSent: base.notSent }, raw: { status: 422, feedState: lookup.feedState, replacedByPnNo: lookup.replacedByPnNo ?? null, statusId: lookup.statusId ?? null }, adapter: getMyLoansAdapter().name, retrievedAt: now };
     }
