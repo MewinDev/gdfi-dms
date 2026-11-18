@@ -3,11 +3,9 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { notifyOverdue } from "@/lib/services/funds";
 import { OPEN_ADVANCE, isOverdue, peso } from "@/lib/funds/rules";
-import { advanceScope, can } from "@/lib/auth/current-user";
+import { advanceScope } from "@/lib/auth/current-user";
 import { typeWhere } from "@/lib/funds/access";
-import { PERMISSIONS } from "@/lib/auth/permissions";
-import { borrowerToDo } from "@/lib/services/borrower-review";
-import { BorrowerCorrectionsCard } from "@/components/loan/borrower-corrections-card";
+import { OpenItemsCard, openItemsToDo } from "@/components/open-items/home-card";
 import { AllClear, CaughtUp, HomeHeader, SummaryStrip, type Segment } from "@/components/home/home-ui";
 import { ChecklistIcon, ClockIcon, CoinsIcon, WarningIcon } from "@/components/ui/icons";
 
@@ -26,7 +24,7 @@ export async function FinanceHome({ user }: { user: CurrentUser }) {
     prisma.cashAdvance.findMany({ where: { ...scope, status: { in: OPEN_ADVANCE as never } }, select: { releasedCents: true, status: true, liquidationDueAt: true } }),
     prisma.cashAdvanceTopUp.count({ where: { status: { in: ["REQUESTED", "APPROVED"] }, releasedAt: null, line: { advance: scope } } }),
     prisma.carryOver.count({ where: { status: "PENDING", line: { advance: scope } } }),
-    can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER) ? borrowerToDo(user) : null,
+    openItemsToDo(user),
   ]);
   const overdue = outstanding.filter((a) => isOverdue(a, now)).length;
   const approve = toApprove + topUps + carries;
@@ -46,7 +44,7 @@ export async function FinanceHome({ user }: { user: CurrentUser }) {
         Outstanding cash: {peso(outstanding.reduce((s, a) => s + a.releasedCents, 0))} released on {outstanding.length} advance{outstanding.length === 1 ? "" : "s"}.
       </p>
       {approve + toRelease === 0 && <CaughtUp>You&apos;re all caught up: nothing to approve or release.</CaughtUp>}
-      {corrections && corrections.count > 0 ? <BorrowerCorrectionsCard data={corrections} /> : <AllClear />}
+      {corrections && corrections.waiting + corrections.unassigned > 0 ? <OpenItemsCard data={corrections} /> : <AllClear />}
     </div>
   );
 }

@@ -91,9 +91,9 @@ Home is one quick look, then the work. Every Home has the same parts, top to bot
 | Who (by ticks) | Summary strip | Do these next | Attention cards (only when above zero) |
 |---|---|---|---|
 | Loan Associate (`checklist:tick`) | Need you now, Waiting on others, Problems to fix | The loans that need them (avatar, name, PN · branch · amount, the next step, the due chip, Continue or Open); "Waiting on others" and "Problems to fix" as closed rows under it when above zero | Package forwarded to you: receive it; Sent back to you |
-| Admin | The same three, plus MyLoans changes and Branch review | As the LA (all branches) | MyLoans changes to review, Branch review, TAT and problems (its link: "Open the TAT report"; the report has no export) |
-| LA Supervisor/Head | The same three, plus Corrections to review | The loans of their branches that need the LA | MyLoans corrections to review, TAT and problems |
-| Approvers (loan files only, no funds ticks) | The same three | The loans of their branches | MyLoans corrections when they have that tick |
+| Admin | The same three, plus Open Items and Branch review | As the LA (all branches) | Open Items to decide (with "N waiting too long" and Unassigned), Branch review, TAT and problems (its link: "Open the TAT report"; the report has no export) |
+| LA Supervisor/Head | The same three, plus Open Items | The loans of their branches that need the LA | Open Items to decide (with "N waiting too long"), TAT and problems |
+| Approvers (loan files only, no funds ticks) | The same three | The loans of their branches | Open Items when they have an approver tick |
 | Document Processor (`jobs:work` without `checklist:tick`) | To review, In process, Problems, Need funds, On hold | The jobs to look at first (problems, overdue, due today, to review); "All jobs" at the top | Liquidation overdue |
 | Finance, or anyone with funds approve or release ticks without `checklist:tick` | To approve, To release, Outstanding, Overdue; "Open Funds" at the top and the outstanding cash in one line | (Home has no request list; the Funds page has the queues) | MyLoans corrections to review (with that tick) |
 | Operations Monitor (monitoring ticks only) | Home is the Monitoring page, as before | | |

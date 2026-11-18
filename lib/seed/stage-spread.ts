@@ -12,7 +12,8 @@ import { openLoanFile } from "@/lib/services/loan-file";
 import { assignToDp, recordEdst, saveChecklist } from "@/lib/services/workflow";
 import { acceptJob, completeJob, finishStage, forwardJob, loadAssignment, receivePackage, startStage, verifyPaper } from "@/lib/services/jobs";
 import { stageRows, verifiablePapers } from "@/lib/services/job-stages";
-import { closeAsCancelled, simulateSourceChange } from "@/lib/services/source-sync";
+import { simulateSourceChange } from "@/lib/services/source-sync";
+import { decideOpenItem } from "@/lib/services/open-items";
 import { simulate } from "@/lib/services/simulator";
 import { shiftBusinessDays } from "@/lib/kit/rebase";
 import { KIT_EMAIL_DOMAIN } from "@/lib/kit/catalog";
@@ -126,9 +127,9 @@ export async function applyStageSpread(log: Log = console.log): Promise<void> {
       const loan = await prisma.loan.findUniqueOrThrow({ where: { pn } });
       if (s.target === "FOR_CHECKLIST") continue; // released 1 day ago (near "Day 2") or 5 days ago (over)
       if (s.target === "CANCELLED") {
-        await simulateSourceChange(superadmin, loan.id, "cancel"); // raises the review item (refreshLoan)
-        const item = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: loan.id, state: "OPEN" }, orderBy: { detectedAt: "desc" } });
-        await closeAsCancelled(superadmin, item.id, "Sample data: cancelled in MyLoans.");
+        await simulateSourceChange(superadmin, loan.id, "cancel"); // raises the status Open Item (refreshLoan)
+        const item = await prisma.openItem.findFirstOrThrow({ where: { loanId: loan.id, status: "PENDING", field: "status" } });
+        await decideOpenItem(superadmin, item.id, { decision: "APPROVE", remarks: "Sample data: cancelled in MyLoans." });
         continue;
       }
       const jobId = await send(pn);

@@ -88,7 +88,7 @@ export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: 
         <form action={runAction} className="flex flex-wrap items-center gap-3" data-sync-run-now>
           <SubmitButton className="btn-secondary" pendingText="Reading changes..." name="mode" value="CHANGE">Run now</SubmitButton>
           <SubmitButton className="btn-ghost" pendingText="Reading changes..." name="mode" value="CATCHUP">Run the catch-up now</SubmitButton>
-          <span className="text-[13px] text-ink-2">Reads what changed in myloans. Nothing is applied: each change is a review item for the branch&rsquo;s approvers.</span>
+          <span className="text-[13px] text-ink-2">Reads what changed in myloans. Nothing is applied: a change to a loan or borrower field waits as an Open Item for the branch&rsquo;s approvers; renames update by themselves.</span>
           <div className="basis-full"><FormMessage state={run} /></div>
         </form>
       )}
@@ -99,7 +99,7 @@ export function MyLoansSyncForm({ d, formId, canManage = true, canRun = true }: 
             <table className="w-full min-w-[720px] text-left text-[13px]">
               <caption className="sr-only">The latest myloans sync runs</caption>
               <thead className="bg-fill text-xs uppercase tracking-wide text-ink-2">
-                <tr>{["Time (PHT)", "How", "Result", "Changes read", "Review items", "Not in DMS yet", "Sent twice", "Took", "Note"].map((h) => <th key={h} scope="col" className="whitespace-nowrap px-2.5 py-2">{h}</th>)}</tr>
+                <tr>{["Time (PHT)", "How", "Result", "Changes read", "Loans with Open Items", "Not in DMS yet", "Sent twice", "Took", "Note"].map((h) => <th key={h} scope="col" className="whitespace-nowrap px-2.5 py-2">{h}</th>)}</tr>
               </thead>
               <tbody>
                 {d.runs.map((r) => (

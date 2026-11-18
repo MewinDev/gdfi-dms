@@ -27,8 +27,9 @@ import { UserError } from "./errors";
  *                              when the interval has passed (npm run sync:myloans; the cron route; the dev timer)
  *
  * Runs never overlap (a lease row). The checkpoint moves only after every page succeeded (page 1's RunStartedAt minus
- * 5 minutes); a catch-up never moves it back. Nothing is applied automatically (strict v2): a change becomes today's
- * review item for the loan (one per loan; the approvers of its branch decide). Released loans not yet in the DMS are
+ * 5 minutes); a catch-up never moves it back. Nothing is applied automatically (strict v2): a change to a loan or
+ * borrower field becomes an Open Item (piece 8; the approvers of its branch decide), a rename is applied by itself and
+ * logged (D-053). Released loans not yet in the DMS are
  * kept (from the cutoff) for the branch pool (10b). Every run is in the run log; N failed runs in a row alert Admin.
  */
 
@@ -134,8 +135,8 @@ export async function runMyLoansSync(o: RunOptions): Promise<RunResult> {
     const counts = { unchanged: 0, reviews: 0, duplicates: 0, candidates: 0 };
     const actor = o.actor ?? SYSTEM_ACTOR;
     const review = async (loanId: string, lookup: Parameters<typeof refreshLoan>[1]["lookup"]) => {
-      // Strict v2: nothing is applied; the change becomes the loan's review item (minor changes too).
-      const r = await refreshLoan(loanId, { actor, mode: "AUTOMATIC", trigger: "sync", now, lookup, holdMinor: true });
+      // Strict v2 (piece 8): a loan or borrower field becomes an Open Item; renames are applied by themselves (D-053).
+      const r = await refreshLoan(loanId, { actor, mode: "AUTOMATIC", trigger: "sync", now, lookup, syncRunId: run.id });
       if (r.ok && r.outcome !== "none") counts.reviews++;
     };
     const dupIds: number[] = [];

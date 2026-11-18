@@ -96,7 +96,7 @@ test("Same borrower: Related loans says Same borrower (no guessed tag, D-051); C
   await expect.poll(async () => db.documentMovement.count({ where: { action: "REFERENCED", remarks: { startsWith: `Referenced from ${OLD}` } } })).toBe(1);
 });
 
-test("Replacement named by myloans (a redo: same CIN, the old copy cancelled): the review asks to confirm no payment; linked, both files say so", async ({ page }) => {
+test("Replacement named by myloans (a redo: same CIN, the old copy cancelled): linked from Related loans, confirming no payment; both files say so", async ({ page }) => {
   await signInWith(page, BUTTONS.la);
   await openPn(page, OLD);
   await change(OLD, { status: "CANCELLED" });
@@ -104,24 +104,23 @@ test("Replacement named by myloans (a redo: same CIN, the old copy cancelled): t
   await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${OLD}?tab=todo`);
   await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from MyLoans" }).click();
-  await expect(page.getByText("Changes found: review.")).toBeVisible();
-  // myloans redid it: a new PN with the same CIN. Opening it offers the link on the old loan's review (D-051).
+  await expect(page.getByText("Changes found: an Open Item waits for an approver.")).toBeVisible();
+  // myloans redid it: a new PN with the same CIN (D-051). The old loan's status item waits; the link is made by hand.
   await newPn("GD1012026909302");
   await signInWith(page, BUTTONS.la);
   await openPn(page, "GD1012026909302");
   await signInWith(page, BUTTONS.admin);
-  await page.goto(`/loans/${OLD}?tab=todo&review=1`);
-  const review = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
-  const repl = review.locator("[data-source-replacement]");
-  await expect(repl).toContainText("Replaced by in myloans: GD1012026909302");
-  await expect(repl.locator("[data-confirm-no-payment]")).toContainText("I confirmed no payment was made on the old PN");
-  await review.getByLabel("Note (required)").fill("Unit issue found after release");
-  await shot(page, "review-replacement");
+  await page.goto(`/loans/${OLD}?tab=todo`);
+  await related(page).locator('[data-related-row="SAME_BORROWER"]').getByRole("button", { name: "Link as replacement" }).click();
+  const sheet = page.locator("[data-link-sheet]");
+  await expect(sheet).toContainText("I confirmed no payment was made on the old PN");
+  await sheet.getByLabel("Note (required)").fill("Unit issue found after release");
+  await shot(page, "link-replacement");
   await noSideways(page);
-  await review.getByRole("button", { name: "Link as replacement" }).click();
-  await expect(review.locator("[data-source-error]")).toContainText("I confirmed no payment was made on the old PN");
-  await repl.locator("[data-confirm-no-payment]").getByRole("checkbox").check();
-  await review.getByRole("button", { name: "Link as replacement" }).click();
+  await sheet.getByRole("button", { name: "Link as replacement" }).click();
+  await expect(sheet).toContainText("I confirmed no payment was made on the old PN");
+  await sheet.getByRole("checkbox").check();
+  await sheet.getByRole("button", { name: "Link as replacement" }).click();
   await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: "GD1012026909302" } })).replacesPn).toBe(OLD);
   expect((await db.loan.findUniqueOrThrow({ where: { pn: "GD1012026909302" } })).replacementEvidence).toMatch(/confirmed no payment was made on GD1652026901003/);
   await page.goto(`/loans/${OLD}?tab=todo`);

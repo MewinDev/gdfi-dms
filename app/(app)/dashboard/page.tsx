@@ -10,21 +10,19 @@ import { getCalendar } from "@/lib/calendar/load";
 import { plainUpdate, timeAgo } from "@/lib/ui/plain";
 import { cardFor, sortByUrgency } from "@/lib/ui/loan-cards";
 import { loadSampleCards } from "@/lib/ui/samples";
-import { borrowerToDo } from "@/lib/services/borrower-review";
 import { SampleLoans } from "@/components/loan/sample-loans";
 import { DpHome } from "@/components/jobs/dp-home";
 import { FinanceHome } from "@/components/funds/finance-home";
 import { TatProblemsCard, tatToDo } from "@/components/jobs/tat-report";
-import { SourceChangesCard, sourceChangesToDo } from "@/components/loan/source-changes-card";
+import { OpenItemsCard, openItemsToDo } from "@/components/open-items/home-card";
 import { SetupWarningsCard, setupWarnings } from "@/components/home/setup-warnings";
 import { WorkCountsCard } from "@/components/home/work-counts";
 import { supervisorWorkCounts } from "@/lib/services/work-items";
-import { BorrowerCorrectionsCard } from "@/components/loan/borrower-corrections-card";
 import { BranchReviewCard, branchReviewToDo } from "@/components/admin/branches/review-card";
 import { PackagesToReceive, packagesFor } from "@/components/jobs/packages-to-receive";
 import { SentBackToYou, sentBackFor } from "@/components/loan/sent-back-to-you";
 import { AllClear, CaughtUp, HOME_CARD, HomeHeader, IconTile, ListBlock, SummaryStrip, type Segment } from "@/components/home/home-ui";
-import { BellIcon, BuildingIcon, ChecklistIcon, ClockIcon, HourglassIcon, RefreshIcon, UsersIcon, WarningIcon } from "@/components/ui/icons";
+import { BellIcon, BuildingIcon, ChecklistIcon, ClockIcon, HourglassIcon, RefreshIcon, WarningIcon } from "@/components/ui/icons";
 import { CollapsedLoans, HomeLoanRow } from "@/components/home/home-loan-row";
 
 export const metadata: Metadata = { title: "Home" };
@@ -43,17 +41,15 @@ export default async function HomePage() {
   if (!la && (canFundsAny(user, "approve") || canFundsAny(user, "release"))) return <FinanceHome user={user} />;
 
   // The attention blocks, each only for the ticks that show it today (permission ticks, never a role name).
-  const none = { count: 0, items: [] };
-  const [rows, cal, updates, samples, packages, sentBack, source, corrections, branches, tat, setup, work] = await Promise.all([
+  const [rows, cal, updates, samples, packages, sentBack, openItems, branches, tat, setup, work] = await Promise.all([
     listLoans(user, { tab: "all" }),
     getCalendar(),
     prisma.notification.findMany({ where: notificationWhere(user), orderBy: { createdAt: "desc" }, take: 3, include: { loan: { select: { borrowerName: true } } } }),
     loadSampleCards(user),
     packagesFor(user),
     sentBackFor(user),
-    can(user, PERMISSIONS.SOURCE_REVIEW) ? sourceChangesToDo(user) : null,
-    // Approvers: the borrower details corrections of the branches in their access (D-029).
-    can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER) ? borrowerToDo(user) : null,
+    // Approvers: Open Items of the branches in their access (piece 8; D-029, D-053).
+    openItemsToDo(user),
     can(user, PERMISSIONS.BRANCHES_REVIEW) ? branchReviewToDo() : null,
     can(user, PERMISSIONS.REPORTS_TAT) ? tatToDo(user) : null,
     // The Superadmin (Manage permissions): setup gaps only they can fix (D-028, D-029).
@@ -73,8 +69,7 @@ export default async function HomePage() {
     { key: "need", n: need.length, label: "Need you now", href: "/loans?tab=queue", dot: "act", icon: <ClockIcon size={18} /> },
     { key: "waiting", n: waiting.length, label: "Waiting on others", href: "/loans?tab=all&group=waiting", icon: <HourglassIcon size={18} /> },
     { key: "problems", n: problems.length, label: problems.length === 1 ? "Problem to fix" : "Problems to fix", href: "/loans?tab=exceptions", dot: "bad", icon: <WarningIcon size={18} /> },
-    ...(source ? [{ key: "source", n: source.count, label: "MyLoans changes", href: source.count ? "#src-h" : undefined, dot: "bad" as const, icon: <RefreshIcon size={18} /> }] : []),
-    ...(corrections ? [{ key: "corrections", n: corrections.count, label: "Corrections to review", href: corrections.count ? "#corr-h" : undefined, dot: "act" as const, icon: <UsersIcon size={18} /> }] : []),
+    ...(openItems ? [{ key: "open-items", n: openItems.waiting, label: "Open Items", href: openItems.waiting + openItems.unassigned ? "/open-items" : undefined, dot: "bad" as const, icon: <RefreshIcon size={18} /> }] : []),
     ...(branches ? [{ key: "branches", n: branches.count, label: "Branch review", href: branches.count ? "#brv-h" : undefined, dot: "act" as const, icon: <BuildingIcon size={18} /> }] : []),
   ];
 
@@ -83,8 +78,7 @@ export default async function HomePage() {
     work.poolTooLong + work.withAway > 0 && <WorkCountsCard key="work" poolTooLong={work.poolTooLong} withAway={work.withAway} />,
     packages.length > 0 && <PackagesToReceive key="packages" rows={packages} />,
     sentBack.length > 0 && <SentBackToYou key="sent" rows={sentBack} />,
-    source && source.count > 0 && <SourceChangesCard key="source" data={source} />,
-    corrections && corrections.count > 0 && <BorrowerCorrectionsCard key="corr" data={corrections ?? none} />,
+    openItems && <OpenItemsCard key="open-items" data={openItems} />,
     branches && branches.count > 0 && <BranchReviewCard key="branches" data={branches} />,
     tat?.attention && <TatProblemsCard key="tat" data={tat} />,
   ].filter(Boolean);

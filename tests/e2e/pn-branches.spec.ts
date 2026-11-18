@@ -57,7 +57,7 @@ test("Loan File: Opened at Antipolo, now at Angono after a MyLoans branch change
   await page.getByRole("button", { name: /Open loan file/ }).click();
   await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
   await expect(page.locator("[data-opened-at]")).toHaveText("Opened at Antipolo");
-  // MyLoans now says Angono (165); Admin applies it in the MyLoans review.
+  // MyLoans now says Angono (165); an approver approves the Branch Open Item.
   const over = { "GD1012026901001": { branchName: "Angono", branchCode: "165", changedAt: new Date().toISOString() } };
   await db.setting.upsert({ where: { key: "myloans.mockOverrides" }, create: { key: "myloans.mockOverrides", value: over }, update: { value: over } });
   await signIn(page, "admin");
@@ -66,12 +66,16 @@ test("Loan File: Opened at Antipolo, now at Angono after a MyLoans branch change
   // up to a minute (lib/myloans/client.ts), and an earlier spec in the same server may have just asked
   // for this PN, before the branch change was set.
   await page.getByRole("button", { name: "Refresh from MyLoans" }).click();
-  await page.locator("[data-source-entry]").getByRole("button", { name: "Review" }).click();
-  const sheet = page.locator('[data-source-review="MATERIAL"]');
-  await expect(sheet.locator("[data-branch-move]")).toContainText("Branch: Antipolo → Angono");
-  await shot(page, "branch-change-review");
-  await sheet.getByLabel("Note (required)").fill("MyLoans moved the account to Angono.");
-  await sheet.getByRole("button", { name: "Apply changes" }).click();
+  await expect(page.locator("[data-open-items-banner]")).toContainText("1 Open Item from myloans: Branch.");
+  await page.goto("/open-items?pn=GD1012026901001");
+  const card = page.locator('[data-oi-card="branchCode"][data-pn="GD1012026901001"]');
+  await expect(card.locator('[data-oi-item="branchCode"]')).toContainText("Antipolo (101)");
+  await expect(card.locator('[data-oi-item="branchCode"]')).toContainText("Angono (165)");
+  await shot(page, "branch-change-open-item");
+  await card.getByLabel("Remarks (required)").fill("MyLoans moved the account to Angono.");
+  await card.getByRole("button", { name: /^Approve/ }).click();
+  await expect.poll(async () => (await db.openItem.findFirstOrThrow({ where: { loan: { pn: "GD1012026901001" } } })).status).toBe("APPROVED");
+  await page.goto("/loans/GD1012026901001");
   await expect(page.locator("[data-opened-at]")).toHaveText("Opened at Antipolo, now at Angono");
   await shot(page, "loan-opened-at-now-at");
   clean();

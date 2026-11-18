@@ -4,7 +4,6 @@ import { closeItem } from "./work-items";
 import { refreshLiquidationForTransaction } from "./liquidation";
 import "server-only";
 import { buildPn, getPnFormat, parsePn } from "@/lib/pn";
-import { resolveLoanBranch } from "./branches";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma, withLoanLock, type Tx } from "@/lib/db";
@@ -16,25 +15,25 @@ import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { worksAtWhere } from "@/lib/branches/access";
 import { getMyLoansAdapter, myLoansMode, type MyLoansRecord } from "@/lib/myloans";
 import { mapLoan } from "@/lib/myloans/live-mapping";
-import { MINOR_ACCOUNT_COLUMNS, sourceTime } from "@/lib/myloans/account";
+import { sourceTime } from "@/lib/myloans/account";
 import {
-  detectChanges, hashTracked, proposeEffect, trackedOf, trackedOfSaved, trackedOfSent, UNSENT,
-  type ChangeCategory, type FieldChange, type Proposed, type Tracked, type TxnNow,
+  detectChanges, hashTracked, trackedOf, trackedOfSaved, trackedOfSent, UNSENT,
+  type ChangeCategory, type Proposed, type Tracked, type TxnNow,
 } from "@/lib/myloans/changes";
 import { isTestMode } from "@/lib/test-mode";
-import { getClassificationRules, getSetting, setSetting } from "@/lib/settings";
-import { businessDate, startOfBusinessDay } from "@/lib/time";
+import { getSetting, setSetting } from "@/lib/settings";
+import { businessDate } from "@/lib/time";
 import { advanceBalance, peso } from "@/lib/funds/rules";
-import { MORTGAGE_THRESHOLDS, classifyProductName, type FinancingType, type OrcrStatus } from "@/lib/rules";
+import { MORTGAGE_THRESHOLDS } from "@/lib/rules";
 import { recomputeStage } from "./stage";
 import { callsThisHour, lookupPn } from "@/lib/myloans/client";
 import type { MyLoansLookup } from "@/lib/myloans/types";
-import { RELATED_SELECT, relatedLoans, replacementCandidates } from "./related-loans";
+import { RELATED_SELECT, relatedLoans } from "./related-loans";
 import { paymentEvidence } from "@/lib/myloans/relation";
 export { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "./source-blocks";
 import { UserError, NotInScopeError } from "./errors";
 import { createTransactionOfType } from "./loan-file";
-import { raiseBorrowerReview } from "./borrower-review";
+import { raiseOpenItems } from "./open-items";
 import { nextDocumentId } from "./workflow";
 import { bandApprovers } from "./jobs";
 import { financeIds, nextNumber } from "./funds";
@@ -49,7 +48,8 @@ type Mode = "MANUAL" | "AUTOMATIC" | "SIMULATED";
 /** find: the background refresh after Find a loan shows a saved loan (Settings > MyLoans sync, "When a saved loan is found"). */
 export type Trigger = "open" | "button" | "background" | "simulator" | "find" | "sync";
 export type RefreshResult =
-  | { ok: true; outcome: "none" | "minor" | "review"; category: ChangeCategory; checkedAt: Date; borrower?: boolean }
+  /** review: Open Items raised (or superseded); minor: only renames applied or items reverted (piece 8). */
+  | { ok: true; outcome: "none" | "minor" | "review"; category: ChangeCategory; checkedAt: Date; raised?: number; reverted?: number; lookup?: number }
   /** limited: no call was made (hourly limit, breaker, or the shared count could not be written); the loan is left as it is. */
   | { ok: false; message: string; checkedAt: Date; limited?: boolean };
 
@@ -95,11 +95,6 @@ export async function reviewerIds(db: Tx | typeof prisma, branchId: string): Pro
   return rows.map((r) => r.id);
 }
 
-async function liveDpIds(db: Tx | typeof prisma, loanId: string): Promise<string[]> {
-  const jobs = await db.dpAssignment.findMany({ where: { loanId, status: { in: [...OPEN_JOB] } }, select: { dpUserId: true, secondaryDpUserId: true } });
-  return jobs.flatMap((j) => [j.dpUserId, ...(j.secondaryDpUserId ? [j.secondaryDpUserId] : [])]);
-}
-
 /** Other loan files of the same borrower (same CIN or CIF). Never by name. */
 export async function sameBorrowerLoans(db: Tx | typeof prisma, loan: { id?: string; cin: string | null; cif: string | null }, openOnly = false) {
   const or = [...(loan.cin ? [{ cin: loan.cin }] : []), ...(loan.cif ? [{ cif: loan.cif }] : [])];
@@ -111,49 +106,19 @@ export async function sameBorrowerLoans(db: Tx | typeof prisma, loan: { id?: str
   });
 }
 
-const words = (cs: { label: string }[]) => {
-  const xs = cs.map((c) => c.label);
-  return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
-};
-
 /**
- * "MyLoans updated the borrower's name and address"; organisation fields are the loan's, not the
- * borrower's: "MyLoans updated the loan's area and division" (an ID and its name count once).
+ * Asks myloans for one loan and records what changed (piece 8, D-053). Renames (area, division, company, branch and
+ * product names) are lookup data: applied by themselves and logged in Reference data changes. A change to a loan or
+ * borrower field raises an Open Item, one per field, decided by an approver of the branch; nothing else changes.
  */
-function minorSummary(minor: FieldChange[]): string {
-  const org = minor.filter((c) => c.field in MINOR_ACCOUNT_COLUMNS);
-  const own = minor.filter((c) => !(c.field in MINOR_ACCOUNT_COLUMNS));
-  const parts: string[] = [];
-  if (own.length) parts.push(`the borrower's ${words(own).toLowerCase().replace(/^borrower name/, "name")}`);
-  if (org.length) {
-    const names = [...new Set(org.map((c) => c.field.replace(/Id$|Name$/, "")))].map((label) => ({ label }));
-    parts.push(`the loan's ${words(names)}`);
-  }
-  return `MyLoans updated ${parts.join(" and ")}`;
-}
-
-/** Merges a newer detection into the open item: was = first seen, now = latest; unchanged-back rows drop out. */
-function mergeChanges(older: FieldChange[], newer: FieldChange[]): FieldChange[] {
-  const out = new Map(older.map((c) => [c.field, { ...c }]));
-  for (const c of newer) {
-    const o = out.get(c.field);
-    if (o) o.now = c.now; else out.set(c.field, { ...c });
-  }
-  return [...out.values()].filter((c) => c.was !== c.now);
-}
-const RANK: Record<string, number> = { MATERIAL: 1, STATUS: 2, REPLACEMENT: 3 };
-
-/**
- * Asks MyLoans for one loan and records what changed. Minor changes update the copy; material,
- * status and replacement changes open (or update) the loan's one review item. Nothing else changes.
- * holdMinor (the piece 7 sync, strict v2, D-052 (a)): nothing is applied, minor changes too go to the review item.
- */
-export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mode; trigger: Trigger; now?: Date; lookup?: MyLoansLookup; ceiling?: number; holdMinor?: boolean }): Promise<RefreshResult> {
+export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mode; trigger: Trigger; now?: Date; lookup?: MyLoansLookup; ceiling?: number; syncRunId?: string | null }): Promise<RefreshResult> {
   const now = opts.now ?? new Date();
   const loan = await prisma.loan.findUnique({ where: { id: loanId } });
   if (!loan) throw new UserError("Loan File not found.");
   // The background run passes what it already got; otherwise one shared call (coalesced; the button asks fresh).
   let lookup = opts.lookup ?? await lookupPn(getMyLoansAdapter(), loan.pn, { fresh: opts.trigger === "button" || opts.trigger === "simulator", ceiling: opts.ceiling });
+  // A redo names the copy that replaced it (the status Open Item says "replaced by").
+  const replacedByPn = !lookup.ok && lookup.reason === "NOT_SELECTABLE" ? lookup.replacedByPnNo ?? null : null;
   // D-050: API 1 says this copy is no longer a released loan (cancelled, redone, not released, inactive). That is a
   // status change on the copy we hold: the last copy with the status myloans gives, in its words, for the usual review.
   if (!lookup.ok && lookup.reason === "NOT_SELECTABLE") {
@@ -207,120 +172,13 @@ export async function refreshLoan(loanId: string, opts: { actor: Actor; mode: Mo
       },
     });
     const mode: Mode = opts.mode === "SIMULATED" ? "SIMULATED" : "AUTOMATIC";
-    const minor = opts.holdMinor ? [] : det.changes.filter((c) => c.kind === "minor");
-    if (minor.length) {
-      // Minor: the copy is updated, no alert ("MyLoans updated the loan's area"). The borrower's own details
-      // are never updated here: they are the Borrower details review below.
-      const data: Prisma.LoanUpdateInput = {};
-      for (const c of minor) {
-        // Area, division and company: the copy shown under More loan details.
-        if (c.field in MINOR_ACCOUNT_COLUMNS) data[MINOR_ACCOUNT_COLUMNS[c.field as keyof typeof MINOR_ACCOUNT_COLUMNS]] = c.now === null ? null : String(c.now);
-      }
-      if (Object.keys(data).length) await tx.loan.update({ where: { id: loan.id }, data });
-      await writeAudit(tx, {
-        actor: SYSTEM_ACTOR, mode, action: "source_minor_updated", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn: loan.pn,
-        summary: minorSummary(minor), details: { changes: minor },
-      });
-    }
-    // Borrower details (name, CIF, CIN): their own review item, decided by the
-    // branch supervisors and approvers. The loan keeps the old details until then; nothing is blocked.
-    const borrower = det.changes.some((c) => c.kind === "borrower")
-      ? !!(await raiseBorrowerReview(tx, { loanId: loan.id, pn: loan.pn, current, hash, mode, now }))
-      : false;
-    // (A replaces-PN link that disappears is not a change to review.)
-    const big = det.changes.filter((c) => (opts.holdMinor || c.kind !== "minor") && c.kind !== "borrower" && !(c.kind === "replacement" && !c.now));
-    if (!big.length) { result = { ok: true, outcome: borrower ? "review" : "minor", category: borrower ? "BORROWER" : "MINOR", checkedAt: now, borrower }; return; }
-
-    const category = (big.some((c) => c.kind === "replacement" && c.now) ? "REPLACEMENT" : big.some((c) => c.kind === "status") ? "STATUS" : "MATERIAL") as Exclude<ChangeCategory, "NONE" | "MINOR" | "BORROWER">;
-    let target = { id: loan.id, pn: loan.pn };
-    let candidates: string[] = [];
-    let itemChanges: FieldChange[] = big;
-    if (category === "REPLACEMENT" && current.previousPn) {
-      // MyLoans says this PN replaces another: only a suggestion. The old one gets the review item with this
-      // PN as a possible replacement; a person links them ("Link as replacement", with a note). Never linked here.
-      const old = await tx.loan.findUnique({ where: { pn: current.previousPn } });
-      await writeAudit(tx, { actor: SYSTEM_ACTOR, mode, action: "replacement_suggested", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn: loan.pn, summary: `MyLoans says ${loan.pn} replaces ${current.previousPn}. Suggested as a replacement; Admin decides whether to link them.` });
-      if (!old) { result = { ok: true, outcome: "minor", category: "REPLACEMENT", checkedAt: now, borrower }; return; }
-      target = { id: old.id, pn: old.pn };
-      candidates = [loan.pn];
-      itemChanges = [{ field: "previousPn", label: "Replaced by", kind: "replacement", was: null, now: loan.pn }];
-    } else if (category === "STATUS") {
-      // Only possible replacements: ended here, details match, released in time. Additional units are not suggested.
-      const me = await tx.loan.findUniqueOrThrow({ where: { id: loan.id }, select: RELATED_SELECT });
-      candidates = (await replacementCandidates(tx, me)).map((r) => r.loan.pn);
-    }
-    await raiseReview(tx, { loanId: target.id, pn: target.pn, category, changes: itemChanges, hash, candidates, mode, now });
-    result = { ok: true, outcome: "review", category, checkedAt: now, borrower };
+    const r = await raiseOpenItems(tx, {
+      loan, previous, current, changes: det.changes, now, mode, replacedByPn, syncRunId: opts.syncRunId ?? null,
+      sourceUpdatedAt: lookup.record.sourceUpdatedAt ? sourceTime(lookup.record.sourceUpdatedAt) : null, source: opts.trigger === "sync" ? "myloans API 2" : "myloans API 1",
+    });
+    result = { ok: true, outcome: r.raised || r.superseded ? "review" : r.lookup || r.reverted ? "minor" : "none", category: det.category, checkedAt: now, raised: r.raised, reverted: r.reverted, lookup: r.lookup };
   });
   return result;
-}
-
-async function proposedFor(db: Tx | typeof prisma, loanId: string, category: ChangeCategory, picks?: { financingType?: FinancingType | null; orcrStatus?: OrcrStatus | null }): Promise<Proposed> {
-  const loan = await db.loan.findUniqueOrThrow({ where: { id: loanId } });
-  const snap = await db.loanSourceSnapshot.findFirst({ where: { loanId }, orderBy: { retrievedAt: "desc" } });
-  const rec = snap ? recordFromPayload(snap.payload) : null;
-  const next = (snap?.tracked as Tracked | null) ?? (rec ? trackedOf(rec) : null);
-  if (!next) throw new UserError("There is no MyLoans copy to compare with.");
-  return proposeEffect({ category, loan: { ...loan, financingType: loan.financingType as FinancingType | null, orcrStatus: loan.orcrStatus as OrcrStatus | null }, txns: await txnsNow(db, loanId), next, picks, rules: await getClassificationRules(db) });
-}
-
-
-/**
- * A new loan file whose MyLoans record names the PN it replaces: a suggestion only. The old one gets the
- * review item with the new PN as a possible replacement; a person links them. Never linked here.
- */
-export async function linkOnOpen(newPn: string, previousPn: string) {
-  const [nw, old] = await Promise.all([prisma.loan.findUnique({ where: { pn: newPn } }), prisma.loan.findUnique({ where: { pn: previousPn } })]);
-  if (!nw) return;
-  await withLoanLock(old?.id ?? nw.id, async (tx) => {
-    await writeAudit(tx, { actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "replacement_suggested", entityType: "Loan", entityId: nw.id, loanId: nw.id, pn: nw.pn, summary: `MyLoans says ${nw.pn} replaces ${previousPn}. Suggested as a replacement; Admin decides whether to link them.` });
-    if (!old) return;
-    const snap = await tx.loanSourceSnapshot.findFirst({ where: { loanId: old.id }, orderBy: { retrievedAt: "desc" } });
-    await raiseReview(tx, {
-      loanId: old.id, pn: old.pn, category: "REPLACEMENT", changes: [{ field: "previousPn", label: "Replaced by", kind: "replacement", was: null, now: nw.pn }],
-      hash: snap?.hash ?? "replacement", candidates: [nw.pn], mode: "AUTOMATIC", now: new Date(),
-    });
-  });
-}
-
-/** One open review item per loan: a newer change updates it and keeps the earlier one in its history. */
-async function raiseReview(tx: Tx, a: { loanId: string; pn: string; category: Exclude<ChangeCategory, "NONE" | "MINOR" | "BORROWER">; changes: FieldChange[]; hash: string; candidates: string[]; mode: Mode; now: Date }) {
-  const open = await tx.sourceChange.findFirst({ where: { loanId: a.loanId, state: "OPEN", category: { not: "BORROWER" } } });
-  const loan = await tx.loan.findUniqueOrThrow({ where: { id: a.loanId } });
-  let id: string;
-  let category = a.category;
-  if (open) {
-    if (RANK[open.category] > RANK[category]) category = open.category as typeof category;
-    const changes = mergeChanges(open.changes as unknown as FieldChange[], a.changes);
-    const history = [...((open.history as unknown[]) ?? []), { detectedAt: open.detectedAt, category: open.category, changes: open.changes }];
-    await tx.sourceChange.update({
-      where: { id: open.id },
-      data: {
-        detectedAt: a.now, category, changes: changes as unknown as Prisma.InputJsonValue, hash: a.hash, history: history as Prisma.InputJsonValue,
-        candidates: [...new Set([...open.candidates, ...a.candidates])], proposed: (await proposedFor(tx, a.loanId, category)) as unknown as Prisma.InputJsonValue,
-      },
-    });
-    id = open.id;
-  } else {
-    const created = await tx.sourceChange.create({
-      data: {
-        loanId: a.loanId, category, changes: a.changes as unknown as Prisma.InputJsonValue, hash: a.hash, candidates: a.candidates,
-        proposed: (await proposedFor(tx, a.loanId, category)) as unknown as Prisma.InputJsonValue, simulated: a.mode === "SIMULATED", detectedAt: a.now, firstSeenAt: a.now,
-      },
-    });
-    id = created.id;
-  }
-  const what = category === "REPLACEMENT" ? `MyLoans gave this loan a replacement PN (${a.candidates[0] ?? "new PN"})` : `MyLoans changed ${words(a.changes)}`;
-  await writeAudit(tx, {
-    actor: SYSTEM_ACTOR, mode: a.mode, action: "source_change_detected", entityType: "SourceChange", entityId: id, loanId: a.loanId, pn: a.pn,
-    summary: `${what}. An approver is reviewing it.`, details: { category, fields: a.changes.map((c) => c.label) },
-  });
-  // Field names only: amounts are never in the notification or the email.
-  await notify(tx, {
-    userIds: [...(await reviewerIds(tx, loan.branchId)), ...(await branchLaUserIds(tx, loan.branchId)), ...(await liveDpIds(tx, a.loanId))], loanId: a.loanId,
-    title: `${a.pn}: MyLoans changed this loan`, body: `${what}. An approver is reviewing it.`, link: `/loans/${a.pn}?tab=todo&review=1`,
-    email: { event: "source_changed", vars: { pn: a.pn, transaction: "the loan file", reason: `${what}.`, status: category === "STATUS" ? "cancelled or not released" : category === "REPLACEMENT" ? "replaced" : "changed" } },
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -345,35 +203,6 @@ function noteOf(raw: unknown) {
 const actorOf = (u: CurrentUser): Actor => ({ id: u.id, label: u.name });
 const listWords = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 
-async function openItem(tx: Tx, id: string, u: CurrentUser) {
-  const item = await tx.sourceChange.findUnique({ where: { id }, include: { loan: true } });
-  if (!item || !inScope(u, item.loan.branchId)) throw new NotInScopeError();
-  if (item.category === "BORROWER") throw new UserError("This is a borrower details correction: Accept the correction or Keep current.");
-  if (item.state !== "OPEN") throw new UserError("This change was already decided.");
-  return item;
-}
-
-async function lockedItem(u: CurrentUser, id: string) {
-  const it = await prisma.sourceChange.findUnique({ where: { id }, select: { loanId: true } });
-  if (!it) throw new NotInScopeError();
-  return it.loanId;
-}
-
-async function tellLoanPeople(tx: Tx, loan: { id: string; pn: string; branchId: string }, title: string, body: string) {
-  await notify(tx, { userIds: [...(await branchLaUserIds(tx, loan.branchId)), ...(await liveDpIds(tx, loan.id))], loanId: loan.id, title, body, link: `/loans/${loan.pn}?tab=journey` });
-}
-
-const applySchema = z.object({
-  note: z.unknown(),
-  financingType: z.enum(["UNDERTAKING", "NON_UNDERTAKING"]).nullish(),
-  orcrStatus: z.enum(["TRANSFERRED", "UNTRANSFERRED"]).nullish(),
-});
-
-/**
- * Apply (material change): re-run the rules on the new data and update the loan. Unsent transactions
- * are added or removed (ticked papers stay where the item still exists); sent or in-process ones are
- * never changed: that part is refused with the reason.
- */
 /**
  * The transactions a re-run of the rules adds or removes (Apply of a MyLoans change, and Reclassify, D-031).
  * Only unsent transactions change; the callers refuse first when sent work would.
@@ -401,85 +230,6 @@ export async function applyTransactionChanges(tx: Tx, loanId: string, p: Pick<Pr
   }
 }
 
-export async function applySourceChange(u: CurrentUser, id: string, raw: unknown) {
-  needReview(u);
-  const d = applySchema.parse(raw);
-  const note = noteOf(d.note);
-  return withLoanLock(await lockedItem(u, id), async (tx) => {
-    const item = await openItem(tx, id, u);
-    if (item.category !== "MATERIAL") throw new UserError("Apply is for changes to amount, product or loan type. Use Close as cancelled or Keep current.");
-    const p = await proposedFor(tx, item.loanId, "MATERIAL", { financingType: d.financingType ?? null, orcrStatus: d.orcrStatus ?? null });
-    if (p.needsPicks) throw new UserError("Pick Undertaking or Non-Undertaking and the ORCR status to apply it (the product is now Financing).", "financingType");
-    if (!p.ruleNext) throw new UserError(p.sentences[0] ?? "The rules cannot run on the new data. Keep current instead.");
-    const locked = p.affected.filter((a) => a.locked);
-    if (locked.length) {
-      throw new UserError(`${listWords(locked.map((a) => a.stateLine))}. Apply never changes work that was sent. Ask the LA to pull it back or the processor to return it, or choose Keep current.`);
-    }
-    const snap = await tx.loanSourceSnapshot.findFirstOrThrow({ where: { loanId: item.loanId }, orderBy: { retrievedAt: "desc" } });
-    const next = snap.tracked as unknown as Tracked;
-    const loan = item.loan;
-    const data: Prisma.LoanUpdateInput = {
-      loanType: next.loanType ?? loan.loanType, productName: next.productName ?? "",
-      // The rest of the material account details, as MyLoans now has them (a copy saved before they were
-      // tracked has none of these keys: the loan keeps its own).
-      ...("productCode" in next ? { productCode: next.productCode } : {}),
-      ...("sourceLoanId" in next ? { sourceLoanId: next.sourceLoanId } : {}),
-      ...(next.branchCode || next.branchName ? { sourceBranchCode: next.branchCode, sourceBranchName: next.branchName } : {}),
-      totalReleasedAmount: typeof next.amount === "number" ? new Prisma.Decimal(next.amount / 100) : loan.totalReleasedAmount,
-      classification: p.classificationNext!, mortgageResult: p.mortgageNext as never, ruleFired: p.ruleNext,
-      // Re-classified from the new product name (D-031): the label follows it, and any earlier flag is settled.
-      classifiedByDefault: classifyProductName(next.productName ?? "", await getClassificationRules(tx)).byDefault, classificationNow: null,
-      financingType: p.classificationNext === "FINANCING" ? (d.financingType ?? loan.financingType) : null,
-      orcrStatus: p.classificationNext === "FINANCING" ? (d.orcrStatus ?? loan.orcrStatus) : null,
-    };
-    if (next.releaseDate && next.releaseDate !== businessDate(loan.releasedAt)) data.releasedAt = startOfBusinessDay(next.releaseDate);
-    // Piece 7 holds minor changes for review too (D-052 (a)): area, division and company as myloans now has them.
-    for (const c of item.changes as unknown as FieldChange[]) {
-      if (c.kind === "minor" && c.field in MINOR_ACCOUNT_COLUMNS) data[MINOR_ACCOUNT_COLUMNS[c.field as keyof typeof MINOR_ACCOUNT_COLUMNS]] = c.now === null ? null : String(c.now);
-    }
-    // The loan's CURRENT branch comes from the MyLoans branch field (code first, then name); it changes
-    // only here, when Admin applies the change. The PN's branch code stays: it says where it was opened.
-    let moved: { from: string; to: string } | null = null;
-    if (next.branchName || next.branchCode) {
-      const br = await resolveLoanBranch(tx, { branchCode: next.branchCode ?? null, branchName: next.branchName });
-      if (!br) throw new UserError(`MyLoans moved the loan to ${next.branchName ?? "a branch"}${next.branchCode ? ` (${next.branchCode})` : ""}, which is not a branch here. Accept it in Settings, Branches (Branch review) first, or keep current.`);
-      if (br.id !== loan.branchId) {
-        data.branch = { connect: { id: br.id } };
-        const was = await tx.branch.findUniqueOrThrow({ where: { id: loan.branchId }, select: { name: true, code: true } });
-        moved = { from: was.name, to: br.name };
-      }
-    }
-    await tx.loan.update({ where: { id: loan.id }, data });
-
-    const now = new Date();
-    await applyTransactionChanges(tx, loan.id, p, now);
-    await tx.sourceChange.update({ where: { id: item.id }, data: { state: "APPLIED", decidedById: u.id, decidedByLabel: u.name, decidedAt: now, note, proposed: p as unknown as Prisma.InputJsonValue } });
-    await writeAudit(tx, {
-      actor: actorOf(u), mode: "MANUAL", action: "source_change_applied", entityType: "SourceChange", entityId: item.id, loanId: loan.id, pn: loan.pn,
-      summary: `MyLoans changed ${words(item.changes as unknown as FieldChange[])}. Admin ${u.name} applied it: ${moved ? `the loan's branch is now ${moved.to} (was ${moved.from}). ` : ""}${p.sentences.join(" ")} Note: ${note}`,
-      before: { classification: loan.classification, mortgage: loan.mortgageResult, ...(moved ? { branch: moved.from } : {}) }, after: { classification: p.classificationNext, mortgage: p.mortgageNext, added: p.added, removed: p.removed, ...(moved ? { branch: moved.to } : {}) },
-    });
-    await recomputeStage(tx, loan.id);
-    await tellLoanPeople(tx, loan, `${loan.pn}: MyLoans change applied`, `${u.name} applied it. ${p.sentences.join(" ")}`);
-  });
-}
-
-/** Keep current: the loan stays as it is (the same change does not alert again). */
-export async function keepCurrent(u: CurrentUser, id: string, raw: unknown) {
-  needReview(u);
-  const note = noteOf(raw);
-  return withLoanLock(await lockedItem(u, id), async (tx) => {
-    const item = await openItem(tx, id, u);
-    await tx.sourceChange.update({ where: { id }, data: { state: "KEPT", decidedById: u.id, decidedByLabel: u.name, decidedAt: new Date(), note } });
-    await writeAudit(tx, {
-      actor: actorOf(u), mode: "MANUAL", action: "source_change_kept", entityType: "SourceChange", entityId: id, loanId: item.loanId, pn: item.loan.pn,
-      summary: `MyLoans changed ${words(item.changes as unknown as FieldChange[])}. Admin ${u.name} kept the current setup: ${note}`,
-    });
-    await tellLoanPeople(tx, item.loan, `${item.loan.pn}: MyLoans change reviewed`, `${u.name} kept the current setup: ${note}`);
-  });
-}
-
-/** Cash still out on the loan's transactions: it must be handled before closing. */
 export async function outstandingCash(db: Tx | typeof prisma, loanId: string) {
   const lines = await db.cashAdvanceLine.findMany({
     where: { transaction: { loanId }, advance: { status: { in: [...OUT_ADVANCE] } }, denied: false },
@@ -495,63 +245,57 @@ export async function outstandingCash(db: Tx | typeof prisma, loanId: string) {
   }).filter((x) => x.cents > 0);
 }
 
-/** Close as cancelled (status or replacement): needs a note; refused while cash is out. Nothing is deleted. */
-export async function closeAsCancelled(u: CurrentUser, id: string, raw: unknown) {
-  needReview(u);
-  const note = noteOf(raw);
-  return withLoanLock(await lockedItem(u, id), async (tx) => {
-    const item = await openItem(tx, id, u);
-    if (item.category === "MATERIAL") throw new UserError("Close as cancelled is for a cancelled, withdrawn or replaced loan.");
-    const cash = await outstandingCash(tx, item.loanId);
-    if (cash.length) {
-      throw new UserError(`Cash is still out: ${cash.map((c) => `${c.number} (${c.dp.name}${c.notReleased ? ", not released yet" : ""})`).join(", ")}. Ask for the cash back (or deny the request) before closing.`);
-    }
-    const loan = item.loan;
-    const reason = loan.replacedByPn ? `Replaced by ${loan.replacedByPn}` : "Cancelled in MyLoans";
-    const now = new Date();
+/**
+ * A loan that left Released in myloans, its status Open Item approved (piece 8, D-053): the loan is closed with the
+ * reason. Unsent work is cancelled, processor jobs are stopped. The caller refused it while cash is out. Nothing is
+ * deleted.
+ */
+export async function closeLoanEnded(tx: Tx, actor: Actor, loan: { id: string; pn: string; branchId: string }, reason: string, note: string, now: Date = new Date()) {
+  {
     const jobs = await tx.dpAssignment.findMany({ where: { loanId: loan.id, status: { in: [...OPEN_JOB] } }, include: { transaction: { include: { type: true } } } });
     for (const j of jobs) await tx.dpAssignment.update({ where: { id: j.id }, data: { status: "PULLED_BACK", closedAt: now } });
     const open = await tx.loanTransaction.findMany({ where: { loanId: loan.id, status: { notIn: ["COMPLETED", "CANCELLED"] } }, include: { type: true } });
     for (const t of open) {
       await tx.loanTransaction.update({ where: { id: t.id }, data: { status: "CANCELLED", statusSince: now, cancelledAt: now } });
       await refreshLiquidationForTransaction(tx, t.id, now); // cancelled before its LTO (D-044 item 2)
-      for (const k of ["TRANSACTION", "DP_JOB"] as const) await closeItem(tx, k, t.id, "CANCELLED", { at: now, by: actorOf(u) });
+      for (const k of ["TRANSACTION", "DP_JOB"] as const) await closeItem(tx, k, t.id, "CANCELLED", { at: now, by: actor });
     }
     await tx.loan.update({ where: { id: loan.id }, data: { cancelledAt: now, cancelReason: reason } });
-    await tx.sourceChange.update({ where: { id }, data: { state: "CLOSED_CANCELLED", decidedById: u.id, decidedByLabel: u.name, decidedAt: now, note } });
     await writeAudit(tx, {
-      actor: actorOf(u), mode: "MANUAL", action: "source_change_closed", entityType: "SourceChange", entityId: id, loanId: loan.id, pn: loan.pn,
-      summary: `Admin ${u.name} closed the loan as "${reason}": ${note}${open.length ? `. Closed: ${listWords(open.map((t) => t.type.name))}` : ""}${jobs.length ? `. Processor jobs stopped: ${listWords(jobs.map((j) => j.transaction.type.name))}` : ""}`,
+      actor, mode: "MANUAL", action: "loan_closed_ended", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn: loan.pn,
+      summary: `${actor.label} closed the loan as "${reason}": ${note}${open.length ? `. Closed: ${listWords(open.map((t) => t.type.name))}` : ""}${jobs.length ? `. Processor jobs stopped: ${listWords(jobs.map((j) => j.transaction.type.name))}` : ""}`,
     });
     for (const j of jobs) {
       await notify(tx, {
         userIds: [j.dpUserId, ...(j.secondaryDpUserId ? [j.secondaryDpUserId] : [])], loanId: loan.id, title: `${loan.pn}: ${j.transaction.type.name} stopped`,
         body: `${reason}. Stop work on it and keep the papers safe; the Loan Associate will collect them.`, link: "/jobs",
-        email: { event: "job_changed", transactionId: j.transactionId, vars: { pn: loan.pn, transaction: j.transaction.type.name, who: u.name, reason: `${reason}. Stop work on it.` } },
+        email: { event: "job_changed", transactionId: j.transactionId, vars: { pn: loan.pn, transaction: j.transaction.type.name, who: actor.label, reason: `${reason}. Stop work on it.` } },
       });
     }
     await recomputeStage(tx, loan.id);
-    await notify(tx, { userIds: await branchLaUserIds(tx, loan.branchId), loanId: loan.id, title: `${loan.pn}: closed as cancelled`, body: `${reason}. ${note}`, link: `/loans/${loan.pn}` });
-  });
+    await notify(tx, { userIds: await branchLaUserIds(tx, loan.branchId), loanId: loan.id, title: `${loan.pn}: closed`, body: `${reason}. ${note}`, link: `/loans/${loan.pn}` });
+  }
 }
 
 /** Return the cash: asks the processor for a normal cash return that Finance confirms. Nothing moves by itself. A note is required, like every review decision. */
-export async function askCashBack(u: CurrentUser, id: string, rawNote?: unknown) {
+export async function askCashBack(u: CurrentUser, loanId: string, rawNote?: unknown) {
   needReview(u);
   const note = noteOf(rawNote);
-  return withLoanLock(await lockedItem(u, id), async (tx) => {
-    const item = await openItem(tx, id, u);
+  return withLoanLock(loanId, async (tx) => {
+    const loan = await tx.loan.findUnique({ where: { id: loanId }, select: { id: true, pn: true, branchId: true } });
+    if (!loan || !inScope(u, loan.branchId)) throw new NotInScopeError();
+    const item = { loanId: loan.id, loan };
     const cash = await outstandingCash(tx, item.loanId);
     if (!cash.length) throw new UserError("No cash is out on this loan.");
     for (const c of cash) {
       await notify(tx, {
         userIds: [c.dp.id, ...(await financeIds(tx, c, c.notReleased ? "approve" : "settle"))], loanId: item.loanId, title: `${c.number}: return the cash for ${item.loan.pn}`,
-        body: `${item.loan.pn} is cancelled in MyLoans. ${c.notReleased ? "This request is not released yet: Finance, deny it." : `Return the balance for ${c.txnName} (My funds > Return cash); Finance confirms it.`}`,
+        body: `${item.loan.pn} is no longer released in myloans. ${c.notReleased ? "This request is not released yet: Finance, deny it." : `Return the balance for ${c.txnName} (My funds > Return cash); Finance confirms it.`}`,
         link: c.notReleased ? "/funds?tab=approve" : "/my-funds?tab=liquidation",
-        email: { event: "cash_returned", amountCents: c.cents, vars: { number: c.number, who: u.name, status: "cash back asked", reason: `${item.loan.pn} is cancelled in MyLoans. Return {amount}`.replace("{amount}", "the balance") } },
+        email: { event: "cash_returned", amountCents: c.cents, vars: { number: c.number, who: u.name, status: "cash back asked", reason: `${item.loan.pn} is no longer released in myloans. Return {amount}`.replace("{amount}", "the balance") } },
       });
     }
-    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "source_cash_back_asked", entityType: "SourceChange", entityId: id, loanId: item.loanId, pn: item.loan.pn, summary: `Admin ${u.name} asked for the cash back on ${listWords(cash.map((c) => c.number))} before closing. Note: ${note}`, details: { note, advances: cash.map((c) => ({ number: c.number, released: !c.notReleased })) } });
+    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "source_cash_back_asked", entityType: "Loan", entityId: loan.id, loanId: item.loanId, pn: item.loan.pn, summary: `${u.name} asked for the cash back on ${listWords(cash.map((c) => c.number))} before closing. Note: ${note}`, details: { note, advances: cash.map((c) => ({ number: c.number, released: !c.notReleased })) } });
   });
 }
 
@@ -594,23 +338,11 @@ async function linkCore(tx: Tx, u: CurrentUser, oldPn: string, newPn: string, ra
     : `${u.name} confirmed no payment was made on ${old.pn}`;
   await tx.loan.update({ where: { id: old.id }, data: { replacedByPn: nw.pn } });
   await tx.loan.update({ where: { id: nw.id }, data: { replacesPn: old.pn, replacementEvidence: `${evidence}. Note: ${note}` } });
-  const open = await tx.sourceChange.findFirst({ where: { loanId: old.id, state: "OPEN" } });
-  if (open) await tx.sourceChange.update({ where: { id: open.id }, data: { candidates: [...new Set([nw.pn, ...open.candidates])] } });
   const text = `Admin ${u.name} linked ${nw.pn} as the replacement of ${old.pn}${manual ? " (from Related loans)" : ""}. ${evidence}. Note: ${note}`;
   const details = { manual, matched: rel.relation?.matched ?? [], payment: pay.known ? (pay.recorded ? "recorded" : "none") : "no payments field", confirmedNoPayment: confirmed, overrideNote: override || null, note };
   for (const l of [old, nw]) {
     await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "replacement_linked", entityType: "Loan", entityId: l.id, loanId: l.id, pn: l.pn, summary: text, details });
   }
-}
-
-/** From the review pop-up of the old loan: link one of its possible replacements. */
-export async function linkReplacement(u: CurrentUser, id: string, raw: LinkInput) {
-  needReview(u);
-  const newPn = String(raw.newPn ?? "").trim().toUpperCase();
-  return withLoanLock(await lockedItem(u, id), async (tx) => {
-    const item = await openItem(tx, id, u);
-    await linkCore(tx, u, item.loan.pn, newPn, raw, false);
-  });
 }
 
 /** From the Related loans panel: link an unusual case by hand (the same confirmation, plus a required note). */
@@ -630,11 +362,11 @@ export async function linkFromRelated(u: CurrentUser, loanId: string, otherPn: s
  * decided by the same approval band as a new request. On approval it is released at once (the cash is
  * already with the processor) and the old line shows it handed over. Never automatic.
  */
-export async function moveCashToNewPn(u: CurrentUser, id: string, lineId: string) {
+export async function moveCashToNewPn(u: CurrentUser, loanId: string, lineId: string) {
   needReview(u);
-  return withLoanLock(await lockedItem(u, id), async (tx) => {
-    const item = await openItem(tx, id, u);
-    const old = item.loan;
+  return withLoanLock(loanId, async (tx) => {
+    const old = await tx.loan.findUnique({ where: { id: loanId } });
+    if (!old || !inScope(u, old.branchId)) throw new NotInScopeError();
     if (!old.replacedByPn) throw new UserError("Link the replacement PN first.");
     const nw = await tx.loan.findUnique({ where: { pn: old.replacedByPn }, include: { transactions: { include: { type: true } } } });
     if (!nw) throw new UserError(`${old.replacedByPn} is not opened yet. Ask the LA to open it first.`);
@@ -655,7 +387,7 @@ export async function moveCashToNewPn(u: CurrentUser, id: string, lineId: string
       },
     });
     for (const l of [old, nw]) {
-      await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "cash_move_requested", entityType: "CashAdvance", entityId: adv.id, loanId: l.id, pn: l.pn, summary: `Admin ${u.name} asked to move the cash on ${cash.number} (${old.pn}) to ${nw.pn} as ${number}; it waits for approval` });
+      await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "cash_move_requested", entityType: "CashAdvance", entityId: adv.id, loanId: l.id, pn: l.pn, summary: `${u.name} asked to move the cash on ${cash.number} (${old.pn}) to ${nw.pn} as ${number}; it waits for approval` });
     }
     await notify(tx, {
       userIds: await bandApprovers(tx, cash.cents, parent), loanId: nw.id, title: `${number}: move cash to ${nw.pn}`, body: `${old.pn} was replaced by ${nw.pn}. Approve moving the balance of ${cash.number}.`, link: "/funds?tab=approve",

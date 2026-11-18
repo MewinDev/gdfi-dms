@@ -67,6 +67,7 @@ export const PERMISSIONS = {
   REPORTS_TAT: "reports:tat",
   REPORTS_TAT_EXPORT: "reports:tat_export", // download the TAT and problems report (CSV)
   REPORTS_PNSEARCH: "reports:pnsearch", // Reports, PN searches (D-050)
+  REFDATA_VIEW: "refdata:view", // Settings, Reference data changes (D-012, D-053)
   // Monitoring (counts, times and PN lists only; opening a loan or seeing amounts needs the usual permissions)
   MONITOR_DP: "monitor:dp", // see the DP monitor
   MONITOR_LTO: "monitor:lto", // see the LTO monitor
@@ -266,6 +267,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.REPORTS_TAT, label: "See the TAT and problems report", help: "Problems and holds by reason, days, overdue counts.", requires: [P.LOANS_VIEW], can: "see the TAT and problems report", where: "Reports, TAT", was: "reports:tat" },
       { key: P.REPORTS_TAT_EXPORT, label: "Download the TAT report (CSV)", help: "Download the TAT and problems report as a spreadsheet file.", requires: [P.REPORTS_TAT], view: P.REPORTS_TAT, can: "download the TAT report", where: "Reports, TAT, Download CSV", was: "reports:tat + loans:export", hidden: true },
       { key: P.REPORTS_PNSEARCH, label: "See PN searches", help: "Every PN # searched on Find loan: who, the PN, what myloans answered, when (within the branches in your access). Download CSV.", requires: [P.LOANS_VIEW], can: "see the PN search log", where: "Reports, PN searches", was: "new on 18 November 2026" },
+      { key: P.REFDATA_VIEW, label: "See reference data changes", help: "Renames from myloans (area, division, company, branch and product names): applied by themselves and logged, with a notice for each new one. Never an Open Item.", requires: [P.LOANS_VIEW], can: "see reference data changes", where: "Settings, Reference data changes", was: "new on 18 November 2026" },
       { key: P.AUDIT_VIEW, label: "See the audit log", help: "Every automatic decision and user action (the technical log).", can: "see the audit log", where: "Audit log", was: "audit:view" },
       { key: P.FILES_LOG_VIEW, label: "View file access log", help: "Who opened or downloaded which receipt, stage evidence or LTO proof, and when; filter and export it (each export is logged too). Give it to a Data Protection Officer if needed.", can: "view the file access log", where: "Audit, File access log", was: "new on 17 November 2026" },
     ],
@@ -275,8 +277,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: P.MYLOANS_VIEW, label: "See when MyLoans was last checked", help: "Show \"MyLoans · Last checked\" on a loan file.", requires: [P.LOANS_VIEW], can: "see when MyLoans was last checked", where: "Loan File, top strip", was: "loans:view" },
       { key: P.LOANS_RECLASSIFY, label: "Reclassify a loan", help: "When the keyword rules changed after a loan file was opened (\"Classification changed since accepted\"): apply the new Financing or Refinancing result, with remarks. Sent work never changes.", requires: [P.LOANS_VIEW], can: "reclassify a loan file", where: "Loan File, Classification changed since accepted", was: "new on 17 November 2026" },
       { key: P.LOANS_REFRESH, label: "Refresh a loan from MyLoans", help: "The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now.", requires: [P.MYLOANS_VIEW], view: P.MYLOANS_VIEW, can: "refresh a loan from MyLoans", where: "Loan File, Refresh from MyLoans", was: "none (shown to everyone who sees the loan file)" },
-      { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
-      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Accept or keep current when MyLoans corrects a borrower's name, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
+      { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Approve or reject Open Items on loan fields (loan type, amount, product, release date, branch, status), for the branches in your access; ask for cash back, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
+      { key: P.SOURCE_REVIEW_BORROWER, label: "Review borrower detail corrections", help: "Approve or reject Open Items on the borrower's name, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches.", requires: [P.LOANS_VIEW], can: "review borrower detail corrections from MyLoans", where: "Loan File, To do, MyLoans corrections; Home", was: "new on 12 November 2026 (before that, borrower details updated without a review)" },
       { key: P.SOURCE_MANAGE, label: "Change MyLoans sync settings", help: "The myloans sync: how often it runs, the daily catch-up, the alert, the go-live and branch-pool dates, and Pause MyLoans calls.", can: "change MyLoans sync settings", where: "Settings, MyLoans sync", was: "source:manage" },
       { key: P.MYLOANS_SYNC, label: "Run the MyLoans sync now", help: "Run now and Run the catch-up now: read what changed in myloans at once (nothing is applied; changes become review items).", can: "run the MyLoans sync now", where: "Settings, MyLoans sync, Run now", was: "source:manage" },
     ],
@@ -428,7 +430,7 @@ const LA_PERMISSIONS: Permission[] = [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN
 /** Finance's default ticks (D-034): every funds tick of both types (the person's Handles CA / FT and branches decide). */
 const FIN_DEFAULT: Permission[] = [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW];
 /** The LA Supervisor/Head's oversight ticks (D-034): what the former Branch Supervisors kept as grants, now the role's own. */
-const SUP_OVERSIGHT: Permission[] = [P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH];
+const SUP_OVERSIGHT: Permission[] = [P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH, P.REFDATA_VIEW];
 /**
  * Approve or reject myloans changes ("Can approve LA Open Items", D-010). Purely permission-based (D-029):
  * anyone with these ticks approves for the branches in their access; with "All branches", every branch.
@@ -445,7 +447,7 @@ export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
   ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH, P.SETTINGS_CLASSIFICATION,
 ];
 /** Keys added on 17 November 2026 (D-031): the role migration ignores them when it compares a role with an earlier default. */
-export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW, P.DUEDATES_CORRECT, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH];
+export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW, P.DUEDATES_CORRECT, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH, P.REFDATA_VIEW];
 
 /**
  * Seeded built-in roles: the defaults that "Reset to default" restores. The ten decided roles (D-002) plus
@@ -563,6 +565,9 @@ export const AREA_PERMISSIONS: Record<string, Permission[]> = {
   email: [P.EMAIL_VIEW],
   "expense-kinds": [P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE],
   "myloans-sync": [P.SOURCE_MANAGE, P.MYLOANS_SYNC],
+  // Piece 8: which fields raise Open Items; the renames log (D-012, D-053).
+  "open-items": [P.SOURCE_MANAGE],
+  "reference-changes": [P.REFDATA_VIEW],
   // The matrix (D-003): changed with Manage permissions; read only for anyone who can see users.
   permissions: [P.ROLES_MANAGE, P.USERS_VIEW],
 };

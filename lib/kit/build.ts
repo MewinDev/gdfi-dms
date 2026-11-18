@@ -17,7 +17,8 @@ import { stageRows, verifiablePapers } from "@/lib/services/job-stages";
 import { returnToLa } from "@/lib/services/return-to-la";
 import { addReceipt, changeFundsType, closeAdvance, decideAdvance, notifyOverdue, releaseAdvance, requestAdvance } from "@/lib/services/funds";
 import { raiseHold } from "@/lib/services/holds";
-import { applySourceChange, simulateSourceChange } from "@/lib/services/source-sync";
+import { simulateSourceChange } from "@/lib/services/source-sync";
+import { decideOpenItem } from "@/lib/services/open-items";
 import { acceptReview, importBranchRowsAsSystem, runBranchSync } from "@/lib/services/branches";
 import { BUILTIN_BRANCHES, BUILTIN_USUAL_LTO, KIT_BRANCH_FILE } from "@/lib/branches/builtin";
 import { looksLikeTestBranch } from "@/lib/branches/file";
@@ -380,8 +381,8 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     "GD1012026902072": async () => {
       const l = await loan("GD1012026902072");
       await simulateSourceChange(u.admin, l.id, "branch");
-      const item = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: l.id, state: "OPEN", category: { not: "BORROWER" } } });
-      await applySourceChange(u.admin, item.id, { note: "The borrower now pays at Angono; MyLoans moved the account." });
+      const item = await prisma.openItem.findFirstOrThrow({ where: { loanId: l.id, status: "PENDING", field: "branchCode" } });
+      await decideOpenItem(u.admin, item.id, { decision: "APPROVE", remarks: "The borrower now pays at Angono; MyLoans moved the account." });
     },
     // Last: an overdue advance blocks the processor's next request (as it should), so it comes after the others.
     // Fund transfers, in the same states (DP 1 and DP 2).

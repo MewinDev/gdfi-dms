@@ -11,6 +11,7 @@ import { getMyLoansAdapter } from "@/lib/myloans";
 import type { MyLoansAdapter } from "@/lib/myloans/types";
 import { OPEN_STAGES } from "./settings-status";
 import { UserError } from "./errors";
+import { recordReferenceChange } from "./reference-changes";
 
 /**
  * Branches from MyLoans (MyLoans is the source of truth for code, name, area, division and status).
@@ -185,6 +186,8 @@ async function ensureGroup(tx: Tx, level: "area" | "division", g: GroupRef, cach
     if (g.myloansId !== null) data.source = "MYLOANS";
     await (del as typeof tx.area).update({ where: { id: g.dmsId }, data });
     if (data.name) {
+      // D-012, D-053: a rename is reference data: logged in Reference data changes (with a notice).
+      await recordReferenceChange(tx, { entity: level === "area" ? "AREA" : "DIVISION", key: String(g.myloansId ?? g.dmsId), oldValue: cur.name, newValue: g.name, source: "myloans API 4" });
       await writeAudit(tx, { actor, mode: actor.id ? "MANUAL" : "AUTOMATIC", action: `${level}_renamed`, entityType: level === "area" ? "Area" : "Division", entityId: g.dmsId, summary: `${level === "area" ? "Area" : "Division"} renamed from ${cur.name} to ${g.name} (MyLoans)`, before: { name: cur.name }, after: { name: g.name } });
     }
     id = g.dmsId;

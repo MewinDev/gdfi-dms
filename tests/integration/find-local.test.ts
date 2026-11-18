@@ -136,8 +136,8 @@ describe("Pressing Find loan", () => {
     await setSetting("myloans.mockOverrides", { [ANTIPOLO]: { totalReleasedAmount: 999_000, changedAt: new Date().toISOString() } });
     expect(await refreshFoundLoan(la, ANTIPOLO)).toEqual({ called: true, changed: true });
     expect(callCount()).toBe(1);
-    // Audited like the other refreshes; the review item is the existing one.
-    expect(await prisma.sourceChange.count({ where: { loan: { pn: ANTIPOLO }, state: "OPEN" } })).toBe(1);
+    // Audited like the other refreshes; the change waits as an Open Item.
+    expect(await prisma.openItem.count({ where: { loan: { pn: ANTIPOLO }, status: "PENDING" } })).toBe(1);
     // Fresh now: a second card (or a second press) makes no call.
     expect((await savedLoanCard(la, ANTIPOLO))!).toMatchObject({ stale: false, changed: true });
     expect(await refreshFoundLoan(la, ANTIPOLO)).toEqual({ called: false, changed: true });

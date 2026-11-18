@@ -3,13 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { advanceScope, type CurrentUser } from "@/lib/auth/current-user";
 import { setUserBranches } from "@/lib/services/access";
-import { sourceChangesToDo } from "@/components/loan/source-changes-card";
-import { borrowerToDo, branchesWithoutApprover, deciderIds } from "@/lib/services/borrower-review";
+import { approverIds, branchesWithoutApprover, openItemsFor } from "@/lib/services/open-items";
 import { listLoans } from "@/lib/services/queries";
 import { financeIds } from "@/lib/services/funds";
 import { kindUsage } from "@/lib/services/expense-kinds";
 import { supervisorUserIds } from "@/lib/notify";
-import { reviewFor } from "@/lib/services/source-review";
 import { setupWarnings } from "@/components/home/setup-warnings";
 import { asUser } from "./helpers";
 
@@ -40,8 +38,14 @@ async function loan(n: string, branchId: string, borrower: string) {
     include: { transactions: true },
   });
 }
-const change = (loanId: string, category: "MATERIAL" | "BORROWER") =>
-  prisma.sourceChange.create({ data: { loanId, category, changes: [{ field: "address", label: "Address", kind: "borrower", was: null, now: "x" }], proposed: { sentences: [], affected: [], needsPicks: false }, hash: `h-${loanId}-${category}` } });
+let seq = 0;
+const change = async (loanId: string, category: "MATERIAL" | "BORROWER") => {
+  const l = await prisma.loan.findUniqueOrThrow({ where: { id: loanId } });
+  return prisma.openItem.create({ data: {
+    number: `OI-2099-${String(900_000 + ++seq)}`, loanId, branchId: l.branchId, field: category === "BORROWER" ? "cif" : "sourceLoanId", fieldLabel: category === "BORROWER" ? "CIF" : "Source loan ID",
+    audience: category === "BORROWER" ? "BORROWER" : "LOAN", oldValue: "a", newValue: "b",
+  } });
+};
 
 async function clean() {
   await prisma.cashAdvance.deleteMany({ where: { number: { startsWith: "CA-2099-97" } } });
@@ -69,19 +73,12 @@ beforeAll(async () => {
 afterAll(clean);
 
 describe("an Angono-only LA Supervisor/Head and Finance see only Angono", () => {
-  it("Home: MyLoans changes card", async () => {
-    const mine = await sourceChangesToDo(sup);
-    expect(mine.items.map((i) => i.loan.pn)).toContain(angonoLoan.pn);
-    expect(mine.items.map((i) => i.loan.pn)).not.toContain(antipoloLoan.pn);
-    // All branches (Admin) sees both; borrower corrections are not on this card.
-    const all = await sourceChangesToDo(admin);
-    expect(all.items.every((i) => i.category !== "BORROWER")).toBe(true);
-  });
-
-  it("Home: Corrections to review", async () => {
-    const pns = (await borrowerToDo(sup, 50)).items.map((i) => i.pn);
-    expect(pns).toContain(angonoLoan.pn);
-    expect(pns).not.toContain(antipoloLoan.pn);
+  it("Open Items: Mine has only the branches in the person's access; All branches (Admin) sees both", async () => {
+    const mine = (await openItemsFor(sup, "mine", { pn: undefined })).map((i) => i.loan.pn);
+    expect(mine).toContain(angonoLoan.pn);
+    expect(mine).not.toContain(antipoloLoan.pn);
+    const all = (await openItemsFor(admin, "mine")).map((i) => i.loan.pn);
+    expect(all).toEqual(expect.arrayContaining([angonoLoan.pn, antipoloLoan.pn]));
   });
 
   it("Loans list and its counts: ?branch= of another branch shows nothing (it narrows, never widens)", async () => {
@@ -89,11 +86,6 @@ describe("an Angono-only LA Supervisor/Head and Finance see only Angono", () => 
     expect(pns).toEqual([angonoLoan.pn]);
     expect(await listLoans(sup, { tab: "all", branch: antipolo, q: P })).toEqual([]);
     expect((await listLoans(admin, { tab: "all", branch: antipolo, q: P })).map((r) => r.pn)).toEqual([antipoloLoan.pn]);
-  });
-
-  it("the review card on a loan file: out of scope is not there", async () => {
-    expect(await reviewFor(sup, antipoloLoan.id)).toBeNull();
-    expect(await reviewFor(sup, angonoLoan.id)).not.toBeNull();
   });
 
   it("Funds lists and Finance Home counts: a request with a line for another branch's loan is not listed", async () => {
@@ -115,9 +107,9 @@ describe("an Angono-only LA Supervisor/Head and Finance see only Angono", () => 
   });
 
   it("approvers: everyone with the tick whose access has the branch (All branches covers every branch); no fallback", async () => {
-    const ids = await deciderIds(prisma, angono);
+    const ids = (await approverIds(prisma, angono, "BORROWER")).ids;
     expect(ids).toEqual(expect.arrayContaining([sup.id, admin.id]));
-    expect(await deciderIds(prisma, antipolo)).not.toContain(sup.id);
+    expect((await approverIds(prisma, antipolo, "BORROWER")).ids).not.toContain(sup.id);
   });
 
   it("Superadmin Home: branches with no approver, and the one-Superadmin warning", async () => {

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { branchesWithoutApprover, noApproverText } from "@/lib/services/borrower-review";
+import { branchesWithoutApprover, noApproverText } from "@/lib/services/open-items";
 import { branchesWithoutHandler, noHandlerText } from "@/lib/services/funds-handlers";
 import { NO_BRANCHES_FIX, noBranchesText, usersWithoutBranches } from "@/lib/services/access";
 import { AlertCard } from "@/components/home/home-ui";

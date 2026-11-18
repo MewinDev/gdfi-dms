@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getSetting, setSetting } from "@/lib/settings";
 import { openLoanFile } from "@/lib/services/loan-file";
-import { applySourceChange } from "@/lib/services/source-sync";
+import { decideOpenItem } from "@/lib/services/open-items";
 import { cutoffOf, runMyLoansSync, runScheduled, runSyncNow, saveSyncSettings, type SyncConfig } from "@/lib/services/myloans-sync";
 import { myLoansClientV1 } from "@/lib/myloans/v1";
 import { addMockScenario, MOCK_SCENARIOS, type MockScenario } from "@/lib/myloans/v1/mock-scenarios";
@@ -74,7 +74,7 @@ describe("change runs and the checkpoint", () => {
     expect((await prisma.syncRun.findUniqueOrThrow({ where: { id: r2.runId! } })).since!.toISOString()).toBe(st.checkpoint);
   });
 
-  it("strict v2 (D-052 (a)): a change becomes the loan's review item with the changed fields; nothing is applied, minor fields too; only an approver of the branch acts", async () => {
+  it("strict v2 (D-052 (a), D-053): a change to a loan field is an Open Item, nothing applied; a rename in the same change is lookup data, applied and logged; only an approver of the branch decides", async () => {
     const loan = await open();
     await run();
     await change(PN, { totalReleasedAmount: 1_020_000, areaName: "LUZON 1 (corrected)" });
@@ -82,23 +82,19 @@ describe("change runs and the checkpoint", () => {
     expect(r).toMatchObject({ ok: true, reviews: 1 });
     const after = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } });
     expect(after.totalReleasedAmount.toString()).toBe(loan.totalReleasedAmount.toString());
-    expect(after.sourceAreaName).toBe(loan.sourceAreaName);
-    const items = await prisma.sourceChange.findMany({ where: { loanId: loan.id } });
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ state: "OPEN", category: "MATERIAL" });
-    const fields = (items[0].changes as { field: string }[]).map((c) => c.field);
-    expect(fields).toEqual(expect.arrayContaining(["amount", "areaName"]));
-    expect(await prisma.auditLog.count({ where: { action: "source_minor_updated", loanId: loan.id } })).toBe(0);
-    // A second change to the same loan updates the same item (one per loan).
+    expect(after.sourceAreaName).toBe("LUZON 1 (corrected)"); // a rename (D-053): applied by itself
+    expect(await prisma.referenceChange.count({ where: { entity: "AREA", newValue: "LUZON 1 (corrected)", source: "myloans API 2" } })).toBe(1);
+    const items = await prisma.openItem.findMany({ where: { loanId: loan.id } });
+    expect(items.map((i) => [i.field, i.status, i.syncRunId])).toEqual([["amount", "PENDING", r.runId]]);
+    // A second value while it is pending supersedes it (one pending per field).
     await change(PN, { totalReleasedAmount: 1_030_000 });
     await run();
-    expect(await prisma.sourceChange.count({ where: { loanId: loan.id, state: "OPEN" } })).toBe(1);
-    // Only people with the approver tick act; Apply then sets the held fields (the minor ones too).
-    await expect(applySourceChange(la, items[0].id, { note: "Checked with the branch" })).rejects.toThrow(/Only approvers review MyLoans changes/);
-    await applySourceChange(admin, items[0].id, { note: "Checked with the branch" });
-    const applied = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } });
-    expect(applied.totalReleasedAmount.toString()).toBe("1030000");
-    expect(applied.sourceAreaName).toBe("LUZON 1 (corrected)");
+    expect(await prisma.openItem.count({ where: { loanId: loan.id, status: "PENDING" } })).toBe(1);
+    expect(await prisma.openItem.count({ where: { loanId: loan.id, status: "SUPERSEDED" } })).toBe(1);
+    const item = await prisma.openItem.findFirstOrThrow({ where: { loanId: loan.id, status: "PENDING" } });
+    await expect(decideOpenItem(la, item.id, { decision: "APPROVE", remarks: "Checked with the branch" })).rejects.toThrow(/Only approvers decide Open Items/);
+    await decideOpenItem(admin, item.id, { decision: "APPROVE", remarks: "Checked with the branch" });
+    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).totalReleasedAmount.toString()).toBe("1030000");
   });
 
   it("an unchanged hash is skipped (a timestamp-only change); a status change is a review item", async () => {
@@ -108,7 +104,7 @@ describe("change runs and the checkpoint", () => {
     expect(await run()).toMatchObject({ ok: true, reviews: 0, unchanged: 1 });
     await change(PN, { status: "CANCELLED" });
     expect(await run()).toMatchObject({ ok: true, reviews: 1 });
-    expect(await prisma.sourceChange.findFirstOrThrow({ where: { loanId: loan.id } })).toMatchObject({ state: "OPEN", category: "STATUS" });
+    expect(await prisma.openItem.findFirstOrThrow({ where: { loanId: loan.id } })).toMatchObject({ status: "PENDING", field: "status" });
     expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).cancelledAt).toBeNull();
   });
 });
@@ -121,11 +117,11 @@ describe("the daily catch-up", () => {
     // A change myloans stamped before the checkpoint (a late commit): the change run does not see it.
     await change(PN, { totalReleasedAmount: 1_050_000 }, new Date(new Date(checkpoint).getTime() - 2 * 3_600_000));
     expect(await run()).toMatchObject({ ok: true, reviews: 0 });
-    expect(await prisma.sourceChange.count({ where: { loanId: loan.id } })).toBe(0);
+    expect(await prisma.openItem.count({ where: { loanId: loan.id } })).toBe(0);
     const before = (await getSetting("myloans.syncState")).checkpoint!;
     const c = await run("CATCHUP");
     expect(c).toMatchObject({ ok: true, mode: "CATCHUP", reviews: 1 });
-    expect(await prisma.sourceChange.count({ where: { loanId: loan.id, state: "OPEN" } })).toBe(1);
+    expect(await prisma.openItem.count({ where: { loanId: loan.id, status: "PENDING" } })).toBe(1);
     const st = await getSetting("myloans.syncState");
     expect(st.checkpoint! >= before).toBe(true);
     expect(st.lastCatchUpDate).toBeTruthy();
@@ -180,7 +176,7 @@ describe("failure simulation: the checkpoint is kept, nothing is lost", () => {
       const r = await run();
       expect(r).toMatchObject({ ran: true, ok: false });
       expect(await getSetting("myloans.syncState")).toMatchObject({ checkpoint: kept, failedRuns: 1 });
-      expect(await prisma.sourceChange.count({ where: { loanId: loan.id } })).toBe(0);
+      expect(await prisma.openItem.count({ where: { loanId: loan.id } })).toBe(0);
       expect(await prisma.syncRun.findUniqueOrThrow({ where: { id: r.runId! } })).toMatchObject({ ok: false });
       await setSetting("myloans.mockFailures", []);
       expect(await run()).toMatchObject({ ok: true, reviews: 1 });
@@ -199,7 +195,7 @@ describe("failure simulation: the checkpoint is kept, nothing is lost", () => {
     const r = await run("CHANGE", { pageSize: 1 });
     expect(r).toMatchObject({ ok: false });
     expect(await getSetting("myloans.syncState")).toMatchObject({ checkpoint: kept });
-    expect(await prisma.sourceChange.count({ where: { loanId: loan.id } })).toBe(0);
+    expect(await prisma.openItem.count({ where: { loanId: loan.id } })).toBe(0);
     expect(await prisma.sourceLoanCandidate.count()).toBe(pool);
     await setSetting("myloans.mockFailures", []);
     expect(await run("CHANGE", { pageSize: 1 })).toMatchObject({ ok: true, reviews: 1 });
@@ -290,9 +286,8 @@ describe("every mock scenario", () => {
     await prisma.mockMyLoansTxn.create({ data: { ...t, id: 960_001, pnNo: "GD9992026960001", loanId: "960001", updatedAt: now, createdAt: now } });
     await prisma.mockMyLoansTxn.update({ where: { id: t.id }, data: { replacedById: 960_001 } });
     expect(await run()).toMatchObject({ ok: true, reviews: 1 });
-    const item = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: loan.id } });
-    expect(item.state).toBe("OPEN");
-    expect(JSON.stringify(item.changes)).toContain("Replaced by");
+    const item = await prisma.openItem.findFirstOrThrow({ where: { loanId: loan.id } });
+    expect(item).toMatchObject({ status: "PENDING", field: "status", newValue: "Redone in myloans (replaced): replaced by GD9992026960001" });
   });
 });
 

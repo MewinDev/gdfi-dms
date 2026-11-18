@@ -35,7 +35,7 @@ async function layoutRules(page: Page) {
   });
   expect(order).toBe(true);
   // One "All clear" line or the alert cards, never both, never an empty card.
-  const alerts = await main(page).locator("[data-source-changes-card], [data-borrower-corrections-card], [data-branch-review-card], [data-tat-card], [data-packages-to-receive], [data-sent-back-home], [data-liquidation-overdue]").count();
+  const alerts = await main(page).locator("[data-open-items-card], [data-branch-review-card], [data-tat-card], [data-packages-to-receive], [data-sent-back-home], [data-liquidation-overdue]").count();
   await expect(main(page).locator("[data-all-clear]")).toHaveCount(alerts ? 0 : 1);
   await noSideways(page);
 }
@@ -58,9 +58,14 @@ async function loan(stage: string, name: string) {
   });
 }
 const NAMES = ["Ana Villanueva", "Ramon Garcia", "Liza Torres", "Mario Reyes", "Nora Santos", "Pedro Cruz", "Gina Lopez", "Tess Ramos"];
+let oi = 0;
 async function change(loanId: string, category: "BORROWER" | "MATERIAL") {
-  const changes = category === "BORROWER" ? [{ field: "borrowerAddress", label: "Address", was: "Angono", now: "12 Rizal Ave, Angono", kind: "BORROWER" }] : [{ field: "amount", label: "Amount", was: 40_000_000, now: 52_000_000, kind: "MATERIAL" }];
-  await db.sourceChange.create({ data: { loanId, category, changes, proposed: {}, hash: `e2e-${loanId}-${category}` } });
+  const l = await db.loan.findUniqueOrThrow({ where: { id: loanId } });
+  await db.openItem.create({ data: {
+    number: `OI-2099-${String(800_000 + ++oi)}`, loanId, branchId: l.branchId, field: category === "BORROWER" ? "cif" : "amount", fieldLabel: category === "BORROWER" ? "CIF" : "Amount",
+    groupKey: category === "BORROWER" ? null : "rules", audience: category === "BORROWER" ? "BORROWER" : "LOAN", oldValue: category === "BORROWER" ? "CIF-OLD" : "₱400,000.00", newValue: category === "BORROWER" ? "CIF-NEW" : "₱520,000.00",
+    oldRaw: category === "BORROWER" ? "CIF-OLD" : 40_000_000, newRaw: category === "BORROWER" ? "CIF-NEW" : 52_000_000,
+  } });
 }
 async function supervisor() {
   const angono = await db.branch.findUniqueOrThrow({ where: { code: "165" } });
@@ -206,15 +211,15 @@ test("an approver with funds requests waiting: To approve shows the request (per
   clean();
 });
 
-test("Admin with a MyLoans review waiting: the count in the strip and one slim card; empty blocks are not rendered", async ({ page }) => {
+test("Admin with an Open Item waiting: the count in the strip and one slim card; empty blocks are not rendered", async ({ page }) => {
   const clean = watchConsole(page);
   const l = await loan("For checklist", "Ana Villanueva");
   await change(l.id, "MATERIAL");
   await signInWith(page, BUTTONS.admin);
   await layoutRules(page);
-  await expect(seg(page, "source")).toHaveAttribute("data-count", "1");
-  const card = main(page).locator("[data-source-changes-card]");
-  await expect(card.locator("[data-source-count]")).toHaveText("1");
+  await expect(seg(page, "open-items")).toHaveAttribute("data-count", "1");
+  const card = main(page).locator("[data-open-items-card]");
+  await expect(card.locator("[data-oi-count]")).toHaveText("1");
   await expect(card).toContainText(l.pn);
   await expect(main(page).locator("[data-all-clear]")).toHaveCount(0);
   // The TAT card only with something in it; its link says what it does (no export there).
@@ -225,18 +230,18 @@ test("Admin with a MyLoans review waiting: the count in the strip and one slim c
   clean();
 });
 
-test("LA Supervisor/Head with decisions waiting: Corrections to review in the strip and its card", async ({ page }) => {
+test("LA Supervisor/Head with decisions waiting: Open Items in the strip and its card", async ({ page }) => {
   const clean = watchConsole(page);
   const label = await supervisor();
   const l = await loan("For checklist", "Ana Villanueva");
   await change(l.id, "BORROWER");
   await signInWith(page, { other: label });
   await layoutRules(page);
-  await expect(seg(page, "corrections")).toHaveAttribute("data-count", "1");
-  await expect(seg(page, "corrections").getByRole("link")).toHaveAttribute("href", "#corr-h");
-  const card = main(page).locator("[data-borrower-corrections-card]");
-  await expect(card.locator("[data-borrower-count]")).toHaveText("1");
-  await expect(card).toContainText("Address");
+  await expect(seg(page, "open-items")).toHaveAttribute("data-count", "1");
+  await expect(seg(page, "open-items").getByRole("link")).toHaveAttribute("href", "/open-items");
+  const card = main(page).locator("[data-open-items-card]");
+  await expect(card.locator("[data-oi-count]")).toHaveText("1");
+  await expect(card).toContainText("CIF");
   await shot(page, "supervisor-decisions");
   clean();
 });
@@ -246,8 +251,8 @@ test("LA Supervisor/Head with nothing: zeros, caught up, one All clear line", as
   const label = await supervisor();
   await signInWith(page, { other: label });
   await layoutRules(page);
-  await expect(seg(page, "corrections")).toHaveAttribute("data-count", "0");
-  await expect(seg(page, "corrections").getByRole("link")).toHaveCount(0); // nothing to open
+  await expect(seg(page, "open-items")).toHaveAttribute("data-count", "0");
+  await expect(seg(page, "open-items").getByRole("link")).toHaveCount(0); // nothing to open
   await expect(main(page).locator("[data-caught-up]")).toBeVisible();
   await expect(main(page).locator("[data-all-clear]")).toBeVisible();
   await shot(page, "supervisor-nothing");

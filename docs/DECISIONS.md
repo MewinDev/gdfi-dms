@@ -785,3 +785,10 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
      4. **Waiting time:** each Open Item shows how long it has waited in working days, green / amber / red, oldest first. Home shows approvers "N Open Items waiting too long".
   4. **Tests:** the plan's list (§9.8) plus the four additions. During tests the development sync timer is off (`MYLOANS_SYNC_DEV_TIMER=false` for the e2e server; vitest starts no server).
 - **Reason:** the user's decisions after the piece 7 report. A rename is not a change to the loan (D-012); a loan that left Released must not move on until a person decides.
+- **How it was built (18 November 2026), choices within the decision:**
+  - **Who decides:** loan fields with "Review MyLoans changes" (`myloans:review`), borrower name, CIF and CIN with "Review borrower detail corrections", each for the branches in the person's access. Unassigned = a branch with no approver of its own (All-branches approvers do not count there); the Superadmin and All-branches approvers see it.
+  - **Status:** Approve closes the loan (refused while cash is out: ask for the cash back first); Reject keeps it open and unblocks it. The processor's Forward to branch is blocked while the status item is pending (a closed loan's papers can still go back).
+  - **Waiting colours:** the inbox thresholds (Settings, Inbox waiting colours), on the loan branch's calendar.
+  - **Monitored fields:** Settings, Open Items (myloans:manage); the status is always watched.
+  - **Replacement:** the old loan's status item says "replaced by"; linking stays on Related loans (with the no-payment confirmation); the per-item Link, Apply and Keep current buttons are gone with the review pop-up.
+  - **Renames from API 4 and API 5** (area, division, product) are logged in Reference data changes too.

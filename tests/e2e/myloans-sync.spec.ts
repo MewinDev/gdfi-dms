@@ -3,8 +3,8 @@ import { signInWith, docShot } from "./helpers";
 import { db, resetLoans } from "./db";
 
 /**
- * MyLoans sync: the Settings card, Find loan suggestions, the review pop-up (material change and
- * cancellation), the Open items "MyLoans changes" group, replacement links and Copy reusable papers.
+ * MyLoans sync: the Settings card, Find loan suggestions, Open Items (piece 8: an amount change and a cancellation),
+ * the loan file's banner and "myloans changes" group, replacement links and Copy reusable papers.
  * Mock MyLoans; changes are made the way the simulator makes them. Screenshots go to SHOTS_DIR.
  */
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin" } as const;
@@ -61,13 +61,13 @@ test("Settings: the MyLoans sync card (piece 7): Run now raises a review item an
   await expect(d.locator("[data-sync-status]")).toContainText("Mock (sample loans)");
   await expect(d.locator("[data-sync-status]")).toContainText("Not started (the first run reads the last 26 hours)");
   await d.getByRole("button", { name: "Run now" }).click();
-  await expect(d.getByText(/read from myloans: 1 review item, \d+ released not yet in the DMS\.$/)).toBeVisible();
+  await expect(d.getByText(/read from myloans: 1 loan with Open Items, \d+ released not yet in the DMS\.$/)).toBeVisible();
   await expect(d.locator("[data-sync-health]")).toHaveText("Healthy");
   await expect(d.locator("[data-sync-status]")).toContainText("Run now, changes): done");
   await expect(d.locator("[data-sync-runs]").getByRole("row")).toHaveCount(2);
   await expect(d.locator("[data-sync-runs]")).toContainText("Done");
   // Strict v2: the change waits for an approver; the loan keeps its amount.
-  expect(await db.sourceChange.count({ where: { loan: { pn: PN }, state: "OPEN" } })).toBe(1);
+  expect(await db.openItem.count({ where: { loan: { pn: PN }, status: "PENDING" } })).toBe(1);
   expect(Number((await db.loan.findUniqueOrThrow({ where: { pn: PN } })).totalReleasedAmount)).toBe(1_000_000);
   await d.getByLabel("Run the sync every (minutes)").fill("45");
   await d.getByRole("button", { name: "Save" }).click();
@@ -102,67 +102,64 @@ test("Find loan: suggestions from the DMS from 3 characters, at most 8; nothing 
   await expect(page.locator(`[data-find-saved="${PN}"]`)).toBeVisible();
 });
 
-test("Material change: LA sees it read-only (no amounts); Open items group; Admin reviews and applies", async ({ page }) => {
+test("Amount change (piece 8): the LA sees the banner and the Open items row; Send held where it reaches; the approver approves it on Open Items", async ({ page }) => {
   await signInWith(page, BUTTONS.la);
   await openPn(page);
   await change(PN, { totalReleasedAmount: 1_020_000 });
   await page.goto(`/loans/${PN}?tab=todo`);
   await refresh(page);
-  await expect(page.getByText("Changes found: review.")).toBeVisible();
+  await expect(page.getByText("Changes found: an Open Item waits for an approver.")).toBeVisible();
   await page.reload();
-  const entry = page.locator("[data-source-entry]");
-  await expect(entry).toContainText("MyLoans changes · Needs review");
-  await entry.getByRole("button", { name: "Review" }).click();
-  const sheet = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
-  await expect(sheet.locator("[data-amount-hidden]")).toHaveText("Amount changed");
-  await expect(sheet.locator("[data-source-waiting]")).toHaveText("Waiting for an approver to review.");
-  await sheet.getByRole("button", { name: "Close" }).last().click();
-  // Check documents: the Open items card has the "MyLoans changes" group.
+  await expect(page.locator("[data-open-items-banner]")).toContainText("1 Open Item from myloans: Amount.");
+  // Check documents: the Open items card has the "myloans changes" group, linking to the Open Items page.
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
   const group = page.locator('[data-open-group="source"]').filter({ visible: true }).first();
   if (!(await group.isVisible())) await page.locator('[data-open-items="collapsible"] summary').click();
-  await expect(page.locator('[data-open-group="source"]').filter({ visible: true }).first()).toContainText("MyLoans changes");
+  await expect(page.locator('[data-open-group="source"]').filter({ visible: true }).first()).toContainText("myloans changes");
   await shot(page, "open-items-myloans");
   await noSideways(page);
   // Send is held only for the transactions the change reaches (Mortgage would be removed).
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
-  await expect(page.locator('[id^="send-why-"]')).toHaveText("MyLoans changed this loan. An approver is reviewing it.");
+  await expect(page.locator('[id^="send-why-"]')).toHaveText("myloans changed this loan. An approver decides the Open Item first.");
 
   await signInWith(page, BUTTONS.admin);
-  await page.goto(`/loans/${PN}?tab=todo&review=1`);
-  const review = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
-  await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,000,000");
-  await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,020,000");
-  await expect(review.locator("[data-source-means]")).toContainText("Mortgage is not needed: this is a Renewal loan above ₱1,000,000.");
-  await expect(review.locator("[data-source-means]")).toContainText("would be removed");
-  await shot(page, "review-material");
+  await page.goto(`/open-items?pn=${PN}`);
+  const card = page.locator(`[data-oi-card="rules"][data-pn="${PN}"]`);
+  await expect(card.locator('[data-oi-item="amount"]')).toContainText("₱1,000,000.00");
+  await expect(card.locator('[data-oi-item="amount"]')).toContainText("₱1,020,000.00");
+  await expect(card.locator("[data-oi-effect]")).toContainText("Mortgage is not needed: this is a Renewal loan above ₱1,000,000.");
+  await expect(card.locator("[data-oi-effect]")).toContainText("would be removed");
+  await expect(card.locator("[data-oi-waiting]")).toHaveText("Waiting 0 working days");
+  await shot(page, "open-items-page");
   await noSideways(page);
-  await review.getByLabel("Note (required)").fill("MyLoans corrected the amount");
-  await review.getByRole("button", { name: "Apply changes" }).click();
-  await expect.poll(async () => (await db.sourceChange.findFirstOrThrow()).state).toBe("APPLIED");
-  await expect(page.locator("[data-source-entry]")).toHaveCount(0);
+  await card.getByLabel("Remarks (required)").fill("MyLoans corrected the amount");
+  await card.getByRole("button", { name: /^Approve/ }).click();
+  await expect.poll(async () => (await db.openItem.findFirstOrThrow({ where: { loan: { pn: PN } } })).status).toBe("APPROVED");
+  await page.goto(`/loans/${PN}?tab=todo`);
+  await expect(page.locator("[data-open-items-banner]")).toHaveCount(0);
 });
 
-test("Cancellation: Admin closes the loan as cancelled", async ({ page }) => {
+test("Cancelled in myloans: the loan file says why Send, Forward and cash wait; the approver closes it on Open Items", async ({ page }) => {
   await signInWith(page, BUTTONS.la);
   await openPn(page);
   await change(PN, { status: "CANCELLED" });
   await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${PN}?tab=todo`);
   await refresh(page);
-  await expect(page.getByText("Changes found: review.")).toBeVisible();
-  await page.goto(`/loans/${PN}?tab=todo&review=1`);
-  const review = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
-  await expect(review.locator("[data-source-means]")).toContainText("MyLoans now says the loan is cancelled.");
-  await expect(review.locator("[data-source-affected]")).toContainText("Notary");
-  await shot(page, "review-cancelled");
+  await expect(page.getByText("Changes found: an Open Item waits for an approver.")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("[data-loan-ended]")).toContainText("myloans says this loan is no longer released (cancelled in myloans). Send, Forward and new cash wait");
+  await page.goto(`/open-items?pn=${PN}`);
+  const card = page.locator(`[data-oi-card="status"][data-pn="${PN}"]`);
+  await expect(card.locator('[data-oi-item="status"]')).toContainText("Cancelled in myloans");
+  await expect(card.locator("[data-oi-blocked]")).toContainText("Send, Forward and new cash wait");
+  await shot(page, "open-items-cancelled");
   await noSideways(page);
-  await review.getByRole("button", { name: "Close as cancelled" }).click();
-  await expect(review.locator("[data-source-error]")).toContainText("short note");
-  await review.getByLabel("Note (required)").fill("MyLoans cancelled the loan");
-  await review.getByRole("button", { name: "Close as cancelled" }).click();
+  await card.getByLabel("Remarks (required)").fill("MyLoans cancelled the loan");
+  await card.getByRole("button", { name: /^Approve/ }).click();
+  await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: PN } })).stage).toBe("Cancelled in MyLoans");
+  await page.goto(`/loans/${PN}`);
   await expect(page.getByText(/Closed: Cancelled in MyLoans/)).toBeVisible();
-  expect((await db.loan.findUniqueOrThrow({ where: { pn: PN } })).stage).toBe("Cancelled in MyLoans");
 });
 
 test("Replacement PN: simulated, linked on both files, Copy reusable papers", async ({ page }) => {
@@ -191,15 +188,17 @@ test("Replacement PN: simulated, linked on both files, Copy reusable papers", as
   await expect(page.locator("[data-preview-warnings]")).toContainText(`replaces ${PN}`);
   await shot(page, "find-loan-replacement-preview");
   await openPn(page, newPn);
-  // Only a suggestion: nothing is linked until Admin presses Link as replacement (with a note).
+  // Nothing is linked until a person links it from Related loans (with a note).
   await expect(page.locator("[data-replaces]")).toHaveCount(0);
   await signInWith(page, BUTTONS.admin);
-  await page.goto(`/loans/${PN}?tab=todo&review=1`);
-  const rev = page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
-  await expect(rev.locator("[data-candidates]")).toContainText(newPn);
-  await rev.locator("[data-confirm-no-payment] input").check();
-  await rev.getByLabel("Note (required)").fill("Same unit, new PN from MyLoans");
-  await rev.getByRole("button", { name: "Link as replacement" }).click();
+  await page.goto(`/loans/${PN}?tab=todo`);
+  await expect(page.locator("[data-loan-ended]")).toContainText(`replaced by ${newPn}`);
+  const row = page.locator("[data-related-loans]").filter({ visible: true }).first().locator('[data-related-row="SAME_BORROWER"]');
+  await row.getByRole("button", { name: "Link as replacement" }).click();
+  const linkSheet = page.locator("[data-link-sheet]");
+  await linkSheet.getByRole("checkbox").check();
+  await linkSheet.getByLabel("Note (required)").fill("Same unit, new PN from MyLoans");
+  await linkSheet.getByRole("button", { name: "Link as replacement" }).click();
   await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: newPn } })).replacesPn).toBe(PN);
   await signInWith(page, BUTTONS.la);
   await page.goto(`/loans/${newPn}`);

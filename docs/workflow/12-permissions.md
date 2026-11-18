@@ -145,6 +145,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 |---|---|---|---|---|---|
 | See the TAT and problems report | Problems and holds by reason, days, overdue counts. | Reports, TAT | See loan files | `reports:tat` | SUPERADMIN, Admin, LA Supervisor/Head |
 | See PN searches | Every PN # searched on Find loan: who, the PN, what myloans answered, when (within the branches in your access). Download CSV. | Reports, PN searches | See loan files | `reports:pnsearch` | Admin, LA Supervisor/Head |
+| See reference data changes | Renames from myloans (area, division, company, branch and product names): applied by themselves and logged, with a notice for each new one. Never an Open Item. | Settings, Reference data changes | See loan files | `refdata:view` | SUPERADMIN, Admin, LA Supervisor/Head |
 | See the audit log | Every automatic decision and user action (the technical log). | Audit log | - | `audit:view` | SUPERADMIN, Admin |
 | View file access log | Who opened or downloaded which receipt, stage evidence or LTO proof, and when; filter and export it (each export is logged too). Give it to a Data Protection Officer if needed. | Audit, File access log | - | `audit:files` | SUPERADMIN, Admin |
 
@@ -155,8 +156,8 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | See when MyLoans was last checked | Show "MyLoans · Last checked" on a loan file. | Loan File, top strip | See loan files | `myloans:view` | SUPERADMIN, LA, Admin, DP, Finance, Vault, Digital Records, QA, ARCHIVER, LA Supervisor/Head |
 | Reclassify a loan | When the keyword rules changed after a loan file was opened ("Classification changed since accepted"): apply the new Financing or Refinancing result, with remarks. Sent work never changes. | Loan File, Classification changed since accepted | See loan files | `loans:reclassify` | Admin, LA Supervisor/Head |
 | Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | SUPERADMIN, LA, Admin, DP, Vault, Digital Records, QA, ARCHIVER, LA Supervisor/Head |
-| Review MyLoans changes | Decide what to do when MyLoans changes a loan: apply, keep the current setup, close as cancelled, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin, LA Supervisor/Head |
-| Review borrower detail corrections | Accept or keep current when MyLoans corrects a borrower's name, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, LA Supervisor/Head |
+| Review MyLoans changes | Approve or reject Open Items on loan fields (loan type, amount, product, release date, branch, status), for the branches in your access; ask for cash back, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin, LA Supervisor/Head |
+| Review borrower detail corrections | Approve or reject Open Items on the borrower's name, CIF or CIN. Only for loans in the person's branches (All branches: every branch). No automatic fallback: a branch with no approver of its own is flagged on Settings, Branches. | Loan File, To do, MyLoans corrections; Home | See loan files | `myloans:review_borrower` | Admin, LA Supervisor/Head |
 | Change MyLoans sync settings | The myloans sync: how often it runs, the daily catch-up, the alert, the go-live and branch-pool dates, and Pause MyLoans calls. | Settings, MyLoans sync | - | `myloans:manage` | SUPERADMIN, Admin |
 | Run the MyLoans sync now | Run now and Run the catch-up now: read what changed in myloans at once (nothing is applied; changes become review items). | Settings, MyLoans sync, Run now | - | `myloans:sync` | SUPERADMIN, Admin |
 
@@ -266,6 +267,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Set processor capacity and leave | Settings, Processor capacity | dpcapacity:manage | `dpcapacity:manage` |  |
 | See the TAT and problems report | Reports, TAT | reports:tat | `reports:tat` |  |
 | See PN searches | Reports, PN searches | new on 18 November 2026 | `reports:pnsearch` | Split or renamed |
+| See reference data changes | Settings, Reference data changes | new on 18 November 2026 | `refdata:view` | Split or renamed |
 | See the audit log | Audit log | audit:view | `audit:view` |  |
 | View file access log | Audit, File access log | new on 17 November 2026 | `audit:files` | Split or renamed |
 | See when MyLoans was last checked | Loan File, top strip | loans:view | `myloans:view` | Split or renamed |

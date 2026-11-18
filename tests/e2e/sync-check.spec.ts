@@ -5,7 +5,7 @@ import { watchConsole, signInWith, docShot } from "./helpers";
 /**
  * MyLoans sync check through the real screens (scenarios 2, 4, 5 and 8): the review pop-up for an amount
  * change and for a branch change, the blocked Send message, the "Waiting for an approver to review" view, the
- * access change after Apply, Close as cancelled and Keep current (each with a note).
+ * access change after Approve, closing a cancelled loan and Reject (each with remarks), on Open Items (piece 8).
  * Screenshots at 1440, 820 and 390: docs/screenshots/sync-check/.
  */
 const DIR = "docs/screenshots/sync-check";
@@ -43,9 +43,13 @@ async function openPn(page: Page, pn: string, questions = true) {
 async function refresh(page: Page, pn: string) {
   await page.goto(`/loans/${pn}?tab=todo`);
   await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from MyLoans" }).click();
-  await expect(page.getByText("Changes found: review.")).toBeVisible();
+  await expect(page.getByText("Changes found: an Open Item waits for an approver.")).toBeVisible();
 }
-const reviewSheet = (page: Page) => page.getByRole("dialog", { name: /^MyLoans changed this loan/ });
+/** The Open Items page for one PN, and the card of one field (or the rule group). */
+async function openItemsCard(page: Page, pn: string, card: string) {
+  await page.goto(`/open-items?pn=${pn}`);
+  return page.locator(`[data-oi-card="${card}"][data-pn="${pn}"]`);
+}
 
 test.beforeEach(async () => {
   await resetLoans();
@@ -59,7 +63,7 @@ test.afterAll(async () => {
   await setting("myloans.mockOverrides", {});
 });
 
-test("2. Amount change: Send held where it reaches, LA read-only (no amounts), Admin's pop-up shows the rules' answer; Keep current needs a note", async ({ page }) => {
+test("2. Amount change: Send held where it reaches; the LA sees the banner, not Open Items; the approver sees the rules' answer; Reject needs remarks", async ({ page }) => {
   const clean = watchConsole(page);
   await signInWith(page, BUTTONS.la);
   await openPn(page, PN);
@@ -67,39 +71,35 @@ test("2. Amount change: Send held where it reaches, LA read-only (no amounts), A
   await refresh(page, PN);
   // The blocked Send message (Mortgage would be removed).
   await page.goto(`/loans/${PN}?tab=todo&tx=MORTGAGE`);
-  await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText("MyLoans changed this loan. An approver is reviewing it.");
+  await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText("myloans changed this loan. An approver decides the Open Item first.");
   await noSideways(page);
   await shot(page, "send-blocked");
   // Notary is not reached: no hold message there.
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
-  await expect(page.locator('[id^="send-why-"]').filter({ hasText: "MyLoans changed" })).toHaveCount(0);
-  // The LA: the same pop-up, read-only, amounts hidden.
-  await page.goto(`/loans/${PN}?tab=todo&review=1`);
-  const ro = reviewSheet(page);
-  await expect(ro.locator("[data-amount-hidden]")).toHaveText("Amount changed");
-  await expect(ro.locator("[data-source-waiting]")).toHaveText("Waiting for an approver to review.");
-  await expect(ro.getByRole("button", { name: "Apply changes" })).toHaveCount(0);
-  await noSideways(page);
-  await shot(page, "waiting-for-admin");
-  // Admin: old and new amount, what the rules would do; the loan file still shows the old amount.
+  await expect(page.locator('[id^="send-why-"]').filter({ hasText: "myloans changed" })).toHaveCount(0);
+  // The LA: the banner on the loan file; the Open Items page is for approvers only.
+  await page.goto(`/loans/${PN}`);
+  await expect(page.locator("[data-open-items-banner]")).toContainText("1 Open Item from myloans: Amount.");
+  const res = await page.goto(`/open-items?pn=${PN}`);
+  expect(res?.status()).toBe(404);
+  // The approver: old and new amount, what the rules would do; the loan file still shows the old amount.
   await signInWith(page, BUTTONS.admin);
-  await page.goto(`/loans/${PN}?tab=todo&review=1`);
-  const review = reviewSheet(page);
-  await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,000,000");
-  await expect(review.getByRole("row", { name: /Amount/ })).toContainText("₱1,020,000");
-  await expect(review.locator("[data-source-means]")).toContainText("Mortgage is not needed: this is a Renewal loan above ₱1,000,000.");
+  const card = await openItemsCard(page, PN, "rules");
+  await expect(card.locator('[data-oi-item="amount"]')).toContainText("₱1,020,000.00");
+  await expect(card.locator("[data-oi-effect]")).toContainText("Mortgage is not needed: this is a Renewal loan above ₱1,000,000.");
   await noSideways(page);
-  await shot(page, "review-amount");
+  await shot(page, "open-item-amount");
   expect(Number((await db.loan.findUniqueOrThrow({ where: { pn: PN } })).totalReleasedAmount)).toBe(1_000_000);
-  await review.getByRole("button", { name: "Keep current" }).click();
-  await expect(review.locator("[data-source-error]")).toContainText("short note");
-  await review.getByLabel("Note (required)").fill("Branch confirmed the first amount");
-  await review.getByRole("button", { name: "Keep current" }).click();
-  await expect.poll(async () => (await db.sourceChange.findFirstOrThrow({ where: { loan: { pn: PN } } })).state).toBe("KEPT");
+  await card.getByLabel("Remarks (required)").fill("abc");
+  await card.getByRole("button", { name: /^Reject/ }).click();
+  await expect(card.getByText("Write remarks (at least 5 characters).")).toBeVisible();
+  await card.getByLabel("Remarks (required)").fill("Branch confirmed the first amount");
+  await card.getByRole("button", { name: /^Reject/ }).click();
+  await expect.poll(async () => (await db.openItem.findFirstOrThrow({ where: { loan: { pn: PN } } })).status).toBe("REJECTED");
   clean();
 });
 
-test("4. Branch change: access follows the old branch until Admin applies, then the new one", async ({ page }) => {
+test("4. Branch change: access follows the old branch until an approver approves, then the new one", async ({ page }) => {
   const clean = watchConsole(page);
   const la = await db.user.findUniqueOrThrow({ where: { email: "test.la@gdfi.ph" }, include: { branches: true } });
   const [antipolo, angono] = await Promise.all(["101", "165"].map((code) => db.branch.findUniqueOrThrow({ where: { code } })));
@@ -119,17 +119,17 @@ test("4. Branch change: access follows the old branch until Admin applies, then 
     await only(angono.id);
     await page.goto(`/loans/${ANTIPOLO_PN}`);
     await expect(page.getByRole("heading", { name: "Loan File" })).toHaveCount(0);
-    // Admin: the branch pop-up (old and new, who gains and loses access), then Apply with a note.
+    // The approver: the Branch Open Item (old and new), then Approve with remarks.
     await signInWith(page, BUTTONS.admin);
-    await page.goto(`/loans/${ANTIPOLO_PN}?tab=todo&review=1`);
-    const review = reviewSheet(page);
-    await expect(review.locator("[data-branch-move]")).toContainText("Branch: Antipolo → Angono");
+    const card = await openItemsCard(page, ANTIPOLO_PN, "branchCode");
+    await expect(card.locator('[data-oi-item="branchCode"]')).toContainText("Antipolo (101)");
+    await expect(card.locator('[data-oi-item="branchCode"]')).toContainText("Angono (165)");
     await noSideways(page);
-    await shot(page, "review-branch");
-    await review.getByLabel("Note (required)").fill("MyLoans moved the account to Angono");
-    await review.getByRole("button", { name: "Apply changes" }).click();
+    await shot(page, "open-item-branch");
+    await card.getByLabel("Remarks (required)").fill("MyLoans moved the account to Angono");
+    await card.getByRole("button", { name: /^Approve/ }).click();
     await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: ANTIPOLO_PN } })).branchId).toBe(angono.id);
-    // After Apply: the Angono-only person sees it, the Antipolo-only person no longer does.
+    // Approved: the Angono-only person sees it, the Antipolo-only person no longer does.
     await signInWith(page, BUTTONS.la);
     await page.goto(`/loans/${ANTIPOLO_PN}`);
     await expect(page.getByRole("heading", { name: "Loan File" })).toBeVisible();
@@ -143,63 +143,54 @@ test("4. Branch change: access follows the old branch until Admin applies, then 
   clean();
 });
 
-test("5 and 8. Cancelled in MyLoans: Send blocked for the whole loan; Admin closes it as cancelled with a note", async ({ page }) => {
+test("5 and 8. Cancelled in MyLoans: Send blocked for the whole loan with the reason; the approver closes it with remarks", async ({ page }) => {
   const clean = watchConsole(page);
   await signInWith(page, BUTTONS.la);
   await openPn(page, PN);
   await change(PN, { status: "CANCELLED" });
   await refresh(page, PN);
+  const why = "myloans says this loan is no longer released (cancelled in myloans). Send, Forward and new cash wait until an approver decides the Open Item.";
   for (const tx of ["NOTARY", "MORTGAGE"]) {
     await page.goto(`/loans/${PN}?tab=todo&tx=${tx}`);
-    await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText("MyLoans says this loan is cancelled. An approver is reviewing it.");
+    await expect(page.locator('[id^="send-why-"]').filter({ visible: true }).first()).toHaveText(why);
   }
+  await expect(page.locator("[data-loan-ended]")).toHaveText(why);
   await noSideways(page);
   await signInWith(page, BUTTONS.admin);
-  await page.goto(`/loans/${PN}?tab=todo&review=1`);
-  const review = reviewSheet(page);
-  await review.getByRole("button", { name: "Close as cancelled" }).click();
-  await expect(review.locator("[data-source-error]")).toContainText("short note");
-  await review.getByLabel("Note (required)").fill("MyLoans cancelled the loan");
-  await review.getByRole("button", { name: "Close as cancelled" }).click();
+  const card = await openItemsCard(page, PN, "status");
+  await card.getByLabel("Remarks (required)").fill("MyLoans cancelled the loan");
+  await card.getByRole("button", { name: /^Approve/ }).click();
+  await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: PN } })).stage).toBe("Cancelled in MyLoans");
+  await page.goto(`/loans/${PN}`);
   await expect(page.getByText(/Closed: Cancelled in MyLoans/)).toBeVisible();
-  expect((await db.loan.findUniqueOrThrow({ where: { pn: PN } })).stage).toBe("Cancelled in MyLoans");
   await noSideways(page);
   clean();
 });
 
-test("3. Borrower details: chip, old and new side by side, read-only for the LA; Admin (no supervisor in the branch) accepts with a note", async ({ page }) => {
+test("3. Borrower details: chip and banner for the LA; nothing blocked; with no approver of the branch's own, Admin (All branches) approves with remarks", async ({ page }) => {
   const clean = watchConsole(page);
   // No supervisor in the branch: the seeded LA Supervisor/Head (Angono) is parked for this test.
   await db.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
   await signInWith(page, BUTTONS.la);
   await openPn(page, PN);
-  // D-051: no address or contact number; name and CIF are borrower details.
+  // D-051: no address or contact number; name and CIF are borrower fields.
   await change(PN, { borrowerName: "Ana Villanueva-Reyes", cif: "CIF-NEW-1003" });
   await refresh(page, PN);
   await page.reload();
-  await expect(page.locator("[data-borrower-chip]")).toContainText("MyLoans changed borrower details, waiting for review");
-  const entry = page.locator("[data-borrower-entry]");
-  await expect(entry).toContainText("Changed: Name, CIF.");
-  await entry.getByRole("button", { name: "See the change" }).click();
-  const sheet = page.getByRole("dialog", { name: /^MyLoans corrected the borrower's details/ });
-  await expect(sheet.locator("[data-borrower-waiting]")).toHaveText("Waiting for review by an approver for this branch."); // D-029: Admin (All branches) decides; no fallback
-  await expect(sheet.locator("[data-no-branch-approver]")).toContainText("No approver assigned to this branch.");
-  await expect(sheet.getByRole("button", { name: "Accept the correction" })).toHaveCount(0);
-  await expect(sheet.locator('[data-diff="now"]').filter({ visible: true }).first()).toBeVisible();
+  await expect(page.locator("[data-borrower-chip]")).toContainText("myloans changed borrower details: an Open Item waits");
+  await expect(page.locator("[data-open-items-banner]")).toContainText("2 Open Items from myloans: Borrower name, CIF.");
   await noSideways(page);
-  await shot(page, "borrower-readonly");
+  await shot(page, "borrower-banner");
   // Nothing blocked: Send still offered on Notary.
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
-  await expect(page.locator('[id^="send-why-"]').filter({ hasText: "MyLoans" })).toHaveCount(0);
+  await expect(page.locator('[id^="send-why-"]').filter({ hasText: "myloans" })).toHaveCount(0);
   await signInWith(page, BUTTONS.admin);
-  await page.goto(`/loans/${PN}?tab=todo&correction=1`);
-  const review = page.getByRole("dialog", { name: /^MyLoans corrected the borrower's details/ });
-  await review.getByRole("button", { name: "Accept the correction" }).click();
-  await expect(review.locator("[data-borrower-error]")).toContainText("at least 5");
-  await review.getByLabel("Note (required)").fill("Checked the valid ID");
+  const card = await openItemsCard(page, PN, "borrowerName");
+  await expect(card.locator('[data-oi-item="borrowerName"]')).toContainText("Ana Villanueva-Reyes");
+  await card.getByLabel("Remarks (required)").fill("Checked the valid ID");
   await noSideways(page);
-  await shot(page, "borrower-review");
-  await review.getByRole("button", { name: "Accept the correction" }).click();
+  await shot(page, "borrower-open-item");
+  await card.getByRole("button", { name: /^Approve/ }).click();
   await expect.poll(async () => (await db.loan.findUniqueOrThrow({ where: { pn: PN } })).borrowerName).toBe("Ana Villanueva-Reyes");
   clean();
 });

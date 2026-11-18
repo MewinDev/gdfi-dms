@@ -767,6 +767,8 @@ On the mock, through the piece 6 client (`changesPage`, `poolPage`) and the roun
 
 ## 9. Piece 8: Open Items (D-004, D-010 to D-013)
 
+> **Built 18 November 2026 (D-053).** As planned (supersede, Q-N10), with the four additions: reverted in myloans closes the item; every move away from Released is a status item that blocks Send, Forward and new cash; renames are never Open Items (Reference data changes only); the waiting time in working days on the inbox colours, oldest first, Home "N Open Items waiting too long". Model `OpenItem`, `OpenItemCounter`, `ReferenceChange` (migration 028, which moved the development review items and dropped `SourceChange`); `refdata:view` (migration 029). Code: `lib/open-items/fields.ts`, `lib/services/open-items.ts`, `lib/services/reference-changes.ts`, `app/(app)/open-items/page.tsx`. Tests: `tests/integration/open-items.test.ts` and the rewritten sync suites.
+
 ### 9.1 Model
 
 **`OpenItem`:**

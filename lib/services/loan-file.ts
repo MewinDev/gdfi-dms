@@ -27,7 +27,7 @@ import {
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { recomputeStage } from "./stage";
 import { getClassificationRules, getSetting, setSetting } from "@/lib/settings";
-import { linkOnOpen, refreshLoan } from "./source-sync";
+import { refreshLoan } from "./source-sync";
 import { hashTracked, trackedOf } from "@/lib/myloans/changes";
 import { UserError } from "./errors";
 
@@ -232,7 +232,7 @@ async function redoneFrom(rec: { pn: string; cin: string | null }): Promise<stri
   const other = await prisma.loan.findFirst({
     where: {
       cin: rec.cin, pn: { not: rec.pn },
-      OR: [{ sourceStatus: { not: "RELEASED" } }, { sourceChanges: { some: { decidedAt: null, category: { in: ["STATUS", "REPLACEMENT"] } } } }],
+      OR: [{ sourceStatus: { not: "RELEASED" } }, { openItems: { some: { status: "PENDING", field: "status" } } }],
     },
     select: { pn: true },
   });
@@ -424,10 +424,8 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
     }
     throw e;
   }
-  // MyLoans says it replaces another PN: link both files and raise the review item on the old one. (D-050: the
-  // contract sends no previous PN and the replacement guess is gone; a redo is read from myloans' own link.)
-  const replaces = rec.previousPn ?? (await redoneFrom(rec));
-  if (replaces) await linkOnOpen(pn, replaces);
+  // A redo of a loan we hold (myloans' own link): the old loan's status Open Item says "replaced by"; nothing is
+  // linked here (Link as replacement on Related loans, D-051).
   await logPnSearch(user, pn, "OPENED", { statusId: rec.statusId ?? null, feedState: rec.feedState ?? null, loanBranchId: branch.id });
   return { pn, alreadyOpen: false };
 }

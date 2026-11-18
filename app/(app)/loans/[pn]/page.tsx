@@ -48,15 +48,14 @@ import { coveredOpenKinds, getNextSteps, nextStepsInputOf } from "@/lib/workflow
 import { inactiveSenderNote, roundChip, sentBack, sentBackIsFor } from "@/lib/ui/rounds";
 import { CLOCK_NOTE, firstLine, lockedMessage, mayAddDetails, mayResumeHold, holdReasonName } from "@/lib/ui/holds";
 import { holdDays, problemDays } from "@/lib/workflow/tat";
-import { sendBlockReason } from "@/lib/services/source-blocks";
+import { loanBlockedReason, sendBlockReason } from "@/lib/services/source-blocks";
+import { loanOpenItems } from "@/lib/services/open-items";
 import { refreshOnOpen } from "@/lib/services/source-sync";
-import { relatedPanel, reviewFor, reusableFor, type ReviewData } from "@/lib/services/source-review";
+import { relatedPanel, reusableFor } from "@/lib/services/source-review";
 import { COMPLETE_WITH_EXCEPTIONS, VAULT_STAGES, missingPapersOf } from "@/lib/services/papers";
 import type { PaperTools } from "@/components/loan/paper-row";
 import { RelatedLoansCard } from "@/components/loan/related-loans";
-import { CopyReusablePapers, SourceReviewEntry } from "@/components/loan/source-review";
-import { BorrowerReviewEntry } from "@/components/loan/borrower-review";
-import { borrowerReviewFor, type BorrowerReviewData } from "@/lib/services/borrower-review";
+import { CopyReusablePapers } from "@/components/loan/source-review";
 import { BORROWER_CHIP } from "@/lib/ui/borrower-chip";
 import { getSetting } from "@/lib/settings";
 import { poolLine } from "@/lib/services/dp-pool";
@@ -88,7 +87,8 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
   if (!loan) notFound(); // includes loan files outside the LA's branches
   // Refreshed from MyLoans when the copy is older than the setting; an outage never blocks the page.
   if (await refreshOnOpen(loan)) loan = (await getLoanForUser(user, loan.pn)) ?? loan;
-  const [review, reusable, related, opened, correction] = await Promise.all([reviewFor(user, loan.id), reusableFor(user, loan.id), relatedPanel(user, loan), openedAt(loan.pn, loan.branch), borrowerReviewFor(user, loan.id)]);
+  const [pending, blocked, reusable, related, opened] = await Promise.all([loanOpenItems(loan.id), loanBlockedReason(prisma, loan.id), reusableFor(user, loan.id), relatedPanel(user, loan), openedAt(loan.pn, loan.branch)]);
+  const correction = pending.some((i) => i.audience === "BORROWER");
   const copySources = [...new Set(reusable.map((o) => o.fromPn))].map((pn) => ({ pn, options: reusable.filter((o) => o.fromPn === pn) }));
   if (OLD_HISTORY.includes(sp.tab ?? "")) redirect(`/loans/${loan.pn}?tab=journey`);
   const ctx = await getLoanContext(loan);
@@ -137,7 +137,13 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
       />
 
       {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
-      {/* The loan keeps the DMS details until the correction is decided (nothing is blocked). */}
+      {/* Piece 8: the loan keeps the DMS values until an approver decides; a loan that left Released does not move on. */}
+      {blocked && <Banner tone="bad"><span data-loan-ended>{blocked}</span></Banner>}
+      {pending.length > 0 && (
+        <Banner tone="wait">
+          <span data-open-items-banner>{pending.length} Open Item{pending.length === 1 ? "" : "s"} from myloans: {[...new Set(pending.map((i) => i.fieldLabel))].join(", ")}. The DMS keeps its values until an approver decides. <Link href={`/open-items?pn=${loan.pn}`} className="link">See {pending.length === 1 ? "it" : "them"}</Link></span>
+        </Banner>
+      )}
       {correction && <p className="-mt-1" data-borrower-chip><ToneChip tone="wait">{BORROWER_CHIP}</ToneChip></p>}
       {loan.cancelledAt && <Banner tone="bad">Closed: {loan.cancelReason ?? "Cancelled in MyLoans"} ({fmtDateTime(loan.cancelledAt)}). Nothing was deleted.</Banner>}
       <SourceStrip loan={loan} view={can(user, PERMISSIONS.MYLOANS_VIEW)} refresh={can(user, PERMISSIONS.LOANS_REFRESH)} paused={await getSetting("myloans.paused")} />
@@ -153,11 +159,9 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
         ))}
       </nav>
 
-      {tab === "todo" && workTxn && <WorkView loan={loan} ctx={ctx} user={user} selected={workTxn} review={review} correction={correction} />}
+      {tab === "todo" && workTxn && <WorkView loan={loan} ctx={ctx} user={user} selected={workTxn} pending={pending} />}
       {tab === "todo" && !workTxn && (
         <>
-          {review && <SourceReviewEntry review={review} />}
-          {correction && <BorrowerReviewEntry review={correction} />}
           {copySources.map((c) => <CopyReusablePapers key={c.pn} loanId={loan.id} oldPn={c.pn} mode={c.options[0].mode} options={c.options} />)}
           <TodoTab loan={loan} ctx={ctx} user={user} step={step} related={<RelatedLoansCard loanId={loan.id} rows={related.rows} hidden={related.hidden} />} />
         </>
@@ -547,7 +551,7 @@ function nextAfter(loan: LoanDetail, t: Txn): { href: string; name: string } | n
   return n ? { href: `/loans/${loan.pn}?tab=todo&tx=${n.type.code}`, name: txnName(n.type.code, n.type.name) } : null;
 }
 
-async function WorkView({ loan, ctx, user, selected, review, correction }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; selected: Txn; review: ReviewData | null; correction: BorrowerReviewData | null }) {
+async function WorkView({ loan, ctx, user, selected, pending }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; selected: Txn; pending: Awaited<ReturnType<typeof loanOpenItems>> }) {
   const la = can(user, PERMISSIONS.CHECKLIST_TICK);
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
   const opens = openItemsFor(loan, ctx.holidays);
@@ -664,8 +668,8 @@ async function WorkView({ loan, ctx, user, selected, review, correction }: { loa
 
   // Open items: only what the card does not already say (other transactions, MyLoans changes).
   const covered = coveredOpenKinds(steps);
-  const rows = [...(review ? [sourceRow(review)] : []), ...(correction ? [correctionRow(correction)] : []), ...backRows(loan, user), ...openRows(loan, opens, user)]
-    .filter((r) => !(r.txnCode === selected.type.code && r.kind !== "source" && r.kind !== "correction" && covered.has(r.kind)));
+  const rows = [...(pending.length ? [sourceRow(loan.pn, pending)] : []), ...backRows(loan, user), ...openRows(loan, opens, user)]
+    .filter((r) => !(r.txnCode === selected.type.code && r.kind !== "source" && covered.has(r.kind)));
 
   const selectedIndex = live.findIndex((t) => t.id === selected.id) + 1;
   const items = txnItems(loan, ctx, opens);
@@ -905,20 +909,11 @@ function backRows(loan: LoanDetail, user: CurrentUser): OpenRow[] {
   });
 }
 
-/** The MyLoans change under review, as an Open items row ("MyLoans changes" group). */
-function sourceRow(r: ReviewData): OpenRow {
+/** myloans changes waiting as Open Items (piece 8), as one Open items row: it opens the Open Items page for this PN. */
+function sourceRow(pn: string, items: Awaited<ReturnType<typeof loanOpenItems>>): OpenRow {
   return {
-    id: r.id, kind: "source", txnCode: "", txnName: "MyLoans", days: 0, href: "", target: "", canResume: false, review: r,
-    reason: r.category === "MATERIAL" ? `Changed: ${r.fields}` : r.category === "REPLACEMENT" ? "A replacement PN was given" : "Cancelled or not released in MyLoans",
-    who: r.canReview ? "Review it" : "Waiting for an approver to review", since: "",
-  };
-}
-
-/** The borrower details correction, as an Open items row ("MyLoans corrections" group). */
-function correctionRow(r: BorrowerReviewData): OpenRow {
-  return {
-    id: r.id, kind: "correction", txnCode: "", txnName: "MyLoans", days: 0, href: "", target: "", canResume: false, correction: r,
-    reason: `Borrower details changed: ${r.fields}`, who: r.canDecide ? "Review it" : r.waiting, since: "",
+    id: `oi-${pn}`, kind: "source", txnCode: "", txnName: "myloans", days: 0, href: `/open-items?pn=${pn}`, target: "", canResume: false,
+    reason: `Changed: ${[...new Set(items.map((i) => i.fieldLabel))].join(", ")}`, who: "An approver of the branch decides", since: "",
   };
 }
 

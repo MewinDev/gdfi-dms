@@ -7,6 +7,7 @@ import { myLoansClientV1 } from "@/lib/myloans/v1";
 import { classifyByKeywords, classificationWord, type ClassificationRules, type ClassificationValue, type ClassifyResult } from "@/lib/rules/classify";
 import { getClassificationRules, recheckClassifications } from "./classification";
 import { UserError } from "./errors";
+import { recordReferenceChange } from "./reference-changes";
 
 /**
  * D-049: myloans products (API 5) and their classification. The list is read whole from API 5 and matched by
@@ -24,7 +25,11 @@ export async function refreshProducts(now: Date = new Date()): Promise<{ added: 
   for (const p of r.data.items) {
     const was = known.get(p.productId);
     if (!was) { await prisma.product.create({ data: { sourceProductId: p.productId, code: p.productCode, name: p.name, active: p.active, seenAt: now } }); added++; continue; }
-    if (was.name !== p.name) renamed++;
+    if (was.name !== p.name) {
+      renamed++;
+      // D-012, D-053: a product rename is reference data: logged in Reference data changes (with a notice).
+      await prisma.$transaction((tx) => recordReferenceChange(tx, { entity: "PRODUCT", key: p.productCode, oldValue: was.name, newValue: p.name, source: "myloans API 5", at: now }));
+    }
     await prisma.product.update({ where: { id: was.id }, data: { code: p.productCode, name: p.name, active: p.active, seenAt: now } });
   }
   const sent = new Set(r.data.items.map((p) => p.productId));

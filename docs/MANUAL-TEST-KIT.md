@@ -208,13 +208,13 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 
 Before these, as **Admin**, turn on the test simulator in Settings, System. "Simulate a MyLoans change" is on the Journey tab of a loan file (Admin).
 
-30. **Borrower details.** As **LA Angono**, open an Angono PN from the list, tick the Notary papers and send one transaction to a processor. As **Admin**, on its Journey tab, simulate "Change the borrower name". As **LA Angono**, open the loan file, its To do tab and **See the change**. As **LA Supervisor/Head**, open it from Home and decide it. Then, as Admin, simulate "Change the borrower's CIF" and, as LA Supervisor/Head, press **Keep current**. Press **Refresh from MyLoans** afterwards.
-31. **Amount and branch.** On another Angono loan, as Admin, simulate "Change the amount". As LA Angono, open Check documents for Mortgage and Notary. As Admin, open the review and press **Keep current** without a note, then with one. On an Antipolo loan (LA Antipolo opens it), simulate "Move the loan to another branch" and apply it as Admin; then look for the loan as LA Antipolo and as LA Angono.
+30. **Borrower details (Open Items).** As **LA Angono**, open an Angono PN from the list, tick the Notary papers and send one transaction to a processor. As **Admin**, on its Journey tab, simulate "Change the borrower name". As **LA Angono**, open the loan file and read the banner. As **LA Supervisor/Head**, open **Open Items** from Home and approve it with remarks. Then, as Admin, simulate "Change the borrower's CIF" and, as LA Supervisor/Head, **Reject** it. Press **Refresh from MyLoans** afterwards.
+31. **Amount and branch.** On another Angono loan, as Admin, simulate "Change the amount". As LA Angono, open Check documents for Mortgage and Notary. As Admin, open Open Items for that PN and press **Reject** without remarks, then with some. On an Antipolo loan (LA Antipolo opens it), simulate "Move the loan to another branch" and approve it as Admin on Open Items; then look for the loan as LA Antipolo and as LA Angono.
 32. **Pause MyLoans calls.** As **Admin**, Settings, MyLoans sync: press **Pause MyLoans calls**, then **Run now**. Open a loan file. Then turn MyLoans calls back on. As **Finance**, look for the same switch.
-33. **Area name.** As Admin, simulate "Correct the area name (minor)" on any loan and open its Journey tab.
+33. **Area name (a rename).** As Admin, simulate "Correct the area name (minor)" on any loan, open its Journey tab, then Settings, Reference data changes.
 
-34. **Return the cash and notes.** On a loan with cash out, as Admin simulate "Set the loan cancelled", open the review and press **Return the cash** without a note, then with a 4-character note, then with a longer one. Try **Keep current** on another review with a 4-character note.
-35. **Replacement at another branch.** As Admin, on a cancelled Angono loan whose borrower has a new loan at Antipolo (Related loans), open the review or the Link form and read it before linking.
+34. **Return the cash and remarks.** On a loan with cash out, as Admin simulate "Set the loan cancelled". Read the loan file. Open Open Items for that PN and press **Ask for the cash back** without remarks, then with 4 characters, then with more. Try **Approve** on its status item. Try **Reject** on another Open Item with 4 characters.
+35. **Replacement at another branch.** As Admin, on a cancelled Angono loan whose borrower has a new loan at Antipolo (Related loans), open the Link form and read it before linking.
 36. **The sync from the console.** Run `npm run sync:myloans -- --now` in PowerShell, then open Settings, MyLoans sync and read the Run log.
 
 ### Find a loan card and rule names (12 November 2026)

@@ -62,7 +62,9 @@ export async function resetLoanData(tx: Prisma.TransactionClient): Promise<Reset
   await tx.checklistCheck.deleteMany({});
   const transactions = (await tx.loanTransaction.deleteMany({})).count;
   await tx.loanSourceSnapshot.deleteMany({});
-  await tx.sourceChange.deleteMany({});
+  await tx.openItem.deleteMany({});
+  await tx.openItemCounter.deleteMany({});
+  await tx.referenceChange.deleteMany({});
   // Simulated MyLoans changes (mock source) go with the sample loans.
   await tx.setting.deleteMany({ where: { key: { in: ["myloans.mockOverrides", "myloans.mockExtra", "myloans.syncState"] } } });
   // Piece 7: the sync's run log, its lock and the released loans not yet in the DMS start again with the loans.

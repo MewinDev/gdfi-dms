@@ -55,6 +55,9 @@ import { MyLoansMockPanel } from "@/components/admin/myloans-mock-panel";
 import { mockAllowed } from "@/lib/myloans/v1/mock-store";
 import { MOCK_SCENARIOS } from "@/lib/myloans/v1/mock-scenarios";
 import { syncOverview } from "@/lib/services/myloans-sync";
+import { referenceChanges, ENTITY_WORDS } from "@/lib/services/reference-changes";
+import { MONITORABLE_FIELDS, OI_FIELDS } from "@/lib/open-items/fields";
+import { OpenItemsFieldsForm } from "@/components/open-items/settings";
 import { callsThisHour } from "@/lib/myloans/client";
 import { myLoansMode } from "@/lib/myloans/mode";
 import { accountFeedQuality, feedQualityLine } from "@/lib/services/feed-quality";
@@ -97,7 +100,9 @@ const AREAS = [
   { key: "return-reasons", title: "Return reasons", desc: "Why a processor returns a job to the Loan Associate.", help: "Offered when a processor returns an accepted job for papers. The turnaround time keeps counting. Nothing is deleted: make it inactive instead.", Icon: ArrowLeftIcon },
   { key: "holidays", title: "Holidays and working days", desc: "Working days, holidays and office closures: one calendar for every count.", help: "Check shows which saved due dates a change moves before you save it.", Icon: CalendarIcon },
   { key: "system", title: "System and test mode", desc: "PN format, MyLoans adapter, simulator and test switches.", help: "These switches save as soon as you press them.", Icon: SettingsIcon },
-  { key: "myloans-sync", title: "MyLoans sync", desc: "The myloans sync: what changed, the daily catch-up and the run log.", help: "Reads only what changed in myloans. Nothing is applied by itself: each change is a review item for the branch's approvers.", Icon: RefreshIcon },
+  { key: "myloans-sync", title: "MyLoans sync", desc: "The myloans sync: what changed, the daily catch-up and the run log.", help: "Reads only what changed in myloans. Nothing is applied by itself: a change to a loan or borrower field is an Open Item for the branch's approvers.", Icon: RefreshIcon },
+  { key: "open-items", title: "Open Items", desc: "Which myloans changes wait for an approver.", help: "A change to a ticked field waits as an Open Item. The status in myloans always does. Renames never do (D-012, D-053).", Icon: ChecklistIcon },
+  { key: "reference-changes", title: "Reference data changes", desc: "Renames from myloans, applied by themselves.", help: "Area, division, company, branch and product names: each rename is applied to the loan files by itself and listed here (D-012, D-053).", Icon: RefreshIcon },
   { key: "email", title: "Email notifications", desc: "Emails for the updates people already get in GDFI DMS.", help: "Email is another way to get the same updates. Turn it on when the system goes live.", Icon: BellIcon },
   { key: "test-data", title: "Test data", desc: "Sample PNs on Find a loan.", help: "Only in test mode.", Icon: FlaskIcon },
   { key: "test-kit", title: "Test kit", desc: "Starting state, reset, backups and the test sheet.", help: "Only on a local test setup (database gdfi_dms, test mode). Reset and Restore ask you to type RESET and take a backup first.", Icon: FlaskIcon },
@@ -212,6 +217,8 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     "missing-reasons": n(missingReasons, "reason", "reasons"),
     "processing-stages": n(stages, "stage", "stages"),
     "myloans-sync": await syncStatusLine(),
+    "open-items": { main: `${(await getSetting("openItems.monitoredFields")).length + 1} fields watched`, extra: `${await prisma.openItem.count({ where: { status: "PENDING" } })} pending` },
+    "reference-changes": await prisma.referenceChange.count().then((n) => ({ main: `${n} rename${n === 1 ? "" : "s"} logged`, extra: "" })),
     email: { main: (await getSetting("email.active")) ? "Active" : "Not active", extra: senderLine() === "Not set up" ? "Not set up" : "" },
     system: { main: `${ENV_LABEL[appEnv()]} · ${appEnv() === "production" ? "" : `Simulator ${sim ? "On" : "Off"} · `}MyLoans ${unavailable ? "unavailable (test)" : (process.env.MYLOANS_MODE ?? "mock").toLowerCase() === "live" ? "live" : "mock"}`, extra: "" },
     "test-data": { main: testMode ? "Test mode only" : "Off", extra: "" },
@@ -250,6 +257,38 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
     return (
       <SettingsModal {...common} footer={can(user, PERMISSIONS.SOURCE_MANAGE) ? { kind: "save", formId: "myloans-sync-form", cancelHref: BASE } : { kind: "done" }}>
         <MyLoansSyncForm d={await syncCardData()} formId="myloans-sync-form" canManage={can(user, PERMISSIONS.SOURCE_MANAGE)} canRun={can(user, PERMISSIONS.MYLOANS_SYNC)} />
+      </SettingsModal>
+    );
+  }
+  if (area.key === "open-items") {
+    const canEdit = can(user, PERMISSIONS.SOURCE_MANAGE);
+    return (
+      <SettingsModal {...common} footer={canEdit ? { kind: "save", formId: "open-items-form", cancelHref: BASE } : { kind: "done" }}>
+        <OpenItemsFieldsForm formId="open-items-form" canEdit={canEdit} on={await getSetting("openItems.monitoredFields")}
+          fields={MONITORABLE_FIELDS.map((f) => ({ key: f, label: OI_FIELDS[f].label, group: OI_FIELDS[f].group === "rules", borrower: OI_FIELDS[f].audience === "BORROWER" }))} />
+      </SettingsModal>
+    );
+  }
+  if (area.key === "reference-changes") {
+    const rows = await referenceChanges(user);
+    return (
+      <SettingsModal {...common} footer={{ kind: "done" }}>
+        {rows.length === 0 ? <p className="rounded-xl bg-fill px-3 py-4 text-sm text-ink-2" data-refdata-empty>No renames yet.</p> : (
+          <div className="max-w-full overflow-x-auto rounded-xl border border-line" data-refdata>
+            <table className="w-full min-w-[620px] text-left text-[13px]">
+              <caption className="sr-only">Renames from myloans, newest first</caption>
+              <thead className="bg-fill text-xs uppercase tracking-wide text-ink-2"><tr>{["When (PHT)", "What", "Was", "Now", "Loan files", "Source"].map((h) => <th key={h} scope="col" className="px-2.5 py-2">{h}</th>)}</tr></thead>
+              <tbody>{rows.map((r) => (
+                <tr key={r.id} className="border-t border-line-soft" data-refdata-row={r.entity}>
+                  <td className="whitespace-nowrap px-2.5 py-1.5">{fmtShort(r.at)}</td>
+                  <td className="px-2.5 py-1.5">{ENTITY_WORDS[r.entity] ?? r.entity}{r.entityKey ? <span className="text-ink-2"> · {r.entityKey}</span> : null}</td>
+                  <td className="px-2.5 py-1.5">{r.oldValue ?? "blank"}</td><td className="px-2.5 py-1.5 font-semibold">{r.newValue ?? "blank"}</td>
+                  <td className="px-2.5 py-1.5">{r.loanCount}</td><td className="px-2.5 py-1.5">{r.source}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
       </SettingsModal>
     );
   }

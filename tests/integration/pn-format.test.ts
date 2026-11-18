@@ -10,8 +10,8 @@ import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getSetting, setSetting } from "@/lib/settings";
 import { lookupPn, openLoanFile } from "@/lib/services/loan-file";
-import { applySourceChange, simulateSourceChange } from "@/lib/services/source-sync";
-import { reviewFor } from "@/lib/services/source-review";
+import { simulateSourceChange } from "@/lib/services/source-sync";
+import { decideOpenItem } from "@/lib/services/open-items";
 import { savePnFormat } from "@/lib/services/pn-settings";
 import { suggestLoans } from "@/lib/services/find-local";
 import { resetClient } from "@/lib/myloans/client";
@@ -95,25 +95,22 @@ describe("Find loan and the PN check", () => {
 });
 
 describe("A loan's branch changes in MyLoans (material change)", () => {
-  it("shows old and new branch and the impact; the loan's branch changes only when Admin applies it", async () => {
+  it("an Open Item with the old and new branch; the loan's branch changes only when an approver approves it", async () => {
     await openLoanFile(la, { pn: ANTIPOLO });
     const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: ANTIPOLO }, include: { branch: true } });
     expect((await openedAt(loan.pn, loan.branch))?.text).toBe("Opened at Antipolo");
     await simulateSourceChange(admin, loan.id, "branch");
-    const review = await reviewFor(admin, loan.id);
-    expect(review).toMatchObject({ category: "MATERIAL" });
-    expect(review!.rows.map((r) => r.label)).toEqual(expect.arrayContaining(["Branch", "Branch code"]));
-    const to = await prisma.branch.findUniqueOrThrow({ where: { code: String(review!.rows.find((r) => r.label === "Branch code")!.now) } });
-    expect(review!.branchMove).toMatchObject({ from: "Antipolo", to: to.name, known: true, openedAt: "Opened at Antipolo" });
-    expect(review!.branchMove!.seeBefore).toBeGreaterThan(0);
+    const item = await prisma.openItem.findFirstOrThrow({ where: { loanId: loan.id, status: "PENDING" } });
+    expect(item).toMatchObject({ field: "branchCode", fieldLabel: "Branch", oldValue: "Antipolo (101)" });
+    const to = await prisma.branch.findUniqueOrThrow({ where: { code: String((item.newRaw as { code: string }).code) } });
     // Not applied yet: still Antipolo.
     expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id }, include: { branch: true } })).branch.code).toBe("101");
-    await applySourceChange(admin, review!.id, { note: "MyLoans moved the account to the other branch." });
+    await decideOpenItem(admin, item.id, { decision: "APPROVE", remarks: "MyLoans moved the account to the other branch." });
     const after = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id }, include: { branch: true } });
     expect(after.branch.code).toBe(to.code);
     expect(after.pn).toBe(ANTIPOLO); // the PN never changes
     expect((await openedAt(after.pn, after.branch))?.text).toBe(`Opened at Antipolo, now at ${to.name}`);
-    const audit = await prisma.auditLog.findFirstOrThrow({ where: { loanId: loan.id, action: "source_change_applied" } });
-    expect(audit.summary).toContain(`the loan's branch is now ${to.name} (was Antipolo)`);
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { loanId: loan.id, action: "open_item_approved" } });
+    expect(audit.summary).toContain(`The loan's branch is now ${to.name}.`);
   });
 });

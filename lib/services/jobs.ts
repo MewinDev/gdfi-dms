@@ -21,6 +21,7 @@ import { typeBandApprovers } from "./funds-handlers";
 import { recomputeStage } from "./stage";
 import { moveDocs, noteDocs } from "./custody";
 import { NotInScopeError, UserError } from "./errors";
+import { forwardBlockReason } from "./source-blocks";
 import { endHoldsOnCompletion } from "./holds";
 import { remarksSchema } from "@/lib/ui/holds";
 import { DECLINE_REASONS } from "@/lib/ui/rounds";
@@ -378,6 +379,9 @@ export async function forwardCore(tx: Tx, a: AssignmentFull, who: Who, raw: Forw
   const p = forwardSchema.safeParse(raw);
   if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
   if (a.status !== "ACCEPTED" || a.transaction.status !== "IN_PROCESS") throw new UserError("Accept the job first.");
+  // D-053: a loan that left Released in myloans does not move on until an approver decides its Open Item.
+  const ended = await forwardBlockReason(tx, a.loanId);
+  if (ended) throw new UserError(ended);
   await requireVerified(tx, a);
   if (!a.processing) throw new UserError("Complete the job first.");
   const branch = await tx.branch.findUnique({ where: { id: p.data.branchId } });
