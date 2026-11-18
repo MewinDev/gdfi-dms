@@ -771,3 +771,17 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   - A loan sent twice in one run raises nothing and notifies Admin (ask the myloans team).
   - Removed: the tier columns, the old background refresh (business hours, cap per run, pause between calls, adaptive cap) and their settings; the hourly call ceiling stays for API 1 (Find loan and the refreshes of one loan).
 
+
+## D-053 Piece 7 accepted; renames are lookup data (correction); piece 8 approved with four additions
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **Piece 7 approved**, with its choices: a change run every 30 minutes; the branch-pool cutoff is "30 days ago" until the go-live date is set; the first load runs from the console only; area, division and company are not in the ContentHash.
+  2. **Correction (D-012, Q7):** changes to the area, division, company, branch and product **names** are lookup data. They never become review items or Open Items: they update automatically and are written to **Reference data changes**. Piece 7 had held them for review (strict v2, D-052 (a)); that is fixed.
+  3. **Piece 8, Open Items: approved**, as planned (one pending item per loan and field, a database rule; supersede on a newer change; loan type, amount, product and release date decided together with the rule effect shown; remarks of 5 to 500 characters to approve and to reject; an Unassigned queue for branches with no approver; a banner on the loan file; the old review pop-ups removed and the development items moved), with four additions:
+     1. **Reverted in myloans:** when myloans puts a field back to the DMS value while an item is pending, the item is closed as "Reverted in myloans" (logged; the approvers are notified).
+     2. **Forward is blocked for every move away from Released** (Cancelled, Inactive, NotReleased, Superseded / replaced), not only a cancellation (D-013, Q8). The loan file says why.
+     3. **Renames never create Open Items:** they are shown only on the Reference data changes page.
+     4. **Waiting time:** each Open Item shows how long it has waited in working days, green / amber / red, oldest first. Home shows approvers "N Open Items waiting too long".
+  4. **Tests:** the plan's list (§9.8) plus the four additions. During tests the development sync timer is off (`MYLOANS_SYNC_DEV_TIMER=false` for the e2e server; vitest starts no server).
+- **Reason:** the user's decisions after the piece 7 report. A rename is not a change to the loan (D-012); a loan that left Released must not move on until a person decides.
