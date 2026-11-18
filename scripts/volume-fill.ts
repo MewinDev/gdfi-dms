@@ -53,6 +53,16 @@ const pick = <T,>(xs: T[], i: number) => xs[i % xs.length];
   await chunk(items, 4000, (p) => prisma.workItem.createMany({ data: p }));
   console.log(`- ${txns.length} transactions, ${items.length} work items`);
 
+  // Processor jobs (the TAT report and Jobs read these): 6,000 transactions sent to the test processor, in process.
+  const dp = await prisma.user.findUniqueOrThrow({ where: { email: "test.dp@gdfi.ph" } });
+  const sent = (await prisma.loanTransaction.findMany({ where: { status: "FOR_CHECKLIST", loan: { borrowerName: { startsWith: "Volume Borrower" } } }, select: { id: true, loanId: true, loan: { select: { branchId: true } } }, take: 6000 }));
+  await chunk(sent.map((t, i) => ({
+    loanId: t.loanId, transactionId: t.id, dpBranchId: t.loan.branchId, dpUserId: dp.id, assignedById: la.id, status: (i % 3 ? "ACCEPTED" : "PENDING_ACCEPTANCE") as never,
+    endorsedAt: new Date(now - (i % 12) * DAY), dueDate: new Date(now + ((i % 9) - 4) * DAY).toISOString().slice(0, 10),
+  })), 2000, (p) => prisma.dpAssignment.createMany({ data: p as never }));
+  await prisma.loanTransaction.updateMany({ where: { id: { in: sent.map((t) => t.id) } }, data: { status: "IN_PROCESS" } });
+  console.log(`- ${sent.length} processor jobs`);
+
   // Released loans not yet in the DMS, waiting in the branch pools (10b).
   const cands = Array.from({ length: 2000 }, (_, i) => ({ externalLoanId: 800_000 + i, pn: `GD8${String(600_000_000_000 + i).slice(-13)}`, borrowerName: `Volume Candidate ${i}`, branchCode: pick(branches, i).code, myloansBranchId: null, amount: "250000.00", releaseDate: new Date(now - (i % 30) * DAY), cin: `CIN-VC-${i}` }));
   await chunk(cands, 2000, (p) => prisma.sourceLoanCandidate.createMany({ data: p }));

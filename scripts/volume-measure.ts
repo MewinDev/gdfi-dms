@@ -8,6 +8,7 @@ import { listLoans } from "@/lib/services/queries";
 import { myItems, poolItems } from "@/lib/services/work-items";
 import { openItemsFor, openItemCounts, pendingOpenItemCount } from "@/lib/services/open-items";
 import { tatReport } from "@/lib/services/tat-report";
+import { jobRows } from "@/lib/services/job-queries";
 import { fileLogPage } from "@/lib/services/file-access-log";
 import { searchSaved } from "@/lib/services/find-local";
 
@@ -30,7 +31,8 @@ async function time(f: () => Promise<unknown>): Promise<number> {
     ["Open Items (Mine)", (u) => openItemsFor(u, "mine")],
     ["Open Items menu count + Home", async (u) => { await pendingOpenItemCount(u); await openItemCounts(u); }],
     ["Loans list (All)", (u) => listLoans(u, { tab: "all" })],
-    ["TAT report", (u) => tatReport(u, {})],
+    ["TAT report (all jobs)", (u) => tatReport(u, { show: "all" })],
+    ["Jobs list (processor)", async () => jobRows({})],
     ["File access log (page 1)", (u) => fileLogPage(u, {}, 1)],
     ["Find loan (type 'GD9500')", (u) => searchSaved(u, "GD9500", 8)],
   ];
