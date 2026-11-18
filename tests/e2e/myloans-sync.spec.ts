@@ -125,8 +125,9 @@ test("Amount change (piece 8): the LA sees the banner and the Open items row; Se
   await signInWith(page, BUTTONS.admin);
   await page.goto("/dashboard");
   // D-053: Open Items in the top menu, with the pending count, for the approvers.
-  const menu = page.getByRole("navigation", { name: "Main" }).filter({ visible: true }).first().getByRole("link", { name: /Open Items/ });
-  await expect(menu).toHaveAttribute("href", "/open-items");
+  // ("Open Items" on wide screens, "Items" on the rail and the phone's bottom bar.)
+  const menu = page.getByRole("navigation", { name: "Main" }).filter({ visible: true }).first().locator('a[href="/open-items"]');
+  await expect(menu).toContainText(/Items/);
   await expect(menu).toContainText("1");
   await page.goto(`/open-items?pn=${PN}`);
   const card = page.locator(`[data-oi-card="rules"][data-pn="${PN}"]`);
