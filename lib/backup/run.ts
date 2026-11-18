@@ -53,8 +53,8 @@ function hasLocalPg(): boolean {
 function pgEnv(url: string): NodeJS.ProcessEnv {
   const u = new URL(url);
   // From the connection string in the environment; passed to pg_dump as PGPASSWORD, never on the command line.
-  const password = decodeURIComponent(u.password);
-  return { ...process.env, PGHOST: u.hostname, PGPORT: u.port || "5432", PGUSER: decodeURIComponent(u.username), PGPASSWORD: password };
+  const pw = decodeURIComponent(u.password);
+  return { ...process.env, PGHOST: u.hostname, PGPORT: u.port || "5432", PGUSER: decodeURIComponent(u.username), PGPASSWORD: pw };
 }
 const sourceUrl = () => process.env.DIRECT_URL || process.env.DATABASE_URL || "";
 
