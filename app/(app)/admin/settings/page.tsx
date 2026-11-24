@@ -390,6 +390,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
         <FundsSettingsForm
           carryOverLimitDays={await getSetting("funds.carryOverLimitDays")}
           blockLtoUntilFunded={await getSetting("funds.blockLtoUntilFunded")}
+          blockLtoUntilReceiptConfirmed={await getSetting("funds.blockLtoUntilReceiptConfirmed")}
           approvalBandsOn={await getSetting("funds.approvalBandsOn")}
         />
       )}

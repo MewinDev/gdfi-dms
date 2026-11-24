@@ -42,6 +42,8 @@ export const SETTING_DEFAULTS = {
   "funds.carryOverLimitDays": 3 as number,
   /** Funds: block "At the LTO" while a funds-flagged transaction is not Funded. */
   "funds.blockLtoUntilFunded": true as boolean,
+  /** D-056 item 1 [TO CONFIRM with Finance]: "At the LTO" also waits until the processor confirmed receipt of a fund transfer. Off. */
+  "funds.blockLtoUntilReceiptConfirmed": false as boolean,
   /**
    * Funds (D-024): approval amount bands. Off (the default, as v2): anyone with the type's Approve tick who
    * handles that type approves. On: only the roles of the band for the amount (Settings, Approval bands).

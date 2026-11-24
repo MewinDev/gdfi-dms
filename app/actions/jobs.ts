@@ -14,6 +14,7 @@ import {
 import { storeEvidenceFile } from "@/lib/services/job-stages";
 import {
   addReceipt, changeFundsType, closeAdvance, confirmReturn, decideAdvance, decideCarryOver, decideTopUp, grantException, recordReturn, releaseAdvance, releaseTopUp, requestAdvance, requestTopUp,
+  confirmReceipt, resolveReceiptMismatch,
 } from "@/lib/services/funds";
 import { UserError } from "@/lib/services/errors";
 import { passJob } from "@/lib/services/pasuyo";
@@ -396,7 +397,28 @@ export async function releaseTopUpAction(_p: ActionState, fd: FormData): Promise
 
 /** What Finance typed at release (the service checks which fields the funds type needs). */
 function releaseFields(fd: FormData) {
-  return { ref: str(fd, "ref"), transferDate: str(fd, "transferDate"), accountProvider: str(fd, "accountProvider"), accountName: str(fd, "accountName"), accountLast4: str(fd, "accountLast4") };
+  return { ref: str(fd, "ref"), transferDate: str(fd, "transferDate"), accountProvider: str(fd, "accountProvider"), accountName: str(fd, "accountName"), accountLast4: str(fd, "accountLast4"), accountChecked: str(fd, "accountChecked") };
+}
+
+/** D-056: the processor confirms receipt of a transfer (reference, amount, last 4); a mismatch is flagged to Finance. */
+export async function confirmReceiptAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const u = await requirePermission(PERMISSIONS.FUNDS_REQUEST);
+    const r = await confirmReceipt(u, { advanceId: str(fd, "advanceId"), ref: str(fd, "ref"), amount: str(fd, "amount"), last4: str(fd, "last4") });
+    await refresh();
+    if (!r.matched) throw new UserError(r.message);
+    return r.message;
+  });
+}
+
+/** D-056: Finance clears a receipt mismatch with remarks. */
+export async function resolveReceiptAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const u = await requireAnyPermission(anyStepKeys("release"));
+    const msg = await resolveReceiptMismatch(u, { advanceId: str(fd, "advanceId"), remarks: str(fd, "remarks") });
+    await refresh();
+    return msg;
+  });
 }
 
 /** Finance changes the funds type before the release (remarks 5 to 500 characters). */

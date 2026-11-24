@@ -1,6 +1,6 @@
 # 16 Holds, problems and returns
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -17,7 +17,7 @@ Exceptions on work (v2 §6.4): a hold (waiting on something that is not a fault)
 | 5 | Missing document flagged by the LA (blocks closure later) | ✅ Built (closure is phase C) | Check documents | `papers:mark_missing` | Missing-paper reasons | module 12 row 14 | UAT LA-6 |
 | 6 | Missing document found by the DP: return to the LA | ✅ Built | Job | `jobs:return_to_la` | Return reasons | module 13 row 6 | UAT DP-5 |
 | 7 | Transaction with issue at the LTO: retry or return | ✅ Built | Job | `jobs:work` | Problem reasons | module 13 row 14 | UAT DP-4 |
-| 8 | Fund mismatch exception | ❌ Missing | n/a | n/a | n/a | module 14 row 10 | n/a |
+| 8 | Fund mismatch exception | ✅ Built (D-056 item 1) | My funds; Funds, Outstanding | DP, Finance | n/a | module 14 row 10 | UAT FIN-9 |
 | 9 | Unliquidated CA exception (no new CA) | ✅ Built as decided | My funds | System | No | module 15 row 5 | UAT DP-9 |
 | 10 | myloans change (Open Item) exception | ✅ Built | Open Items | approvers | Monitored fields | module 10 | UAT SUP-2 |
 | 11 | QA finding; document not received at the vault | 📦 Later phase (B) | n/a | n/a | n/a | STATUS phase B | n/a |

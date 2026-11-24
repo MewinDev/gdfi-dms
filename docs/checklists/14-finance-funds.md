@@ -1,6 +1,6 @@
 # 14 Finance and funds (CA / FT, approval, release, exceptions, bands)
 
-Last updated: 19 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -13,13 +13,13 @@ The processor asks for money for LTO work as a Cash advance (CA) or a Fund trans
 | 1 | **Known gap 1. DP fund request, v2: one request per account; amount = document fees + km × rate + meals + other.** Built today: one request per DP covering several jobs and PNs, with lines per expense kind; each line's amount comes from the rule's suggested amount, the kind's preset, the LTO office's transport, or typed; maximums per transaction type; no km × rate or meals-per-day formula | ✅ As decided: today's model kept, no v2 formula (D-056 item 4) [TO CONFIRM with Finance and Operations] | My funds, New request | `funds:request` | Expense kinds, Cash-advance rules, LTO office transport | `lib/services/funds.ts` (`CashAdvanceLine` source RULE / PRESET / OFFICE / TYPED) | UAT DP-7 |
 | 2 | Computed rates locked; other expenses with required remarks | ✅ As decided with item 1 (D-056 item 4) | My funds | `funds:request` | Maximums | `funds.ts` | Add an Other line without remarks |
 | 3 | Fund type per request: CA or FT | ✅ Built | My funds | `funds:request` | Funds types | `lib/funds/types.ts` | UAT DP-7 |
-| 4 | CA details: amount, date, needs; FT: amount, payee, receiving account (last 4 only) | ⚠️ Partial: FT account (provider, name, last 4) is entered by Finance at release, not by the DP at request | Funds, Release | Finance | Funds types (needs account / reference) | `checkRelease` in `lib/funds/types.ts` | UAT FIN-4 |
+| 4 | CA details: amount, date, needs; FT: amount, payee, receiving account (last 4 only) | ✅ Built: the DP types the FT account at request; Finance sees it in full only on the release screen and ticks that it was checked; cleared at release, last 4 kept (D-056 item 5) | My funds, New request; Funds, Release | Finance | Funds types (needs account / reference) | `checkRequestAccount` in `lib/funds/types.ts`; `releaseAdvance`; `tests/integration/phase-a-gaps.test.ts`; e2e `funds-types.spec.ts` | UAT FIN-4 |
 | 5 | Routed to the matching Finance user (CA only to CA users, FT to FT users) | ✅ Built (Changed by D-009: one Finance role, "Handles CA / FT" per person) | Funds | `funds:ca_*` / `funds:ft_*` | Per person | D-009, D-035 | CA-only user sees no FT |
 | 6 | Finance: breakdown per PN and per expense type before release | ✅ Built | Funds, request | Finance | No | `app/(app)/funds/[number]` | UAT FIN-2 |
 | 7 | Approve then release (Changed by D-024: Finance keeps approve-then-release; v2 had no approval step) | ✅ Built | Funds | `funds:*_approve`, `funds:*_release` | Approval bands (off) | D-024 | UAT FIN-2, FIN-4 |
 | 8 | Approval bands by amount and role | ✅ Built, off by default | Settings, Approval bands | `settings:cash_advance` | Yes | D-024 | ⏸ Finance to confirm (D-024) |
 | 9 | Release needs the details: FT bank reference # and date, account last 4; CA voucher reference; difference from the request needs remarks | ✅ Built (per funds type: needs reference, needs account) | Funds, Release | `funds:*_release` | Funds types | `lib/funds/types.ts` `checkRelease` | UAT FIN-4 |
-| 10 | **Known gap 2. DP receipt confirmation:** the DP matches reference #, amount (and last 4 for FT); a mismatch is flagged to Finance and Admin; the DP cannot start LTO until resolved | ❌ Missing (the LTO stage waits for Released, not for the DP's confirmation; no mismatch flag) | n/a | n/a | n/a | grep: no confirm-receipt service | n/a |
+| 10 | **Known gap 2. DP receipt confirmation:** the DP matches reference #, amount (and last 4 for FT); a mismatch is flagged to Finance and Admin; the DP cannot start LTO until resolved | ✅ Built (D-056 item 1): match confirms; a mismatch is flagged to Finance (handlers of that type and branch) with the details; Finance clears it with remarks; the LTO gate is a setting (off) [TO CONFIRM] | My funds; Funds, Outstanding | DP (`funds:request`); Finance (`funds:ft_release`) | Settings, Cash-advance rules (the LTO gate) | `confirmReceipt`, `resolveReceiptMismatch` in `lib/services/funds.ts`; `tests/integration/phase-a-gaps.test.ts`; e2e `funds-types.spec.ts` | UAT DP-11, FIN-9 |
 | 11 | "Funds credited" with the date on the account | ⚠️ Partial: shown as Released with the date | Loan file Journey, Job | n/a | No | FLOWCHART Chart 6 | Read the job after release |
 | 12 | Cannot release your own request | ✅ Built | Funds | n/a | No | `funds.ts` | n/a |
 | 13 | Edit lines, change type before release, with remarks | ✅ Built (DMS addition) | Funds | `funds:*_edit_lines`, `funds:*_change_type` | No | e2e `funds-types.spec.ts` | n/a |

@@ -227,11 +227,13 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
   /** Request (Cash advance, or Fund transfer when `ft`), approve, release (a transfer with its reference, date and account ending). */
   const fund = async (pn: string, dp: CurrentUser, upTo: "requested" | "approved" | "released", ft = false) => {
     const t = await txn(pn, "MORTGAGE");
-    const r = await requestAdvance(dp, { lines: [{ transactionId: t.id, kind: "LTO_FEE", cents: 350_000 }], fundsTypeId: (await fundsType(ft ? "FT" : "CA")).id });
+    // D-056: a fund transfer carries the processor's receiving account (fake numbers).
+    const account = ft ? { provider: "BPI", name: dp.name, number: dp.name === "DP 1" ? "0000 1111 4821" : "0000 2222 7350" } : undefined;
+    const r = await requestAdvance(dp, { lines: [{ transactionId: t.id, kind: "LTO_FEE", cents: 350_000 }], fundsTypeId: (await fundsType(ft ? "FT" : "CA")).id, account });
     if (upTo !== "requested") await decideAdvance(u.finance, r.id, { approve: true });
     if (upTo === "released") {
       await releaseAdvance(u.finance, r.id, ft
-        ? { ref: `FT-88${pn.slice(-4)}`, transferDate: today, accountProvider: "BPI", accountName: dp.name, accountLast4: dp.name === "DP 1" ? "4821" : "7350" }
+        ? { ref: `FT-88${pn.slice(-4)}`, transferDate: today, accountChecked: "on" }
         : { ref: `CV-${pn.slice(-4)}` });
     }
     return { advanceId: r.id, lineId: (await prisma.cashAdvanceLine.findFirstOrThrow({ where: { advanceId: r.id } })).id };

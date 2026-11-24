@@ -87,7 +87,7 @@ export async function saveSettingsAction(_prev: ActionState, fd: FormData): Prom
 export async function saveFundsSettingsAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   return runAction(async () => {
     const user = await requirePermission(PERMISSIONS.SETTINGS_CASH_ADVANCE);
-    await saveFundsSettings(user, { carryOverLimitDays: str(fd, "carryOverLimitDays"), liquidationDueDays: str(fd, "liquidationDueDays"), blockLtoUntilFunded: fd.get("blockLtoUntilFunded") === "on", approvalBandsOn: fd.get("approvalBandsOn") === "on" });
+    await saveFundsSettings(user, { carryOverLimitDays: str(fd, "carryOverLimitDays"), liquidationDueDays: str(fd, "liquidationDueDays"), blockLtoUntilFunded: fd.get("blockLtoUntilFunded") === "on", blockLtoUntilReceiptConfirmed: fd.get("blockLtoUntilReceiptConfirmed") === "on", approvalBandsOn: fd.get("approvalBandsOn") === "on" });
     revalidatePath("/admin/settings");
     return "Saved.";
   });

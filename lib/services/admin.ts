@@ -452,6 +452,7 @@ export const FUNDS_SETTINGS_SCHEMA = z.object({
   approvalBandsOn: z.boolean().default(false),
   carryOverLimitDays: int("Carry-over limit", 0, 60),
   blockLtoUntilFunded: bool,
+  blockLtoUntilReceiptConfirmed: bool.default(false),
 });
 
 /** Cash-advance switches (Settings > Cash-advance rules). One audit row. */
@@ -464,10 +465,12 @@ export async function saveFundsSettings(user: CurrentUser, raw: Record<string, u
       carryOverLimitDays: await getSetting("funds.carryOverLimitDays", tx),
       approvalBandsOn: await getSetting("funds.approvalBandsOn", tx),
       blockLtoUntilFunded: await getSetting("funds.blockLtoUntilFunded", tx),
+      blockLtoUntilReceiptConfirmed: await getSetting("funds.blockLtoUntilReceiptConfirmed", tx),
     };
     await setSetting("funds.carryOverLimitDays", p.data.carryOverLimitDays, tx);
     await setSetting("funds.approvalBandsOn", p.data.approvalBandsOn, tx);
     await setSetting("funds.blockLtoUntilFunded", p.data.blockLtoUntilFunded, tx);
-    await writeAudit(tx, { actor: actorOf(user), mode: "MANUAL", action: "setting_updated", entityType: "Setting", entityId: "funds", summary: `Cash-advance switches: carry-over limit ${p.data.carryOverLimitDays} working days, block At the LTO until funded ${p.data.blockLtoUntilFunded ? "on" : "off"}, approval bands ${p.data.approvalBandsOn ? "on" : "off"}`, before, after: p.data });
+    await setSetting("funds.blockLtoUntilReceiptConfirmed", p.data.blockLtoUntilReceiptConfirmed, tx);
+    await writeAudit(tx, { actor: actorOf(user), mode: "MANUAL", action: "setting_updated", entityType: "Setting", entityId: "funds", summary: `Cash-advance switches: carry-over limit ${p.data.carryOverLimitDays} working days, block At the LTO until funded ${p.data.blockLtoUntilFunded ? "on" : "off"}, until a transfer's receipt is confirmed ${p.data.blockLtoUntilReceiptConfirmed ? "on" : "off"}, approval bands ${p.data.approvalBandsOn ? "on" : "off"}`, before, after: p.data });
   });
 }

@@ -24,7 +24,9 @@ import { allPapers, asUser, cleanLoans } from "./helpers";
 let la: CurrentUser, dp: CurrentUser, fin: CurrentUser, admin: CurrentUser;
 const today = () => businessDate(new Date());
 const type = (code: string) => prisma.fundsType.findUniqueOrThrow({ where: { code } });
-const FT_RELEASE = { ref: "FT-889101", transferDate: businessDate(new Date()), accountProvider: "BPI", accountName: "Test Document Processor", accountLast4: "4821" };
+const FT_RELEASE = { ref: "FT-889101", transferDate: businessDate(new Date()), accountProvider: "BPI", accountName: "Test Document Processor", accountLast4: "4821", accountChecked: "on" };
+// D-056: the receiving account the processor types at request (fake).
+const ACCOUNT = { provider: "BPI", name: "Test Document Processor", number: "0000 1111 4821" };
 
 beforeAll(async () => {
   la = await asUser("test.la@gdfi.ph");
@@ -61,7 +63,7 @@ async function acceptedMortgage(code = "MORTGAGE") {
   await acceptJob(dp, job.id);
   return { loan, txn, job };
 }
-const request = (transactionId: string, fundsTypeId?: string, kind = "LTO_FEE") => requestAdvance(dp, { lines: [{ transactionId, kind, cents: 250_000 }], fundsTypeId });
+const request = (transactionId: string, fundsTypeId?: string, kind = "LTO_FEE") => requestAdvance(dp, { account: ACCOUNT, lines: [{ transactionId, kind, cents: 250_000 }], fundsTypeId });
 
 describe("Funds types list (Settings)", () => {
   it("seeds Cash advance and Fund transfer as Proposed; Admin saving one confirms it; a rename never changes old records", async () => {
@@ -174,6 +176,8 @@ describe("Release by type", () => {
     const { txn } = await acceptedMortgage();
     const r = await request(txn.id, (await type("FT")).id);
     await decideAdvance(fin, r.id, { approve: true });
+    // A request made before D-056 (or changed to a transfer by Finance) has no account from the processor: Finance types it.
+    await prisma.cashAdvance.update({ where: { id: r.id }, data: { accountProvider: "", accountName: "", accountNumber: "", accountLast4: "" } });
     await expect(releaseAdvance(fin, r.id, { ref: "V-1" })).rejects.toThrow("Enter the transfer reference number.");
     await expect(releaseAdvance(fin, r.id, { ...FT_RELEASE, transferDate: "" })).rejects.toThrow("Pick the transfer date.");
     await expect(releaseAdvance(fin, r.id, { ...FT_RELEASE, accountProvider: "" })).rejects.toThrow("Enter the bank or e-wallet.");

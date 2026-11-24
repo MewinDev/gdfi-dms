@@ -1,6 +1,6 @@
 # 04 Settings and customization: the master list
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -42,11 +42,12 @@ Everything that can be changed without a code change, in one place: app settings
 | Holidays and office closures | Days that do not count (all or some branches) | seeded sample list (the official list to be entered) | any date; back at most 7 days, with a reason | Settings, Holidays and working days | `settings:holidays` | Yes | At once; saved due dates move |
 | Due dates corrected by hand | One item's due date | n/a | a working day, with a reason | Inbox, Correct due date | `duedates:correct` | Yes | At once |
 | Pool waiting colours | Branch pool and Open Items waiting turns amber, then red | 1 and 2 working days | 1 to 30, red after amber | Settings, Inbox waiting colours | `settings:tat` (Admin) | Yes | At once |
-| Turnaround times | Target working days per step | seeded: checklist 2, assign to DP 2, DP accept 0, Notary 3, PPSR 5, Mortgage 10, receiving LA 2, and others | 0 or more | Settings, Turnaround times | `settings:tat` | Yes | New work items |
+| Turnaround times | Target working days per step | seeded (D-056 item 9, to confirm): checklist 1, assign to DP 1, DP accept 0, Notary 5, PPSR 5, Mortgage 5, cash advance release 1, receiving LA 2, and others | 0 or more | Settings, Turnaround times | `settings:tat` | Yes | New work items |
 | Processor capacity and On leave | Open jobs a processor takes | 10 | 1 or more | Settings, Processor capacity | `dpcapacity:manage` | Yes | At once |
 | Liquidation due days (per funds type) | Working days after the last LTO pickup | 2 | 0 to 30 | Settings, Funds types | `fundtypes:manage` (Admin) | Yes | New releases (saved on the record) |
 | Carry-over limit | A balance carries to the next attempt without approval | 3 business days | 0 to 60 | Settings, Cash-advance rules | `settings:cash_advance` | Yes | At once |
 | Block LTO until funded | "At the LTO" waits for released funds | on | on / off | Settings, Cash-advance rules | `settings:cash_advance` | Yes | At once |
+| Block LTO until a transfer's receipt is confirmed (`funds.blockLtoUntilReceiptConfirmed`) | "At the LTO" also waits until the processor confirmed receipt of a fund transfer (D-056 item 1) [TO CONFIRM with Finance] | off | on / off | Settings, Cash-advance rules | `settings:cash_advance` | Yes | At once |
 | Approval bands (switch and bands) | Who approves by amount (D-024) | off | bands by amount and role | Settings, Approval bands | `settings:cash_advance` | Yes | New requests |
 | Cash-advance rules | Suggested and maximum amounts per transaction type | seeded | pesos | Settings, Cash-advance rules | `settings:cash_advance` | Yes | New requests |
 | Expense kinds | What a request line can be for, with an amount | seeded; "Other" built in | any | Settings, Expense kinds | `funds:kinds_manage` (Finance) | Yes | New requests |
@@ -54,7 +55,7 @@ Everything that can be changed without a code change, in one place: app settings
 | PN format | Checks a PN before any search | GD + branch (3) + year (4) + "9" + running (5), on | parts, or off | Settings, System | `settings:pn_format` (Admin) | Yes | At once |
 | Branch and product daily read | Time and pause of the daily read (APIs 4 and 5) | 02:00, on | HH:MM; pause | Settings, Branches | `branches:import` | Yes | Next run |
 | Email master switch, events, templates | Which updates also go by email | off until go-live | on / off; text | Settings, Email notifications | `email:manage` | Yes | At once |
-| Transaction types | Names, who does them, needs a processor, needs LTO | Notary, For EDST, For Entry PPSR, Mortgage | add, rename, inactive | Settings, Transaction types | `settings:transaction_types` | Yes | Loan files opened from then on |
+| Transaction types | Names, who does them, needs a processor, needs LTO | Notary, For EDST, For Entry PPSR, Mortgage (built in); Cancellation of Mortgage, Transfer of Ownership, Renewal of OR, PPSR Termination (added by hand, D-056) | add, rename, inactive | Settings, Transaction types | `settings:transaction_types` | Yes | Loan files opened from then on |
 | Document types and checklist items | Kinds of paper; papers per transaction (required, pick-one group, reusable) | seeded | any | Settings, Document types / Checklist items | `settings:document_types`, `settings:checklist` | Yes | Loan files opened from then on |
 | Processing stages | A processor's stages and their evidence | seeded (LTO drop off, LTO pickup, Check and verify, ...) | reorder, add | Settings, Processing stages | `stages:manage` | Yes | New jobs |
 | Loan types | Display names for New and Renewal | New, Renewal | names only | Settings, Loan types | `settings:loan_types` | Yes | At once |
@@ -88,7 +89,7 @@ Everything that can be changed without a code change, in one place: app settings
 
 ### C4. Permission ticks and their default roles
 
-Generated from the code (`VISIBLE_PERMISSION_GROUPS` and `ROLE_DEFAULTS` in `lib/auth/permissions.ts`) on 18 November 2026. Change them in Settings, Permissions (per role) or Users, Edit (per person) with `roles:manage` (Superadmin by default). Every change is audit-logged and applies on the person's next click.
+Generated from the code (`VISIBLE_PERMISSION_GROUPS` and `ROLE_DEFAULTS` in `lib/auth/permissions.ts`) on 24 November 2026. Change them in Settings, Permissions (per role) or Users, Edit (per person) with `roles:manage` (Superadmin by default). Every change is audit-logged and applies on the person's next click.
 
 | Tick (key) | What it allows | Default roles | Where it shows |
 |---|---|---|---|
@@ -100,6 +101,7 @@ Generated from the code (`VISIBLE_PERMISSION_GROUPS` and `ROLE_DEFAULTS` in `lib
 | Transactions and papers: Mark a paper Missing (`papers:mark_missing`) | On Check papers: mark a paper Missing with a reason and remarks, so the file can still be sent. Edits after sending are kept in the history. | Loan Associate, LA Supervisor/Head | Loan File, Check papers |
 | Transactions and papers: Receive a missing paper (`papers:receive_late`) | Mark a missing paper Received, with the date it arrived. The reason and remarks stay in the history. | Superadmin, Loan Associate, Admin, LA Supervisor/Head | Loan File, Check papers and Missing papers |
 | Transactions and papers: Add a transaction (`transactions:add`) | Add a custom transaction type to a loan file. | Loan Associate, LA Supervisor/Head | Loan File, Add a transaction |
+| Transactions and papers: Cancel a transaction (`transactions:cancel`) | Cancel a transaction that is not done, with a reason (D-056). Open processor jobs stop; cash already released stays owed and is liquidated as usual. | Admin, LA Supervisor/Head | Loan File, Cancel transaction |
 | Transactions and papers: Mark as done (`transactions:complete`) | Record the EDST reference, and mark custom transactions done. | Loan Associate, LA Supervisor/Head | Loan File, EDST and Mark as done |
 | Transactions and papers: Raise a problem (`problems:raise`) | Open a problem on a transaction the person works on. | Loan Associate, Document Processor / Collateral & Mortgage, LA Supervisor/Head | Loan File, Job |
 | Transactions and papers: Resolve own problems (`problems:resolve`) | Resolve problems on transactions the person works on. | Loan Associate, Document Processor / Collateral & Mortgage, LA Supervisor/Head | Loan File, Job |

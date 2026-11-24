@@ -219,9 +219,28 @@ export async function ltoBlocked(db: Tx | typeof prisma, a: AssignmentFull): Pro
 }
 export const LTO_BLOCK_MESSAGE = "This job needs funds. Request a cash advance first.";
 
+/**
+ * D-056 item 1: when the setting is on, "At the LTO" also waits until the processor confirmed receipt of each fund
+ * transfer released for this job (types that send to an account). Off by default.
+ */
+export async function receiptBlockReason(db: Tx | typeof prisma, transactionId: string): Promise<string | null> {
+  if (!(await getSetting("funds.blockLtoUntilReceiptConfirmed", db))) return null;
+  const open = await db.cashAdvance.findFirst({
+    where: { status: { in: ["RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"] }, receiptConfirmedAt: null, fundsType: { needsAccount: true }, lines: { some: { transactionId, denied: false } } },
+    select: { number: true },
+  });
+  return open ? `Confirm receipt of ${open.number} first (My funds).` : null;
+}
+
+/** Why "At the LTO" cannot start now, or null. */
+export async function ltoBlockReason(db: Tx | typeof prisma, a: AssignmentFull): Promise<string | null> {
+  if (await ltoBlocked(db, a)) return LTO_BLOCK_MESSAGE;
+  return receiptBlockReason(db, a.transactionId);
+}
+
 export async function attemptCore(tx: Tx, a: AssignmentFull, who: Who, input: AttemptInput, now: Date = new Date()) {
   if (a.status !== "ACCEPTED" || a.transaction.status !== "IN_PROCESS") throw new UserError("Accept the job first.");
-  if (await ltoBlocked(tx, a)) throw new UserError(LTO_BLOCK_MESSAGE);
+  { const why = await ltoBlockReason(tx, a); if (why) throw new UserError(why); }
   const lines = a.transaction.advanceLines.filter((l) => !l.denied);
   for (const s of input.spends) {
     if (!lines.some((l) => l.id === s.lineId)) throw new UserError("That cash advance line is not for this job.");

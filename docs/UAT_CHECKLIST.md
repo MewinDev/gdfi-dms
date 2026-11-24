@@ -1,6 +1,6 @@
 # User acceptance test (UAT) checklist: phase A
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 For staging, with fake or copied-and-masked loans, before the go-live checklist (`docs/GO_LIVE_RUNBOOK.md`, section 6). Each role is tested by someone who does that job today. Mark **P** (pass) or **F** (fail); every F needs a remark (what happened, the PN, a screenshot if possible). The module checklists (`docs/checklists/`) say where each feature is and how it is built.
 
@@ -39,6 +39,7 @@ Before starting: Admin has set up one tester per role with the right branches, e
 | SUP-9 | Change an automatic classification with a reason | The new result shows; the reason and my name are in the history | | | | |
 | SUP-10 | Resolve a problem on any transaction of my branches | Resolved; the owner is told | | | | |
 | SUP-11 | Reports, TAT: filter by branch, download CSV | Numbers match the loans; the file opens in Excel | | | | |
+| SUP-12 | Cancel a transaction that has released cash, with a reason | The confirm step says the cash stays owed and when it must be liquidated; after cancelling, the transaction shows Cancelled and the processor is told | | | | |
 
 ## Document Processor (DP)
 
@@ -54,6 +55,7 @@ Before starting: Admin has set up one tester per role with the right branches, e
 | DP-8 | Liquidate: add receipts (photo) and return cash | Receipts open; totals add up; Finance is told | | | | |
 | DP-9 | With an overdue liquidation, try a new request | Refused, with the reason, unless Finance granted an exception | | | | |
 | DP-10 | File an LTO advisory from an LTO stage | Others see the warning; my job is not blocked | | | | |
+| DP-11 | Ask for a Fund transfer with my account; after Finance sends it, confirm receipt with the reference, amount and last 4 digits (try one wrong digit first) | The account shows as "account ending 1234"; a wrong value says what does not match and Finance is told; the right values confirm it | | | | |
 
 ## Finance
 
@@ -67,6 +69,7 @@ Before starting: Admin has set up one tester per role with the right branches, e
 | FIN-6 | Settle and close a liquidated advance | Closed; returned cash recorded | | | | |
 | FIN-7 | Grant a funds exception to a DP with an overdue advance | The DP can submit one more request | | | | |
 | FIN-8 | Print the liquidation report | Prints with the lines and receipts | | | | |
+| FIN-9 | Send a Fund transfer (check the account the processor typed, tick "I checked"); then clear a receipt mismatch with remarks | The full account number shows only on the send form; after sending only the last 4 digits; the mismatch clears and the processor is told | | | | |
 
 ## Admin
 
