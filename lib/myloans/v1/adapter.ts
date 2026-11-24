@@ -33,7 +33,7 @@ export function recordOfRow(r: FeedRowV1): MyLoansRecord {
     areaId: id(r.areaId), areaName: r.areaName, divisionId: id(r.divisionId), divisionName: r.divisionName, companyId: id(r.companyId), companyName: r.companyName,
     isActive: r.transactionIsActive === 1 || r.transactionIsActive === true,
     sourceUpdatedAt: r.sourceUpdatedAt,
-    externalLoanId: r.externalLoanId, contentHash: r.contentHash, feedState: r.feedState,
+    externalLoanId: r.externalLoanId, contentHash: r.contentHash, feedState: r.feedState, myloansBranchId: r.branchId ?? null,
     notSent: NOT_SENT,
   };
 }
@@ -62,7 +62,8 @@ export class ContractMyLoansAdapter implements MyLoansAdapter {
     // No partial search and no changed-since in the contract's API 1; the background refresh reads PN by PN until
     // piece 7 moves it to API 2.
     // Changed-since reads API 2 (the background run's feed mode until piece 7 brings the full sync on API 2).
-    this.capabilities = { search: false, changedSince: true, branches: !!o.branchSource?.capabilities.branches, branchesUpdatedSince: !!o.branchSource?.capabilities.branchesUpdatedSince };
+    // Piece 11 (D-054): the branch list is API 4, the whole list every time (no "updated since").
+    this.capabilities = { search: false, changedSince: true, branches: true, branchesUpdatedSince: false };
   }
 
   async getByPn(pn: string): Promise<MyLoansLookup> {
@@ -110,8 +111,16 @@ export class ContractMyLoansAdapter implements MyLoansAdapter {
     return { ok: true, records: records.slice(0, limit), until: until ?? new Date() };
   }
 
-  listBranches(o: ListBranchesOptions): Promise<MyLoansBranches> {
-    const f = this.o.branchSource?.listBranches?.bind(this.o.branchSource);
-    return f ? f(o) : Promise.resolve({ ok: false, reason: "UNSUPPORTED", message: "MyLoans has no branch list yet. Use Import from MyLoans (a file)." });
+  /** API 4 (piece 11, D-054): myloans' branch list with each BranchID; one page here, cut into the caller's pages. */
+  async listBranches(o: ListBranchesOptions): Promise<MyLoansBranches> {
+    if (await this.o.isUnavailable?.()) return { ok: false, reason: "UNAVAILABLE", message: UNAVAILABLE_MESSAGE };
+    const r = await this.o.client().branches();
+    if (!r.ok) return { ok: false, reason: "UNAVAILABLE", message: r.kind === "unavailable" ? UNAVAILABLE_MESSAGE : r.message, ...(r.kind === "busy" ? { retryAfterMs: r.retryAfterMs } : {}) };
+    const rows = r.data.items.filter((b) => b.branchCode).map((b) => ({
+      branchId: b.branchId, code: b.branchCode!, name: b.branchName, areaId: b.areaId, areaName: b.areaName ?? "", divisionId: b.divisionId, divisionName: b.divisionName ?? "",
+      address: "", active: b.isActive === 1 || b.isActive === true, updatedAt: b.updatedAt,
+    }));
+    const start = (o.page - 1) * o.pageSize;
+    return { ok: true, branches: rows.slice(start, start + o.pageSize), nextPage: start + o.pageSize < rows.length ? o.page + 1 : null };
   }
 }

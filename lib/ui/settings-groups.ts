@@ -4,7 +4,7 @@ export const SETTINGS_GROUPS = [
   { key: "people", label: "People and access", help: "Who can do what.", cards: ["permissions", "roles", "dp-capacity"] },
   { key: "documents", label: "Documents and steps", help: "What papers each transaction needs.", cards: ["transaction-types", "document-types", "checklist", "processing-stages", "problem-reasons", "hold-reasons", "return-reasons", "missing-reasons"] },
   { key: "time-money", label: "Time and money", help: "How long steps take and what funds are set aside.", cards: ["tat", "pool-colours", "holidays", "cash-advance", "expense-kinds", "funds-types", "approval-bands"] },
-  { key: "system", label: "System and testing", help: "MyLoans sync, email, test switches and sample data.", cards: ["system", "myloans-sync", "email", "test-data", "test-kit"] },
+  { key: "system", label: "System and testing", help: "MyLoans sync, email, test switches and sample data.", cards: ["system", "myloans-sync", "open-items", "reference-changes", "email", "test-data", "test-kit"] },
 ] as const;
 
 export type SettingsCardKey = (typeof SETTINGS_GROUPS)[number]["cards"][number];

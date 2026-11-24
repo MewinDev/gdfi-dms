@@ -11,7 +11,7 @@ import {
 import { MAX_RECEIPT_BYTES, receiptStore, sniffReceipt } from "@/lib/storage/receipts";
 import { noteDocs } from "./custody";
 import { UserError } from "./errors";
-import { LTO_BLOCK_MESSAGE, ltoBlocked, notifyProblem, type AssignmentFull, type Who } from "./jobs";
+import { ltoBlockReason, notifyProblem, type AssignmentFull, type Who } from "./jobs";
 
 /**
  * Job stages. Each DP job runs its type's processing stages in order (Settings > Processing stages):
@@ -128,7 +128,7 @@ async function current(tx: Tx, a: AssignmentFull, stageId: string, simulated: bo
 export async function startStageCore(tx: Tx, a: AssignmentFull, who: Who, stageId: string, now: Date = new Date()) {
   const row = await current(tx, a, stageId, who.mode === "SIMULATED");
   if (row.status === "STARTED") throw new UserError(`${row.name} is already started.`);
-  if (row.kind === "LTO_DROP" && (await ltoBlocked(tx, a))) throw new UserError(LTO_BLOCK_MESSAGE);
+  if (row.kind === "LTO_DROP") { const why = await ltoBlockReason(tx, a); if (why) throw new UserError(why); }
   await tx.jobStage.update({ where: { id: row.id }, data: { status: "STARTED", startedAt: now, startedById: who.userId, startedByLabel: who.actor.label } });
   await auditStage(tx, who, a, "stage_started", `${row.name} started on ${a.transaction.type.name} by ${who.actor.label}`, { stage: row.code });
   return row;

@@ -31,7 +31,7 @@ async function latestCopies(db: Db, loanIds: string[]) {
   if (!loanIds.length) return new Map<string, { tracked: Tracked | null; record: MyLoansRecord | null; endedOn: string | null }>();
   const [snaps, ended] = await Promise.all([
     db.loanSourceSnapshot.findMany({ where: { loanId: { in: loanIds } }, distinct: ["loanId"], orderBy: [{ loanId: "asc" }, { retrievedAt: "desc" }], select: { loanId: true, tracked: true, payload: true } }),
-    db.sourceChange.findMany({ where: { loanId: { in: loanIds }, category: { in: ["STATUS", "REPLACEMENT"] } }, orderBy: { firstSeenAt: "asc" }, select: { loanId: true, firstSeenAt: true } }),
+    db.openItem.findMany({ where: { loanId: { in: loanIds }, field: "status" }, orderBy: { raisedAt: "asc" }, select: { loanId: true, raisedAt: true } }).then((rows) => rows.map((r) => ({ loanId: r.loanId, firstSeenAt: r.raisedAt }))),
   ]);
   const out = new Map<string, { tracked: Tracked | null; record: MyLoansRecord | null; endedOn: string | null }>();
   for (const s of snaps) {

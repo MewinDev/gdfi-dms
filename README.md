@@ -39,7 +39,7 @@ If port 5432 is already used on your PC (for example a native PostgreSQL service
 | `npm run db:seed` | Reference data + test users (idempotent) |
 | `npm run db:seed:reference` | Reference data only (never test users) |
 | `npm run db:reset` | Drop and recreate the local database, then seed. **Destroys local data.** Refused unless the database name contains `test` or `ALLOW_DESTRUCTIVE=1` is set (see `docs/ENVIRONMENT.md`). |
-| `npm run db:reset-seed` | **Replaces everything in the local development database `gdfi_dms`** with every migration plus fake development data: the seed, the scenario kit's sample accounts and loans (every current stage, some near or over TAT, pending myloans changes, branches from the sample MyLoans), and the foundation layer (`lib/seed/foundation.ts`: Superadmin, LA Supervisor/Head and Archiver roles; one fake user per decided role; myloans interval 30 minutes; LTO offices from the templates, LTO-PASIG marked as a sample). Takes a plain-SQL backup to `backups/` first and asks for `RESET`. **Refused** unless `APP_ENV=local`, the database is `gdfi_dms` on this computer (never `gdfi_dms_test`), `TEST_MODE=true`, `MYLOANS_MODE=mock` and `ALLOW_DESTRUCTIVE=1` is set for this one command. Never runs in staging or production. PowerShell: `$env:ALLOW_DESTRUCTIVE='1'; npm run db:reset-seed; Remove-Item Env:ALLOW_DESTRUCTIVE`. It does not save or replace a Manual Test Kit baseline. |
+| `npm run db:reset-seed` | **Replaces everything in the local development database `gdfi_dms`** with every migration plus fake development data: the seed, the scenario kit's sample accounts and loans (every current stage, some near or over TAT, pending myloans changes, branches from the sample MyLoans), and the foundation layer (`lib/seed/foundation.ts`: Superadmin, LA Supervisor/Head and Archiver roles; one fake user per decided role; myloans interval 30 minutes; LTO offices from the templates, LTO-PASIG marked as a sample). Takes a plain-SQL backup to `backups/` first and asks for `RESET`. **Refused** unless `APP_ENV=local`, the database is `gdfi_dms` on this computer (never `gdfi_dms_test`), `TEST_MODE=true`, `MYLOANS_MODE=mock` and `ALLOW_DESTRUCTIVE=1` is set for this one command. Never runs in staging or production. PowerShell: `$env:ALLOW_DESTRUCTIVE='1'; npm run db:reset-seed; Remove-Item Env:ALLOW_DESTRUCTIVE`. It does not save or replace a Manual Test Kit baseline. Released loans waiting in the branch pools: run `npm run sync:myloans -- --first-load` afterwards (it reads the sample MyLoans). |
 | `npm run db:studio` | Prisma Studio |
 | `npm run db:create-test` | Create (or bring up to date) `gdfi_dms_test`, the automated tests' database. Safe to run again. |
 | `npm run kit:start`, `kit:reset`, `kit:backup -- <name>`, `kit:list`, `kit:restore -- <name>`, `kit:rebuild` | The Manual Test Kit on `gdfi_dms` (add `-- --with-scenarios` to start, reset or rebuild for the old scenario data): see [`docs/MANUAL-TEST-KIT.md`](docs/MANUAL-TEST-KIT.md) |
@@ -48,27 +48,21 @@ If port 5432 is already used on your PC (for example a native PostgreSQL service
 | `npm run test:e2e` | Playwright happy path (see below) |
 | `npm run e2e:groups` | Every e2e spec in small groups, one width at a time, 1 worker, production build; summary in `test-results/e2e-groups-summary.md` |
 | `npm run typecheck`, `npm run lint` | TypeScript and ESLint |
+| `npm run backup`, `npm run restore -- --into=<db> --files-into=<dir>` | Database and uploaded files to a folder or an S3-compatible bucket; restore only into a clean copy (`docs/GO_LIVE_RUNBOOK.md`) |
+| `npm run sync:myloans` | The myloans sync (what is due; `--now`, `--catchup`, `--first-load`); `docs/SCHEDULER.md` |
+| `npm run volume -- create`, `-- measure` | Volume test on its own database `gdfi_dms_volume_test` (15,000 loans; timings of the main screens) |
 
 ### Testing by hand: the Manual Test Kit
 
 `npm run kit:start` puts your own database (`gdfi_dms`) in a clean state: the settings and branches, sign-in accounts for each role and situation (`@example.test`) and 40 PNs that exist only in the sample MyLoans, with nothing opened; `npm run kit:reset` puts it back. The tester sheet (accounts and PNs only) is [`docs/MANUAL-TEST-KIT.md`](docs/MANUAL-TEST-KIT.md), the answers [`docs/MANUAL-TEST-KIT-ANSWERS.md`](docs/MANUAL-TEST-KIT-ANSWERS.md); the old scenario data loads with `--with-scenarios` ([`docs/MANUAL-TEST-KIT-SCENARIOS.md`](docs/MANUAL-TEST-KIT-SCENARIOS.md)) (also in the app: Settings > Test kit > Open the test sheet). It replaces the older notes below for testing by hand.
 
-### Test accounts of the seed (Test sign-in panel on `/login`)
+### Test accounts of the seed (Test sign-in panel on `/login`, local only)
 
-| Account | Role | Branches |
-|---|---|---|
-| `test.admin@gdfi.ph` | Admin (also holds the Supervisor override for now) | All |
-| `test.la@gdfi.ph` | Loan Associate | Quezon City, Cebu |
+One account per role, all on Antipolo (101) and Angono (165) unless shown: `test.superadmin@gdfi.ph`, `test.admin@gdfi.ph` (all branches), `test.lahead@gdfi.ph` (LA Supervisor/Head), `test.la@gdfi.ph` (Loan Associate), `test.dp@gdfi.ph` (Document Processor), `test.finance@gdfi.ph` (Finance, all branches) and more in `prisma/seed.ts`. The Manual Test Kit has its own `@example.test` accounts (`docs/MANUAL-TEST-KIT.md`).
 
-Five Document Processors are seeded (no sign-in yet) so the LA can assign transactions: Rico Dela Cruz and Joy Navarro (Quezon City), Paolo Lim and Grace Tan (Cebu), Ben Ocampo (Davao).
+### Sample MyLoans (mock)
 
-### Mock MyLoans PNs
-
-`GD1012026901001` to `GD1652026901011` and `GD1012026999999` behave exactly as listed in the build prompt, section 9. Release dates are relative to today (0 to 3 business days ago) so the TAT badges can be seen. In **Settings > System and test mode** an Admin can:
-
-- simulate **MyLoans unavailable**;
-- turn on the **test-mode simulator** (shown on each Loan File's Journey tab);
-- change the amount MyLoans returns for a PN, to demonstrate the **source-change flag** on refresh.
+With `MYLOANS_MODE=mock` the app reads a sample myloans through the same contract client as live (APIs 1, 2, 4 and 5; `docs/myloans/mock-and-contract.md`). Settings > System and test mode has the mock panel: simulate failures, change a loan to show an Open Item, and the "MOCK myloans data" banner. The kit's 40 PNs are listed in `docs/MANUAL-TEST-KIT.md`.
 
 ### Test mode (`TEST_MODE=true`)
 
@@ -95,16 +89,11 @@ The integration tests (`tests/integration`) and the Playwright helpers (`tests/e
 
 ---
 
-## Switch the MyLoans adapter
+## MyLoans: mock or live, and the sync
 
-`lib/myloans` has one interface (`MyLoansAdapter.getLoanByPn`) and two implementations:
+`MYLOANS_MODE=mock` (default) or `live` selects the data behind **one contract client** (`lib/myloans/v1`): Find loan and Refresh (API 1), the sync (API 2), branches (API 4) and products (API 5). Live reads `MYLOANS_BASE_URL`, `MYLOANS_API_KEY`, `MYLOANS_TIMEOUT_MS`; `npm run test:contract` checks a live myloans against the agreed contract.
 
-| `MYLOANS_MODE` | Adapter | Notes |
-|---|---|---|
-| `mock` (default) | `MockMyLoansAdapter` | Section 9 data, plus the Settings toggles above |
-| `live` | `HttpMyLoansAdapter` | Reads `MYLOANS_BASE_URL`, `MYLOANS_API_KEY`, `MYLOANS_TIMEOUT_MS`. **TODO:** confirm the endpoint and map the real response in `lib/myloans/http-adapter.ts` (`endpointFor`, `mapResponse`) |
-
-There is no sync and no import job: the MyLoans API is called only when an LA searches a PN, opens a Loan File, or clicks **Refresh from MyLoans**.
+The sync (`npm run sync:myloans` or `POST /api/cron/myloans-sync`) reads what changed every 30 minutes plus a daily catch-up; a changed field becomes an Open Item for the branch's approvers, never a direct change (D-052, D-053). Scheduling: `docs/SCHEDULER.md`.
 
 ## Switch authentication
 
@@ -121,7 +110,7 @@ The same Prisma schema and migrations run unchanged: the app uses only standard 
 3. `npx prisma migrate deploy` (or `npm run db:deploy`).
 4. `npm run db:seed:reference` - branches, transaction types, checklist items, TATs, LTO offices, holidays. **Never seed test users in live.**
 5. Switch sign-in from test to Microsoft Entra ID (`AUTH_MODE=entra`) and create real users.
-6. Set `MYLOANS_MODE=live` once the MyLoans mapping is done; implement the Supabase Storage driver in `lib/storage` (TODO) and set `STORAGE_DRIVER`.
+6. Set `MYLOANS_MODE=live` after `npm run test:contract` passes against myloans staging. Uploaded files need a persistent disk (`STORAGE_LOCAL_DIR`) until the Supabase Storage driver in `lib/storage` is built. Backups: `docs/GO_LIVE_RUNBOOK.md`, section 5.
 
 ---
 
@@ -236,13 +225,8 @@ Full-height shells use `100dvh`. Checked with no horizontal scroll at 1440, 1280
 
 ## Open items
 
-| # | Question | Built assumption |
-|---|---|---|
-| O-1 | Who handles **For Entry PPSR**, and do PPSR and Mortgage wait for Notary to finish? | C&M handles it through a DP assignment; each transaction runs independently |
-| O-2 | Processing rules that differ between Undertaking and Non-Undertaking | Separate classifications, no different requirements |
-| O-3 | ~~Which MyLoans fields hold the Undertaking flag and ORCR status?~~ **Closed** | The LA picks both on the preview card |
-| O-4 | Product Name with only part of a word, such as "Auto Finance" | Not a match; defaults to Refinancing |
-| O-5 | Who may override an automatic result? | Supervisor only (Admin account for now), with a reason, audited |
-| O-6 | TATs, approval matrix, escalation days, retention periods | Proposed values seeded; TATs and holidays editable in Settings |
-| - | Real MyLoans endpoint and field mapping | `HttpMyLoansAdapter` TODO |
-| - | Microsoft Entra ID sign-in, Graph email, Supabase Storage | TODOs in `lib/auth/providers.ts`, `lib/notify.ts`, `lib/storage` |
+Decisions are in `docs/DECISIONS.md`; what is built, blocked and left to a phase A go-live is in `docs/STATUS.md`, the per-module checklists in `docs/checklists/` and the gaps in `docs/PHASE_A_GAPS.md`. Go-live: `docs/GO_LIVE_RUNBOOK.md`; user acceptance: `docs/UAT_CHECKLIST.md`.
+
+| Not built yet | Where |
+|---|---|
+| Microsoft Entra ID sign-in, Supabase Storage driver | TODOs in `lib/auth/providers.ts`, `lib/storage` |

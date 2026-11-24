@@ -70,6 +70,8 @@ export interface ReleaseInput {
   accountProvider?: string;
   accountName?: string;
   accountLast4?: string;
+  /** D-056: Finance ticked "I checked the receiving account" (the account the processor typed at request). */
+  accountChecked?: string;
 }
 export interface ReleaseDetails { ref: string; transferDate: string; accountProvider: string; accountName: string; accountLast4: string }
 
@@ -107,4 +109,40 @@ export function releaseLine(r: { releaseRef: string; transferDate: string; accou
   if (r.transferDate) parts.push(`sent ${r.transferDate}`);
   if (r.accountLast4) parts.push(`to ${r.accountProvider}, ${r.accountName}, account ending ${r.accountLast4}`);
   return parts.filter(Boolean).join(" · ");
+}
+
+// ---------------------------------------------------------------------------
+// D-056 items 1 and 5: the receiving account at request, and the processor's receipt confirmation.
+// ---------------------------------------------------------------------------
+
+export interface RequestAccountInput { provider?: string; name?: string; number?: string }
+export interface RequestAccount { accountProvider: string; accountName: string; accountNumber: string; accountLast4: string }
+
+/** The account the processor types when requesting a type that needs one: bank or e-wallet, name, the full number. */
+export function checkRequestAccount(raw: RequestAccountInput | undefined): { ok: true; account: RequestAccount } | { ok: false; message: string; field: string } {
+  const provider = (raw?.provider ?? "").trim();
+  const name = (raw?.name ?? "").trim();
+  const number = (raw?.number ?? "").replace(/[\s-]/g, "");
+  if (provider.length < 2) return { ok: false, message: "Enter the bank or e-wallet that receives the transfer.", field: "accountProvider" };
+  if (name.length < 2) return { ok: false, message: "Enter the account name.", field: "accountName" };
+  if (!/^\d{6,30}$/.test(number)) return { ok: false, message: "Enter the account number (6 to 30 digits).", field: "accountNumber" };
+  return { ok: true, account: { accountProvider: provider.slice(0, 60), accountName: name.slice(0, 80), accountNumber: number, accountLast4: number.slice(-4) } };
+}
+
+/** Everywhere but Finance's release screen the number shows as its last 4 digits only. */
+export const maskedAccount = (last4: string) => (last4 ? `account ending ${last4}` : "");
+
+export interface ReceiptTyped { ref: string; cents: number | null; last4: string }
+export interface ReceiptRecorded { releaseRef: string; releasedCents: number; accountLast4: string }
+
+const refKey = (s: string) => s.toUpperCase().replace(/[\s-]/g, "");
+const pesoText = (c: number) => `₱${(c / 100).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Compares what the processor typed with what Finance recorded at release. Empty list: it matches. */
+export function receiptDifferences(typed: ReceiptTyped, rec: ReceiptRecorded): string[] {
+  const out: string[] = [];
+  if (refKey(typed.ref) !== refKey(rec.releaseRef)) out.push(`reference: typed "${typed.ref.trim()}", Finance recorded "${rec.releaseRef}"`);
+  if (typed.cents !== rec.releasedCents) out.push(`amount: typed ${typed.cents === null ? "an unreadable amount" : pesoText(typed.cents)}, Finance recorded ${pesoText(rec.releasedCents)}`);
+  if (typed.last4.trim() !== rec.accountLast4) out.push(`last 4 digits: typed ${typed.last4.trim() || "nothing"}, Finance recorded ${rec.accountLast4}`);
+  return out;
 }

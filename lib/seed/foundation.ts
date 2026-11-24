@@ -1,7 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { writeUserAccess } from "@/lib/services/access";
-import { setSetting } from "@/lib/settings";
 import { KIT_EMAIL_DOMAIN } from "@/lib/kit/catalog";
 import { kitAccess } from "@/lib/kit/build";
 import { ticksFromRole } from "@/lib/auth/effective";
@@ -71,12 +70,13 @@ export async function applyFoundationSeed(log: Log = console.log): Promise<void>
   log(`Users: added ${FOUNDATION_USERS.length} fake users (fdn.*${KIT_EMAIL_DOMAIN}) for the decided roles the scenario kit has none for.`);
 
   // Settings.
-  await setSetting("myloans.backgroundMinutes", 30);
-  log("Settings: myloans check interval 30 minutes (myloans.backgroundMinutes until piece 7 adds myloans.intervalMinutes). Other settings keep their defaults.");
+  log("Settings: the myloans sync runs every 30 minutes (myloans.sync, its default). Other settings keep their defaults.");
 
   // LTO offices from the templates.
   for (const o of TEMPLATE_LTO) {
-    const data = { name: o.name, city: o.city, distanceKm: o.km, travelHours: o.hours, suggestedTransportCents: o.transportPesos === null ? null : o.transportPesos * 100, active: true };
+    const data = { name: o.name, city: o.city, distanceKm: o.km, travelHours: o.hours, suggestedTransportCents: o.transportPesos === null ? null : o.transportPesos * 100, active: true,
+      // D-020: the sample office carries the badge until Operations verifies it.
+      isSample: o.code === "LTO-PASIG", sampleNote: o.code === "LTO-PASIG" ? "Sample. Verify with Operations" : "" };
     await prisma.ltoOffice.upsert({ where: { code: o.code }, create: { code: o.code, ...data }, update: data });
   }
   log(`LTO offices: ${TEMPLATE_LTO.length} from the templates (LTO-PASIG named as a SAMPLE: the sources say 10, 50 and 2 km). Loan types stay New and Renewal; the template's "Test" loan type is a placeholder and is not seeded.`);

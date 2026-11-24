@@ -175,7 +175,7 @@ describe("Notifications go to the people of the type", () => {
     await prisma.approvalBand.create({ data: { fundsTypeId: TYPE_ID.FT, fromCents: 0, roleId: ftRoleId } });
     const txn = await accepted();
     const started = new Date();
-    const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 250_000 }], fundsTypeId: TYPE_ID.FT });
+    const r = await requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 250_000 }], fundsTypeId: TYPE_ID.FT, account: { provider: "BPI", name: "Test Document Processor", number: "0000 1111 4821" } });
     const told = async (title: string) => (await prisma.notification.findMany({ where: { title }, select: { userId: true } })).map((n) => n.userId).sort();
     expect(await told(`${r.number}: Fund transfer to approve`)).toEqual([ftFin.id]);
     await decideAdvance(ftFin, r.id, { approve: true });

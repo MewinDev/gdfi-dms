@@ -54,7 +54,12 @@ import { ProductClassificationList, type ProductView } from "@/components/admin/
 import { MyLoansMockPanel } from "@/components/admin/myloans-mock-panel";
 import { mockAllowed } from "@/lib/myloans/v1/mock-store";
 import { MOCK_SCENARIOS } from "@/lib/myloans/v1/mock-scenarios";
-import { syncStatus } from "@/lib/services/source-sync";
+import { syncOverview } from "@/lib/services/myloans-sync";
+import { referenceChanges, ENTITY_WORDS } from "@/lib/services/reference-changes";
+import { MONITORABLE_FIELDS, OI_FIELDS } from "@/lib/open-items/fields";
+import { OpenItemsFieldsForm } from "@/components/open-items/settings";
+import { callsThisHour } from "@/lib/myloans/client";
+import { myLoansMode } from "@/lib/myloans/mode";
 import { accountFeedQuality, feedQualityLine } from "@/lib/services/feed-quality";
 import { MyLoansSyncForm, type SyncCardData } from "@/components/admin/myloans-sync";
 import { SettingsModal } from "@/components/admin/settings-modal";
@@ -95,7 +100,9 @@ const AREAS = [
   { key: "return-reasons", title: "Return reasons", desc: "Why a processor returns a job to the Loan Associate.", help: "Offered when a processor returns an accepted job for papers. The turnaround time keeps counting. Nothing is deleted: make it inactive instead.", Icon: ArrowLeftIcon },
   { key: "holidays", title: "Holidays and working days", desc: "Working days, holidays and office closures: one calendar for every count.", help: "Check shows which saved due dates a change moves before you save it.", Icon: CalendarIcon },
   { key: "system", title: "System and test mode", desc: "PN format, MyLoans adapter, simulator and test switches.", help: "These switches save as soon as you press them.", Icon: SettingsIcon },
-  { key: "myloans-sync", title: "MyLoans sync", desc: "How often loan files are checked against MyLoans.", help: "Only the loans someone opened are checked, never the whole MyLoans. A change that matters waits for Admin to review it.", Icon: RefreshIcon },
+  { key: "myloans-sync", title: "MyLoans sync", desc: "The myloans sync: what changed, the daily catch-up and the run log.", help: "Reads only what changed in myloans. Nothing is applied by itself: a change to a loan or borrower field is an Open Item for the branch's approvers.", Icon: RefreshIcon },
+  { key: "open-items", title: "Open Items", desc: "Which myloans changes wait for an approver.", help: "A change to a ticked field waits as an Open Item. The status in myloans always does. Renames never do (D-012, D-053).", Icon: ChecklistIcon },
+  { key: "reference-changes", title: "Reference data changes", desc: "Renames from myloans, applied by themselves.", help: "Area, division, company, branch and product names: each rename is applied to the loan files by itself and listed here (D-012, D-053).", Icon: RefreshIcon },
   { key: "email", title: "Email notifications", desc: "Emails for the updates people already get in GDFI DMS.", help: "Email is another way to get the same updates. Turn it on when the system goes live.", Icon: BellIcon },
   { key: "test-data", title: "Test data", desc: "Sample PNs on Find a loan.", help: "Only in test mode.", Icon: FlaskIcon },
   { key: "test-kit", title: "Test kit", desc: "Starting state, reset, backups and the test sheet.", help: "Only on a local test setup (database gdfi_dms, test mode). Reset and Restore ask you to type RESET and take a backup first.", Icon: FlaskIcon },
@@ -210,6 +217,8 @@ async function statusLines(testMode: boolean): Promise<Record<AreaKey, { main: s
     "missing-reasons": n(missingReasons, "reason", "reasons"),
     "processing-stages": n(stages, "stage", "stages"),
     "myloans-sync": await syncStatusLine(),
+    "open-items": { main: `${(await getSetting("openItems.monitoredFields")).length + 1} fields watched`, extra: `${await prisma.openItem.count({ where: { status: "PENDING" } })} pending` },
+    "reference-changes": await prisma.referenceChange.count().then((n) => ({ main: `${n} rename${n === 1 ? "" : "s"} logged`, extra: "" })),
     email: { main: (await getSetting("email.active")) ? "Active" : "Not active", extra: senderLine() === "Not set up" ? "Not set up" : "" },
     system: { main: `${ENV_LABEL[appEnv()]} · ${appEnv() === "production" ? "" : `Simulator ${sim ? "On" : "Off"} · `}MyLoans ${unavailable ? "unavailable (test)" : (process.env.MYLOANS_MODE ?? "mock").toLowerCase() === "live" ? "live" : "mock"}`, extra: "" },
     "test-data": { main: testMode ? "Test mode only" : "Off", extra: "" },
@@ -248,6 +257,38 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
     return (
       <SettingsModal {...common} footer={can(user, PERMISSIONS.SOURCE_MANAGE) ? { kind: "save", formId: "myloans-sync-form", cancelHref: BASE } : { kind: "done" }}>
         <MyLoansSyncForm d={await syncCardData()} formId="myloans-sync-form" canManage={can(user, PERMISSIONS.SOURCE_MANAGE)} canRun={can(user, PERMISSIONS.MYLOANS_SYNC)} />
+      </SettingsModal>
+    );
+  }
+  if (area.key === "open-items") {
+    const canEdit = can(user, PERMISSIONS.SOURCE_MANAGE);
+    return (
+      <SettingsModal {...common} footer={canEdit ? { kind: "save", formId: "open-items-form", cancelHref: BASE } : { kind: "done" }}>
+        <OpenItemsFieldsForm formId="open-items-form" canEdit={canEdit} on={await getSetting("openItems.monitoredFields")}
+          fields={MONITORABLE_FIELDS.map((f) => ({ key: f, label: OI_FIELDS[f].label, group: OI_FIELDS[f].group === "rules", borrower: OI_FIELDS[f].audience === "BORROWER" }))} />
+      </SettingsModal>
+    );
+  }
+  if (area.key === "reference-changes") {
+    const rows = await referenceChanges(user);
+    return (
+      <SettingsModal {...common} footer={{ kind: "done" }}>
+        {rows.length === 0 ? <p className="rounded-xl bg-fill px-3 py-4 text-sm text-ink-2" data-refdata-empty>No renames yet.</p> : (
+          <div className="max-w-full overflow-x-auto rounded-xl border border-line" data-refdata>
+            <table className="w-full min-w-[620px] text-left text-[13px]">
+              <caption className="sr-only">Renames from myloans, newest first</caption>
+              <thead className="bg-fill text-xs uppercase tracking-wide text-ink-2"><tr>{["When (PHT)", "What", "Was", "Now", "Loan files", "Source"].map((h) => <th key={h} scope="col" className="px-2.5 py-2">{h}</th>)}</tr></thead>
+              <tbody>{rows.map((r) => (
+                <tr key={r.id} className="border-t border-line-soft" data-refdata-row={r.entity}>
+                  <td className="whitespace-nowrap px-2.5 py-1.5">{fmtShort(r.at)}</td>
+                  <td className="px-2.5 py-1.5">{ENTITY_WORDS[r.entity] ?? r.entity}{r.entityKey ? <span className="text-ink-2"> · {r.entityKey}</span> : null}</td>
+                  <td className="px-2.5 py-1.5">{r.oldValue ?? "blank"}</td><td className="px-2.5 py-1.5 font-semibold">{r.newValue ?? "blank"}</td>
+                  <td className="px-2.5 py-1.5">{r.loanCount}</td><td className="px-2.5 py-1.5">{r.source}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
       </SettingsModal>
     );
   }
@@ -349,6 +390,7 @@ async function AreaModal({ area, edit, step, testMode, user, filter, branchFilte
         <FundsSettingsForm
           carryOverLimitDays={await getSetting("funds.carryOverLimitDays")}
           blockLtoUntilFunded={await getSetting("funds.blockLtoUntilFunded")}
+          blockLtoUntilReceiptConfirmed={await getSetting("funds.blockLtoUntilReceiptConfirmed")}
           approvalBandsOn={await getSetting("funds.approvalBandsOn")}
         />
       )}
@@ -568,7 +610,7 @@ async function loadListArea(key: AreaKey, opts: { btype?: TypeKey } = {}): Promi
       ];
       return {
         kind: "ltoOffice", statusKind: "ltoOffice", noun: "LTO office", addLabel: "Add LTO office", filterLabel: "Find an office",
-        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: `${r.code}${r.city ? ` · ${r.city}` : ""} · ${ltoEstimate(r) ?? "No estimate yet"}`, inactive: !r.active, href: editHref(key, r.id) })),
+        rows: rows.map((r) => ({ id: r.id, title: r.name, sub: `${r.code}${r.city ? ` · ${r.city}` : ""} · ${ltoEstimate(r) ?? "No estimate yet"}`, inactive: !r.active, href: editHref(key, r.id), ...(r.isSample ? { tags: [{ text: r.sampleNote || "Sample. Verify with Operations", tone: "act" as const }] } : {}) })),
         fieldsFor: (id) => (id === null ? f() : rows.find((r) => r.id === id) ? f(rows.find((r) => r.id === id)) : null),
       };
     }
@@ -773,7 +815,8 @@ async function ClassificationArea({ common, user, test }: { common: { id: string
   const [preview, products] = await Promise.all([previewClassification(rules), productPreview(tried && !tried.problem ? tried.rules : undefined)]);
   const productRows: ProductView[] = products.rows.map((r) => ({
     id: r.id, code: r.code, name: r.name, manual: r.manual, note: r.note, by: r.by, atText: r.at ? fmtShort(r.at) : null,
-    beforeText: resultText(r.before), afterText: resultText(r.after), changes: r.changes, confirm: r.confirm,
+    beforeText: resultText(r.before), afterText: resultText(r.after), changes: r.changes,
+    history: r.history.map((h) => ({ atText: fmtShort(h.at), by: h.by, text: h.text })),
   }));
   return (
     <SettingsModal {...common} footer={canEdit ? { kind: "save", formId: "classification-form", cancelHref: BASE } : { kind: "done" }}>
@@ -799,7 +842,7 @@ async function ClassificationArea({ common, user, test }: { common: { id: string
           </ul>
         )}
       </section>
-      <ProductClassificationList rows={productRows} moving={products.moving} testing={!!test} canEdit={canEdit} />
+      <ProductClassificationList rows={productRows} moving={products.moving} testing={!!test} canEdit={canEdit} lastRead={await getSetting("products.lastReadAt").then((t) => (t ? fmtDateTime(t) : null))} />
     </SettingsModal>
   );
 }
@@ -967,46 +1010,52 @@ async function EmailArea({ user, testMode, filter }: { user: CurrentUser; testMo
   );
 }
 
-async function syncStatusLine(): Promise<{ main: string; extra: string }> {
-  const s = await syncStatus();
-  return { main: `${s.mode === "live" ? "Live" : "Mock"} · ${s.health}`, extra: s.lastRun ? `last run ${fmtShort(s.lastRun.at)}` : "never run" };
+function syncHealth(o: Awaited<ReturnType<typeof syncOverview>>): string {
+  if (o.paused) return "Paused by Admin: MyLoans calls are paused";
+  if (o.state.failedRuns > 0) return `Failing: ${o.state.failedRuns} failed run${o.state.failedRuns === 1 ? "" : "s"} in a row`;
+  return o.state.lastRunAt ? "Healthy" : "Not run yet";
 }
 
-/** The MyLoans sync card: health, statistics, tiers and settings (never the address or key). */
+async function syncStatusLine(): Promise<{ main: string; extra: string }> {
+  const o = await syncOverview();
+  return { main: `${myLoansMode() === "live" ? "Live" : "Mock"} · ${syncHealth(o)}`, extra: o.state.lastRunAt ? `last run ${fmtShort(o.state.lastRunAt)}` : "never run" };
+}
+
+const KIND: Record<string, string> = { CHANGE: "changes", CATCHUP: "catch-up", FIRST_LOAD: "first load" };
+const HOW: Record<string, string> = { run_now: "Run now", schedule: "Scheduled", script: "Console", dev_timer: "Dev timer", test: "Test" };
+
+/** The MyLoans sync card (piece 7): health, the run log and the settings (never the address or key). */
 async function syncCardData(): Promise<SyncCardData> {
-  const s = await syncStatus();
-  const last = s.lastRun;
-  const [onOpen, onFind, every, hours, max, pause, tiers, window, paused, noName] = await Promise.all([
-    getSetting("myloans.refreshOnOpenMinutes"), getSetting("myloans.refreshOnFindHours"), getSetting("myloans.backgroundMinutes"), getSetting("myloans.businessHoursOnly"), getSetting("myloans.maxPerRun"), getSetting("myloans.pauseMs"),
-    getSetting("myloans.tierMinutes"), getSetting("myloans.replacementWindowDays"), getSetting("myloans.paused"), getSetting("myloans.noNameLoans"),
+  const o = await syncOverview();
+  const [onOpen, onFind, ceiling, noName, hourCalls] = await Promise.all([
+    getSetting("myloans.refreshOnOpenMinutes"), getSetting("myloans.refreshOnFindHours"), getSetting("myloans.hourlyCeiling"), getSetting("myloans.noNameLoans"), callsThisHour(),
   ]);
-  const how = (t: string) => (t === "run_now" ? "Run now" : t === "cron" ? "Scheduled" : "Console");
   const feed = feedQualityLine(await accountFeedQuality());
+  const last = o.runs.find((r) => !r.skipped) ?? null;
   return {
-    refreshOnOpenMinutes: onOpen, refreshOnFindHours: onFind, backgroundMinutes: every, businessHoursOnly: hours, maxPerRun: max, pauseMs: pause,
-    tierA: tiers.A, tierB: tiers.B, tierC: tiers.C, hourlyCeiling: s.ceiling, replacementWindowDays: window, paused,
-    mode: s.mode === "live" ? "Live" : "Mock", search: s.capabilities.search, changedSince: s.capabilities.changedSince, health: s.health, tiers: s.tiers,
+    refreshOnOpenMinutes: onOpen, refreshOnFindHours: onFind, hourlyCeiling: ceiling,
+    intervalMinutes: o.config.intervalMinutes, catchUpTime: o.config.catchUpTime, catchUpHours: o.config.catchUpHours, alertAfterFailedRuns: o.config.alertAfterFailedRuns,
+    goLiveDate: o.config.goLiveDate ?? "", cutoffDate: o.config.cutoffDate ?? "", paused: o.paused, health: syncHealth(o),
     lines: [
-      { label: "Mode", value: s.mode === "live" ? "Live (MyLoans API)" : "Mock (sample loans)" },
-      { label: "MyLoans supports", value: [s.capabilities.search ? "search by part of a PN or name" : "the exact PN only", s.capabilities.changedSince ? "a changed-since feed (one call a run)" : "no changed-since feed (due loans are re-read)"].join("; ") },
-      { label: "Last run", value: last ? `${fmtDateTime(last.at)} (${how(last.trigger)}, ${last.mode === "feed" ? "changed-since feed" : "due loans"})` : "Never" },
-      { label: "Loans due / checked", value: last ? `${last.due} / ${last.checked}` : "-" },
-      { label: "Calls made / saved", value: last ? `${last.calls} / ${last.saved} (shared or cached)` : "-" },
-      { label: "Answer time", value: last && last.calls ? `${last.avgMs} ms average, ${last.maxMs} ms slowest` : "-" },
-      { label: "Errors", value: last ? String(last.errors) : "-", bad: !!last?.errors },
-      { label: "Loans updated / changes found", value: last ? `${last.updated} / ${last.changes}` : "-" },
-      { label: "Run time", value: last ? `${last.ms} ms` : "-" },
-      { label: "Current cap", value: `${s.cap ?? max} loans a run (at most ${max})` },
-      { label: "This hour", value: `${s.hourCalls} of ${s.ceiling} calls` , bad: s.hourCalls >= s.ceiling },
+      { label: "Mode", value: myLoansMode() === "live" ? "Live (MyLoans API)" : "Mock (sample loans)" },
+      { label: "Changes read up to", value: o.state.checkpoint ? fmtDateTime(o.state.checkpoint) : `Not started (the first run reads the last ${o.config.catchUpHours} hours)` },
+      { label: "Last run", value: last ? `${fmtDateTime(last.startedAt)} (${HOW[last.trigger] ?? last.trigger}, ${KIND[last.mode] ?? last.mode}): ${last.ok ? "done" : "failed"}` : "Never", bad: !!last && !last.ok },
+      { label: "Last catch-up", value: o.state.lastCatchUpDate ?? "Never" },
+      { label: "Failed runs in a row", value: String(o.state.failedRuns), bad: o.state.failedRuns > 0 },
+      { label: "Released, not yet in the DMS", value: `${o.candidates} loan${o.candidates === 1 ? "" : "s"} (from ${o.cutoff}; shown in the branch pool)` },
+      { label: "Find loan and refreshes this hour", value: `${hourCalls} of ${ceiling} calls`, bad: hourCalls >= ceiling },
       // Feed quality: the 15 MyLoans account items missing or empty across loan files (docs/myloans/field-map.md).
       { label: "Account details missing", value: feed.value, bad: feed.bad },
       // Refused at Find a loan / Open loan file: MyLoans has neither a personal name nor a company name.
       { label: "No borrower name in MyLoans (not opened)", value: noName.length ? noName.slice(0, 10).map((x) => `${x.pn}${x.branch ? ` (${x.branch})` : ""}`).join(", ") + (noName.length > 10 ? ` and ${noName.length - 10} more` : "") : "None", bad: noName.length > 0 },
-      { label: "Last error", value: last?.error ?? (s.breaker.open ? "MyLoans did not answer several times; paused for a minute." : "None"), bad: !!last?.error || s.breaker.open },
+      { label: "Last error", value: last && !last.ok ? last.error ?? "Unknown" : "None", bad: !!last && !last.ok },
     ],
-    runs: s.runs.map((r) => ({
-      when: fmtShort(r.at), trigger: how(r.trigger), mode: r.mode === "feed" ? "feed" : "due loans", status: r.status, due: r.due, calls: r.calls, saved: r.saved,
-      avgMs: r.avgMs, maxMs: r.maxMs, errors: r.errors, ms: r.ms, updated: r.updated, changes: r.changes, cap: r.cap, hour: `${r.hourCalls} / ${r.ceiling}`,
+    runs: o.runs.slice(0, 20).map((r) => ({
+      id: r.id, when: fmtShort(r.startedAt), how: HOW[r.trigger] ?? r.trigger, kind: KIND[r.mode] ?? r.mode,
+      result: r.skipped ? "skipped" as const : r.ok ? "ok" as const : "failed" as const,
+      rows: r.rows, reviews: r.reviews, candidates: r.candidates, duplicates: r.duplicates,
+      took: r.endedAt ? `${((r.endedAt.getTime() - r.startedAt.getTime()) / 1000).toFixed(1)} s` : "-",
+      note: r.skipped ?? (r.ok ? "" : r.error ?? ""),
     })),
   };
 }

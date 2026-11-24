@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 import { can, inScope, requirePageAny } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { andWhere, holdsWhere } from "@/lib/auth/holders";
-import { canSeeJob, LTO_BLOCK_MESSAGE, lineTotals, loadAssignment, ltoBlocked } from "@/lib/services/jobs";
+import { canSeeJob, lineTotals, loadAssignment, ltoBlockReason } from "@/lib/services/jobs";
 import { heldFor } from "@/lib/services/pasuyo";
 import { getTatMap } from "@/lib/settings";
 import { getCalendar } from "@/lib/calendar/load";
@@ -113,7 +113,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   // The saved due date and how it moved (holidays, closures, pauses), in plain words (D-041).
   const dueMoves = a.dueDate ? await dueChanges("DpAssignment", a.id) : [];
   const pausing = !!hold?.reason.pausesTat;
-  const blocked = working && (await ltoBlocked(prisma, a)) ? LTO_BLOCK_MESSAGE : undefined;
+  const blocked = working ? (await ltoBlockReason(prisma, a)) ?? undefined : undefined;
   const reasons = await prisma.problemReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } });
   const lines = working
     ? await Promise.all(t.advanceLines.filter((l) => !l.denied && l.releasedCents > 0).map(async (l) => ({ lineId: l.id, label: `${l.advance.number} · ${lineKindText(names, l)}`, balanceCents: (await lineTotals(prisma, l.id)).balance })))

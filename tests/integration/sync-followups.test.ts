@@ -12,8 +12,10 @@ import { getSetting, setSetting } from "@/lib/settings";
 import { getMyLoansAdapter } from "@/lib/myloans";
 import { lookupPn, openLoanFile, MYLOANS_BUSY } from "@/lib/services/loan-file";
 import { assignToDp, saveChecklist } from "@/lib/services/workflow";
-import { askCashBack, keepCurrent, linkReplacement, refreshLoan, runMyLoansSync, syncStatus } from "@/lib/services/source-sync";
-import { reviewFor, relatedPanel } from "@/lib/services/source-review";
+import { askCashBack, linkFromRelated, refreshLoan } from "@/lib/services/source-sync";
+import { decideOpenItem } from "@/lib/services/open-items";
+import { runMyLoansSync } from "@/lib/services/myloans-sync";
+import { relatedPanel } from "@/lib/services/source-review";
 import { setUserBranches } from "@/lib/services/access";
 import { callStore, callsThisHour, countCall, DbCallStore, hourKey, lookupPn as clientLookup, resetClient, setCallStore, type CallStore } from "@/lib/myloans/client";
 import { DbBreakerStore, ResilientAdapter } from "@/lib/myloans/resilience";
@@ -44,7 +46,6 @@ beforeEach(async () => {
   await setSetting("myloans.mockExtra", []);
   await setSetting("myloans.hourlyCeiling", 600);
   await setSetting("myloans.paused", false);
-  await setSetting("myloans.state", { cursor: null, cap: null, runs: [] });
   resetClient();
 });
 afterAll(async () => {
@@ -83,7 +84,7 @@ async function cancelledWithWork() {
 async function cancel(loanId: string) {
   await change(PN, { status: "STATUS_14", statusId: "14", statusName: "Cancelled" });
   await refreshLoan(loanId, sys);
-  return prisma.sourceChange.findFirstOrThrow({ where: { loanId, state: "OPEN", category: "STATUS" } });
+  return prisma.openItem.findFirstOrThrow({ where: { loanId, status: "PENDING", field: "status" } });
 }
 
 describe("1. Return the cash", () => {
@@ -109,12 +110,12 @@ describe("1. Return the cash", () => {
     };
     // Who may: only those who review MyLoans changes.
     // The LA Supervisor/Head (sup) approves myloans changes since D-010; the LA and the DP do not.
-    for (const u of [la, dp]) await expect(askCashBack(u, item.id, "Return it please")).rejects.toThrow(/Only approvers review/);
+    for (const u of [la, dp]) await expect(askCashBack(u, loan.id, "Return it please")).rejects.toThrow(/Only approvers review/);
     void sup;
     // A note of 5 to 500 characters.
-    await expect(askCashBack(admin, item.id)).rejects.toThrow(/at least 5 characters/);
-    await expect(askCashBack(admin, item.id, "1234")).rejects.toThrow(/at least 5 characters/);
-    await askCashBack(admin, item.id, "Loan cancelled in MyLoans");
+    await expect(askCashBack(admin, loan.id)).rejects.toThrow(/at least 5 characters/);
+    await expect(askCashBack(admin, loan.id, "1234")).rejects.toThrow(/at least 5 characters/);
+    await askCashBack(admin, loan.id, "Loan cancelled in MyLoans");
     // Released: the processor returns the balance (Finance confirms). Not released: Finance denies it.
     const notes = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "return the cash" }, createdAt: { gte: t0 } } });
     const toDp = notes.filter((n) => n.userId === dp.id);
@@ -130,27 +131,27 @@ describe("1. Return the cash", () => {
     expect(await prisma.checklistCheck.findMany({ where: { transaction: { loanId: loan.id } }, orderBy: { id: "asc" }, select: { id: true, checked: true } })).toEqual(before.checks);
     expect(await prisma.documentItem.count({ where: { loanId: loan.id } })).toBe(before.docs);
     expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("PENDING_ACCEPTANCE");
-    expect((await prisma.sourceChange.findUniqueOrThrow({ where: { id: item.id } })).state).toBe("OPEN");
+    expect((await prisma.openItem.findUniqueOrThrow({ where: { id: item.id } })).status).toBe("PENDING");
   });
 
   it("no cash out: refused in plain words", async () => {
     const { loan } = await cancelledWithWork();
-    const item = await cancel(loan.id);
-    await expect(askCashBack(admin, item.id, "Nothing to return?")).rejects.toThrow("No cash is out on this loan.");
+    await cancel(loan.id);
+    await expect(askCashBack(admin, loan.id, "Nothing to return?")).rejects.toThrow("No cash is out on this loan.");
   });
 });
 
-describe("2. Every review decision needs a note of 5 to 500 characters", () => {
-  it("4 characters refused, 5 accepted (Keep current); 501 refused", async () => {
+describe("2. Every Open Item decision needs remarks of 5 to 500 characters", () => {
+  it("4 characters refused, 5 accepted (Reject); 501 refused", async () => {
     await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: PN } });
     await change(PN, { totalReleasedAmount: 1_020_000 });
     await refreshLoan(loan.id, sys);
-    const item = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: loan.id, state: "OPEN" } });
-    await expect(keepCurrent(admin, item.id, "abcd")).rejects.toThrow("Write a short note (at least 5 characters).");
-    await expect(keepCurrent(admin, item.id, "x".repeat(501))).rejects.toThrow("Keep the note under 500 characters.");
-    await keepCurrent(admin, item.id, "abcde");
-    expect((await prisma.sourceChange.findUniqueOrThrow({ where: { id: item.id } })).state).toBe("KEPT");
+    const item = await prisma.openItem.findFirstOrThrow({ where: { loanId: loan.id, status: "PENDING" } });
+    await expect(decideOpenItem(admin, item.id, { decision: "REJECT", remarks: "abcd" })).rejects.toThrow("Write remarks (at least 5 characters).");
+    await expect(decideOpenItem(admin, item.id, { decision: "REJECT", remarks: "x".repeat(501) })).rejects.toThrow("Keep the remarks under 500 characters.");
+    await decideOpenItem(admin, item.id, { decision: "REJECT", remarks: "abcde" });
+    expect((await prisma.openItem.findUniqueOrThrow({ where: { id: item.id } })).status).toBe("REJECTED");
   });
 });
 
@@ -164,35 +165,23 @@ describe("3. The renamed tick", () => {
   });
 });
 
-describe("4. Replacement suggestion at another branch: a line, never a block", () => {
+describe("4. Replacement at another branch: a line, never a block", () => {
   const extra = (pn: string, branchCode: string, branchName: string): MyLoansRecord => ({
     // A redo in myloans keeps the CIN on a new PN (D-051: no guess from the CIF alone).
     pn, cin: "CIN-771003", cif: "CIF-551003", sourceLoanId: `ML-${pn}`, borrowerName: "Ana Villanueva", branchName, branchCode, status: "RELEASED", statusId: "12", statusName: "Loan Released",
     loanType: "Renewal", productName: "Auto Financing", totalReleasedAmount: 1_000_000, releaseDate: new Date().toISOString().slice(0, 10),
   });
 
-  it("same branch: no line", async () => {
-    await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const old = await prisma.loan.findUniqueOrThrow({ where: { pn: PN } });
-    await setSetting("myloans.mockExtra", [extra("GD1652026909401", "165", "Angono")]);
-    await cancel(old.id);
-    await openLoanFile(la, { pn: "GD1652026909401", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const r = (await reviewFor(admin, old.id))!;
-    expect(r.candidates).toEqual([expect.objectContaining({ pn: "GD1652026909401", differentBranch: null })]);
-  });
-
-  it("different branch: 'Different branch: Angono → Antipolo' in the review and the Related loans link form; linking still allowed with a note", async () => {
+  it("different branch: 'Different branch: Angono → Antipolo' on the Related loans link form; linking still allowed with a note", async () => {
     await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
     const old = await prisma.loan.findUniqueOrThrow({ where: { pn: PN } });
     await setSetting("myloans.mockExtra", [extra("GD1012026909402", "101", "Antipolo")]);
-    const item = await cancel(old.id);
+    await cancel(old.id);
     await openLoanFile(la, { pn: "GD1012026909402", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const r = (await reviewFor(admin, old.id))!;
-    expect(r.candidates).toEqual([expect.objectContaining({ pn: "GD1012026909402", differentBranch: "Different branch: Angono → Antipolo" })]);
     const nw = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026909402" } });
     expect((await relatedPanel(admin, nw)).rows.find((x) => x.pn === PN)!.differentBranch).toBe("Different branch: Angono → Antipolo");
-    await expect(linkReplacement(admin, item.id, { newPn: "GD1012026909402", note: "abc", confirmNoPayment: true })).rejects.toThrow(/at least 5/);
-    await linkReplacement(admin, item.id, { newPn: "GD1012026909402", note: "Moved branch with the new PN", confirmNoPayment: true });
+    await expect(linkFromRelated(admin, old.id, "GD1012026909402", { note: "abc", confirmNoPayment: true })).rejects.toThrow(/at least 5/);
+    await linkFromRelated(admin, old.id, "GD1012026909402", { note: "Moved branch with the new PN", confirmNoPayment: true });
     expect((await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026909402" } })).replacesPn).toBe(PN);
   });
 });
@@ -251,18 +240,13 @@ describe("5. The hourly count and the circuit breaker are shared by every instan
     }
   });
 
-  it("console-script calls appear in This hour on the Settings card", async () => {
-    await openLoanFile(la, { pn: PN, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    await prisma.loan.update({ where: { pn: PN }, data: { nextCheckAt: new Date(Date.now() - 60_000) } });
+  it("This hour counts the calls of Find loan and the refreshes, shared (the sync reads pages and is not counted)", async () => {
     const before = await callsThisHour();
-    resetClient();
-    const r = await runMyLoansSync({ trigger: "script", force: true });
-    expect(r).toMatchObject({ ran: true, calls: 1 });
-    expect(await callsThisHour()).toBe(before + 1);
-    expect((await syncStatus()).hourCalls).toBe(before + 1);
     expect(callStore()).toBeInstanceOf(DbCallStore);
-    // countCall is the same shared count.
     await countCall();
-    expect((await syncStatus()).hourCalls).toBe(before + 2);
+    expect(await callsThisHour()).toBe(before + 1);
+    resetClient();
+    await runMyLoansSync({ mode: "CHANGE", trigger: "script" });
+    expect(await callsThisHour()).toBe(before + 1);
   });
 });

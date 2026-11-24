@@ -737,3 +737,133 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
        - Tricycle Loan.
 - **Reason:** the user's answers after the 10a report.
 
+## D-052 Product classification final; 10a notes; piece 7 approved
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **Product classification, final** (updates D-049 and D-051):
+     - **The automatic keyword rule decides:**
+       1. Refinancing words in the name → Refinancing;
+       2. otherwise Financing words → Financing;
+       3. no matching word → Refinancing (automatic).
+
+       No products need confirming in advance: the **"Please confirm" markers and their list are removed**.
+     - **"Classified by default"** (no matching word) keeps its label and filter, so supervisors find and check those quickly.
+     - **"Manage product classification"** is on by default for the **LA Supervisor/Head only** (off by default for Admin and Superadmin). The Superadmin can grant it to others (for example an LA) in the permission matrix.
+     - **Changing a product's classification always requires a reason, for anyone.** It is logged and shown in the product's history.
+     - **Reason:** keep it simple; the rule decides, and people correct a product with a reason.
+  2. **Notes on 10a:**
+     - **Old audit-log rows with an address or contact number:** no action. The DMS is not live and they are fake test data. Confirmed: no production code can write an address or contact number anywhere, the audit log included.
+     - **"Same borrower" in Related loans** is the existing Related loans card (other loans with the same CIN or CIF, within the reader's branches), with its guessed tag replaced by a neutral label. It is not new.
+  3. **Piece 7, myloans sync on API 2: approved.**
+     - **(a)** As a short bridge until piece 8, API 2 changes raise today's review items, one per loan. **Nothing is applied automatically** (strict v2). Only people with the approver tick for the loan's branch can act, and items show the changed fields.
+     - **(b)** The old tiered background refresh retires: its code and settings are removed, so there is one sync path. Find loan and Refresh stay on API 1.
+     - **(c)** Released loans not yet in the DMS are stored, only those released on or after the branch-pool cutoff (a setting, default go-live minus 30 days), keeping only what the pool card needs. They are shown in the pool in 10b.
+     - **Scheduler:** the hosting is not decided. The sync is one command / entry point that any scheduler can call (Windows Task Scheduler, cron, a cloud scheduler); in development an in-app timer is fine. `docs/SCHEDULER.md` shows each option. Runs never overlap (a lock).
+     - **Daily catch-up:** 02:00 Manila, the last 26 hours (settings).
+- **Reason:** the user's decisions after the 10a report.
+- **How it was built (18 November 2026), choices within the decision:**
+  - A change run every **30 minutes** (the interval already decided for the sync, editable); the scheduler may call every 5 minutes and the sync decides what is due (the catch-up first, else a change run when the interval passed).
+  - **Admin is alerted after 3 failed runs in a row** (a setting). A failed run keeps the checkpoint, so nothing is lost.
+  - **Until go-live is set, the branch-pool cutoff is 30 days ago** (go-live minus 30 days once set; a cutoff date can be set directly).
+  - **The first load (pool mode)** runs from the console only (`npm run sync:myloans -- --first-load`); Settings has Run now and Run the catch-up now.
+  - **What counts as a change is the contract's ContentHash.** A field outside its 17 fields (area, division, company) is not seen by the sync on its own; it reaches the loan with the next change or a Refresh from MyLoans.
+  - A loan sent twice in one run raises nothing and notifies Admin (ask the myloans team).
+  - Removed: the tier columns, the old background refresh (business hours, cap per run, pause between calls, adaptive cap) and their settings; the hourly call ceiling stays for API 1 (Find loan and the refreshes of one loan).
+
+
+## D-053 Piece 7 accepted; renames are lookup data (correction); piece 8 approved with four additions
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **Piece 7 approved**, with its choices: a change run every 30 minutes; the branch-pool cutoff is "30 days ago" until the go-live date is set; the first load runs from the console only; area, division and company are not in the ContentHash.
+  2. **Correction (D-012, Q7):** changes to the area, division, company, branch and product **names** are lookup data. They never become review items or Open Items: they update automatically and are written to **Reference data changes**. Piece 7 had held them for review (strict v2, D-052 (a)); that is fixed.
+  3. **Piece 8, Open Items: approved**, as planned (one pending item per loan and field, a database rule; supersede on a newer change; loan type, amount, product and release date decided together with the rule effect shown; remarks of 5 to 500 characters to approve and to reject; an Unassigned queue for branches with no approver; a banner on the loan file; the old review pop-ups removed and the development items moved), with four additions:
+     1. **Reverted in myloans:** when myloans puts a field back to the DMS value while an item is pending, the item is closed as "Reverted in myloans" (logged; the approvers are notified).
+     2. **Forward is blocked for every move away from Released** (Cancelled, Inactive, NotReleased, Superseded / replaced), not only a cancellation (D-013, Q8). The loan file says why.
+     3. **Renames never create Open Items:** they are shown only on the Reference data changes page.
+     4. **Waiting time:** each Open Item shows how long it has waited in working days, green / amber / red, oldest first. Home shows approvers "N Open Items waiting too long".
+  4. **Tests:** the plan's list (§9.8) plus the four additions. During tests the development sync timer is off (`MYLOANS_SYNC_DEV_TIMER=false` for the e2e server; vitest starts no server).
+- **Reason:** the user's decisions after the piece 7 report. A rename is not a change to the loan (D-012); a loan that left Released must not move on until a person decides.
+- **How it was built (18 November 2026), choices within the decision:**
+  - **Who decides:** loan fields with "Review MyLoans changes" (`myloans:review`), borrower name, CIF and CIN with "Review borrower detail corrections", each for the branches in the person's access. Unassigned = a branch with no approver of its own (All-branches approvers do not count there); the Superadmin and All-branches approvers see it.
+  - **Status:** Approve closes the loan (refused while cash is out: ask for the cash back first); Reject keeps it open and unblocks it. The processor's Forward to branch is blocked while the status item is pending (a closed loan's papers can still go back).
+  - **Waiting colours:** the inbox thresholds (Settings, Inbox waiting colours), on the loan branch's calendar.
+  - **Monitored fields:** Settings, Open Items (myloans:manage); the status is always watched.
+  - **Replacement:** the old loan's status item says "replaced by"; linking stays on Related loans (with the no-payment confirmation); the per-item Link, Apply and Keep current buttons are gone with the review pop-up.
+  - **Renames from API 4 and API 5** (area, division, product) are logged in Reference data changes too.
+- **Update (18 November 2026, the user's, after the piece 8 report): piece 8 approved with one correction and one change.**
+  1. **Correction: what approving a status item does depends on the status.**
+     - **Cancelled:** Approve closes the loan file (refused while cash is out). As built.
+     - **Redone / replaced** (the same CIN, myloans' ReplacedBy): Approve **re-links the same loan file** to the replacement: the new PN # and the new ExternalLoanId. The old PN # and id stay in the loan's history; papers, jobs and work items stay with the loan file. It is **not** closed. The link comes from myloans by itself; linking by hand on Related loans stays only for unclear cases.
+     - **Not released / Inactive:** Approve puts the loan **on hold** ("On hold: not released in myloans"): blocked, not closed. When myloans shows it Released again, the hold ends by itself, logged as "Reverted in myloans", and the approvers are told.
+     - The decision card says what Approve will do before it is pressed ("This will close the loan file", "This will move the loan file to PN ...", "The loan stays on hold until released again").
+  2. **Open Items in the top menu,** with the pending count, only for people with "Review MyLoans changes" or "Review borrower detail corrections" (both on by default for the LA Supervisor/Head and Admin).
+  3. **Piece 10b approved,** with one addition: a "Released, not yet in the DMS" pool item's waiting time starts when it **entered the pool** (the sync), not at the release date, so the first load does not turn everything red on day one; the release date is shown on the card separately. The rest as planned: branch matching (an unmatched branch goes to the Branch review, with a Home warning for Admin), Accept opens the loan file, the item leaves the pool for each reason, one item per PN, the amount only for people allowed to see amounts, branch scope.
+  - **Reason:** a redo is the same loan under a new PN (the papers and work belong to it); a loan not released may come back; closing is only right for a cancellation.
+  - **How it was built (18 November 2026):** the re-link asks myloans (API 1) for the replacement PN when Approve is pressed and refuses if it is not a released loan now, or if that PN is already a loan file here (then link the two on Related loans; once linked by hand, Approve closes the old one as replaced). Myloans' new copy becomes the loan's baseline; a field it changed (other than the status) is its own Open Item. The hold is a column on the loan (`sourceHold`, migration 030); the loan file, Send, Forward and new cash say "On hold: not released in myloans ...". For 10b, a released loan waiting for an unknown branch enters the pool at the first sync after the branch exists in the DMS.
+
+## D-054 Piece 11 approved, with three additions; the piece 8 correction, Open Items menu and 10b approved
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **The piece 8 correction, the Open Items menu and piece 10b are approved** as built (D-053).
+  2. **Piece 11 approved** as planned: branches from API 4 and products from API 5, on the mock through the same client; a daily run from the scheduler entry point; a failed read keeps the last list; renames logged; inactive never deleted; the LTO-PASIG sample badge; Settings shows when each list was last read, with "Read the list from myloans"; contract tests. With three additions:
+     - **Match branches by myloans' BranchID, not the code.** Each DMS branch keeps the myloans BranchID, and every match uses it (the loan feed, the 10b pool, the branch sync). The code is for display only: a code change is a logged change (Reference data changes), never a broken match. The 10b pool matching switches to the BranchID too.
+     - **A branch closed in myloans:** its existing loan files, jobs, inbox items and history stay fully accessible to people with access to that branch. Only NEW pool items stop. Admin's Home warns: "Branch X is closed in myloans but has N open items".
+     - **A new product from API 5** is classified by the keywords, and the people with "Manage product classification" (default the LA Supervisor/Head) get a notice: "New product: <name>, classified as <Financing/Refinancing>[ by default]".
+  3. **At the end:** full vitest and full e2e, tsc, lint; commit; push; stop before piece 12 with a short plan and an updated STATUS.md (done, blocked and by whom, what remains to a Phase A go-live).
+- **Reason:** a branch code can change in myloans; the BranchID cannot. Closing a branch must not hide work already in the DMS. People who classify products should know when a new one arrives.
+
+## D-055 Piece 12: backups, security headers, volume test, runbook, UAT; no privacy notice; module checklists
+
+- **Date:** 18 November 2026
+- **Decision (the user's):**
+  1. **Backup and restore cover the database AND the uploaded files** (receipts, stage evidence, LTO proof), with a timestamp and a checksum list; `npm run backup` and `npm run restore`. The target comes from configuration: a folder (a disk or NAS) or an S3-compatible bucket (keys from the environment, never in the repository). Retention is a setting. A rehearsal proves a restored receipt opens through the file route. The runbook has a section per hosting option (on-premise disk / NAS plus off-site; cloud object storage with versioning; Supabase) and the 3-2-1 rule.
+  2. **No privacy notice** is needed; it is removed from the plan and STATUS if listed.
+  3. **Security headers, minimal and compact:** one config with CSP (self and what the app truly needs), HSTS (production only), `X-Content-Type-Options: nosniff`, `frame-ancestors 'none'` / `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`; the session cookie Secure (production), HttpOnly, SameSite=Lax. One test. Nothing else.
+  4. **A volume test** on a separate seed variant (not the normal kit): about 15,000 loans with pool items, Open Items and file-log rows; the main screens measured; anything slower than about 2 seconds fixed; before and after timings reported.
+  5. **A go-live runbook** (with a rollback plan) and a **UAT checklist** per role.
+  6. **Module checklists** (`docs/checklists/`, one file per module, an index) and a **Phase A gap summary** (`docs/PHASE_A_GAPS.md`); docs only, no gap is fixed until the user decides. From now on every piece or fix updates the matching checklist file in the same commit (CLAUDE.md).
+- **How it was built (18 November 2026):**
+  - Backup target: `BACKUP_TARGET=folder` (`BACKUP_DIR`, default `./backups/sets`) or `s3` (`BACKUP_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_PREFIX`; path-style, Signature V4, so AWS S3, Cloudflare R2, Backblaze B2, Wasabi, MinIO and Supabase's S3 endpoint all work). Retention is the environment setting `BACKUP_KEEP_DAYS` (default 30; the newest set is always kept): it belongs to the server, not to an in-app screen, because backups run outside the app.
+  - A set is `gdfi-dms-YYYYMMDD-HHMMSS/`: `db.dump` (pg_dump custom format), `files/<storage root>/...`, `manifest.json` (database, migrations, every file with its size and SHA-256). Restore checks every checksum first and only ever goes into a clean copy (a new database and an empty folder), never over the database in use.
+  - pg_dump / pg_restore run from the server's PATH; on a developer PC, inside the Docker database container.
+  - Security headers: one function (`lib/security/headers.ts`) wired in `next.config.ts`; the CSP allows the Microsoft sign-in form target and inline scripts and styles (Next.js needs them without nonces). The session cookie already complied.
+  - Volume test: its own database `gdfi_dms_volume_test` (`npm run volume -- create | measure`), 15,000 loans, 30,000 transactions, 26,000 work items, 6,000 processor jobs, 2,000 pool loans, 4,000 Open Items, 60,000 file-log and 30,000 audit rows. Every screen measured under 100 ms (the slowest: TAT report 97 ms, Jobs list 89 ms, Loans list 86 ms); nothing needed fixing.
+  - Scheduling is in one doc (`docs/SCHEDULER.md`: the sync, email reminders, the backup); `docs/myloans/scheduling.md` points there.
+  - The test simulator gained "Set the loan not released" and "Set the loan released again", so testers can try the hold outcome by hand (kit items 43 to 45). `db:reset-seed` is unchanged; pools are filled by `npm run sync:myloans -- --first-load` afterwards (README).
+  - New e2e: role by screen (each role's menu; pages outside it are Not found, which a page with a loading screen shows with status 200) and the Open Items outcomes (reject, not released then released again, redo) with pool to loan file.
+  - Checklists (`docs/checklists/`, 24 modules and an index) and `docs/PHASE_A_GAPS.md` record proposals only (G1 to G9, S1 to S13, questions Q1 to Q10); nothing in them is built until the user decides.
+- **Reason:** files without their database rows (or the reverse) cannot be used; a restore that can overwrite live data is a risk on the worst day.
+
+
+## D-056 Phase A gaps: decisions and working defaults
+
+- **Date:** 19 November 2026
+- **Decision (the user's, on `docs/PHASE_A_GAPS.md`):** items marked **[TO CONFIRM]** are working defaults until the business confirms them; each is built to be changed in Settings or with one small change. All of them are listed in `docs/BUSINESS_QUESTIONS.md`.
+  1. **DP receipt confirmation: built for go-live.** For a funds type that sends money to an account (Fund transfer: "needs account"), after the release the processor confirms receipt by typing the reference number, the amount and the last 4 digits of the account. All three match: confirmed, logged. Any difference: flagged to Finance (the handlers of that type and branch) with what was typed and what Finance recorded, logged; Finance clears it with remarks, or the processor confirms again once it matches.
+     - Not a gate by default: the LTO stage does not wait for the confirmation (setting `funds.blockLtoUntilReceiptConfirmed`, off). **[TO CONFIRM with Finance]** whether the LTO must wait (v2 §5.7 says it does).
+  2. **Cancel transaction:** a new tick "Cancel transaction" (`transactions:cancel`), default **LA Supervisor/Head and Admin** (not the Superadmin: day-to-day work, D-028). A reason (5 to 500 characters) is required; the cancel is logged. Any transaction not done and not already cancelled can be cancelled: open processor jobs stop (the processor is told), its work items close, the loan's stage is recomputed. **If cash was already released for it, the cancel is allowed and the cash stays owed:** liquidation is due N working days after the later of the last LTO pickup and the cancellation (D-044 item 2). The confirm step says so, with the request number and the amount. Cash asked for but not yet released is shown on the confirm step too; Finance decides it.
+  3. **The four optional transactions** (Cancellation of Mortgage, Transfer of Ownership, Renewal of OR, PPSR Termination) are seeded as transaction types the Loan Associate adds by hand (Add a transaction; not created by the rules), each with v2 §4.6's paper list (all required), needing a processor and the LTO. Checklists stay editable in Settings. **[TO CONFIRM with the LA Supervisor/Head]** the papers. The available / unavailable matrix by result (v2 §4.5) waits (PHASE_A_GAPS S6).
+  4. **Fund request: keep today's model** (one request per processor covering several jobs; lines per expense kind with presets). The v2 formula (fee table + km × rate + meals) is not built. Added to the v2 spec corrections list (`IMPLEMENTATION_PLAN.md` §14b). **[TO CONFIRM with Finance and Operations]**
+  5. **FT receiving account:** the processor enters it when requesting (v2): bank or e-wallet, account name and account number. Finance sees it in full **only on the release screen**, ticks "I checked the receiving account" and releases. The full number is kept only until the release and then cleared; the last 4 digits stay. Everywhere else it shows as "account ending 1234". A request made before this change, or changed to a fund transfer by Finance, has no account from the processor: Finance types it at release as before.
+  6. **(a) Forward does not wait for liquidation** (as built: papers keep moving; an overdue liquidation already blocks new cash). **(b) A fund transfer is liquidated with receipts, like a cash advance** (as built: "must liquidate" on both types). **[TO CONFIRM with Finance]** (b).
+  7. **Required papers stay per transaction type** (as built). **[TO CONFIRM with the LA Supervisor/Head]**; the four built-in types keep today's papers, and how they differ from v2 §4.6's samples is a question in `docs/BUSINESS_QUESTIONS.md`.
+  8. **Reports:** the 11 usable reports are enough for go-live; CSV only (no PDF).
+  9. **TAT targets:** LA 1 working day (Checklist complete, Assign to DP), DP 5 (Notary, PPSR registration, Mortgage), Finance 1 (cash advance release) as the seeded defaults. Databases that still have the earlier seeded values get the new ones (migration 032); a value an Admin already changed is kept. **[TO CONFIRM with the LA Head and Operations before UAT]**
+- **Not built until IT answers Q10:** the cloud file driver and myloans OAuth.
+- **Reason:** the user's decisions on the Phase A gap summary (D-055).
+
+
+## D-057 The build and the pages call no outside host: fonts self-hosted
+
+- **Date:** 24 November 2026
+- **Decision (the user's):** after `next build` failed because Google Fonts could not be reached (the final D-056 e2e run had to wait), the build must not depend on Google Fonts.
+  - **Inter is self-hosted:** `app/fonts/inter-latin-wght-normal.woff2` (the same Inter variable font, latin, weights 100 to 900, that Google Fonts served) with its licence `app/fonts/Inter-OFL-LICENSE.txt` (SIL Open Font License 1.1, which allows bundling). `app/layout.tsx` uses `next/font/local` with the same CSS variable (`--font-inter`) and `display: swap`, so the look does not change. The file was taken from the npm package `@fontsource-variable/inter` 5.3.0 (`npm pack`, not added as a dependency), because Google Fonts was unreachable.
+  - **Next.js telemetry is off** for `npm run dev`, `build`, `start` and the e2e runner (`NEXT_TELEMETRY_DISABLED=1`): it was the build's only other outside call.
+  - **CSP:** `font-src 'self'` only (the `data:` it allowed is no longer needed).
+  - **What still calls outside, on purpose, from the server only (each set from the environment):** Microsoft Graph for email (`login.microsoftonline.com` for the token, `graph.microsoft.com` to send), Microsoft sign-in (Entra, when built), the myloans API (`MYLOANS_BASE_URL`; the mock runs in process), and the backup bucket (`BACKUP_S3_ENDPOINT`, only when `BACKUP_TARGET=s3`). Nothing in the browser calls another host: no CDN, analytics or remote fonts.
+  - The build needs no internet access except the package registry (`npm install`); recorded in `docs/GO_LIVE_RUNBOOK.md`.
+  - `lib/security/headers.test.ts` checks `font-src 'self'` and that `app/layout.tsx` does not use Google Fonts.
+- **Reason:** a build that depends on an outside host fails when that host or the network is down; the production server may have no general internet access.

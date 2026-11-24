@@ -580,6 +580,9 @@ model LtoOffice {
   /// Inactive instead of delete: when and by whom it was made inactive (null while active).
   deactivatedAt   DateTime?
   deactivatedById String?
+  /// D-020: a sample office (LTO-PASIG, seeded with a sample distance): a warning badge in Settings and on Send.
+  isSample        Boolean   @default(false)
+  sampleNote      String    @default("")
 
   /// Optional estimates, used only to help the approver judge the cash advance (transport and time).
   distanceKm              Float?
@@ -852,10 +855,6 @@ model Loan {
   lastRefreshError    String?
   /// When MyLoans was last asked (answered or not). retrievedAt is the last answer.
   lastCheckedAt       DateTime?
-  /// MyLoans polling: A work in progress, B not yet sent, C finished steps not closed; null = never (closed, cancelled).
-  syncTier            String?
-  /// When the background sync should ask MyLoans again (partial index "Loan_due_idx" on active loans).
-  nextCheckAt         DateTime?
   /// Replacement PN links (a changed unit gets a new PN: a new loan file linked to the old one).
   replacesPn          String?
   replacedByPn        String?
@@ -870,7 +869,7 @@ model Loan {
   disposedAt DateTime?
 
   snapshots        LoanSourceSnapshot[]
-  sourceChanges    SourceChange[]
+  openItems        OpenItem[]
   transactions     LoanTransaction[]
   /// D-050: every myloans copy this loan file was read from (one row per ExternalLoanId; piece 7 adds redo copies).
   sourceIdentities LoanSourceIdentity[]
@@ -891,8 +890,12 @@ model Loan {
   updatedAt DateTime @updatedAt
 
   /// D-050: myloans' transaction id (ExternalLoanId) and the contract hash, saved when the loan file is opened.
-  externalLoanId      Int?     @unique
-  contentHash         String?
+  externalLoanId  Int?      @unique
+  /// D-053: myloans says the loan is no longer released (NotReleased or Inactive) and an approver approved it: the
+  /// loan is on hold (blocked, not closed) until myloans shows it Released again. The myloans state word.
+  sourceHold      String?
+  sourceHoldSince DateTime?
+  contentHash     String?
 
   @@index([branchId, stage])
   @@index([cin])
@@ -921,51 +924,77 @@ model LoanSourceSnapshot {
   @@index([loanId, retrievedAt])
 }
 
-enum SourceChangeCategory {
-  MATERIAL
-  STATUS
-  REPLACEMENT
-  /// Borrower details (name, address, contact number, CIF, CIN): decided by the branch supervisors and
-  /// approvers (myloans:review_borrower), apart from the Admin item. One open item of each per loan.
-  BORROWER
+/// Piece 8 (D-004, D-010 to D-013, D-053): what happened to an Open Item.
+enum OpenItemStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  /// A newer myloans value replaced it while pending (linked to the new item).
+  SUPERSEDED
+  /// myloans put the field back to the DMS value while it was pending.
+  REVERTED
 }
 
-enum SourceChangeState {
-  OPEN
-  APPLIED
-  KEPT
-  CLOSED_CANCELLED
+/// Piece 8: one changed loan or borrower field from myloans, waiting for an approver of the loan's branch. Nothing
+/// is applied until it is approved. One PENDING item per loan and field (partial unique index
+/// "OpenItem_one_pending_per_field", hand-written SQL in migration 028).
+model OpenItem {
+  id              String         @id @default(cuid())
+  /// OI-YYYY-###### (the sequence restarts each year: OpenItemCounter).
+  number          String         @unique
+  loanId          String
+  loan            Loan           @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  branchId        String
+  field           String
+  fieldLabel      String
+  /// "rules": loan type, amount, product and release date are decided together (the rule effect is shown).
+  groupKey        String?
+  /// LOAN (myloans:review) or BORROWER (myloans:review_borrower): whose tick decides it.
+  audience        String         @default("LOAN")
+  /// The DMS value and the myloans value, as shown (amounts only to those who may see them: see the raw values).
+  oldValue        String?
+  newValue        String?
+  oldRaw          Json?
+  newRaw          Json?
+  sourceUpdatedAt DateTime?
+  syncRunId       String?
+  raisedAt        DateTime       @default(now())
+  status          OpenItemStatus @default(PENDING)
+  supersededById  String?
+  decidedById     String?
+  decidedByLabel  String?
+  decidedAt       DateTime?
+  remarks         String?
+  simulated       Boolean        @default(false)
+
+  @@index([status, raisedAt])
+  @@index([loanId, status])
+  @@index([branchId, status])
 }
 
-/// A MyLoans change that needs a decision (Admin review). Append-only except the decision fields
-/// (state, decidedById, decidedByLabel, decidedAt, note) and, while Open, the latest detection
-/// (changes, proposed, detectedAt) whose earlier versions are kept in history.
-model SourceChange {
-  id             String               @id @default(cuid())
-  loanId         String
-  loan           Loan                 @relation(fields: [loanId], references: [id], onDelete: Cascade)
-  firstSeenAt    DateTime             @default(now())
-  detectedAt     DateTime             @default(now())
-  category       SourceChangeCategory
-  /// [{ field, label, was, now, kind }] (stored values, amounts in centavos).
-  changes        Json
-  /// The proposed effect: what the rules would do on the new data (nothing saved).
-  proposed       Json
-  /// Earlier detections while it was open: [{ detectedAt, category, changes }].
-  history        Json                 @default("[]")
-  /// The new values' hash (the snapshot it was detected on).
-  hash           String
-  /// Possible replacement PNs (same CIN or CIF), or the PN MyLoans named.
-  candidates     String[]             @default([])
-  state          SourceChangeState    @default(OPEN)
-  decidedById    String?
-  decidedByLabel String?
-  decidedAt      DateTime?
-  note           String?
-  simulated      Boolean              @default(false)
+/// Piece 8: the yearly Open Item number sequence.
+model OpenItemCounter {
+  year Int @id
+  last Int @default(0)
+}
 
-  @@index([loanId, state])
-  @@index([state])
+/// Piece 8 (D-012, D-053): a rename of reference data (area, division, company, branch or product name) seen in
+/// myloans. Applied by itself; this is its log (Settings, Reference data changes).
+model ReferenceChange {
+  id        String   @id @default(cuid())
+  /// AREA, DIVISION, COMPANY, BRANCH, PRODUCT.
+  entity    String
+  /// The myloans id or code of the thing renamed.
+  entityKey String
+  oldValue  String?
+  newValue  String?
+  at        DateTime @default(now())
+  /// "myloans API 2", "myloans API 1", "myloans API 5".
+  source    String
+  /// How many loan files took the new name.
+  loanCount Int      @default(0)
+
+  @@index([at])
 }
 
 model LoanTransaction {
@@ -1568,6 +1597,18 @@ model CashAdvance {
   accountProvider      String            @default("")
   accountName          String            @default("")
   accountLast4         String            @default("")
+  /// D-056: the full receiving account number the processor typed when requesting (a type that needs an account).
+  /// Shown in full only on Finance's release screen; cleared at release (the last 4 digits stay above).
+  accountNumber        String            @default("")
+  /// D-056: the processor's receipt confirmation (reference #, amount, last 4 checked against the release).
+  receiptConfirmedAt   DateTime?
+  receiptConfirmedById String?
+  /// A mismatch: when, and what was typed against what Finance recorded; Finance clears it with remarks.
+  receiptMismatchAt    DateTime?
+  receiptMismatchNote  String            @default("")
+  receiptResolvedAt    DateTime?
+  receiptResolvedById  String?
+  receiptResolveNote   String            @default("")
   /// Restarts at each carry-over decision.
   liquidationDueAt     DateTime?
   /// The start of the liquidation count (YYYY-MM-DD): the release or the latest carry-over decision (D-041 window).
@@ -2237,21 +2278,21 @@ model MockMyLoansBranch {
 /// D-049: myloans products (from API 5), with the optional manual classification that overrides the keywords.
 /// Matched by myloans' ProductID, so a rename keeps the manual setting.
 model Product {
-  id                  String          @id @default(cuid())
-  sourceProductId     Int             @unique
-  code                String
-  name                String
-  active              Boolean         @default(true)
+  id                 String          @id @default(cuid())
+  sourceProductId    Int             @unique
+  code               String
+  name               String
+  active             Boolean         @default(true)
   /// Set by someone with "Manage product classification"; null: the keywords decide.
-  classification      Classification?
-  classificationNote  String          @default("")
-  classifiedById      String?
-  classifiedByLabel   String          @default("")
-  classifiedAt        DateTime?
+  classification     Classification?
+  classificationNote String          @default("")
+  classifiedById     String?
+  classifiedByLabel  String          @default("")
+  classifiedAt       DateTime?
   /// When API 5 last sent it (the list is read whole each time).
-  seenAt              DateTime        @default(now())
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  seenAt             DateTime        @default(now())
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   @@index([code])
 }
@@ -2292,4 +2333,60 @@ model PnSearchLog {
   @@index([pn])
   @@index([loanBranchId, at])
   @@index([searcherBranchId, at])
+}
+
+/// Piece 7 (D-052): one myloans sync run (API 2 change mode, the daily catch-up, or the first load): what it did.
+model SyncRun {
+  id               String    @id @default(cuid())
+  /// CHANGE, CATCHUP, FIRST_LOAD.
+  mode             String
+  /// schedule, script, run_now, dev_timer.
+  trigger          String
+  startedAt        DateTime  @default(now())
+  endedAt          DateTime?
+  ok               Boolean   @default(false)
+  /// A skipped run (paused, another run holds the lock, not due): why.
+  skipped          String?
+  since            DateTime?
+  pages            Int       @default(0)
+  rows             Int       @default(0)
+  unchanged        Int       @default(0)
+  reviews          Int       @default(0)
+  duplicates       Int       @default(0)
+  candidates       Int       @default(0)
+  error            String?
+  checkpointBefore DateTime?
+  checkpointAfter  DateTime?
+  byLabel          String    @default("")
+
+  @@index([startedAt])
+}
+
+/// Piece 7: the lock that keeps two sync runs from overlapping (one row; a run holds it until it ends or it expires).
+model SyncLease {
+  id        String   @id
+  holder    String
+  expiresAt DateTime
+}
+
+/// Piece 7 (D-052 (c)): a loan myloans released that has no loan file here yet, released on or after the branch-pool
+/// cutoff. Only what the pool card needs. Shown in the branch pool in piece 10b.
+model SourceLoanCandidate {
+  id              String   @id @default(cuid())
+  externalLoanId  Int      @unique
+  cin             String?
+  pn              String
+  borrowerName    String
+  /// D-054: myloans' BranchID (every match uses it; the code is for display).
+  myloansBranchId Int?
+  branchCode      String?
+  branchName      String?
+  productName     String?
+  amount          String?
+  releaseDate     DateTime
+  firstSeenAt     DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+
+  @@index([pn])
+  @@index([branchCode, releaseDate])
 }

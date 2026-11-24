@@ -40,6 +40,6 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: true,
     timeout: 600_000,
-    env: { DATABASE_URL: testDb, DIRECT_URL: testDb, NEXT_DIST_DIR: E2E_DEV ? ".next-e2e" : ".next-e2e-prod", APP_BASE_URL: "http://localhost:3100" },
+    env: { DATABASE_URL: testDb, DIRECT_URL: testDb, NEXT_DIST_DIR: E2E_DEV ? ".next-e2e" : ".next-e2e-prod", APP_BASE_URL: "http://localhost:3100", MYLOANS_SYNC_DEV_TIMER: "false" },
   },
 });

@@ -49,7 +49,7 @@ async function acceptedMortgage() {
 }
 const request = async (fundsTypeCode = "CA") => {
   const { txn } = await acceptedMortgage();
-  return requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 350_000 }], fundsTypeId: (await type(fundsTypeCode)).id });
+  return requestAdvance(dp, { lines: [{ transactionId: txn.id, kind: "LTO_FEE", cents: 350_000 }], fundsTypeId: (await type(fundsTypeCode)).id, account: { provider: "BPI", name: "Test Document Processor", number: "0000 1111 4821" } });
 };
 const approvedRows = (id: string) => prisma.auditLog.count({ where: { entityId: id, action: "advance_approved" } });
 

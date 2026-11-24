@@ -149,11 +149,11 @@ export async function savedLoanCard(user: CurrentUser, pn: string, now: Date = n
       openedBy: { select: { name: true } },
       dpAssignments: { select: { status: true, endorsedAt: true, dpUser: { select: { name: true } } }, orderBy: { endorsedAt: "desc" } },
       holds: { where: { resumedAt: null }, select: { reasonName: true, reason: { select: { name: true } } } },
-      _count: { select: { problems: { where: { resolvedAt: null } }, exceptions: { where: { status: "OPEN" } }, sourceChanges: { where: { state: "OPEN", category: { not: "BORROWER" } } } } },
+      _count: { select: { problems: { where: { resolvedAt: null } }, exceptions: { where: { status: "OPEN" } }, openItems: { where: { status: "PENDING", audience: "LOAN" } } } },
     },
   });
   if (!l) return null;
-  const borrowerChanged = (await prisma.sourceChange.count({ where: { loan: { pn }, state: "OPEN", category: "BORROWER" } })) > 0;
+  const borrowerChanged = (await prisma.openItem.count({ where: { loan: { pn }, status: "PENDING", audience: "BORROWER" } })) > 0;
   const job = l.dpAssignments.find((a) => liveAssignment(a.status) && a.status !== "CLOSED");
   const problems = l._count.problems + l._count.exceptions;
   const holds = [...new Set(l.holds.map((h) => h.reasonName || h.reason.name))];
@@ -161,12 +161,12 @@ export async function savedLoanCard(user: CurrentUser, pn: string, now: Date = n
     : l.closedAt || l.archivedAt ? "Nothing to do: the loan file is closed."
     : problems ? "Fix the open problem first."
     : holds.length ? "Resume the hold when it is cleared."
-    : l._count.sourceChanges ? "An approver reviews the MyLoans change."
+    : l._count.openItems ? "An approver decides the myloans change (Open Items)."
     : nextStepFor(l.stage, { hasOpenException: l._count.exceptions > 0 }).label;
   return {
     pn: l.pn, borrowerName: l.borrowerName, productName: l.productName, branchName: l.branch.name, stage: l.stage, stageText: stageLabel(l.stage),
     holder: job ? { role: "Processor", name: job.dpUser.name } : { role: "Owner", name: l.openedBy.name },
-    next, holds, problems, changed: l._count.sourceChanges > 0,
+    next, holds, problems, changed: l._count.openItems > 0,
     cancelled: l.cancelledAt ? { on: fmtDate(l.cancelledAt), reason: l.cancelReason } : null,
     closed: !!(l.closedAt || l.archivedAt), replacedByPn: l.replacedByPn,
     stale: await isStaleForFind(l, now),
@@ -186,7 +186,7 @@ export async function refreshFoundLoan(user: CurrentUser, pn: string, now: Date 
     select: { id: true, branchId: true, lastCheckedAt: true, retrievedAt: true, cancelledAt: true, closedAt: true, archivedAt: true },
   });
   if (!l || !inScope(user, l.branchId)) return { called: false, changed: false };
-  const changedNow = async () => (await prisma.sourceChange.count({ where: { loanId: l.id, state: "OPEN", category: { not: "BORROWER" } } })) > 0;
+  const changedNow = async () => (await prisma.openItem.count({ where: { loanId: l.id, status: "PENDING", audience: "LOAN" } })) > 0;
   if (!(await isStaleForFind(l, now))) return { called: false, changed: await changedNow() };
   // Paused by Admin: no call (a person can still press Refresh from MyLoans on the loan file).
   if (await getSetting("myloans.paused")) return { called: false, changed: await changedNow() };

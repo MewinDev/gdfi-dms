@@ -11,7 +11,7 @@ import { PERMISSIONS as P, type Permission } from "@/lib/auth/permissions";
 import { getSetting, setSetting } from "@/lib/settings";
 import { ignoreReview, previewBranchFile, confirmBranchFile, runBranchSync, acceptReview, setBranchHidden } from "@/lib/services/branches";
 import { savePnFormat } from "@/lib/services/pn-settings";
-import { runSyncNow, saveSyncSettings } from "@/lib/services/source-sync";
+import { runSyncNow, saveSyncSettings } from "@/lib/services/myloans-sync";
 import { resendEmail, saveEmailTemplate, sendTestEmail, setEmailActive, setEmailEvent } from "@/lib/email/outbox";
 import { saveUser } from "@/lib/services/admin";
 import { asUser } from "./helpers";

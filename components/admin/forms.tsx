@@ -34,7 +34,7 @@ export interface FieldDef {
 }
 
 /** Cash-advance switches (top of the Cash-advance rules pop-up). */
-export function FundsSettingsForm({ carryOverLimitDays, blockLtoUntilFunded, approvalBandsOn }: { carryOverLimitDays: number; blockLtoUntilFunded: boolean; approvalBandsOn: boolean }) {
+export function FundsSettingsForm({ carryOverLimitDays, blockLtoUntilFunded, blockLtoUntilReceiptConfirmed = false, approvalBandsOn }: { carryOverLimitDays: number; blockLtoUntilFunded: boolean; blockLtoUntilReceiptConfirmed?: boolean; approvalBandsOn: boolean }) {
   const [state, action] = useActionState(saveFundsSettingsAction, null);
   return (
     <form onSubmit={(e) => submitKeepingValues(e, action)} className="mb-4 grid gap-3 rounded-lg border border-line bg-white p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_auto] lg:items-end">
@@ -45,6 +45,10 @@ export function FundsSettingsForm({ carryOverLimitDays, blockLtoUntilFunded, app
       <label className="inline-flex min-h-11 items-center gap-2 text-[15px]">
         <input type="checkbox" name="blockLtoUntilFunded" defaultChecked={blockLtoUntilFunded} className="h-5 w-5 accent-[var(--navy)]" />
         Block &ldquo;At the LTO&rdquo; until funded
+      </label>
+      <label className="inline-flex min-h-11 items-center gap-2 text-[15px]" title="Off (the default, D-056): the processor confirms receipt of a fund transfer, but the LTO does not wait for it. On: At the LTO waits until the receipt is confirmed.">
+        <input type="checkbox" name="blockLtoUntilReceiptConfirmed" defaultChecked={blockLtoUntilReceiptConfirmed} className="h-5 w-5 accent-[var(--navy)]" />
+        Block &ldquo;At the LTO&rdquo; until a transfer&rsquo;s receipt is confirmed
       </label>
       <label className="inline-flex min-h-11 items-center gap-2 text-[15px]" title="Off (the default): anyone who can approve the fund type approves any amount. On: only the roles of the approval band for that amount.">
         <input type="checkbox" name="approvalBandsOn" defaultChecked={approvalBandsOn} className="h-5 w-5 accent-[var(--navy)]" />

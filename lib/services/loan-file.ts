@@ -27,7 +27,7 @@ import {
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { recomputeStage } from "./stage";
 import { getClassificationRules, getSetting, setSetting } from "@/lib/settings";
-import { linkOnOpen, refreshLoan } from "./source-sync";
+import { refreshLoan } from "./source-sync";
 import { hashTracked, trackedOf } from "@/lib/myloans/changes";
 import { UserError } from "./errors";
 
@@ -232,7 +232,7 @@ async function redoneFrom(rec: { pn: string; cin: string | null }): Promise<stri
   const other = await prisma.loan.findFirst({
     where: {
       cin: rec.cin, pn: { not: rec.pn },
-      OR: [{ sourceStatus: { not: "RELEASED" } }, { sourceChanges: { some: { decidedAt: null, category: { in: ["STATUS", "REPLACEMENT"] } } } }],
+      OR: [{ sourceStatus: { not: "RELEASED" } }, { openItems: { some: { status: "PENDING", field: "status" } } }],
     },
     select: { pn: true },
   });
@@ -364,9 +364,7 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       await tx.loanSourceSnapshot.create({
         data: { loanId: loan.id, retrievedAt: lookup.retrievedAt, adapter: lookup.adapter, payload: lookup.raw as Prisma.InputJsonValue, tracked: tracked as unknown as Prisma.InputJsonValue, hash: hashTracked(tracked), kind: "BASE" },
       });
-      // Not yet sent: tier B, first background check after its interval.
-      const tiers = await getSetting("myloans.tierMinutes", tx);
-      await tx.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: lookup.retrievedAt, syncTier: "B", nextCheckAt: new Date(lookup.retrievedAt.getTime() + tiers.B * 60_000) } });
+      await tx.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: lookup.retrievedAt } });
       await writeAudit(tx, {
         actor, mode: "MANUAL", action: "loan_file_opened", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn,
         journeyStep: "1.4",
@@ -409,6 +407,8 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
       await createTransactions(tx, { loanId: loan.id, pn, codes: outcome.transactions, origin: "AUTOMATIC", holderUserId: user.id });
       const candidate = await openItem(tx, "LOAN_CANDIDATE", pn);
       if (candidate) { await takeItem(tx, "LOAN_CANDIDATE", pn, user); await closeItem(tx, "LOAN_CANDIDATE", pn, "DONE", { by: { id: user.id, label: user.name } }); }
+      // 10b: no longer "Released, not yet in the DMS".
+      await tx.sourceLoanCandidate.deleteMany({ where: { pn } });
       await writeAudit(tx, {
         actor: SYSTEM_ACTOR, mode: "AUTOMATIC", action: "transactions_generated", entityType: "Loan", entityId: loan.id, loanId: loan.id, pn,
         journeyStep: "2.6",
@@ -426,10 +426,8 @@ export async function openLoanFile(user: CurrentUser, input: OpenLoanInput): Pro
     }
     throw e;
   }
-  // MyLoans says it replaces another PN: link both files and raise the review item on the old one. (D-050: the
-  // contract sends no previous PN and the replacement guess is gone; a redo is read from myloans' own link.)
-  const replaces = rec.previousPn ?? (await redoneFrom(rec));
-  if (replaces) await linkOnOpen(pn, replaces);
+  // A redo of a loan we hold (myloans' own link): the old loan's status Open Item says "replaced by"; nothing is
+  // linked here (Link as replacement on Related loans, D-051).
   await logPnSearch(user, pn, "OPENED", { statusId: rec.statusId ?? null, feedState: rec.feedState ?? null, loanBranchId: branch.id });
   return { pn, alreadyOpen: false };
 }

@@ -70,3 +70,25 @@ describe("Funds types (pure rules)", () => {
   });
 });
 
+
+describe("D-056: the request account and the receipt check", () => {
+  it("the account needs a bank or e-wallet, a name and 6 to 30 digits (spaces and dashes ignored); the last 4 come from it", async () => {
+    const { checkRequestAccount, maskedAccount } = await import("./types");
+    expect(checkRequestAccount({ provider: "BPI", name: "Juan Cruz", number: "1234 5678-4821" })).toEqual({ ok: true, account: { accountProvider: "BPI", accountName: "Juan Cruz", accountNumber: "123456784821", accountLast4: "4821" } });
+    expect(checkRequestAccount({ provider: "", name: "Juan Cruz", number: "123456" })).toMatchObject({ ok: false, field: "accountProvider" });
+    expect(checkRequestAccount({ provider: "BPI", name: "J", number: "123456" })).toMatchObject({ ok: false, field: "accountName" });
+    expect(checkRequestAccount({ provider: "BPI", name: "Juan Cruz", number: "12345" })).toMatchObject({ ok: false, field: "accountNumber" });
+    expect(checkRequestAccount(undefined)).toMatchObject({ ok: false });
+    expect(maskedAccount("4821")).toBe("account ending 4821");
+  });
+  it("lists each difference between what the processor typed and what Finance recorded", async () => {
+    const { receiptDifferences } = await import("./types");
+    const rec = { releaseRef: "FT-889101", releasedCents: 250_000, accountLast4: "4821" };
+    expect(receiptDifferences({ ref: "ft 889101", cents: 250_000, last4: "4821" }, rec)).toEqual([]);
+    expect(receiptDifferences({ ref: "FT-1", cents: null, last4: "0000" }, rec)).toEqual([
+      'reference: typed "FT-1", Finance recorded "FT-889101"',
+      "amount: typed an unreadable amount, Finance recorded ₱2,500.00",
+      "last 4 digits: typed 0000, Finance recorded 4821",
+    ]);
+  });
+});

@@ -22,7 +22,7 @@ import { dayText } from "@/lib/ui/plain";
 import { PageHeader, ToneChip } from "@/components/ui/basics";
 import { AdvanceStatusChip } from "@/components/funds/advance-status";
 import {
-  ChangeTypeForm, DecideSheetButton, GrantExceptionForm, QuickApproveForm, ReleaseSheetButton, SmallAction, TopUpReleaseSheetButton,
+  ChangeTypeForm, DecideSheetButton, GrantExceptionForm, QuickApproveForm, ReleaseSheetButton, ResolveReceiptForm, SmallAction, TopUpReleaseSheetButton,
 } from "@/components/funds/forms";
 import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { RecordHistory } from "@/components/funds/record-history";
@@ -344,7 +344,7 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             asked: askedCell(a.requestedBy.name, a.branch.name, `Asked ${dayText(a.createdAt)}`),
             amount: amountCell(a.approvedCents ?? 0, <><Grey>Approved by {by ?? DASH}</Grey><Grey>{dayText(a.approvedAt)}</Grey>{(a.approvedCents ?? 0) !== a.requestedCents && <Grey>Asked {peso(a.requestedCents)}</Grey>}</>),
             status: <><AdvanceStatusChip status={a.status} /><Aging tone="mute">{daysText(daysSince(a.approvedAt, a.branchId), "waiting")}</Aging></>,
-            action: may("release", a) || may("changeType", a) ? actions(a.number, [ok && <ReleaseSheetButton key="rel" number={a.number} advanceId={a.id} type={a.fundsType} today={today} />], [[may("changeType", a) && <ChangeTypeForm key="type" advanceId={a.id} current={a.fundsTypeId} types={editTypes} />]], lock) : null,
+            action: may("release", a) || may("changeType", a) ? actions(a.number, [ok && <ReleaseSheetButton key="rel" number={a.number} advanceId={a.id} type={a.fundsType} today={today} account={a.accountNumber ? { provider: a.accountProvider, name: a.accountName, number: a.accountNumber } : null} />], [[may("changeType", a) && <ChangeTypeForm key="type" advanceId={a.id} current={a.fundsTypeId} types={editTypes} />]], lock) : null,
             details: historyOf(a.id).length ? <RecordHistory rows={historyOf(a.id)} /> : undefined,
           }} />
         ),
@@ -387,7 +387,10 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
       const txns = txnsOf(a.lines);
       const receipts = a.lines.flatMap((l) => l.receipts.map((r) => ({ r, l })));
       const verb = a.fundsType.needsReference || a.fundsType.needsAccount ? "Sent" : "Released";
+      // D-056 item 1: a receipt the processor could not match; Finance clears it with remarks.
+      const mismatch = !!a.receiptMismatchAt && !a.receiptConfirmedAt;
       const main = [
+        mismatch && may("release", a) && <ResolveReceiptForm key="receipt" advanceId={a.id} number={a.number} />,
         ...unconfirmed.map((r) => may("settle", a) && <SmallAction key={r.id} kind="confirm-return" id={r.id} label={unconfirmed.length > 1 ? `Confirm ${peso(r.cents)} received` : "Confirm received"} cls="btn-secondary btn-sm fl-btn" />),
         a.status === "LIQUIDATED" && may("settle", a) && unconfirmed.length === 0 && <SmallAction key="close" kind="close" id={a.id} label="Close advance" cls="btn-gold btn-sm fl-btn" />,
         a.status === "LIQUIDATED" && printLink(a.number, a),
@@ -412,6 +415,9 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
                 <span className="mt-1 flex items-center gap-1.5 text-[12px] text-ink-2" data-aging={agingTone({ overdue, days })}><span className={`fl-dot fl-dot-${agingTone({ overdue, days })}`} aria-hidden="true" />{daysText(days, "outstanding")}</span>
                 <Grey><span data-liquidation-line>{liquidationLineFor(a)}</span></Grey>
                 <Grey><span data-release-line>{releaseLine(a) || DASH}</span></Grey>
+                {a.fundsType.needsAccount && (mismatch
+                  ? <p className="mt-1 text-[12px] font-semibold text-bad-fg" data-receipt-mismatch>Receipt does not match: {a.receiptMismatchNote}</p>
+                  : <Grey><span data-receipt-state>{a.receiptConfirmedAt ? (a.receiptResolveNote ? `Receipt cleared by Finance: ${a.receiptResolveNote}` : "Receipt confirmed by the processor") : "Receipt not confirmed yet"}</span></Grey>)}
               </div>
             ),
             asked: askedCell(a.requestedBy.name, a.branch.name, `${verb} ${dayText(a.releasedAt)}`),

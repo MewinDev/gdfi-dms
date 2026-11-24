@@ -38,7 +38,7 @@ if (!testDb || !/test/i.test(new URL(testDb).pathname)) {
 }
 // --screenshots (npm run docs:screenshots): refresh docs/screenshots/. A normal run writes none (docShot).
 const screenshots = process.argv.includes("--screenshots");
-const env = { ...process.env, DATABASE_URL: testDb, DIRECT_URL: testDb, NEXT_DIST_DIR: ".next-e2e-prod", APP_BASE_URL: `http://localhost:${PORT}`, DOCS_SCREENSHOTS: screenshots ? "1" : "0" };
+const env = { ...process.env, NEXT_TELEMETRY_DISABLED: "1", DATABASE_URL: testDb, DIRECT_URL: testDb, NEXT_DIST_DIR: ".next-e2e-prod", APP_BASE_URL: `http://localhost:${PORT}`, DOCS_SCREENSHOTS: screenshots ? "1" : "0" };
 
 /** Stops whatever listens on the e2e port (a server left by a group that crashed or timed out). */
 function stopPort() {

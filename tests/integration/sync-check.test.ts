@@ -1,7 +1,7 @@
 /**
- * MyLoans sync, checked end to end (the "sync check" brief): each scenario on a loan with ticked papers,
- * one sent transaction and one unsent one. Borrower details (its own review, decided by the branch
- * supervisors and approvers), the pause switch, the busy message, refresh paths and notifications.
+ * MyLoans sync, checked end to end (the "sync check" brief), now on Open Items (piece 8, D-053): each scenario on a
+ * loan with ticked papers, one sent transaction and one unsent one. Borrower fields decided by the branch's
+ * borrower approvers, renames applied by themselves, the pause switch, the busy message, refresh paths, notifications.
  * Test database (gdfi_dms_test), sample MyLoans (mock).
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
@@ -15,12 +15,11 @@ import { getMyLoansAdapter } from "@/lib/myloans";
 import { lookupPn, openLoanFile, refreshFromMyLoans, MYLOANS_BUSY } from "@/lib/services/loan-file";
 import { assignToDp, saveChecklist } from "@/lib/services/workflow";
 import { requestAdvance } from "@/lib/services/funds";
-import {
-  applySourceChange, keepCurrent, linkReplacement, refreshLoan, refreshOnOpen, runMyLoansSync, runSyncNow, setMyLoansPaused, simulateSourceChange, PAUSED_BY_ADMIN,
-} from "@/lib/services/source-sync";
-import { cashBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "@/lib/services/source-blocks";
-import { reviewFor } from "@/lib/services/source-review";
-import { acceptBorrowerCorrection, borrowerReviewFor, borrowerToDo, keepBorrowerCurrent } from "@/lib/services/borrower-review";
+import { refreshLoan, refreshOnOpen, setMyLoansPaused, simulateSourceChange } from "@/lib/services/source-sync";
+import { decideOpenItem, openItemCounts, openItemsFor, ruleGroupEffect } from "@/lib/services/open-items";
+import { runMyLoansSync, runScheduled, runSyncNow } from "@/lib/services/myloans-sync";
+const PAUSED_BY_ADMIN = "MyLoans calls are paused by Admin.";
+import { cashBlockReason, forwardBlockReason, sendBlockReason, CANCELLED_REASON, CHANGED_REASON } from "@/lib/services/source-blocks";
 import { refreshFoundLoan, savedLoanCard } from "@/lib/services/find-local";
 import { listLoans } from "@/lib/services/queries";
 import { setUserBranches } from "@/lib/services/access";
@@ -67,11 +66,8 @@ beforeEach(async () => {
   await cleanLoans();
   // This file sets up who approves in each branch itself: the seeded LA Supervisor/Head is parked.
   await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: false } });
-  for (const [k, v] of [["myloans.refreshOnOpenMinutes", 15], ["myloans.refreshOnFindHours", 4], ["myloans.maxPerRun", 50], ["myloans.pauseMs", 0], ["myloans.hourlyCeiling", 600]] as const) await setSetting(k, v);
+  for (const [k, v] of [["myloans.refreshOnOpenMinutes", 15], ["myloans.refreshOnFindHours", 4], ["myloans.hourlyCeiling", 600]] as const) await setSetting(k, v);
   await setSetting("myloans.paused", false);
-  await setSetting("myloans.businessHoursOnly", false);
-  await setSetting("myloans.lastRun", null);
-  await setSetting("myloans.state", { cursor: null, cap: null, runs: [] });
   await setSetting("myloans.mockOverrides", {});
   await setSetting("myloans.mockExtra", []);
   await setSetting("email.active", false);
@@ -83,7 +79,6 @@ afterAll(async () => {
   await cleanLoans();
   await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
   await setSetting("myloans.paused", false);
-  await setSetting("myloans.businessHoursOnly", true);
   await setSetting("myloans.mockOverrides", {});
   await setSetting("myloans.mockExtra", []);
   for (const email of [SUP_A, SUP_B, APPR_A]) {
@@ -117,55 +112,49 @@ async function setup(pn = PN) {
   const job = await prisma.dpAssignment.findFirstOrThrow({ where: { transactionId: ppsr.id } });
   return { loan, notary, ppsr, job, txn };
 }
-const openItems = (loanId: string) => prisma.sourceChange.findMany({ where: { loanId, state: "OPEN" } });
+const openItems = (loanId: string) => prisma.openItem.findMany({ where: { loanId, status: "PENDING" }, orderBy: { field: "asc" } });
 
-describe("1. Minor: area name corrected", () => {
-  it("the copy updates, one Journey line, no review, no alert, no email", async () => {
+describe("1. A rename: area name corrected (D-053)", () => {
+  it("the copy updates, one Journey line, no Open Item, no loan alert, no email; logged in Reference data changes", async () => {
     const { loan } = await setup();
     const notesBefore = await prisma.notification.count({ where: { loanId: loan.id } });
     await simulateSourceChange(admin, loan.id, "area");
     expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).sourceAreaName).toMatch(/\(corrected\)$/);
-    expect(await prisma.auditLog.count({ where: { loanId: loan.id, action: "source_minor_updated" } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { loanId: loan.id, action: "reference_data_updated" } })).toBe(1);
     expect(await openItems(loan.id)).toEqual([]);
+    expect(await prisma.referenceChange.count({ where: { entity: "AREA" } })).toBe(1);
     expect(await prisma.notification.count({ where: { loanId: loan.id } })).toBe(notesBefore);
     expect(await prisma.emailOutbox.count({ where: { loanId: loan.id, event: { in: ["source_changed", "borrower_changed"] } } })).toBe(0);
   });
 });
 
-describe("2. Material: amount raised across the mortgage threshold", () => {
-  it("one item; Send held only where it reaches; the loan keeps the old amount; the review shows the rules' answer unsaved; read-only for LA and DP; amounts hidden", async () => {
+describe("2. Amount raised across the mortgage threshold", () => {
+  it("one Open Item; Send held only where it reaches; the loan keeps the old amount; the effect is shown unsaved; LA and DP cannot decide", async () => {
     const { loan } = await setup();
     await simulateSourceChange(admin, loan.id, "amount");
     const items = await openItems(loan.id);
-    expect(items).toHaveLength(1);
-    expect(items[0].category).toBe("MATERIAL");
+    expect(items.map((i) => [i.field, i.groupKey])).toEqual([["amount", "rules"]]);
     expect(await sendBlockReason(prisma, loan.id, "MORTGAGE")).toBe(CHANGED_REASON);
     expect(await sendBlockReason(prisma, loan.id, "NOTARY")).toBeNull();
     const l = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } });
     expect(Number(l.totalReleasedAmount)).toBe(1_000_000);
     expect(l.mortgageResult).toBe("MORTGAGE");
-    const forAdmin = (await reviewFor(admin, loan.id))!;
-    expect(forAdmin.canReview).toBe(true);
-    expect(forAdmin.sentences.join(" ")).toMatch(/Mortgage is not needed: this is a Renewal loan above ₱1,000,000./);
-    for (const u of [la, dp]) {
-      const r = (await reviewFor(u, loan.id))!;
-      expect(r.canReview).toBe(false);
-      expect(r.rows.find((x) => x.label === "Amount")).toMatchObject({ hidden: true, was: "", now: "" });
-    }
+    expect((await ruleGroupEffect(loan.id))!.sentences.join(" ")).toMatch(/Mortgage is not needed: this is a Renewal loan above ₱1,000,000./);
+    for (const u of [la, dp]) await expect(decideOpenItem(u, items[0].id, { decision: "APPROVE", remarks: "Looks right" })).rejects.toThrow(/Only approvers decide/);
+    // The branch's approvers see it; another branch's do not.
+    expect((await openItemsFor(supAngono, "mine")).map((r) => r.field)).toEqual(["amount"]);
+    expect(await openItemsFor(supAntipolo, "mine")).toEqual([]);
   });
 });
 
 describe("3. Borrower details", () => {
-  it("name and CIF in one change (no address or contact number, D-051): one item, old and new; the loan keeps the old details; nothing blocked; read-only for LA and DP; the deciders are told without values", async () => {
+  it("name and CIF (no address or contact number, D-051): one Open Item each, old and new; the loan keeps the old details; nothing blocked; the deciders are told without values", async () => {
     const { loan, job } = await setup();
     await setSetting("email.active", true);
     await change(PN, { borrowerName: "Ana Villanueva-Reyes", cif: "CIF-NEW-1003" });
-    expect(await refreshLoan(loan.id, sys)).toMatchObject({ ok: true, outcome: "review", category: "BORROWER", borrower: true });
+    expect(await refreshLoan(loan.id, sys)).toMatchObject({ ok: true, outcome: "review", category: "BORROWER", raised: 2 });
     const items = await openItems(loan.id);
-    expect(items.map((i) => i.category)).toEqual(["BORROWER"]);
-    const rows = (await borrowerReviewFor(supAngono, loan.id))!.rows;
-    expect(rows.map((r) => [r.label, r.dms, r.myloans])).toEqual([["Name", "Ana Villanueva", "Ana Villanueva-Reyes"], ["CIF", "CIF-551003", "CIF-NEW-1003"]]);
-    // The DMS keeps the old details everywhere until it is decided.
+    expect(items.map((i) => [i.fieldLabel, i.oldValue, i.newValue, i.audience]).sort()).toEqual([["Borrower name", "Ana Villanueva", "Ana Villanueva-Reyes", "BORROWER"], ["CIF", "CIF-551003", "CIF-NEW-1003", "BORROWER"]]);
     expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).borrowerName).toBe("Ana Villanueva");
     // Nothing blocked: Send, Accept, funds.
     expect(await sendBlockReason(prisma, loan.id, "NOTARY")).toBeNull();
@@ -173,104 +162,60 @@ describe("3. Borrower details", () => {
     const { acceptJob } = await import("@/lib/services/jobs");
     await acceptJob(dp, job.id);
     expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("ACCEPTED");
-    // What it means: sent work, and what accepting changes.
-    const sup = (await borrowerReviewFor(supAngono, loan.id))!;
-    expect(sup.sentences[0]).toMatch(/^Already sent or done: .*PPSR \(sent to a processor\)\. Their papers may carry the old details\.$/);
-    expect(sup.sentences[1]).toBe("Accepting changes the details shown in the DMS. It does not change papers already prepared.");
-    expect(sup).toMatchObject({ canDecide: true, noBranchApprover: false });
-    // LA and DP see it read-only.
-    for (const u of [la, dp]) expect((await borrowerReviewFor(u, loan.id))!).toMatchObject({ canDecide: false, waiting: "Waiting for review by an approver for this branch." });
     // A supervisor of another branch: cannot see or decide it.
-    expect(await borrowerReviewFor(supAntipolo, loan.id)).toBeNull();
-    await expect(acceptBorrowerCorrection(supAntipolo, sup.id, "Checked the ID card")).rejects.toThrow();
-    // Told: everyone who may decide it (D-029): the branch supervisor and approver, and approvers with All
-    // branches (Admin); never a supervisor of another branch. Email field names only.
-    const notes = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "borrower's details" } } });
+    expect(await openItemsFor(supAntipolo, "mine")).toEqual([]);
+    await expect(decideOpenItem(supAntipolo, items[0].id, { decision: "APPROVE", remarks: "Checked the ID card" })).rejects.toThrow();
+    // Told: the branch's deciders and All-branches approvers (Admin); never another branch's supervisor. Field names only.
+    const notes = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "myloans changed this loan" } } });
     const told = new Set(notes.map((n) => n.userId));
     for (const id of [supAngono.id, apprAngono.id, admin.id]) expect(told.has(id), id).toBe(true);
     expect(told.has(supAntipolo.id)).toBe(false);
-    const mails = await prisma.emailOutbox.findMany({ where: { loanId: loan.id, event: "borrower_changed" } });
+    const mails = await prisma.emailOutbox.findMany({ where: { loanId: loan.id, event: "source_changed" } });
     expect(mails.length).toBeGreaterThan(0);
-    for (const m of [...notes.map((n) => n.body), ...mails.map((x) => `${x.subject} ${x.text} ${x.html} ${x.headline}`)]) expect(m).not.toMatch(/Reyes|Rizal|0917/);
-    // Chips: My loans, Home (the list), the "Already in the DMS" card; Home to-do of the deciders.
+    for (const m of [...notes.map((n) => n.body), ...mails.map((x) => `${x.subject} ${x.text} ${x.html} ${x.headline}`)]) expect(m).not.toMatch(/Reyes|CIF-NEW/);
+    // Chips: My loans and the "Already in the DMS" card.
     expect((await listLoans(la, { tab: "all" })).find((r) => r.pn === PN)).toMatchObject({ borrowerChanged: true, sourceChanged: false });
     expect((await savedLoanCard(la, PN))!.borrowerChanged).toBe(true);
-    expect((await borrowerToDo(supAngono)).items.map((i) => i.pn)).toEqual([PN]);
-    expect((await borrowerToDo(supAntipolo)).count).toBe(0);
   });
 
-  it("Accept the correction (supervisor): details update, one Journey line with old → new, audit with old and new, note 5 to 500", async () => {
+  it("Approve (an approver of the branch): details update, audited with remarks 5 to 500; the same value does not come back", async () => {
     const { loan } = await setup();
-    await change(PN, { borrowerName: "Ana Villanueva-Reyes", cif: "CIF-NEW-1003" });
+    await change(PN, { borrowerName: "Ana Villanueva-Reyes" });
     await refreshLoan(loan.id, sys);
-    const id = (await borrowerReviewFor(supAngono, loan.id))!.id;
-    await expect(acceptBorrowerCorrection(supAngono, id, "ok")).rejects.toThrow(/at least 5/);
-    await expect(acceptBorrowerCorrection(la, id, "Checked the ID")).rejects.toThrow(/does not review/);
-    await expect(keepCurrent(admin, id, "Admin path")).rejects.toThrow(/borrower details correction/);
-    await acceptBorrowerCorrection(supAngono, id, "Checked the valid ID");
-    const l = await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } });
-    expect(l).toMatchObject({ borrowerName: "Ana Villanueva-Reyes", cif: "CIF-NEW-1003" });
-    const a = await prisma.auditLog.findFirstOrThrow({ where: { loanId: loan.id, action: "borrower_details_corrected" } });
-    expect(a.summary).toBe("Borrower details corrected: Name: Ana Villanueva → Ana Villanueva-Reyes; CIF: CIF-551003 → CIF-NEW-1003. Note: Checked the valid ID");
-    expect(a).toMatchObject({ actorId: supAngono.id, before: { Name: "Ana Villanueva", CIF: "CIF-551003" }, after: { Name: "Ana Villanueva-Reyes", CIF: "CIF-NEW-1003" } });
+    const id = (await openItems(loan.id))[0].id;
+    await expect(decideOpenItem(apprAngono, id, { decision: "APPROVE", remarks: "ok" })).rejects.toThrow(/at least 5/);
+    await expect(decideOpenItem(la, id, { decision: "APPROVE", remarks: "Checked the ID" })).rejects.toThrow(/Review borrower detail corrections/);
+    await decideOpenItem(apprAngono, id, { decision: "APPROVE", remarks: "Checked the valid ID" });
+    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).borrowerName).toBe("Ana Villanueva-Reyes");
+    expect((await prisma.auditLog.findFirstOrThrow({ where: { loanId: loan.id, action: "open_item_approved" } })).summary).toMatch(/Remarks: Checked the valid ID$/);
     expect(await openItems(loan.id)).toEqual([]);
-    // The same MyLoans value does not alert again.
     expect(await refreshLoan(loan.id, sys)).toMatchObject({ outcome: "none" });
   });
 
-  it("CIF alone, decided by an approver of the branch; Keep current remembers it; a different later change alerts again; a newer change updates the same item", async () => {
-    const { loan } = await setup();
-    await change(PN, { cif: "CIF-NEW-1" });
-    await refreshLoan(loan.id, sys);
-    let r = (await borrowerReviewFor(apprAngono, loan.id))!;
-    expect(r.rows.map((x) => x.label)).toEqual(["CIF"]);
-    // Two changes before anyone looks: one item, the earlier one in its history.
-    await change(PN, { cif: "CIF-NEW-2" });
-    await refreshLoan(loan.id, sys);
-    expect(await openItems(loan.id)).toHaveLength(1);
-    r = (await borrowerReviewFor(apprAngono, loan.id))!;
-    expect(r).toMatchObject({ history: 1, rows: [{ label: "CIF", myloans: "CIF-NEW-2" }] });
-    await keepBorrowerCurrent(apprAngono, r.id, "Branch file says the old CIF");
-    expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).cif).toBe("CIF-551003");
-    expect(await refreshLoan(loan.id, sys)).toMatchObject({ outcome: "none" });
-    expect(await openItems(loan.id)).toEqual([]);
-    await change(PN, { cif: "CIF-NEW-3" });
-    await refreshLoan(loan.id, sys);
-    expect((await borrowerReviewFor(apprAngono, loan.id))!.rows[0]).toMatchObject({ dms: "CIF-551003", myloans: "CIF-NEW-3" });
-  });
-
-  it("no approver of the branch's own: no fallback; All-branches approvers (Admin) still decide; the branch is flagged (D-029)", async () => {
+  it("no approver of the branch's own: Unassigned; All-branches approvers (Admin) still decide; the branch is flagged (D-029)", async () => {
     const { loan } = await setup();
     await prisma.user.updateMany({ where: { email: { in: [SUP_A, APPR_A, "test.lahead@gdfi.ph"] } }, data: { active: false } });
     try {
-      await change(PN, { borrowerName: "Ana V. Villanueva" });
+      await change(PN, { totalReleasedAmount: 1_010_000 });
       await refreshLoan(loan.id, sys);
-      const r = (await borrowerReviewFor(admin, loan.id))!;
-      expect(r).toMatchObject({ noBranchApprover: true, canDecide: true });
-      expect((await borrowerReviewFor(la, loan.id))!.waiting).toBe("Waiting for review by an approver for this branch.");
-      const told = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "borrower's details" } } });
+      expect((await openItemsFor(await asUser("test.superadmin@gdfi.ph"), "unassigned")).map((r) => r.loan.pn)).toEqual([PN]);
+      expect((await openItemsFor(admin, "mine"))[0]).toMatchObject({ canDecide: true });
+      const told = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "myloans changed" } } });
       expect(told.map((n) => n.userId)).toContain(admin.id);
-      // Admin's Home: the correction in "Corrections to review" (permission-based, no separate Admin queue).
-      expect((await borrowerToDo(admin)).items.map((i) => i.pn)).toContain(PN);
-      const { branchesWithoutApprover, noApproverText } = await import("@/lib/services/borrower-review");
-      const angono = (await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).branchId;
-      expect((await branchesWithoutApprover()).map((b) => b.id)).toContain(angono);
+      const { branchesWithoutApprover, noApproverText } = await import("@/lib/services/open-items");
+      expect((await branchesWithoutApprover()).map((b) => b.id)).toContain(loan.branchId);
       expect(noApproverText(1)).toBe("1 active branch has no approver assigned.");
       expect(noApproverText(0)).toBe("");
-      // Nobody at all with the tick: the waiting line says who can fix it.
-      const { waitingText } = await import("@/lib/services/borrower-review");
-      expect(waitingText(0)).toBe("Nobody can approve this yet. Ask a Superadmin to give someone the approver tick for this branch.");
     } finally {
       await prisma.user.updateMany({ where: { email: "test.lahead@gdfi.ph" }, data: { active: true } });
     }
   });
 
-  it("a borrower change together with an amount change: two items (Admin's and the supervisor's)", async () => {
+  it("a borrower change together with an amount change: two Open Items, decided by their own ticks", async () => {
     const { loan } = await setup();
     await change(PN, { borrowerName: "Ana V. Cruz", totalReleasedAmount: 1_020_000 });
     await refreshLoan(loan.id, sys);
-    expect((await openItems(loan.id)).map((i) => i.category).sort()).toEqual(["BORROWER", "MATERIAL"]);
-    expect((await reviewFor(admin, loan.id))!.category).toBe("MATERIAL");
+    expect((await openItems(loan.id)).map((i) => [i.field, i.audience]).sort()).toEqual([["amount", "LOAN"], ["borrowerName", "BORROWER"]]);
   });
 
   it("a copy saved before this change does not count as changed", async () => {
@@ -296,62 +241,43 @@ describe("Part A.2: no name at all", () => {
   });
 });
 
-describe("4. Material: branch changed (Antipolo to Angono)", () => {
-  it("access follows the old branch until Admin applies; then the Antipolo-only user loses it and the Angono-only user gains it", async () => {
+describe("4. Branch changed (Antipolo to Angono)", () => {
+  it("access follows the old branch until approved; then the Antipolo-only user loses it and the Angono-only user gains it", async () => {
     await openLoanFile(la, { pn: ANTIPOLO_PN });
     const loan = await prisma.loan.findUniqueOrThrow({ where: { pn: ANTIPOLO_PN } });
     const sees = async (u: CurrentUser) => !!(await prisma.loan.findFirst({ where: { pn: ANTIPOLO_PN, ...loanScope(u) } }));
     await change(ANTIPOLO_PN, { branchCode: "165", branchName: "Angono" });
     await refreshLoan(loan.id, sys);
     const item = (await openItems(loan.id))[0];
-    expect(item.category).toBe("MATERIAL");
+    expect(item).toMatchObject({ field: "branchCode", newValue: "Angono (165)" });
     expect([await sees(supAntipolo), await sees(supAngono)]).toEqual([true, false]);
-    expect((await reviewFor(admin, loan.id))!.branchMove).toMatchObject({ from: "Antipolo", to: "Angono", known: true });
-    await applySourceChange(admin, item.id, { note: "Moved in MyLoans" });
+    await decideOpenItem(admin, item.id, { decision: "APPROVE", remarks: "Moved in MyLoans" });
     expect((await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } })).branchId).toBe(angono);
     expect([await sees(supAntipolo), await sees(supAngono)]).toEqual([false, true]);
   });
 });
 
-describe("5. Status: cancelled or not released", () => {
-  it("Send and new cash requests blocked for the whole loan; open processor jobs unaffected until Admin decides", async () => {
+describe("5. Status: cancelled or not released (D-053: every move away from Released)", () => {
+  it("Send, Forward and new cash requests blocked for the whole loan; open processor jobs unaffected until an approver decides", async () => {
     const { loan, job } = await setup();
     await simulateSourceChange(admin, loan.id, "cancel");
-    expect((await openItems(loan.id))[0].category).toBe("STATUS");
+    expect((await openItems(loan.id))[0].field).toBe("status");
     for (const code of ["NOTARY", "PPSR", "MORTGAGE", "EDST"]) expect(await sendBlockReason(prisma, loan.id, code)).toBe(CANCELLED_REASON);
     expect(await cashBlockReason(prisma, loan.id)).toBe(CANCELLED_REASON);
+    expect(await forwardBlockReason(prisma, loan.id)).toBe(CANCELLED_REASON);
     const notary = await prisma.loanTransaction.findFirstOrThrow({ where: { loanId: loan.id, type: { code: "NOTARY" } } });
     await expect(requestAdvance(dp, { lines: [{ transactionId: notary.id, kind: "TRANSPORT", cents: 10_000 }] })).rejects.toThrow();
     expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("PENDING_ACCEPTANCE");
   });
 });
 
-describe("6. Replacement PN: only suggested, a person links", () => {
+describe("6. Replacement PN: never guessed, a person links", () => {
   const base = (pn: string, over: Partial<MyLoansRecord>): MyLoansRecord => ({
     pn, cin: null, cif: null, sourceLoanId: `ML-${pn}`, borrowerName: "Ana Villanueva", branchName: "Angono", branchCode: "165", status: "RELEASED", statusId: "12", statusName: "Loan Released",
     loanType: "Renewal", productName: "Auto Financing", totalReleasedAmount: 1_000_000, releaseDate: new Date().toISOString().slice(0, 10), ...over,
   });
 
-  it("MyLoans names the old PN: the old loan gets the review with the suggestion; nothing is linked until Link as replacement with a note", async () => {
-    const t0 = new Date();
-    const { loan: old } = await setup();
-    await setSetting("myloans.mockExtra", [base("GD1652026909101", { cin: "CIN-NEW-9101", cif: "CIF-551003", previousPn: PN })]);
-    await change(PN, { ...{ status: "STATUS_14", statusId: "14", statusName: "Cancelled" } });
-    await refreshLoan(old.id, sys);
-    await openLoanFile(la, { pn: "GD1652026909101", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const [o, n] = await Promise.all([prisma.loan.findUniqueOrThrow({ where: { pn: PN } }), prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026909101" } })]);
-    expect([o.replacedByPn, n.replacesPn]).toEqual([null, null]);
-    const item = (await openItems(old.id)).find((i) => i.category !== "BORROWER")!;
-    expect(item.candidates).toContain("GD1652026909101");
-    expect(await prisma.auditLog.count({ where: { action: "replacement_linked", pn: { in: [PN, "GD1652026909101"] }, at: { gte: t0 } } })).toBe(0);
-    expect(await prisma.auditLog.count({ where: { action: "replacement_suggested", pn: "GD1652026909101" } })).toBeGreaterThan(0);
-    await expect(linkReplacement(admin, item.id, { newPn: "GD1652026909101", note: "", confirmNoPayment: true })).rejects.toThrow(/short note/);
-    await linkReplacement(admin, item.id, { newPn: "GD1652026909101", note: "Same unit, new PN", confirmNoPayment: true });
-    expect((await prisma.loan.findUniqueOrThrow({ where: { pn: PN } })).replacedByPn).toBe("GD1652026909101");
-    expect((await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1652026909101" } })).replacesPn).toBe(PN);
-  });
-
-  it("two new PNs with the same CIF as one cancelled loan: none suggested (no guess, D-051), none linked", async () => {
+  it("two new PNs with the same CIF as one cancelled loan: none linked (no guess, D-051); the old loan's status item waits", async () => {
     const { loan: old } = await setup();
     await setSetting("myloans.mockExtra", [
       base("GD1652026909201", { cin: "CIN-NEW-9201", cif: "CIF-551003" }),
@@ -360,25 +286,13 @@ describe("6. Replacement PN: only suggested, a person links", () => {
     await change(PN, { status: "STATUS_14", statusId: "14", statusName: "Cancelled" });
     await refreshLoan(old.id, sys);
     for (const pn of ["GD1652026909201", "GD1652026909202"]) await openLoanFile(la, { pn, financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const item = (await openItems(old.id)).find((i) => i.category === "STATUS")!;
-    expect(item.candidates).toEqual([]);
+    expect((await openItems(old.id)).map((i) => i.field)).toEqual(["status"]);
     expect(await prisma.loan.count({ where: { OR: [{ replacesPn: { not: null } }, { replacedByPn: { not: null } }] } })).toBe(0);
-  });
-
-  it("two borrowers with the same name but different CIFs and CINs: never suggested", async () => {
-    const { loan: old } = await setup();
-    await setSetting("myloans.mockExtra", [base("GD1652026909301", { cin: "CIN-OTHER", cif: "CIF-OTHER" })]);
-    await change(PN, { status: "STATUS_14", statusId: "14", statusName: "Cancelled" });
-    await refreshLoan(old.id, sys);
-    await openLoanFile(la, { pn: "GD1652026909301", financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
-    const item = (await openItems(old.id)).find((i) => i.category === "STATUS")!;
-    expect(item.candidates).toEqual([]);
-    expect((await reviewFor(admin, old.id))!.candidates).toEqual([]);
   });
 });
 
-describe("7. Two changes in a row before Admin looks", () => {
-  it("one open item, updated, with the earlier change in its history", async () => {
+describe("7. Two changes in a row before anyone looks", () => {
+  it("the first item superseded by the second (linked); one pending", async () => {
     const { loan } = await setup();
     await change(PN, { totalReleasedAmount: 1_020_000 });
     await refreshLoan(loan.id, sys);
@@ -386,20 +300,21 @@ describe("7. Two changes in a row before Admin looks", () => {
     await refreshLoan(loan.id, sys);
     const items = await openItems(loan.id);
     expect(items).toHaveLength(1);
-    expect((items[0].history as unknown[]).length).toBe(1);
+    expect(await prisma.openItem.findFirstOrThrow({ where: { loanId: loan.id, status: "SUPERSEDED" } })).toMatchObject({ supersededById: items[0].id });
   });
 });
 
-describe("8. Admin decisions need a note (Apply, Keep current)", () => {
-  it("Apply: unsent removed, ticked papers stay ticked, sent job untouched", async () => {
+describe("8. Decisions need remarks (Approve, Reject)", () => {
+  it("Approve the product: unsent removed, ticked papers stay ticked, sent job untouched", async () => {
     const { loan, notary, job } = await setup();
-    await change(PN, { productName: "Auto Refinancing" });
+    await change(PN, { productName: "Auto Refinancing", productCode: "AR-001" });
     await refreshLoan(loan.id, sys);
     const item = (await openItems(loan.id))[0];
-    await expect(applySourceChange(admin, item.id, { note: "" })).rejects.toThrow(/short note/);
-    await expect(keepCurrent(admin, item.id, "")).rejects.toThrow(/short note/);
-    await applySourceChange(admin, item.id, { note: "Product corrected" });
-    expect((await prisma.sourceChange.findUniqueOrThrow({ where: { id: item.id } })).state).toBe("APPLIED");
+    expect(item.field).toBe("productCode");
+    await expect(decideOpenItem(admin, item.id, { decision: "APPROVE", remarks: "" })).rejects.toThrow(/at least 5/);
+    await expect(decideOpenItem(admin, item.id, { decision: "REJECT", remarks: "" })).rejects.toThrow(/at least 5/);
+    await decideOpenItem(admin, item.id, { decision: "APPROVE", remarks: "Product corrected" });
+    expect((await prisma.openItem.findUniqueOrThrow({ where: { id: item.id } })).status).toBe("APPROVED");
     expect((await prisma.checklistCheck.findMany({ where: { transactionId: notary.id } })).every((c) => c.checked)).toBe(true);
     expect((await prisma.dpAssignment.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("PENDING_ACCEPTANCE");
   });
@@ -437,21 +352,20 @@ describe("11. Refresh paths, the pause switch, limits", () => {
   it("paused: the background run, the stale refresh and refresh on open make zero calls; the button and a new-PN Find still call; audited; noted; Admin only", async () => {
     const t0 = new Date();
     const { loan } = await setup();
-    await prisma.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: new Date(Date.now() - 6 * 3_600_000), nextCheckAt: new Date(Date.now() - 60_000) } });
+    await prisma.loan.update({ where: { id: loan.id }, data: { lastCheckedAt: new Date(Date.now() - 6 * 3_600_000) } });
     await expect(setMyLoansPaused(la, true)).rejects.toThrow(/Ask a Superadmin/);
     await expect(setMyLoansPaused(supAngono, true)).rejects.toThrow(/Ask a Superadmin/);
     await setMyLoansPaused(admin, true);
     expect(await prisma.auditLog.count({ where: { action: "myloans_paused", actorId: admin.id, at: { gte: t0 } } })).toBe(1);
     resetClient();
     spy();
-    expect(await runMyLoansSync({ trigger: "cron" })).toEqual({ ran: false, reason: PAUSED_BY_ADMIN });
-    expect(await runMyLoansSync({ trigger: "script", force: true })).toEqual({ ran: false, reason: PAUSED_BY_ADMIN });
+    expect(await runScheduled("schedule")).toMatchObject({ ran: false, skipped: PAUSED_BY_ADMIN });
+    expect(await runMyLoansSync({ mode: "CHANGE", trigger: "script" })).toMatchObject({ ran: false, skipped: PAUSED_BY_ADMIN });
     expect(await refreshFoundLoan(la, PN)).toMatchObject({ called: false });
     expect(await refreshOnOpen(await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } }))).toBeNull();
     expect(count()).toBe(0);
-    const state = await getSetting("myloans.state");
-    expect(state.runs[0]).toMatchObject({ status: "paused", byAdmin: true, error: PAUSED_BY_ADMIN });
-    expect((await (await import("@/lib/services/source-sync")).syncStatus()).health).toBe("Paused by Admin: MyLoans calls are paused");
+    // The run log says why (the schedule can be seen working).
+    expect(await prisma.syncRun.count({ where: { skipped: PAUSED_BY_ADMIN } })).toBe(2);
     // A person asked: the button and a new-PN lookup still call MyLoans.
     await refreshFromMyLoans(la, loan.id);
     expect(count()).toBe(1);
@@ -468,9 +382,9 @@ describe("11. Refresh paths, the pause switch, limits", () => {
     expect(await refreshOnOpen(await prisma.loan.findUniqueOrThrow({ where: { id: loan.id } }))).toBeNull();
     expect(await refreshFoundLoan(la, PN)).toMatchObject({ called: false });
     expect(count()).toBe(0);
-    await runMyLoansSync({ trigger: "script", force: true });
+    await runMyLoansSync({ mode: "CHANGE", trigger: "script" });
     await runSyncNow(admin);
-    expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run", summary: { startsWith: "The console script ran" } } })).toBeGreaterThan(0);
+    expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run", summary: { startsWith: "The console command ran" } } })).toBeGreaterThan(0);
     expect(await prisma.auditLog.count({ where: { action: "myloans_sync_run", actorId: admin.id } })).toBeGreaterThan(0);
     process.env.CRON_SECRET = "a-long-test-secret-123456";
     const wrong = await cronPost(new NextRequest("http://localhost/api/cron/myloans-sync", { method: "POST", headers: { "x-cron-secret": "wrong-secret-0000000000" } }));
@@ -479,10 +393,10 @@ describe("11. Refresh paths, the pause switch, limits", () => {
     expect(right.status).toBe(200);
   });
 
-  it("two runs at once do not overlap (advisory lock)", async () => {
+  it("two runs at once do not overlap (the lock)", async () => {
     await setup();
-    const [a, b] = await Promise.all([runMyLoansSync({ trigger: "script", force: true, sleep: () => new Promise((r) => setTimeout(r, 50)) }), runMyLoansSync({ trigger: "script", force: true })]);
-    const reasons = [a, b].filter((r) => !r.ran).map((r) => (r as { reason: string }).reason);
+    const [a, b] = await Promise.all([runMyLoansSync({ mode: "CHANGE", trigger: "script" }), runMyLoansSync({ mode: "CHANGE", trigger: "script" })]);
+    const reasons = [a, b].filter((r) => !r.ran).map((r) => r.skipped);
     expect(reasons.length).toBeLessThanOrEqual(1);
     if (reasons.length) expect(reasons[0]).toBe("Another MyLoans sync is running.");
   });
@@ -558,35 +472,34 @@ describe("11. Refresh paths, the pause switch, limits", () => {
 });
 
 describe("12. Notifications", () => {
-  it("Material, Status, Replacement: in-app to Admin, the branch LA and the DP, never amounts; email only when the master switch is on", async () => {
+  it("an Open Item: in-app to the branch's approvers, Admin and the processor on it, never amounts; email only when the master switch is on; a rename tells no one about the loan", async () => {
     const { loan } = await setup();
     await setSetting("email.active", false);
     await change(PN, { totalReleasedAmount: 1_020_000 });
     await refreshLoan(loan.id, sys);
-    const notes = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "MyLoans changed this loan" } } });
-    // The Angono LA Supervisor/Head reviews myloans changes for Angono (D-010, D-011); the Antipolo one is not told.
-    expect(new Set(notes.map((n) => n.userId))).toEqual(new Set([admin.id, la.id, dp.id, supAngono.id]));
+    const notes = await prisma.notification.findMany({ where: { loanId: loan.id, title: { contains: "myloans changed this loan" } } });
+    // The Angono LA Supervisor/Head decides myloans changes for Angono (D-010, D-011); the Antipolo one is not told.
+    expect(notes.map((n) => n.userId)).toEqual(expect.arrayContaining([admin.id, dp.id, supAngono.id]));
     expect(notes.map((n) => n.userId)).not.toContain(supAntipolo.id);
     expect(notes.every((n) => !/₱|1,020,000/.test(n.body))).toBe(true);
     const out = await prisma.emailOutbox.findMany({ where: { loanId: loan.id, event: "source_changed" } });
-    // The outbox records it; with the master switch off nothing is sent.
     expect(out.every((m) => m.status !== "SENT")).toBe(true);
-    // Minor changes tell no one.
-    const n0 = await prisma.notification.count();
+    const n0 = await prisma.notification.count({ where: { loanId: loan.id } });
     await change(PN, { areaName: "Somewhere else" });
     await refreshLoan(loan.id, sys);
-    expect(await prisma.notification.count()).toBe(n0);
+    expect(await prisma.notification.count({ where: { loanId: loan.id } })).toBe(n0);
   });
 });
 
 describe("13. Chips and lists", () => {
-  it("'MyLoans changed' on My loans and the Already in the DMS card; the Admin Home count", async () => {
+  it("'MyLoans changed' on My loans and the Already in the DMS card; the approver's Home count", async () => {
     const { loan } = await setup();
     await change(PN, { totalReleasedAmount: 1_020_000 });
     await refreshLoan(loan.id, sys);
     expect((await listLoans(la, { tab: "all" })).find((r) => r.pn === PN)!.sourceChanged).toBe(true);
     expect((await savedLoanCard(la, PN))!.changed).toBe(true);
-    expect(await prisma.sourceChange.count({ where: { state: "OPEN", category: { not: "BORROWER" } } })).toBe(1);
+    expect(await openItemCounts(supAngono)).toMatchObject({ waiting: 1, tooLong: 0 });
+    expect(await openItemCounts(la)).toBeNull();
   });
 });
 

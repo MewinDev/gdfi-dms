@@ -22,6 +22,7 @@ import { cashBlockReason } from "./source-blocks";
 import { recomputeStage } from "./stage";
 import { UserError } from "./errors";
 import { assertFundsNotHeld } from "./locks";
+import { checkRequestAccount, receiptDifferences, type RequestAccountInput } from "@/lib/funds/types";
 import { DEFAULT_FUNDS_TYPE_CODE, checkRelease, defaultFundsType, isTransfer, numberPrefix, releaseLine, typeChangeRemarks, type ReleaseInput } from "@/lib/funds/types";
 
 /**
@@ -128,6 +129,8 @@ export const requestSchema = z.object({
   })).default([]),
   /** Funds type (Settings > Funds types). Blank: the default, Cash advance. */
   fundsTypeId: z.string().trim().optional(),
+  /** D-056 item 5: the receiving account, for a type that needs one (a fund transfer). */
+  account: z.object({ provider: z.string().optional(), name: z.string().optional(), number: z.string().optional() }).optional(),
 }).refine((r) => r.lines.length + r.others.length > 0, { message: "Tick at least one job or add an expense.", path: ["lines"] });
 
 /** The DP submits one advance covering several jobs. */
@@ -167,6 +170,13 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
   const types = await prisma.fundsType.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
   const type = d.fundsTypeId ? types.find((t) => t.id === d.fundsTypeId) : defaultFundsType(types);
   if (!type) throw new UserError(d.fundsTypeId ? "Pick an active funds type." : "No funds type is active. Ask Admin (Settings, Funds types).", "fundsTypeId");
+  // D-056 item 5: a type that sends to an account needs the processor's receiving account now.
+  let account = {};
+  if (type.needsAccount) {
+    const c = checkRequestAccount(d.account as RequestAccountInput | undefined);
+    if (!c.ok) throw new UserError(c.message, c.field);
+    account = c.account;
+  }
 
   return withNumberRetry(() => prisma.$transaction(async (tx) => {
     // Held transactions: no new cash goes out for them.
@@ -185,7 +195,7 @@ export async function requestAdvance(u: CurrentUser, raw: unknown, now: Date = n
     const adv = await tx.cashAdvance.create({
       data: {
         number, requestedById: u.id, branchId, requestedCents: total, exceptionId,
-        fundsTypeId: type.id, fundsTypeCode: type.code, fundsTypeName: type.name,
+        fundsTypeId: type.id, fundsTypeCode: type.code, fundsTypeName: type.name, ...account,
         lines: {
           create: [
             // Each job line keeps the office it had when the cash was asked for ("Office changed from X to Y").
@@ -411,7 +421,10 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
     needType(u, "release", a, "releasing");
     if (a.status !== "APPROVED") throw new UserError("Only an approved advance can be released.");
     if (a.requestedById === u.id) throw new UserError("You cannot release your own request.");
-    const checked = checkRelease(a.fundsType, raw);
+    // D-056 item 5: the processor typed the account at request; Finance checks it here (the only screen that shows it in full).
+    const fromRequest = a.fundsType.needsAccount && !!a.accountNumber;
+    if (fromRequest && raw.accountChecked !== "on") throw new UserError("Tick \"I checked the receiving account\" before sending.", "accountChecked");
+    const checked = checkRelease(a.fundsType, fromRequest ? { ...raw, accountProvider: a.accountProvider, accountName: a.accountName, accountLast4: a.accountLast4 } : raw);
     if (!checked.ok) throw new UserError(checked.message, checked.field);
     const r = checked.details;
     const ref = r.ref;
@@ -430,6 +443,7 @@ export async function releaseAdvance(u: CurrentUser, advanceId: string, raw: Rel
       data: {
         status: settle ? "LIQUIDATED" : "RELEASED", releasedCents: total, releasedById: u.id, releasedAt: now, releaseRef: ref, liquidationDueAt: null,
         transferDate: r.transferDate, accountProvider: r.accountProvider, accountName: r.accountName, accountLast4: r.accountLast4,
+        accountNumber: "", // the full number is not kept after the release (D-056 item 5)
       },
     });
     // The liquidation due date (D-044): N working days after the last LTO pickup; waiting until then.
@@ -776,4 +790,75 @@ export function liquidationReportAccess(u: CurrentUser, a: { branchId: string; s
   if (!canFunds(u, "view", a) || !allInScope(u, [a.branchId, ...(a.lineBranchIds ?? [])]) || !PRINTABLE_STATUSES.includes(a.status)) return "not-found";
   if (!canFunds(u, "print", a)) return "refused";
   return "ok";
+}
+
+// ---------------------------------------------------------------------------
+// D-056 item 1: the processor confirms receipt of a fund transfer; a mismatch is flagged to Finance.
+// ---------------------------------------------------------------------------
+
+const RECEIVED = ["RELEASED", "FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"];
+const toCents = (t: string): number | null => {
+  const s = (t ?? "").replace(/[,\s₱]/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  const [w, f = ""] = s.split(".");
+  return Number(w) * 100 + Number((f + "00").slice(0, 2));
+};
+
+export const confirmReceiptSchema = z.object({
+  advanceId: z.string().min(1),
+  ref: z.string().trim().min(1, "Type the reference number on the transfer.").max(60),
+  amount: z.string().trim().min(1, "Type the amount you received."),
+  last4: z.string().trim().regex(/^\d{4}$/, "Type the last 4 digits of the account that received it."),
+});
+
+/** The processor's check: reference #, amount and last 4 digits against what Finance recorded at release. */
+export async function confirmReceipt(u: CurrentUser, raw: unknown, now: Date = new Date()): Promise<{ matched: boolean; message: string }> {
+  need(u, PERMISSIONS.FUNDS_REQUEST, "Your role does not allow confirming funds.");
+  const p = confirmReceiptSchema.safeParse(raw);
+  if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
+  const d = p.data;
+  return prisma.$transaction(async (tx) => {
+    const a = await tx.cashAdvance.findUnique({ where: { id: d.advanceId }, include: { fundsType: true } });
+    if (!a || a.requestedById !== u.id) throw new UserError("Only the processor who asked for it confirms the receipt.");
+    if (!a.fundsType?.needsAccount) throw new UserError("Only a transfer to an account is confirmed this way.");
+    if (!RECEIVED.includes(a.status) || !a.releasedAt) throw new UserError("Finance has not sent it yet.");
+    if (a.receiptConfirmedAt) throw new UserError("You already confirmed the receipt.");
+    const diffs = receiptDifferences({ ref: d.ref, cents: toCents(d.amount), last4: d.last4 }, a);
+    const actor = actorOf(u);
+    if (!diffs.length) {
+      await tx.cashAdvance.update({ where: { id: a.id }, data: { receiptConfirmedAt: now, receiptConfirmedById: u.id } });
+      await writeAudit(tx, { actor, mode: "MANUAL", action: "funds_receipt_confirmed", entityType: "CashAdvance", entityId: a.id, summary: `${u.name} confirmed receipt of ${a.number}: reference, amount and last 4 digits match` });
+      return { matched: true, message: "Receipt confirmed. It matches what Finance sent." };
+    }
+    const note = `${u.name} typed: ${diffs.join("; ")}.`;
+    await tx.cashAdvance.update({ where: { id: a.id }, data: { receiptMismatchAt: now, receiptMismatchNote: note, receiptResolvedAt: null, receiptResolvedById: null, receiptResolveNote: "" } });
+    await writeAudit(tx, { actor, mode: "MANUAL", action: "funds_receipt_mismatch", entityType: "CashAdvance", entityId: a.id, summary: `${a.number}: the receipt does not match. ${note}`, details: { diffs } });
+    // Finance: the handlers of this type and branch (D-056 item 1).
+    const ids = await handlersOrAdmins(tx, "release", { fundsTypeId: a.fundsTypeId ?? undefined }, [a.branchId]);
+    await notify(tx, { userIds: ids, title: `${a.number}: receipt does not match`, body: `${note} Check the transfer, then clear it on Funds with remarks.`, link: "/funds?tab=outstanding" });
+    return { matched: false, message: `It does not match: ${diffs.join("; ")}. Finance was told; check with them.` };
+  });
+}
+
+export const resolveReceiptSchema = z.object({
+  advanceId: z.string().min(1),
+  remarks: z.string().trim().min(5, "Say what was checked, in 5 to 500 characters.").max(500, "Keep the remarks under 500 characters."),
+});
+
+/** Finance clears a receipt mismatch with remarks (the transfer was checked or corrected); the receipt then counts as confirmed. */
+export async function resolveReceiptMismatch(u: CurrentUser, raw: unknown, now: Date = new Date()): Promise<string> {
+  if (!canFundsAny(u, "release")) throw new UserError("Your role does not allow releasing funds.");
+  const p = resolveReceiptSchema.safeParse(raw);
+  if (!p.success) { const i = p.error.issues[0]; throw new UserError(i.message, String(i.path[0] ?? "")); }
+  return prisma.$transaction(async (tx) => {
+    const a = await tx.cashAdvance.findUnique({ where: { id: p.data.advanceId }, include: { fundsType: true } });
+    if (!a) throw new UserError("Cash advance not found.");
+    await needSee(tx, u, a);
+    needType(u, "release", a, "clearing a receipt mismatch on");
+    if (!a.receiptMismatchAt || a.receiptConfirmedAt) throw new UserError("There is no receipt mismatch to clear.");
+    await tx.cashAdvance.update({ where: { id: a.id }, data: { receiptResolvedAt: now, receiptResolvedById: u.id, receiptResolveNote: p.data.remarks, receiptConfirmedAt: now, receiptConfirmedById: u.id } });
+    await writeAudit(tx, { actor: actorOf(u), mode: "MANUAL", action: "funds_receipt_mismatch_cleared", entityType: "CashAdvance", entityId: a.id, summary: `${u.name} cleared the receipt mismatch on ${a.number}: ${p.data.remarks}` });
+    await notify(tx, { userIds: [a.requestedById], title: `${a.number}: receipt checked by Finance`, body: `${u.name}: ${p.data.remarks}`, link: "/my-funds" });
+    return "Cleared. The receipt counts as confirmed.";
+  });
 }

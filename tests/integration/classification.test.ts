@@ -16,7 +16,7 @@ import { asUser } from "./helpers";
  * myloans rename that flips the result. Test database only; fake borrowers and product names.
  */
 const P = "GD9992099880";
-let admin: CurrentUser, la: CurrentUser, supOther: CurrentUser;
+let admin: CurrentUser, la: CurrentUser, supOther: CurrentUser, head: CurrentUser;
 let angono: string;
 
 async function loan(n: string, productName: string, classification: "FINANCING" | "REFINANCING", extra: Record<string, unknown> = {}) {
@@ -39,6 +39,7 @@ beforeAll(async () => {
   const antipolo = (await prisma.branch.findUniqueOrThrow({ where: { code: "101" } })).id;
   admin = await asUser("test.admin@gdfi.ph");
   la = await asUser("test.la@gdfi.ph");
+  head = await asUser("test.lahead@gdfi.ph");
   const sup = await prisma.role.findUniqueOrThrow({ where: { key: "SUP" } });
   const u = await prisma.user.create({ data: { email: "zz.class.sup@gdfi.ph", name: "Zz Antipolo Head", roleId: sup.id, isTestUser: true } });
   await setUserBranches(u.id, [antipolo]);
@@ -57,8 +58,10 @@ describe("product classification (D-031)", () => {
     const fin = await loan("03", "Auto Finance", "FINANCING", { financingType: "UNDERTAKING", orcrStatus: "TRANSFERRED" });
 
     await expect(saveClassificationRules(la, { refinancing: "refinanc", financing: "financ" })).rejects.toThrow(/Ask a Superadmin/);
-    await expect(saveClassificationRules(admin, { refinancing: "", financing: "financ" })).rejects.toThrow(/at least one Refinancing keyword/);
-    await expect(saveClassificationRules(admin, { refinancing: "re", financing: "financ" })).rejects.toThrow(/too short/);
+    // D-052: "Manage product classification" is the LA Supervisor/Head's by default, not Admin's.
+    await expect(saveClassificationRules(admin, { refinancing: "refinanc", financing: "financ" })).rejects.toThrow(/Ask a Superadmin/);
+    await expect(saveClassificationRules(head, { refinancing: "", financing: "financ" })).rejects.toThrow(/at least one Refinancing keyword/);
+    await expect(saveClassificationRules(head, { refinancing: "re", financing: "financ" })).rejects.toThrow(/too short/);
 
     // Test keyword rules: "financing" only, so "Auto Finance" has no keyword any more.
     const tried = asRules({ refinancing: ["refinanc", "refi"], financing: ["financing"], fallback: "REFINANCING" });
@@ -66,7 +69,7 @@ describe("product classification (D-031)", () => {
     expect(preview.rows.find((r) => r.productName === "Auto Finance")).toMatchObject({ next: "REFINANCING", byDefault: true, changes: 1, saved: "FINANCING" });
     expect(await getSetting("classification.rules")).toEqual(DEFAULT_CLASSIFICATION_RULES); // the preview saves nothing
 
-    const r = await saveClassificationRules(admin, { refinancing: "refinanc\nrefi", financing: "financing", fallback: "REFINANCING" });
+    const r = await saveClassificationRules(head, { refinancing: "refinanc\nrefi", financing: "financing", fallback: "REFINANCING" });
     expect(r.flagged).toBeGreaterThanOrEqual(1);
     const after = await prisma.loan.findMany({ where: { id: { in: [refi.id, byDefault.id, fin.id] } }, orderBy: { pn: "asc" } });
     expect(after.map((l) => l.classificationNow)).toEqual([null, null, "REFINANCING"]);

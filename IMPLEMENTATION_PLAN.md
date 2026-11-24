@@ -730,6 +730,8 @@ The old sync settings (tiers, `backgroundMinutes`, `maxPerRun`, `pauseMs`, `hour
 
 ### 8.10 Piece 7 build plan (18 November 2026): for confirmation before building
 
+> **Built 18 November 2026 (D-052).** As planned, with the owner's answers: (a) API 2 changes become review items, one per loan, nothing applied by itself (minor fields too; Apply sets them); (b) the old tiered background refresh, its settings and the `syncTier` / `nextCheckAt` columns are removed (migration 027); (c) released loans not yet in the DMS are kept from the branch-pool cutoff (`SourceLoanCandidate`). Engine: `lib/services/myloans-sync.ts`; one entry point for any scheduler (`npm run sync:myloans`, `POST /api/cron/myloans-sync`, docs/SCHEDULER.md); a development timer (`lib/myloans/dev-timer.ts`). Tests: `tests/integration/myloans-sync-run.test.ts`, `myloans-load.test.ts`.
+
 On the mock, through the piece 6 client (`changesPage`, `poolPage`) and the round 3 logic already tested (`fetchRun`, `planRun`).
 
 1. **Run engine:**
@@ -744,7 +746,7 @@ On the mock, through the piece 6 client (`changesPage`, `poolPage`) and the roun
    - the one-time **first load** (pool mode from the cutoff date, a Superadmin setting).
    - The cron route calls one function; "Run now" stays for Admin.
 3. **Row handling** (8.3) **with what exists until piece 8:** the duplicate alert, "same hash, no action", redo (a) and (b), "away from Released", field differences and reference-name renames are each mapped onto **today's review items** (one per loan, the existing Apply / Keep current / Link screens). Piece 8 then splits them into per-field Open Items with approver queues.
-4. **Unknown released CINs** go into a `SourceLoanCandidate` table now. They appear in the branch pool in **10b** (the feed hook built in piece 9).
+4. **Unknown released CINs** go into a `SourceLoanCandidate` table now. They appear in the branch pool in **10b** (the feed hook built in piece 9). *Built 18 November 2026 (D-053): `enterPool`, `leavePool`, `poolWaitingCandidates` in `lib/services/myloans-sync.ts`; waiting from pool entry; tests in `tests/integration/branch-pool.test.ts`.*
 5. **The old tiered background refresh retires** once API 2 runs: tiers, per-loan polling, `nextCheckAt` and the hourly background budget. Refresh on a loan file and Find loan stay on API 1.
 6. **Screens:** Settings, MyLoans sync shows the run log (last 50 runs, with counts and errors), the interval, the catch-up time and window, the alert threshold, the first-load cutoff and Run now. Each is audited.
 7. **Tests:**
@@ -764,6 +766,8 @@ On the mock, through the piece 6 client (`changesPage`, `poolPage`) and the roun
 ---
 
 ## 9. Piece 8: Open Items (D-004, D-010 to D-013)
+
+> **Built 18 November 2026 (D-053).** As planned (supersede, Q-N10), with the four additions: reverted in myloans closes the item; every move away from Released is a status item that blocks Send, Forward and new cash; renames are never Open Items (Reference data changes only); the waiting time in working days on the inbox colours, oldest first, Home "N Open Items waiting too long". Model `OpenItem`, `OpenItemCounter`, `ReferenceChange` (migration 028, which moved the development review items and dropped `SourceChange`); `refdata:view` (migration 029). Code: `lib/open-items/fields.ts`, `lib/services/open-items.ts`, `lib/services/reference-changes.ts`, `app/(app)/open-items/page.tsx`. Tests: `tests/integration/open-items.test.ts` and the rewritten sync suites.
 
 ### 9.1 Model
 
@@ -986,6 +990,8 @@ The existing `DpAssignment` / `DocumentMovement` records keep working. The engin
 
 ## 12. Piece 11: Branches and products (APIs 4 and 5)
 
+> **Built 18 November 2026 (D-054).** API 4 and API 5 on the mock through the contract client, read daily; every branch match by myloans' BranchID (renames and code changes applied by themselves and logged); a closed branch keeps its work and stops new pool items (Admin Home warning); a new-product notice; a failed read keeps the last list; the LTO-PASIG sample badge (migration 031). Tests: `tests/integration/reference-sync.test.ts`.
+
 - **Branches:** the live adapter's `listBranches` uses API 4. The mock serves it. Renames are applied and logged (D-012). Existing Branch review is kept for new or unknown branches.
 - **Products:** the `Product` table is built in piece 3a. Here it is synced from API 5 (required before go-live, `docs/MYLOANS_REPLY_2.md`). A rename that flips a classification is handled by piece 3a (flag, then reclassify).
 - **LTO-PASIG** (D-020): seeded with a sample distance. New `LtoOffice.isSample` and `sampleNote` = "Sample. Verify with Operations". Settings and the Send panel show a warning badge on that office.
@@ -1036,6 +1042,9 @@ Places where the DMS deliberately does not follow the v2 spec. Each one is a rec
 | v2 asks for | The DMS does | Decision |
 |---|---|---|
 | The borrower's **birth date** (stored and monitored) | Neither receives, stores nor monitors it: not in the myloans contract, not in the ContentHash, no "birth date changed" item | D-037 (not needed by the business; less personal data under RA 10173) |
+| One fund request per account, its amount computed as document fees per transaction type + km to the LTO × rate per km + meals + other (v2 §3.5, §5.6) | One request per processor covering several jobs; lines per expense kind with preset, suggested or typed amounts and maximums; no formula | D-056 item 4 (working default, to confirm with Finance and Operations) |
+| The LTO stage waits for the processor to confirm receipt of the funds (v2 §5.7) | The confirmation and mismatch flag are built; the LTO does not wait unless the setting `funds.blockLtoUntilReceiptConfirmed` is turned on | D-056 item 1 (to confirm with Finance) |
+| Only the last 4 digits of the receiving account are stored (v2 §5.7) | The processor enters the full number at request; it is shown in full only on Finance's release screen and cleared at release (the last 4 digits stay) | D-056 item 5 |
 
 ## 15. Questions still open
 

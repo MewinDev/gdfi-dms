@@ -57,3 +57,6 @@ next-env.d.ts
 
 # Incoming files from other teams (may hold real data); save redacted copies under docs/
 /docs/incoming/
+# Backup work folders (D-055)
+/.backup-work-*
+/.backup-test-*

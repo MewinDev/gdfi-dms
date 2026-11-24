@@ -120,7 +120,7 @@ describe("Import from MyLoans: preview and confirm", () => {
 });
 
 describe("Branches from MyLoans (API) and the Branch review", () => {
-  it("every difference goes to the review; nothing changes until accepted", async () => {
+  it("D-054: a rename and a code change (matched by the BranchID) are applied by themselves and logged; every other difference goes to the review and changes nothing until accepted", async () => {
     const loan = await loanAt((await byCode("802")).id, "GD8022026900001");
     await setSetting("myloans.mockBranches", {
       overrides: {},
@@ -133,31 +133,26 @@ describe("Branches from MyLoans (API) and the Branch review", () => {
     expect(r?.ok).toBe(true);
     const items = await open();
     const kinds = Object.fromEntries(items.map((i) => [i.code, i.kind]));
-    expect(kinds).toMatchObject({ "801": "RENAMED", "812": "CODE_CHANGED", "803": "MOVED", "804": "CLOSED", "805": "NEW_BRANCH", "807": "REOPENED", "806": "NOT_IN_LIST" });
-    expect((await byCode("801")).name).toBe("Z Branch 1");
-    expect((await byCode("802")).id).toBe(loan.branchId);
+    expect(kinds).toMatchObject({ "803": "MOVED", "804": "CLOSED", "805": "NEW_BRANCH", "807": "REOPENED", "806": "NOT_IN_LIST" });
+    expect(kinds["801"]).toBeUndefined();
+    expect(kinds["812"]).toBeUndefined();
+    // Reference data (D-012, D-054): the new name and the new code, on the same branch (its loans stay with it).
+    expect((await byCode("801")).name).toBe("Z Branch 1 Renamed");
+    expect((await byCode("812")).id).toBe(loan.branchId);
+    expect(await prisma.loan.findUniqueOrThrow({ where: { pn: "GD8022026900001" } })).toMatchObject({ branchId: loan.branchId });
+    expect(await prisma.referenceChange.count({ where: { entity: "BRANCH", oldValue: "Z Branch 1", newValue: "Z Branch 1 Renamed" } })).toBe(1);
+    expect(await prisma.referenceChange.count({ where: { entity: "BRANCH_CODE", oldValue: "802", newValue: "812" } })).toBe(1);
+    expect((await byCode("804")).active).toBe(true); // Closed waits for the review
     const run = await prisma.branchSyncRun.findUniqueOrThrow({ where: { id: r!.runId! } });
     expect(run).toMatchObject({ trigger: "api", mode: "FULL", ok: true, newCount: 1, missingCount: 1 });
   });
 
-  it("Ignore leaves the DMS as it is (Renamed, Closed)", async () => {
+  it("Ignore leaves the DMS as it is (Closed)", async () => {
     const items = await open();
-    await ignoreReview(admin, items.find((i) => i.code === "801")!.id, "");
     await ignoreReview(admin, items.find((i) => i.code === "804")!.id, "Checked with MyLoans");
-    expect((await byCode("801")).name).toBe("Z Branch 1");
     expect((await byCode("804")).active).toBe(true);
     const decided = await reviewRows("DECIDED");
     expect(decided.find((d) => d.code === "804")).toMatchObject({ state: "IGNORED", note: "Checked with MyLoans", decidedByLabel: admin.name });
-  });
-
-  it("Code changed is matched by the MyLoans id: Accept keeps the same branch (and its loans)", async () => {
-    const before = await byCode("802");
-    const item = (await open()).find((i) => i.code === "812")!;
-    await acceptReview(admin, item.id);
-    const after = await byCode("812");
-    expect(after.id).toBe(before.id);
-    expect((await prisma.loan.findUniqueOrThrow({ where: { pn: "GD8022026900001" } })).branchId).toBe(before.id);
-    await expect(acceptReview(admin, item.id)).rejects.toThrow(/already decided/);
   });
 
   it("Area or division changed: the impact names who gains or loses access; Accept rebuilds the access", async () => {
@@ -192,12 +187,10 @@ describe("Branches from MyLoans (API) and the Branch review", () => {
     expect(await byCode("806")).toMatchObject({ active: false });
   });
 
-  it("the next run asks again about an ignored change; Closed and Renamed can then be accepted", async () => {
+  it("the next run asks again about an ignored change; Closed can then be accepted", async () => {
     await runBranchSync({ trigger: "api", user: admin, mode: "full" });
     const items = await open();
-    await acceptReview(admin, items.find((i) => i.code === "801")!.id);
     await acceptReview(admin, items.find((i) => i.code === "804")!.id);
-    expect((await byCode("801")).name).toBe("Z Branch 1 Renamed");
     expect((await byCode("804")).active).toBe(false);
   });
 

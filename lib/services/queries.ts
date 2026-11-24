@@ -1,5 +1,4 @@
 import "server-only";
-import { borrowerChangedLoanIds } from "./borrower-review";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { inScope, loanRelationScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
@@ -186,11 +185,11 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
     include: {
       branch: { select: { id: true, name: true, code: true, area: { select: { name: true } } } },
       transactions: { where: { status: "IN_PROCESS" }, select: { type: { select: { code: true } } } },
-      _count: { select: { exceptions: { where: { status: "OPEN" } }, problems: { where: { resolvedAt: null } }, sourceChanges: { where: { state: "OPEN", category: { not: "BORROWER" } } } } },
+      _count: { select: { exceptions: { where: { status: "OPEN" } }, problems: { where: { resolvedAt: null } }, openItems: { where: { status: "PENDING", audience: "LOAN" } } } },
     },
     take: 500,
   });
-  const corrected = await borrowerChangedLoanIds(loans.map((l) => l.id));
+  const corrected = new Set((await prisma.openItem.findMany({ where: { loanId: { in: loans.map((l) => l.id) }, status: "PENDING", audience: "BORROWER" }, select: { loanId: true }, distinct: ["loanId"] })).map((r) => r.loanId));
   let rows: LoanRow[] = loans.map((l) => {
     const tat = loanTat({ stage: l.stage, stageSince: l.stageSince, releasedAt: l.releasedAt, inProcessCodes: l.transactions.map((x) => x.type.code) }, t, daysFor(cal, l.branch.id));
     const next = nextStepFor(l.stage, { hasOpenException: l._count.exceptions > 0 });
@@ -202,8 +201,8 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
       classification: l.classification, stage: l.stage, tat, nextStep: next,
       // Open problems on jobs count as problems too (red chip on Home and Loans).
       openExceptions: l._count.exceptions + l._count.problems, needsAction, archived: !!l.archivedAt,
-      // A MyLoans change waits for Admin's review ("MyLoans changed").
-      sourceChanged: l._count.sourceChanges > 0,
+      // A myloans change waits as an Open Item ("MyLoans changed"; piece 8).
+      sourceChanged: l._count.openItems > 0,
       borrowerChanged: corrected.has(l.id),
     };
   });

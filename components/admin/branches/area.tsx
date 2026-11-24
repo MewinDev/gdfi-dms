@@ -7,7 +7,7 @@ import { fmtShort } from "@/lib/time";
 import { getMyLoansAdapter } from "@/lib/myloans";
 import { branchWorkload, recentBranchRuns, reviewRows, openReviewCount } from "@/lib/services/branches";
 import { inactiveEffect } from "@/lib/services/settings-status";
-import { branchesWithoutApprover, noApproverText } from "@/lib/services/borrower-review";
+import { branchesWithoutApprover, noApproverText } from "@/lib/services/open-items";
 import { branchesWithoutHandler, noHandlerText } from "@/lib/services/funds-handlers";
 import { SettingsModal } from "@/components/admin/settings-modal";
 import { SettingsEditForm, type FieldDef } from "@/components/admin/forms";

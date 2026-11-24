@@ -52,29 +52,28 @@ describe("product classification (D-049)", () => {
     expect((await row("Zz SME - 2nd Hand Vehicle Loan")).before).toMatchObject({ classification: "FINANCING", keyword: "2nd hand" });
     expect((await row("Zz Brand New Motorcycle Loan")).before).toMatchObject({ classification: "FINANCING", keyword: "brand new" });
     expect((await row("Zz SME - Refinancing Heavy Truck")).before.classification).toBe("REFINANCING");
-    expect((await row("Zz Real Estate Take Out")).confirm).toBe("Real-estate Take Out");
-    expect((await row("Zz Personal Loan")).confirm).toBeNull();
+    expect((await row("Zz Personal Loan")).before).toMatchObject({ classification: "REFINANCING", step: "DEFAULT" }); // "Classified by default"
   });
 
   it("a manual setting overrides the keywords; a reason is required; audited; the note goes once it is set", async () => {
-    const admin = await asUser("test.admin@gdfi.ph");
+    const sup = await asUser("test.lahead@gdfi.ph");
     const p = await prisma.product.findFirstOrThrow({ where: { sourceProductId: 990003 } });
-    await expect(setProductClassification(admin, p.id, "FINANCING", "no")).rejects.toThrow(/at least 5 characters/);
-    await setProductClassification(admin, p.id, "FINANCING", "Confirmed with Credit");
+    await expect(setProductClassification(sup, p.id, "FINANCING", "no")).rejects.toThrow(/at least 5 characters/);
+    await setProductClassification(sup, p.id, "FINANCING", "Confirmed with Credit");
     expect((await row("Zz SME - Refinancing Heavy Truck")).before).toMatchObject({ classification: "FINANCING", step: "MANUAL" });
     expect(await prisma.auditLog.count({ where: { action: "product_classification_set", entityId: p.id } })).toBe(1);
     const t = await prisma.product.findFirstOrThrow({ where: { sourceProductId: 990004 } });
-    await setProductClassification(admin, t.id, "REFINANCING", "Decided by the branch head");
-    expect((await row("Zz Real Estate Take Out")).confirm).toBeNull();
+    await setProductClassification(sup, t.id, "REFINANCING", "Decided by the branch head");
+    expect((await row("Zz Real Estate Take Out")).before.step).toBe("MANUAL");
     // Back to the keywords.
-    await setProductClassification(admin, p.id, null, "Credit changed their mind");
+    await setProductClassification(sup, p.id, null, "Credit changed their mind");
     expect((await row("Zz SME - Refinancing Heavy Truck")).before.classification).toBe("REFINANCING");
   });
 
   it("a rename in myloans keeps the manual setting (matched by ProductID)", async () => {
-    const admin = await asUser("test.admin@gdfi.ph");
+    const sup = await asUser("test.lahead@gdfi.ph");
     const p = await prisma.product.findFirstOrThrow({ where: { sourceProductId: 990005 } });
-    await setProductClassification(admin, p.id, "FINANCING", "Confirmed with Credit");
+    await setProductClassification(sup, p.id, "FINANCING", "Confirmed with Credit");
     await prisma.mockMyLoansProduct.update({ where: { productId: 990005 }, data: { name: "Zz Personal Loan Plus" } });
     expect((await refreshProducts()).renamed).toBe(1);
     const after = await prisma.product.findFirstOrThrow({ where: { sourceProductId: 990005 } });
@@ -98,7 +97,20 @@ describe("product classification (D-049)", () => {
     expect(p.moving).toEqual([{ from: "Refinancing (default)", to: "Financing", n: 20 }]);
     for (const r of p.rows.filter((x) => /refinancing heavy truck/i.test(x.name))) expect(r.after.classification, r.name).toBe("REFINANCING");
     expect(p.rows.filter((r) => /refinancing heavy truck/i.test(r.name))).toHaveLength(2);
-    // The 12 undecided products carry "Please confirm" (D-051).
-    expect(p.rows.filter((r) => r.confirm).length).toBe(12);
+  });
+
+  it("D-052: on by default for the LA Supervisor/Head only; Admin and Superadmin need it granted; every change shows in the product's history with its reason", async () => {
+    const p = await prisma.product.findFirstOrThrow({ where: { sourceProductId: 990001 } });
+    for (const email of ["test.admin@gdfi.ph", "test.superadmin@gdfi.ph"]) {
+      await expect(setProductClassification(await asUser(email), p.id, "REFINANCING", "Should not work")).rejects.toThrow(/Manage product classification/);
+    }
+    const sup = await asUser("test.lahead@gdfi.ph");
+    await setProductClassification(sup, p.id, "REFINANCING", "Credit decided: a refinancing product");
+    await setProductClassification(sup, p.id, null, "Back to the keywords after review");
+    const h = (await productPreview()).rows.find((r) => r.id === p.id)!.history;
+    expect(h).toHaveLength(2);
+    expect(h[0].text).toContain("Back to the keywords after review");
+    expect(h[1].text).toContain("Credit decided: a refinancing product");
   });
 });
+

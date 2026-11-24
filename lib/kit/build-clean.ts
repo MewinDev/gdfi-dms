@@ -24,7 +24,7 @@ type Log = (line: string) => void;
 
 /** The tables the clean kit leaves empty (work data). Checked by the kit's integration test. */
 export const CLEAN_EMPTY_TABLES = [
-  "Loan", "LoanSourceSnapshot", "SourceChange", "LoanTransaction", "ChecklistCheck", "DocumentItem", "DocumentMovement", "DpAssignment", "JobStage",
+  "Loan", "LoanSourceSnapshot", "OpenItem", "OpenItemCounter", "ReferenceChange", "LoanTransaction", "ChecklistCheck", "DocumentItem", "DocumentMovement", "DpAssignment", "JobStage",
   "LoanException", "Problem", "Hold", "HoldTransfer", "Transmittal", "TransmittalItem", "PullOutRequest", "DigitalRecord", "QaFinding", "Attachment",
   "Notification", "EmailOutbox", "CashAdvance", "CashAdvanceLine", "CashAdvanceTopUp", "TransactionAttempt", "AttemptSpend", "Receipt", "CashReturn",
   "PasuyoEvent", "CarryOver", "FundsException", "LtoAdvisory", "BranchReview",

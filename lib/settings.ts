@@ -20,33 +20,30 @@ export const SETTING_DEFAULTS = {
   "myloans.refreshOnOpenMinutes": 60 as number,
   /** MyLoans sync: when Find a loan shows a saved loan, refresh it in the background if last checked more than this many hours ago (0 = never). */
   "myloans.refreshOnFindHours": 4 as number,
-  /** MyLoans sync: background refresh every this many minutes (active loans only). */
-  "myloans.backgroundMinutes": 60 as number,
-  /** MyLoans sync: background refresh only Mon to Sat, 7:00 AM to 7:00 PM PHT, holidays skipped. */
-  "myloans.businessHoursOnly": true as boolean,
-  /** MyLoans sync: at most this many loans per run, with this pause between calls. */
-  "myloans.maxPerRun": 50 as number,
-  "myloans.pauseMs": 500 as number,
-  /** Replacement PN: the new loan must be released within this many days of the old one (or after it ended). */
-  "myloans.replacementWindowDays": 30 as number,
-  /** MyLoans sync: polling interval per tier, in minutes (A work in progress, B not yet sent, C finished steps not closed). */
-  "myloans.tierMinutes": { A: 60, B: 240, C: 1440 } as { A: number; B: number; C: number },
   /** MyLoans sync: at most this many calls to MyLoans an hour; background sync pauses until the hour turns. */
   "myloans.hourlyCeiling": 600 as number,
-  /** MyLoans sync: average answer slower than this (ms) halves the per-run cap. */
-  "myloans.slowMs": 2000 as number,
-  /** Admin: "Pause MyLoans calls". On: the background run, the stale refresh and refresh on open make no call. */
+  /** Admin: "Pause MyLoans calls". On: the sync, the stale refresh and refresh on open make no call. */
   "myloans.paused": false as boolean,
   /** Admin data check: loans refused because MyLoans has no borrower name at all (the latest 50). */
   "myloans.noNameLoans": [] as { pn: string; branch: string | null; at: string }[],
-  /** MyLoans sync: the feed cursor, the adaptive cap and the last 10 runs. */
-  "myloans.state": { cursor: null, cap: null, runs: [] } as { cursor: string | null; cap: number | null; runs: import("@/lib/services/source-sync").RunStat[] },
-  /** MyLoans sync: the last background run (Run now included). */
-  "myloans.lastRun": null as null | { at: string; ok: boolean; checked: number; changes: number; failed: number; error: string | null; trigger: string; status?: string },
+  /**
+   * Piece 7 (D-052): the one myloans sync (API 2). A change run every intervalMinutes; the daily catch-up at catchUpTime
+   * (Manila) over the last catchUpHours; Admin is alerted after alertAfterFailedRuns failed runs in a row. Released
+   * loans not yet in the DMS are kept from the branch-pool cutoff (cutoffDate, else go-live minus 30 days).
+   */
+  "myloans.sync": { intervalMinutes: 30, catchUpTime: "02:00", catchUpHours: 26, alertAfterFailedRuns: 3, goLiveDate: null, cutoffDate: null } as import("@/lib/services/myloans-sync").SyncConfig,
+  /** Piece 11 (D-054): when the product list (API 5) was last read. */
+  "products.lastReadAt": null as string | null,
+  /** Piece 8 (D-012, D-053): the fields that raise Open Items (the status always does: it blocks Forward). */
+  "openItems.monitoredFields": ["loanType", "amount", "productCode", "releaseDate", "branchCode", "sourceLoanId", "borrowerName", "cif", "cin"] as string[],
+  /** Piece 7: the checkpoint (moves only after a whole good run), failed runs in a row, the last catch-up and run. */
+  "myloans.syncState": { checkpoint: null, failedRuns: 0, lastCatchUpDate: null, lastRunAt: null } as import("@/lib/services/myloans-sync").SyncState,
   /** Funds: a balance may carry over to the next attempt without approval for up to this many business days. */
   "funds.carryOverLimitDays": 3 as number,
   /** Funds: block "At the LTO" while a funds-flagged transaction is not Funded. */
   "funds.blockLtoUntilFunded": true as boolean,
+  /** D-056 item 1 [TO CONFIRM with Finance]: "At the LTO" also waits until the processor confirmed receipt of a fund transfer. Off. */
+  "funds.blockLtoUntilReceiptConfirmed": false as boolean,
   /**
    * Funds (D-024): approval amount bands. Off (the default, as v2): anyone with the type's Approve tick who
    * handles that type approves. On: only the roles of the band for the amount (Settings, Approval bands).

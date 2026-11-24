@@ -2,13 +2,13 @@
 
 The automatic rules, the turnaround targets, the roles and examples of permissions.
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 ### Automatic rules (run once, when the LA clicks Open Loan File)
 
 | Rule | Input | Result |
 |---|---|---|
-| 1 Classification | A product **set by hand** in Settings, Product classification (Financing or Refinancing, with a reason; it survives a myloans rename) comes first. Otherwise the product name (case, hyphens and extra spaces ignored) is checked: a Refinancing keyword, else a Financing keyword ("financ", "brand new", "2nd hand"; multi-word phrases allowed), else the default (D-031, D-049). Keywords and product settings need the one tick **"Manage product classification"** (on by default for LA Supervisor/Head, Admin and Superadmin). The screen lists every active myloans product, marks undecided ones "Please confirm", and "Test keyword rules" shows each product before and after | Refinancing or Financing (only these two), labelled "Classified by default" when no keyword matched, or "Set by hand" |
+| 1 Classification | A product **set by hand** in Settings, Product classification (Financing or Refinancing, with a reason; it survives a myloans rename) comes first. Otherwise the product name (case, hyphens and extra spaces ignored) is checked: a Refinancing keyword, else a Financing keyword ("financ", "brand new", "2nd hand"; multi-word phrases allowed), else the default (D-031, D-049). Keywords and product settings need the one tick **"Manage product classification"** (D-052: on by default for the LA Supervisor/Head only; the Superadmin can grant it to others). Every change to a product needs a reason and is shown in the product's history. The screen lists every active myloans product, and "Test keyword rules" shows each product before and after | Refinancing or Financing (only these two), labelled "Classified by default" when no keyword matched, or "Set by hand" |
 | 2 Undertaking | Financing only, picked by the LA | Undertaking or Non-Undertaking |
 | 3 ORCR | Financing + Untransferred | Notary + EDST |
 | 4 Mortgage | New and amount at or below PHP 500,000; Renewal and amount at or below PHP 1,000,000 | Mortgage: Notary, EDST, Entry of PPSR, Mortgage. Otherwise Notary and EDST |
@@ -17,12 +17,12 @@ Last updated: 18 November 2026 (PHT)
 
 | Clock | Default |
 |---|---|
-| LA check and send | Day 2 from release |
+| LA check and send | 1 (D-056, to confirm) |
 | EDST | 1 |
 | DP accepts | Same day |
-| Notary | 3 |
-| Entry of PPSR | 5 |
-| Mortgage | 10 |
+| Notary | 5 (D-056, to confirm) |
+| Entry of PPSR | 5 (D-056, to confirm) |
+| Mortgage | 5 (D-056, to confirm) |
 | Receiving LA acceptance | 2 |
 | Transmittal to the vault | 3 |
 
@@ -91,9 +91,9 @@ Home is one quick look, then the work. Every Home has the same parts, top to bot
 | Who (by ticks) | Summary strip | Do these next | Attention cards (only when above zero) |
 |---|---|---|---|
 | Loan Associate (`checklist:tick`) | Need you now, Waiting on others, Problems to fix | The loans that need them (avatar, name, PN · branch · amount, the next step, the due chip, Continue or Open); "Waiting on others" and "Problems to fix" as closed rows under it when above zero | Package forwarded to you: receive it; Sent back to you |
-| Admin | The same three, plus MyLoans changes and Branch review | As the LA (all branches) | MyLoans changes to review, Branch review, TAT and problems (its link: "Open the TAT report"; the report has no export) |
-| LA Supervisor/Head | The same three, plus Corrections to review | The loans of their branches that need the LA | MyLoans corrections to review, TAT and problems |
-| Approvers (loan files only, no funds ticks) | The same three | The loans of their branches | MyLoans corrections when they have that tick |
+| Admin | The same three, plus Open Items and Branch review | As the LA (all branches) | Open Items to decide (with "N waiting too long" and Unassigned), Branch review, TAT and problems (its link: "Open the TAT report"; the report has no export) |
+| LA Supervisor/Head | The same three, plus Open Items | The loans of their branches that need the LA | Open Items to decide (with "N waiting too long"), TAT and problems |
+| Approvers (loan files only, no funds ticks) | The same three | The loans of their branches | Open Items when they have an approver tick |
 | Document Processor (`jobs:work` without `checklist:tick`) | To review, In process, Problems, Need funds, On hold | The jobs to look at first (problems, overdue, due today, to review); "All jobs" at the top | Liquidation overdue |
 | Finance, or anyone with funds approve or release ticks without `checklist:tick` | To approve, To release, Outstanding, Overdue; "Open Funds" at the top and the outstanding cash in one line | (Home has no request list; the Funds page has the queues) | MyLoans corrections to review (with that tick) |
 | Operations Monitor (monitoring ticks only) | Home is the Monitoring page, as before | | |

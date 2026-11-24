@@ -32,6 +32,7 @@ describe("Decisions batch (10 November 2026): Print liquidation report, Branch S
       "Reclassify a loan when the keyword rules changed (within their branches)",
       "Resolve any problem, see the DP and LTO monitors, the TAT report and PN searches (within their branches)",
       "Manage product classification: the keywords and setting a product to Financing or Refinancing (D-049)",
+      "Cancel a transaction with a reason (D-056)",
     ]);
   });
 });

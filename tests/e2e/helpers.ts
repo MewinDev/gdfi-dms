@@ -52,6 +52,12 @@ export async function pickLtoOffice(page: Page) {
   if ((await lto.count()) && !(await lto.first().inputValue())) await lto.first().selectOption({ index: 1 });
 }
 
+/** When the send date has passed (it depends on today and the 1-day LA checklist TAT, D-056), Send also needs a late reason: fill it if asked. */
+export async function giveLateReason(page: Page) {
+  const late = page.getByLabel("Why is this late?").filter({ visible: true });
+  if (await late.count()) await late.first().fill("Test run");
+}
+
 const phToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
 /** A tiny PDF (the stage file check reads the first bytes). */
 export const SAMPLE_PDF = { name: "certificate.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n") };

@@ -2,7 +2,7 @@
 
 How cash advances and fund transfers are flagged, requested, approved, released, carried over and liquidated.
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -10,7 +10,7 @@ See the [colour key](README.md#colour-key).
 flowchart TD
   A["LA flags: needs funds, with the kinds, or no funds. No amount"]:::la
   A --> B["DP accepts the job"]:::dp
-  B --> C["DP requests funds for several jobs and picks the type: Cash advance (default) or Fund transfer. Amount per line (pre-filled from the rule or the kind; Other says what it is), LTO office and estimate shown"]:::dp
+  B --> C["DP requests funds for several jobs and picks the type: Cash advance (default) or Fund transfer. Amount per line (pre-filled from the rule or the kind; Other says what it is), LTO office and estimate shown. Fund transfer: also the receiving account (bank or e-wallet, name, number)"]:::dp
   C --> D{"DP has an overdue, unliquidated advance?"}
   D -->|Yes| D1["Blocked, unless Finance grants a one-time exception"]:::fin
   D1 --> C
@@ -18,8 +18,12 @@ flowchart TD
   E -.->|"Before release"| T["Finance may change the type, with remarks (in the history)"]:::fin
   T -.-> E
   E -->|Denied| E1["Transaction shows No funds: DP or LA reschedules"]:::prob
-  E -->|"Approved, full or lower with a note"| F["Cash advance: Release cash with the reference. Fund transfer: Send transfer with the reference number, date and account (last 4 digits)"]:::fin
+  E -->|"Approved, full or lower with a note"| F["Cash advance: Release cash with the reference. Fund transfer: Send transfer with the reference number and date, after ticking that the account the DP typed was checked (only the last 4 digits are kept)"]:::fin
   F --> G["Job is Funded, DP and LA are notified"]:::sys
+  G -->|"Fund transfer"| R1{"DP confirms receipt: reference, amount, last 4 match?"}
+  R1 -->|Yes| H
+  R1 -->|No| R2["Mismatch flagged to Finance with the details; Finance clears it with remarks"]:::prob
+  R2 --> H
   G --> H["DP works an attempt and spends money"]:::dp
   H --> I["Receipts added: date, amount, number, file"]:::dp
   I --> J{"Cash left over?"}
@@ -46,6 +50,8 @@ flowchart TD
   classDef sys fill:#e6e8ec,stroke:#56627a,color:#14213a
 ```
 
+- **Fund transfer account and receipt (D-056):** for a type that sends to an account, the processor types the receiving account (bank or e-wallet, account name, account number) when requesting. Finance sees the full number only on the release screen and ticks "I checked the receiving account"; after the release only the last 4 digits are kept, and everywhere else it shows as "account ending 1234". The processor then confirms receipt on My funds (reference number, amount, last 4 digits); a difference is flagged to Finance (the handlers of that type and branch) with what was typed and what was recorded, and Finance clears it with remarks. "At the LTO" does not wait for this unless Settings turns on `funds.blockLtoUntilReceiptConfirmed` (to confirm with Finance).
+- **A cancelled transaction (D-056):** cash already released for it stays owed; liquidation is due the set number of working days after the later of the last LTO pickup and the cancellation.
 - The LA only flags whether funds are needed. The DP asks for the amount, one advance for several jobs, and picks the funds type: Cash advance (default) or Fund transfer.
 - Both types follow the same flow: approval bands, release, receipts, carry-over, top-up, liquidation, overdue notice, holds and permissions are the same. Only what Finance enters at release differs (Settings, Funds types), and a type's "Must be liquidated with receipts" switch (on for both by default).
 - Finance can change the type before release, with remarks (5 to 500 characters); top-ups and carry-overs follow their record's type, and Finance can change a top-up's type at release.

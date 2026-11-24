@@ -17,7 +17,8 @@ import { stageRows, verifiablePapers } from "@/lib/services/job-stages";
 import { returnToLa } from "@/lib/services/return-to-la";
 import { addReceipt, changeFundsType, closeAdvance, decideAdvance, notifyOverdue, releaseAdvance, requestAdvance } from "@/lib/services/funds";
 import { raiseHold } from "@/lib/services/holds";
-import { applySourceChange, simulateSourceChange } from "@/lib/services/source-sync";
+import { simulateSourceChange } from "@/lib/services/source-sync";
+import { decideOpenItem } from "@/lib/services/open-items";
 import { acceptReview, importBranchRowsAsSystem, runBranchSync } from "@/lib/services/branches";
 import { BUILTIN_BRANCHES, BUILTIN_USUAL_LTO, KIT_BRANCH_FILE } from "@/lib/branches/builtin";
 import { looksLikeTestBranch } from "@/lib/branches/file";
@@ -226,11 +227,13 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
   /** Request (Cash advance, or Fund transfer when `ft`), approve, release (a transfer with its reference, date and account ending). */
   const fund = async (pn: string, dp: CurrentUser, upTo: "requested" | "approved" | "released", ft = false) => {
     const t = await txn(pn, "MORTGAGE");
-    const r = await requestAdvance(dp, { lines: [{ transactionId: t.id, kind: "LTO_FEE", cents: 350_000 }], fundsTypeId: (await fundsType(ft ? "FT" : "CA")).id });
+    // D-056: a fund transfer carries the processor's receiving account (fake numbers).
+    const account = ft ? { provider: "BPI", name: dp.name, number: dp.name === "DP 1" ? "0000 1111 4821" : "0000 2222 7350" } : undefined;
+    const r = await requestAdvance(dp, { lines: [{ transactionId: t.id, kind: "LTO_FEE", cents: 350_000 }], fundsTypeId: (await fundsType(ft ? "FT" : "CA")).id, account });
     if (upTo !== "requested") await decideAdvance(u.finance, r.id, { approve: true });
     if (upTo === "released") {
       await releaseAdvance(u.finance, r.id, ft
-        ? { ref: `FT-88${pn.slice(-4)}`, transferDate: today, accountProvider: "BPI", accountName: dp.name, accountLast4: dp.name === "DP 1" ? "4821" : "7350" }
+        ? { ref: `FT-88${pn.slice(-4)}`, transferDate: today, accountChecked: "on" }
         : { ref: `CV-${pn.slice(-4)}` });
     }
     return { advanceId: r.id, lineId: (await prisma.cashAdvanceLine.findFirstOrThrow({ where: { advanceId: r.id } })).id };
@@ -380,8 +383,8 @@ export async function buildSamples(log: Log = console.log): Promise<void> {
     "GD1012026902072": async () => {
       const l = await loan("GD1012026902072");
       await simulateSourceChange(u.admin, l.id, "branch");
-      const item = await prisma.sourceChange.findFirstOrThrow({ where: { loanId: l.id, state: "OPEN", category: { not: "BORROWER" } } });
-      await applySourceChange(u.admin, item.id, { note: "The borrower now pays at Angono; MyLoans moved the account." });
+      const item = await prisma.openItem.findFirstOrThrow({ where: { loanId: l.id, status: "PENDING", field: "branchCode" } });
+      await decideOpenItem(u.admin, item.id, { decision: "APPROVE", remarks: "The borrower now pays at Angono; MyLoans moved the account." });
     },
     // Last: an overdue advance blocks the processor's next request (as it should), so it comes after the others.
     // Fund transfers, in the same states (DP 1 and DP 2).

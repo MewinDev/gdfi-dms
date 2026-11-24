@@ -11,6 +11,7 @@ import { getMyLoansAdapter } from "@/lib/myloans";
 import type { MyLoansAdapter } from "@/lib/myloans/types";
 import { OPEN_STAGES } from "./settings-status";
 import { UserError } from "./errors";
+import { recordReferenceChange } from "./reference-changes";
 
 /**
  * Branches from MyLoans (MyLoans is the source of truth for code, name, area, division and status).
@@ -185,6 +186,8 @@ async function ensureGroup(tx: Tx, level: "area" | "division", g: GroupRef, cach
     if (g.myloansId !== null) data.source = "MYLOANS";
     await (del as typeof tx.area).update({ where: { id: g.dmsId }, data });
     if (data.name) {
+      // D-012, D-053: a rename is reference data: logged in Reference data changes (with a notice).
+      await recordReferenceChange(tx, { entity: level === "area" ? "AREA" : "DIVISION", key: String(g.myloansId ?? g.dmsId), oldValue: cur.name, newValue: g.name, source: "myloans API 4" });
       await writeAudit(tx, { actor, mode: actor.id ? "MANUAL" : "AUTOMATIC", action: `${level}_renamed`, entityType: level === "area" ? "Area" : "Division", entityId: g.dmsId, summary: `${level === "area" ? "Area" : "Division"} renamed from ${cur.name} to ${g.name} (MyLoans)`, before: { name: cur.name }, after: { name: g.name } });
     }
     id = g.dmsId;
@@ -503,7 +506,24 @@ export async function runBranchSync(o: { trigger: "api" | "cron" | "lookup"; use
       return { ok: false, mode, queued: 0, unchanged: 0, missing: 0, message: `Branches from MyLoans did not run: ${failure} Nothing was changed.`, runId: run.id };
     }
     const diff = diffBranches(rows.map((r, i) => ({ ...r, line: i + 1 })), await loadDmsState(), { full });
-    const items = diff.items.filter((i) => i.status !== "unchanged");
+    // D-054: a branch matched by myloans' BranchID whose only change is its name or code: reference data, applied by
+    // itself and logged in Reference data changes (never a broken match). Everything else waits in the Branch review.
+    const auto = diff.items.filter((i) => i.status === "changed" && i.matchedBy === "id" && i.kinds.length > 0 && i.kinds.every((k) => k === "RENAMED" || k === "CODE_CHANGED"));
+    if (auto.length) {
+      await prisma.$transaction(async (tx) => {
+        const before = new Map((await tx.branch.findMany({ where: { id: { in: auto.map((i) => i.branchId!) } }, select: { id: true, name: true, code: true } })).map((b) => [b.id, b]));
+        const r = await applyItems(tx, auto, { actor, runId: null, source: o.trigger, activate: new Set(), hide: new Set(), accepted: true });
+        for (const i of auto) {
+          const was = before.get(i.branchId!);
+          if (!was || r.problems.some((p) => p.startsWith(`${i.row.name} (${i.row.code})`))) continue;
+          const key = String(i.row.branchId);
+          if (was.name !== i.row.name) await recordReferenceChange(tx, { entity: "BRANCH", key, oldValue: was.name, newValue: i.row.name, source: "myloans API 4", at: now });
+          if (was.code !== i.row.code) await recordReferenceChange(tx, { entity: "BRANCH_CODE", key, oldValue: was.code, newValue: i.row.code, source: "myloans API 4", at: now });
+        }
+      }, { timeout: 60_000 });
+    }
+    const autoIds = new Set(auto.map((i) => i.branchId));
+    const items = diff.items.filter((i) => i.status !== "unchanged" && !autoIds.has(i.branchId));
     const run = await prisma.branchSyncRun.create({ data: { trigger: o.trigger, mode, ok: true, newCount: diff.counts.new, changedCount: diff.counts.changed, unchangedCount: diff.counts.unchanged, missingCount: diff.counts.missing, ms: 0, byLabel: actor.label } });
     await prisma.$transaction(async (tx) => {
       await queueItems(tx, items, diff, run.id, o.trigger);
@@ -531,7 +551,10 @@ export async function runScheduledBranchSync(now: Date = new Date()): Promise<Br
   if (hm < s.time) return { skipped: `waits for ${s.time} PHT` };
   if (!getMyLoansAdapter().capabilities.branches) return { skipped: "MyLoans has no branch list yet (use Import from MyLoans)" };
   await setSetting("branches.sync", { ...s, lastRunDate: day });
-  return (await runBranchSync({ trigger: "cron", now })) ?? { skipped: "another run is going" };
+  const r = (await runBranchSync({ trigger: "cron", now })) ?? { skipped: "another run is going" };
+  // Piece 11 (D-054): the product list (API 5) is read in the same daily run; a failed read keeps the last list.
+  await import("./products").then((m) => m.refreshProducts(now)).catch(() => null);
+  return r;
 }
 
 /**
@@ -563,9 +586,16 @@ export async function recentBranchRuns(take = 10) {
 
 export interface BranchHit { id: string; code: string | null; name: string; active: boolean; hidden: boolean }
 
-/** The DMS branch of a MyLoans loan: by the branch code first, by the name only when there is no code match. */
-export async function resolveLoanBranch(db: Db, rec: { branchCode: string | null; branchName: string | null }): Promise<BranchHit | null> {
+/**
+ * The DMS branch of a myloans loan. D-054: by myloans' BranchID first (a code change never breaks the match); by the
+ * code only when the loan or the branch has no id; by the name only when nothing else matches.
+ */
+export async function resolveLoanBranch(db: Db, rec: { myloansBranchId?: number | null; branchCode: string | null; branchName: string | null }): Promise<BranchHit | null> {
   const select = { id: true, code: true, name: true, active: true, hidden: true } as const;
+  if (rec.myloansBranchId) {
+    const b = await db.branch.findUnique({ where: { myloansBranchId: rec.myloansBranchId }, select });
+    if (b) return b;
+  }
   const code = rec.branchCode?.trim();
   if (code) {
     const b = await db.branch.findUnique({ where: { code }, select });

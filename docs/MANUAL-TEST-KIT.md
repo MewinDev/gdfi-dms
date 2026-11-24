@@ -1,6 +1,6 @@
 # Manual Test Kit
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 Test GDFI DMS by hand from zero. The kit puts your own database (`gdfi_dms`) in a clean state: the settings, the branches and the sign-in accounts below, and a list of PNs that exist only in the sample MyLoans. Nothing is opened yet: you search each PN and open it yourself. The automated tests use another database (`gdfi_dms_test`).
 
@@ -208,14 +208,15 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 
 Before these, as **Admin**, turn on the test simulator in Settings, System. "Simulate a MyLoans change" is on the Journey tab of a loan file (Admin).
 
-30. **Borrower details.** As **LA Angono**, open an Angono PN from the list, tick the Notary papers and send one transaction to a processor. As **Admin**, on its Journey tab, simulate "Change the borrower name". As **LA Angono**, open the loan file, its To do tab and **See the change**. As **LA Supervisor/Head**, open it from Home and decide it. Then, as Admin, simulate "Change the borrower's CIF" and, as LA Supervisor/Head, press **Keep current**. Press **Refresh from MyLoans** afterwards.
-31. **Amount and branch.** On another Angono loan, as Admin, simulate "Change the amount". As LA Angono, open Check documents for Mortgage and Notary. As Admin, open the review and press **Keep current** without a note, then with one. On an Antipolo loan (LA Antipolo opens it), simulate "Move the loan to another branch" and apply it as Admin; then look for the loan as LA Antipolo and as LA Angono.
+30. **Borrower details (Open Items).** As **LA Angono**, open an Angono PN from the list, tick the Notary papers and send one transaction to a processor. As **Admin**, on its Journey tab, simulate "Change the borrower name". As **LA Angono**, open the loan file and read the banner. As **LA Supervisor/Head**, open **Open Items** from Home and approve it with remarks. Then, as Admin, simulate "Change the borrower's CIF" and, as LA Supervisor/Head, **Reject** it. Press **Refresh from MyLoans** afterwards.
+31. **Amount and branch.** On another Angono loan, as Admin, simulate "Change the amount". As LA Angono, open Check documents for Mortgage and Notary. As Admin, open Open Items for that PN and press **Reject** without remarks, then with some. On an Antipolo loan (LA Antipolo opens it), simulate "Move the loan to another branch" and approve it as Admin on Open Items; then look for the loan as LA Antipolo and as LA Angono.
 32. **Pause MyLoans calls.** As **Admin**, Settings, MyLoans sync: press **Pause MyLoans calls**, then **Run now**. Open a loan file. Then turn MyLoans calls back on. As **Finance**, look for the same switch.
-33. **Area name.** As Admin, simulate "Correct the area name (minor)" on any loan and open its Journey tab.
+33. **Area name (a rename).** As Admin, simulate "Correct the area name (minor)" on any loan, open its Journey tab, then Settings, Reference data changes.
 
-34. **Return the cash and notes.** On a loan with cash out, as Admin simulate "Set the loan cancelled", open the review and press **Return the cash** without a note, then with a 4-character note, then with a longer one. Try **Keep current** on another review with a 4-character note.
-35. **Replacement at another branch.** As Admin, on a cancelled Angono loan whose borrower has a new loan at Antipolo (Related loans), open the review or the Link form and read it before linking.
-36. **This hour.** Run `npm run myloans:sync` in PowerShell, then open Settings, MyLoans sync and read "This hour".
+34. **Return the cash and remarks.** On a loan with cash out, as Admin simulate "Set the loan cancelled". Read the loan file. Open Open Items for that PN and press **Ask for the cash back** without remarks, then with 4 characters, then with more. Try **Approve** on its status item. Try **Reject** on another Open Item with 4 characters.
+35. **Replacement at another branch.** As Admin, on a cancelled Angono loan whose borrower has a new loan at Antipolo (Related loans), open the Link form and read it before linking.
+36. **The sync from the console.** Run `npm run sync:myloans -- --now` in PowerShell, then open Settings, MyLoans sync and read the Run log.
+
 
 ### Find a loan card and rule names (12 November 2026)
 
@@ -237,6 +238,17 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 ### Stage names and next steps (12 November 2026)
 
 42. **The new stage names.** As **LA Angono**, open a loan file and read the progress line at the top; finish or send every transaction (EDST done, the others sent to a processor) and read it again. Open **My loans** and hover the Next step of a few rows. Then as **Admin** open **Loans**, All loans, read the Stage and Next step columns and hover a Next step. Look at the loan file on a tablet and a phone too.
+
+### Open Items: what approving a status does (18 November 2026)
+
+43. **Not released, then released again.** As LA Angono open an Angono PN. As Admin, on its Journey tab, simulate "Set the loan not released", then press **Refresh from MyLoans**. On Open Items, read the status card (what approving does is said first) and **Approve** with remarks. As LA Angono, try **Send** on the loan file. As Admin, simulate "Set the loan released again" and press **Refresh from MyLoans**; read the loan file again.
+44. **A redo (new PN).** As LA Angono open another Angono PN and tick a few papers. As Admin, simulate "Create a replacement PN". On Open Items, read the status card, then **Approve** with remarks. Look for the loan by the old PN and by the new PN.
+45. **Branch pool to loan file.** After `npm run kit:demo`, as LA Angono open **Inbox, Branch pool**: press **Accept** on the first released loan waiting there, then open it from **My items** and **Open loan file**. Look at the pool again.
+
+### Phase A gaps (24 November 2026)
+
+46. **Cancel a transaction.** As LA Angono, send a transaction of an Angono loan to a processor; as that processor, accept it and ask for funds; as Finance, approve and release. Then as **LA Supervisor/Head**, open the loan file, press **Cancel transaction**, read the confirm step, press it once without a reason, then with one. Look for the same button as LA Angono.
+47. **Fund transfer and its receipt.** As a processor with an accepted job that needs funds, ask for a **Fund transfer**: fill in the bank or e-wallet, the account name and the account number. As Finance, open **Send** on it and read the account; send it with and without the tick. As the processor, on My funds, confirm the receipt with a wrong amount, then look at Funds, Outstanding as Finance and clear it.
 
 ## If the sign-in page keeps coming back
 

@@ -55,6 +55,8 @@ export interface MyLoansRecord {
   contentHash?: string | null;
   /** Released / Cancelled / Superseded / NotReleased / Inactive. */
   feedState?: string | null;
+  /** D-054: myloans' BranchID of the loan's branch (every branch match uses it; the code is for display). */
+  myloansBranchId?: number | null;
   /** Fields the agreed contract does not send (D-050): never compared on a Refresh. */
   notSent?: ("vehicle" | "previousPn" | "paymentRecorded")[];
 }

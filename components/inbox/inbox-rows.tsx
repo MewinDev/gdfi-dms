@@ -54,6 +54,7 @@ function Row({ r, x, pool, move, moving: busy }: { r: InboxRow; x: RowExtras; po
           <p className="text-[13px]">
             <span className={pool || r.state !== "HELD" ? POOL_TEXT[r.poolTone] : "text-ink-2"} data-pool-tone={r.poolTone}>{r.state === "HELD" ? `Accepted after ${r.waiting === 0 ? "less than a day" : `${r.waiting} working day${r.waiting === 1 ? "" : "s"}`}` : r.waitingText}</span>
             <span className="text-ink-2"> · arrived {r.arrivedText}</span>
+            {r.candidate && <span className="text-ink-2" data-candidate> · released {r.candidate.releaseDate}{r.candidate.amount ? ` · ${r.candidate.amount}` : ""}</span>}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">

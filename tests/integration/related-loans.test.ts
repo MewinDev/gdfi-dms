@@ -9,9 +9,9 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 import { getSetting, setSetting } from "@/lib/settings";
 import { lookupPn, openLoanFile } from "@/lib/services/loan-file";
 import { saveChecklist } from "@/lib/services/workflow";
-import { copyReusablePapers, linkFromRelated, linkReplacement, refreshLoan, reusablePapers, ORIGINAL_NOTE } from "@/lib/services/source-sync";
+import { copyReusablePapers, linkFromRelated, refreshLoan, reusablePapers, ORIGINAL_NOTE } from "@/lib/services/source-sync";
 import { relatedLoans, RELATED_SELECT } from "@/lib/services/related-loans";
-import { relatedPanel, reviewFor } from "@/lib/services/source-review";
+import { relatedPanel } from "@/lib/services/source-review";
 import { MockMyLoansAdapter } from "@/lib/myloans/mock-adapter";
 import { SYSTEM_ACTOR } from "@/lib/audit";
 import type { MyLoansRecord } from "@/lib/myloans/types";
@@ -58,7 +58,7 @@ const loanOf = (pn: string) => prisma.loan.findUniqueOrThrow({ where: { pn }, se
 async function cancelOld() {
   await change(OLD, { status: "CANCELLED" });
   await refreshLoan((await loanOf(OLD)).id, sys);
-  return prisma.sourceChange.findFirstOrThrow({ where: { loan: { pn: OLD }, state: "OPEN" } });
+  return prisma.openItem.findFirstOrThrow({ where: { loan: { pn: OLD }, status: "PENDING", field: "status" } });
 }
 
 describe("Replacement or additional unit", () => {
@@ -72,8 +72,7 @@ describe("Replacement or additional unit", () => {
     expect(rel.map((r) => [r.loan.pn, r.tag, r.relation])).toEqual([["GD1012026909201", "SAME_BORROWER", null]]);
     // The old one is cancelled: still no guessed candidate (a redo is named by myloans, D-051).
     const item = await cancelOld();
-    expect(item.candidates).toEqual([]);
-    expect((await reviewFor(admin, item.loanId))!.candidates).toEqual([]);
+    expect(item.newValue).toBe("Cancelled in myloans"); // no guessed replacement on it
     expect((await relatedPanel(admin, await loanOf(OLD))).rows[0]).toMatchObject({ tag: "SAME_BORROWER", tagText: "Same borrower", canLink: true });
     // Find loan: no "this borrower has another loan" warning now (D-051).
     await extra({ pn: "GD1012026909203", cin: "CIN-UNIT-9203", totalReleasedAmount: 800_000 });
@@ -82,20 +81,17 @@ describe("Replacement or additional unit", () => {
     expect(preview).not.toHaveProperty("otherLoans");
   });
 
-  it("a redo myloans names (same CIN, the old copy cancelled): the review offers it; the Admin confirms no payment (unknown, D-051); linked and audited", async () => {
+  it("a redo myloans names (same CIN, the old copy cancelled): linked from Related loans; the approver confirms no payment (unknown, D-051); linked and audited", async () => {
     await open(OLD);
-    const item0 = await cancelOld();
-    expect(item0.candidates).toEqual([]);
+    await cancelOld();
     await extra({ pn: "GD1012026909210" }); // the same CIN as the old copy: myloans' redo
     expect(await lookupPn(la, "GD1012026909210")).toMatchObject({ kind: "preview", replacesPn: OLD });
     await open("GD1012026909210");
-    const item = await prisma.sourceChange.findFirstOrThrow({ where: { loan: { pn: OLD }, state: "OPEN" } });
-    expect(item.candidates).toEqual(["GD1012026909210"]);
-    const review = (await reviewFor(admin, item.loanId))!;
-    expect(review.payment).toEqual({ known: false, recorded: false, text: null });
-    await expect(linkReplacement(admin, item.id, { newPn: "GD1012026909210", note: "Redone in myloans" })).rejects.toThrow(/I confirmed no payment was made on the old PN/);
-    await expect(linkReplacement(la, item.id, { newPn: "GD1012026909210", note: "x note", confirmNoPayment: true })).rejects.toThrow(/Only approvers/);
-    await linkReplacement(admin, item.id, { newPn: "GD1012026909210", note: "Redone in myloans", confirmNoPayment: true });
+    const oldId = (await loanOf(OLD)).id;
+    expect((await relatedPanel(admin, await loanOf(OLD))).rows[0]).toMatchObject({ pn: "GD1012026909210", payment: { known: false, recorded: false, text: null } });
+    await expect(linkFromRelated(admin, oldId, "GD1012026909210", { note: "Redone in myloans" })).rejects.toThrow(/I confirmed no payment was made on the old PN/);
+    await expect(linkFromRelated(la, oldId, "GD1012026909210", { note: "x note", confirmNoPayment: true })).rejects.toThrow(/Only approvers/);
+    await linkFromRelated(admin, oldId, "GD1012026909210", { note: "Redone in myloans", confirmNoPayment: true });
     const nw = await prisma.loan.findUniqueOrThrow({ where: { pn: "GD1012026909210" } });
     expect(nw).toMatchObject({ replacesPn: OLD, replacementEvidence: "Test Admin confirmed no payment was made on GD1652026901003. Note: Redone in myloans" });
     expect((await prisma.loan.findUniqueOrThrow({ where: { pn: OLD } })).replacedByPn).toBe("GD1012026909210");

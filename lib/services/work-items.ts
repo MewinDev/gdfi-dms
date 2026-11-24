@@ -253,6 +253,8 @@ export interface InboxRow {
   id: string; kind: WorkKind; role: WorkRole; kindText: string; label: string; pn: string | null; link: string; branchName: string;
   state: string; holder: string | null; arrivedText: string; waiting: number; waitingText: string; poolTone: PoolTone;
   dueDate: string | null; dueText: string | null; tone: DueTone | null; paused: boolean; measureText: string;
+  /** 10b: a released loan not yet in the DMS: its release date (the waiting time is from when it entered the pool), and the amount for people who may see amounts. */
+  candidate?: { releaseDate: string; amount: string | null } | null;
 }
 
 function linkOf(it: { kind: string; subjectId: string; pn: string | null }, jobId?: string | null): string {
@@ -263,12 +265,13 @@ function linkOf(it: { kind: string; subjectId: string; pn: string | null }, jobI
   return it.pn ? `/loans/${it.pn}` : "/inbox";
 }
 
-async function rows(db: typeof prisma, where: Prisma.WorkItemWhereInput, now: Date): Promise<InboxRow[]> {
+async function rows(db: typeof prisma, where: Prisma.WorkItemWhereInput, now: Date, seesAmounts = false): Promise<InboxRow[]> {
   const [items, cal, amber, red] = await Promise.all([
     db.workItem.findMany({ where, include: { holder: { select: { name: true } } }, orderBy: { arrivedAt: "asc" }, take: 500 }),
     loadCalendar(db), getSetting("pool.amberAfterDays", db), getSetting("pool.redAfterDays", db),
   ]);
   const txIds = items.filter((i) => i.kind === "TRANSACTION" || i.kind === "DP_JOB").map((i) => i.subjectId);
+  const candidates = new Map((await db.sourceLoanCandidate.findMany({ where: { pn: { in: items.filter((i) => i.kind === "LOAN_CANDIDATE").map((i) => i.subjectId) } }, select: { pn: true, releaseDate: true, amount: true } })).map((c) => [c.pn, c]));
   const [branches, jobs, holds] = await Promise.all([
     db.branch.findMany({ where: { id: { in: [...new Set(items.map((i) => i.branchId))] } }, select: { id: true, name: true } }),
     db.dpAssignment.findMany({ where: { transactionId: { in: txIds }, status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] } }, select: { id: true, transactionId: true, dueDate: true } }),
@@ -286,6 +289,11 @@ async function rows(db: typeof prisma, where: Prisma.WorkItemWhereInput, now: Da
       state: it.state, holder: it.holder?.name ?? null, arrivedText: fmtShort(it.arrivedAt), waiting, waitingText: waitingText(waiting), poolTone: poolTone(waiting, amber, red),
       dueDate: due, dueText: due ? fmtDate(due) : null, tone: due ? dueTone(due, today, days, cal.amberWithinDays ?? 1, paused) : null, paused,
       measureText: it.measure === "WAITING" ? "Time to act (from arrival)" : "Turnaround time (from accept)",
+      candidate: it.kind === "LOAN_CANDIDATE" && candidates.has(it.subjectId) ? (() => {
+        const c = candidates.get(it.subjectId)!;
+        const n = Number(c.amount);
+        return { releaseDate: fmtDate(businessDate(c.releaseDate)), amount: seesAmounts && Number.isFinite(n) ? `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null };
+      })() : null,
     };
   });
 }
@@ -298,7 +306,7 @@ export function sortInbox(r: InboxRow[]): InboxRow[] {
 
 /** The person's items: accepted, and named but not accepted yet. */
 export async function myItems(u: CurrentUser, now: Date = new Date()) {
-  return sortInbox(await rows(prisma, { holderUserId: u.id, state: { in: ["INBOX", "HELD"] } }, now));
+  return sortInbox(await rows(prisma, { holderUserId: u.id, state: { in: ["INBOX", "HELD"] } }, now, can(u, PERMISSIONS.JOURNEY_VIEW_AMOUNTS)));
 }
 
 /** What a person can take from their branches' pools: by work role (and funds type for Finance). */
@@ -310,7 +318,7 @@ export async function poolItems(u: CurrentUser, now: Date = new Date()) {
   // Supervisors (Move work items) see every pool of their branches, to move work on.
   const all = can(u, PERMISSIONS.WORKITEMS_MOVE);
   if (!roles.length && !all) return [];
-  const items = await rows(prisma, { state: "POOL", ...loanScope(u), ...(all ? {} : { OR: roles }) }, now);
+  const items = await rows(prisma, { state: "POOL", ...loanScope(u), ...(all ? {} : { OR: roles }) }, now, can(u, PERMISSIONS.JOURNEY_VIEW_AMOUNTS));
   // Longest waiting first (the pool has no due date until someone takes it).
   return items.sort((a, b) => b.waiting - a.waiting);
 }

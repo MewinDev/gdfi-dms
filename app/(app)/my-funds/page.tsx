@@ -13,11 +13,11 @@ import { presetWas } from "@/lib/funds/kinds";
 import { businessDate } from "@/lib/time";
 import { dayText } from "@/lib/ui/plain";
 import { PageHeader, ToneChip } from "@/components/ui/basics";
-import { RequestForm, ReceiptForm, ReturnCashForm, TopUpButton } from "@/components/funds/forms";
+import { ConfirmReceiptForm, RequestForm, ReceiptForm, ReturnCashForm, TopUpButton } from "@/components/funds/forms";
 import { AdvanceStatusChip } from "@/components/funds/advance-status";
 import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { RecordHistory } from "@/components/funds/record-history";
-import { defaultFundsType, releaseLine } from "@/lib/funds/types";
+import { defaultFundsType, maskedAccount, releaseLine } from "@/lib/funds/types";
 
 export const metadata: Metadata = { title: "My funds" };
 
@@ -38,7 +38,7 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
       include: {
         lines: { include: { transaction: { include: { loan: { select: { pn: true, borrowerName: true } }, type: { select: { name: true } } } }, receipts: true, returns: true, topUps: true, carryOvers: true } },
         returns: true,
-        fundsType: { select: { liquidationDueDays: true, mustLiquidate: true } },
+        fundsType: { select: { liquidationDueDays: true, mustLiquidate: true, needsAccount: true } },
       },
     }),
     prisma.fundsException.findFirst({ where: { dpUserId: user.id, usedBy: null } }),
@@ -96,7 +96,15 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
                 {a.releasedAt && (a.transferDate || a.accountLast4) ? ` (${releaseLine(a)})` : ""}
                 {a.releasedAt && (OPEN_ADVANCE.includes(a.status) || a.daysLate !== null) ? ` · ${liquidationLineFor(a)}` : ""}
               </p>
+              {!a.releasedAt && a.accountLast4 && <p className="mt-1 text-[13px] text-ink-2" data-request-account>To {a.accountProvider}, {a.accountName}, {maskedAccount(a.accountLast4)}</p>}
               {a.deniedReason && <p className="mt-1 text-[15px] text-bad-fg">Denied: {a.deniedReason}</p>}
+              {a.fundsType?.needsAccount && a.releasedAt && OPEN_ADVANCE.includes(a.status) && !a.receiptConfirmedAt && (
+                <div className="mt-2 flex flex-col gap-2">
+                  {a.receiptMismatchAt && <p className="text-[13px] font-semibold text-bad-fg" data-receipt-mismatch>It did not match. Finance was told: {a.receiptMismatchNote}</p>}
+                  <ConfirmReceiptForm advanceId={a.id} number={a.number} />
+                </div>
+              )}
+              {a.receiptConfirmedAt && <p className="mt-1 text-[13px] text-ink-2" data-receipt-state>Receipt confirmed.</p>}
               {a.note && <p className="mt-1 text-[13px] font-semibold text-wait-fg">{a.note}</p>}
               {a.approvalNote && <p className="mt-1 text-[13px]">Approver&rsquo;s note: {a.approvalNote}</p>}
               <ul className="mt-2 flex flex-col gap-1.5">

@@ -5,9 +5,12 @@ import { can, type CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { myLoansClientV1 } from "@/lib/myloans/v1";
 import { classifyByKeywords, classificationWord, type ClassificationRules, type ClassificationValue, type ClassifyResult } from "@/lib/rules/classify";
-import { pleaseConfirm } from "@/lib/rules/classify-confirm";
 import { getClassificationRules, recheckClassifications } from "./classification";
 import { UserError } from "./errors";
+import { notify } from "@/lib/notify";
+import { holdsWhere } from "@/lib/auth/holders";
+import { setSetting } from "@/lib/settings";
+import { recordReferenceChange } from "./reference-changes";
 
 /**
  * D-049: myloans products (API 5) and their classification. The list is read whole from API 5 and matched by
@@ -22,22 +25,42 @@ export async function refreshProducts(now: Date = new Date()): Promise<{ added: 
   if (!r.ok) throw new UserError(r.message);
   const known = new Map((await prisma.product.findMany()).map((p) => [p.sourceProductId, p]));
   let added = 0, renamed = 0;
+  const firstRead = known.size === 0;
+  const rules = await getClassificationRules();
+  const classifiers = firstRead ? [] : (await prisma.user.findMany({ where: holdsWhere(PERMISSIONS.SETTINGS_CLASSIFICATION), select: { id: true } })).map((u) => u.id);
   for (const p of r.data.items) {
     const was = known.get(p.productId);
-    if (!was) { await prisma.product.create({ data: { sourceProductId: p.productId, code: p.productCode, name: p.name, active: p.active, seenAt: now } }); added++; continue; }
-    if (was.name !== p.name) renamed++;
+    if (!was) {
+      await prisma.product.create({ data: { sourceProductId: p.productId, code: p.productCode, name: p.name, active: p.active, seenAt: now } });
+      added++;
+      // D-054: a new product is classified by the keywords; the people who manage classification are told.
+      // (Not on the very first read, which brings the whole list.)
+      if (p.active && classifiers.length) {
+        const c = classifyByKeywords(p.name, rules, p.productCode);
+        await prisma.$transaction((tx) => notify(tx, { userIds: classifiers, title: `New product: ${p.name}`, body: `New product: ${p.name}, classified as ${classificationWord(c.classification)}${c.step === "DEFAULT" ? " by default" : ""}. Change it in Settings, Product classification if it is wrong.`, link: "/admin/settings?open=classification" }));
+      }
+      continue;
+    }
+    if (was.name !== p.name) {
+      renamed++;
+      // D-012, D-053: a product rename is reference data: logged in Reference data changes (with a notice).
+      await prisma.$transaction((tx) => recordReferenceChange(tx, { entity: "PRODUCT", key: p.productCode, oldValue: was.name, newValue: p.name, source: "myloans API 5", at: now }));
+    }
     await prisma.product.update({ where: { id: was.id }, data: { code: p.productCode, name: p.name, active: p.active, seenAt: now } });
   }
   const sent = new Set(r.data.items.map((p) => p.productId));
   const gone = await prisma.product.updateMany({ where: { active: true, sourceProductId: { notIn: [...sent] } }, data: { active: false } });
   if (renamed) await recheckClassifications(prisma);
+  await setSetting("products.lastReadAt", now.toISOString());
   return { added, renamed, inactive: gone.count, total: r.data.items.length };
 }
 
 export interface ProductRow {
   id: string; code: string; name: string;
   manual: ClassificationValue | null; note: string; by: string; at: Date | null;
-  before: ClassifyResult; after: ClassifyResult; changes: boolean; confirm: string | null;
+  before: ClassifyResult; after: ClassifyResult; changes: boolean;
+  /** D-052: the product's history (each change with who, when and the reason), newest first. */
+  history: { at: Date; by: string; text: string }[];
 }
 
 const how = (r: ClassifyResult) => (r.step === "MANUAL" ? "set by hand" : r.step === "DEFAULT" ? "by default" : `"${r.keyword}"`);
@@ -45,19 +68,20 @@ export const resultText = (r: ClassifyResult) => `${classificationWord(r.classif
 
 /**
  * "Test keyword rules" over all active products (D-049): each product with the saved rules (before) and with the
- * rules being tried (after). Manual settings count in both. Changed rows first, then "Please confirm", then by name.
+ * rules being tried (after). Manual settings count in both. Changed rows first, then by name.
  */
 export async function productPreview(tried?: ClassificationRules): Promise<{ rows: ProductRow[]; moving: { from: string; to: string; n: number }[] }> {
   const [saved, products] = await Promise.all([getClassificationRules(), prisma.product.findMany({ where: { active: true }, orderBy: { name: "asc" } })]);
+  const audits = await prisma.auditLog.findMany({ where: { action: "product_classification_set", entityType: "Product", entityId: { in: products.map((p) => p.id) } }, orderBy: { at: "desc" }, select: { entityId: true, at: true, actorLabel: true, summary: true } });
   const after = tried ? { ...tried, manual: saved.manual } : saved;
   const rows = products.map((p) => {
     const b = classifyByKeywords(p.name, saved, p.code), a = classifyByKeywords(p.name, after, p.code);
     return {
       id: p.id, code: p.code, name: p.name, manual: p.classification, note: p.classificationNote, by: p.classifiedByLabel, at: p.classifiedAt,
       before: b, after: a, changes: b.classification !== a.classification || b.step !== a.step,
-      confirm: p.classification ? null : pleaseConfirm(p.name),
+      history: audits.filter((a) => a.entityId === p.id).map((a) => ({ at: a.at, by: a.actorLabel, text: a.summary })),
     };
-  }).sort((x, y) => Number(y.changes) - Number(x.changes) || Number(!!y.confirm) - Number(!!x.confirm) || x.name.localeCompare(y.name));
+  }).sort((x, y) => Number(y.changes) - Number(x.changes) || x.name.localeCompare(y.name));
   const label = (r: ClassifyResult) => `${classificationWord(r.classification)}${r.step === "DEFAULT" ? " (default)" : r.step === "MANUAL" ? " (set by hand)" : ""}`;
   const moves = new Map<string, number>();
   for (const r of rows.filter((x) => x.before.classification !== x.after.classification)) {

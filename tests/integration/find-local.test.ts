@@ -136,8 +136,8 @@ describe("Pressing Find loan", () => {
     await setSetting("myloans.mockOverrides", { [ANTIPOLO]: { totalReleasedAmount: 999_000, changedAt: new Date().toISOString() } });
     expect(await refreshFoundLoan(la, ANTIPOLO)).toEqual({ called: true, changed: true });
     expect(callCount()).toBe(1);
-    // Audited like the other refreshes; the review item is the existing one.
-    expect(await prisma.sourceChange.count({ where: { loan: { pn: ANTIPOLO }, state: "OPEN" } })).toBe(1);
+    // Audited like the other refreshes; the change waits as an Open Item.
+    expect(await prisma.openItem.count({ where: { loan: { pn: ANTIPOLO }, status: "PENDING" } })).toBe(1);
     // Fresh now: a second card (or a second press) makes no call.
     expect((await savedLoanCard(la, ANTIPOLO))!).toMatchObject({ stale: false, changed: true });
     expect(await refreshFoundLoan(la, ANTIPOLO)).toEqual({ called: false, changed: true });
@@ -191,7 +191,7 @@ describe("Pressing Find loan", () => {
   });
 
   it("a cancelled loan replaced by another: the card says so and names the replacement", async () => {
-    await prisma.loan.update({ where: { pn: ANTIPOLO }, data: { cancelledAt: new Date(), cancelReason: `Replaced by ${ANGONO}`, replacedByPn: ANGONO, syncTier: null } });
+    await prisma.loan.update({ where: { pn: ANTIPOLO }, data: { cancelledAt: new Date(), cancelReason: `Replaced by ${ANGONO}`, replacedByPn: ANGONO } });
     await setSetting("myloans.refreshOnFindHours", 4);
     await prisma.loan.update({ where: { pn: ANTIPOLO }, data: { lastCheckedAt: new Date(Date.now() - 5 * 3_600_000) } });
     const card = await savedLoanCard(la, ANTIPOLO);

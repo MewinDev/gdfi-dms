@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith, docShot } from "./helpers";
+import { openFundsDetails, signInWith, docShot } from "./helpers";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
 
@@ -88,6 +88,11 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
   await expect(choice.getByRole("radio", { name: /CA · Cash advance/ })).toBeChecked();
   await choice.getByRole("radio", { name: /FT · Fund transfer/ }).check();
   await page.getByRole("textbox", { name: /LTO fee amount/ }).fill("2500.00");
+  // D-056: a fund transfer asks where Finance sends it (the full number is shown to Finance only when sending).
+  const acct = page.locator("[data-request-account]");
+  await acct.getByLabel("Bank or e-wallet").fill("BPI");
+  await acct.getByLabel("Account name").fill("Test Document Processor");
+  await acct.getByLabel("Account number").fill("1234 5678 4821");
   await shot(page, "dp-request-type-choice");
   await noSideways(page);
   await page.getByRole("button", { name: "Send to Finance" }).click();
@@ -144,17 +149,17 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
   sheet = page.getByRole("dialog", { name: `Send transfer: ${ft.number}` });
   await expect(sheet.getByRole("button", { name: "Send transfer", exact: true })).toBeVisible();
   await expect(sheet.getByLabel("Transfer reference number")).toBeVisible();
-  await expect(sheet.getByLabel("Last 4 digits")).toHaveAttribute("maxlength", "4");
+  // D-056: the account the processor typed, in full here only, with the tick that Finance checked it.
+  await expect(sheet.locator("[data-account-number]")).toHaveText("123456784821");
+  await expect(sheet.getByLabel("Last 4 digits")).toHaveCount(0);
   await shot(page, "finance-release-fund-transfer", sheet);
 
-  // Send the transfer: reference, date, bank, account name, last 4 digits.
+  // Send the transfer: reference, date, and the tick.
   await sheet.getByLabel("Transfer reference number").fill("FT-889101");
-  await sheet.getByLabel("Bank or e-wallet").fill("BPI");
-  await sheet.getByLabel("Account name").fill("Test Document Processor");
-  await sheet.getByLabel("Last 4 digits").fill("4821");
+  await sheet.getByLabel("I checked the receiving account").check();
   await sheet.getByRole("button", { name: "Send transfer", exact: true }).click();
   await expect.poll(async () => (await db.cashAdvance.findUniqueOrThrow({ where: { id: ft.id } })).status).toBe("RELEASED");
-  expect(await db.cashAdvance.findUniqueOrThrow({ where: { id: ft.id } })).toMatchObject({ releaseRef: "FT-889101", accountProvider: "BPI", accountLast4: "4821" });
+  expect(await db.cashAdvance.findUniqueOrThrow({ where: { id: ft.id } })).toMatchObject({ releaseRef: "FT-889101", accountProvider: "BPI", accountLast4: "4821", accountNumber: "" });
   // Cash advance: as before, the reference note only.
   await caCard.getByRole("button", { name: "Release", exact: true }).click();
   sheet = page.getByRole("dialog", { name: "Release cash: CA-E2E-0001" });
@@ -165,9 +170,31 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
   // Outstanding shows the transfer details (account ending only) and the DP sees the pill.
   await page.goto("/funds?tab=outstanding");
   await expect(page.locator(`[data-advance="${ft.number}"]`)).toContainText("account ending 4821");
+  await expect(page.locator(`[data-advance="${ft.number}"]`)).not.toContainText("123456784821");
   await signInWith(page, BUTTONS.dp);
   await page.goto("/my-funds?tab=advances");
   await expect(page.locator('[data-funds-type="FT"]').first()).toBeVisible();
+  // D-056: the processor confirms receipt; a wrong amount is flagged to Finance, who clears it with remarks.
+  const confirm = page.locator(`[data-confirm-receipt="${ft.number}"]`);
+  await confirm.getByLabel("Reference number").fill("FT-889101");
+  await confirm.getByLabel("Amount received (PHP)").fill("2400");
+  await confirm.getByLabel("Last 4 digits of the account").fill("4821");
+  await confirm.getByRole("button", { name: "Confirm receipt" }).click();
+  await expect(confirm.getByText(/It does not match: amount: typed ₱2,400.00, Finance recorded ₱2,500.00/)).toBeVisible();
+  await noSideways(page);
+  await signInWith(page, BUTTONS.fin);
+  await page.goto("/funds?tab=outstanding");
+  const row = page.locator(`[data-advance="${ft.number}"]`);
+  // A tablet hides the money trail (where the mismatch shows) until the row's Details is open.
+  if (page.viewportSize()?.width === 820) await openFundsDetails(row);
+  await expect(row.locator("[data-receipt-mismatch]").filter({ visible: true }).first()).toContainText("amount: typed ₱2,400.00");
+  await row.getByRole("button", { name: "Clear mismatch" }).filter({ visible: true }).first().click();
+  const clear = page.getByRole("dialog", { name: `${ft.number}: clear the receipt mismatch` });
+  await clear.getByLabel("What did you check or correct?").fill("Bank shows 2,500.00; the processor misread the slip.");
+  await clear.getByRole("button", { name: "Clear", exact: true }).click();
+  await expect.poll(async () => (await db.cashAdvance.findUniqueOrThrow({ where: { id: ft.id } })).receiptConfirmedAt).not.toBeNull();
+  await signInWith(page, BUTTONS.dp);
+  await page.goto("/my-funds?tab=advances");
   // The notification says which type it is.
   expect(await db.notification.count({ where: { userId: dp.id, title: `${ft.number} (Fund transfer) sent` } })).toBe(1);
 });

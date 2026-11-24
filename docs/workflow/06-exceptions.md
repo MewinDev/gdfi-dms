@@ -2,7 +2,7 @@
 
 Missing papers, holds, problems, changes after sending, Pasuyo and MyLoans changes.
 
-Last updated: 12 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -17,6 +17,8 @@ flowchart TD
   H1L -->|"Owner away"| HT["Transfer hold: LA Supervisor/Head or Admin gives it to another owner in their branches, never resumes"]:::admin
   HT --> H2
   X -->|"A fault: system down, wrong paper, closed office"| P1["Problem: red, own timer"]:::prob
+  X -->|"A transaction is not needed"| C1["Cancel transaction (D-056): LA Supervisor/Head or Admin, reason required; the processor's job stops; cash already released stays owed and is liquidated"]:::admin
+  X -->|"A fund transfer received does not match"| F1["Receipt mismatch (D-056): flagged to Finance with the details; Finance clears it with remarks"]:::prob
   P1 --> P2["Resolved with a note. Admin may tag Outside our control"]:::prob
   X -->|"LA wants to change a job already sent"| C1{"Has the DP accepted?"}
   C1 -->|"Not yet"| C2["LA updates papers, changes funds or processor, adds a note, or pulls back"]:::la
@@ -31,13 +33,13 @@ flowchart TD
   V1 --> V2["Found, then verified again. Forward stays blocked until all papers are complete"]:::dp
   X -->|"DP needs another processor to continue"| PS["Pasuyo: choose Return the cash or Hand the balance over"]:::dp
   X -->|"MyLoans data changed"| Y1{"Kind of change"}
-  Y1 -->|"Area, division, company"| Y2["Updated automatically, noted in the Journey"]:::sys
-  Y1 -->|"Borrower name, address, contact, CIF, CIN"| Y7["Branch supervisor or approver reviews: Accept the correction, or Keep current with a note. Nothing blocked"]:::admin
-  Y1 -->|"Amount, product, loan type"| Y3["Admin reviews: Apply, or Keep current with a note"]:::admin
-  Y1 -->|"Cancelled or not released"| Y4["Admin closes as cancelled after cash is returned"]:::admin
-  Y1 -->|"New PN, same CIF, old PN cancelled"| Y5["Suggested only. Admin links as replacement with a note after confirming no payment"]:::admin
+  Y1 -->|"A rename: area, division, company, branch or product name"| Y2["Updated automatically, logged in Reference data changes. Never an Open Item"]:::sys
+  Y1 -->|"Borrower name, CIF, CIN"| Y7["Open Item for the branch's borrower approvers: Approve or Reject with remarks. Nothing blocked"]:::admin
+  Y1 -->|"Amount, product, loan type, release date"| Y3["One Open Item group, the rule effect shown: an approver of the branch approves or rejects with remarks"]:::admin
+  Y1 -->|"No longer released: cancelled, not released, inactive, redone"| Y4["Status Open Item: Send, Forward and new cash blocked. Approve closes the loan after cash is returned; Reject keeps it"]:::admin
+  Y1 -->|"Redone in myloans: new PN, same CIN"| Y5["The old loan's status item says replaced by. A person links it from Related loans with a note after confirming no payment"]:::admin
   Y1 -->|"New PN, new application"| Y6["Shown in Related loans: no alert, no link"]:::sys
-  Z["Loan File: Missing papers row. Monitoring: Has missing papers. Open items: holds, problems, MyLoans changes and MyLoans corrections"]:::sys
+  Z["Loan File: Missing papers row. Monitoring: Has missing papers. Open items: holds, problems and myloans changes (the Open Items page)"]:::sys
   M1 -.-> Z
   H1 -.-> Z
   P1 -.-> Z

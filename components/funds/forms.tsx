@@ -5,7 +5,7 @@ import { FormMessage, SubmitButton } from "@/components/form-status";
 import { Sheet } from "@/components/ui/sheet";
 import {
   addReceiptAction, changeFundsTypeAction, closeAdvanceAction, confirmReturnAction, decideAdvanceAction, decideCarryOverAction, decideTopUpAction, grantExceptionAction,
-  recordReturnAction, releaseAdvanceAction, releaseTopUpAction, requestAdvanceAction, requestTopUpAction,
+  recordReturnAction, releaseAdvanceAction, releaseTopUpAction, requestAdvanceAction, requestTopUpAction, confirmReceiptAction, resolveReceiptAction,
 } from "@/app/actions/jobs";
 import type { ActionState } from "@/lib/action";
 import { isTransfer, releaseVerb } from "@/lib/funds/types";
@@ -49,6 +49,9 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kin
   const init = () => Object.fromEntries(jobs.flatMap((j) => j.kinds.map((k) => [`${j.transactionId}|${k.kind}`, { on: true, amount: k.suggestedCents ? (k.suggestedCents / 100).toFixed(2) : "", reason: "", desc: "" }])));
   const [lines, setLines] = useState<Record<string, { on: boolean; amount: string; reason: string; desc: string }>>(init);
   const [others, setOthers] = useState<Other[]>([]);
+  // D-056 item 5: the receiving account, for a type that sends to an account (a fund transfer).
+  const [account, setAccount] = useState({ provider: "", name: "", number: "" });
+  const needsAccount = !!types.find((t) => t.id === typeId)?.needsAccount;
   // A sent request clears the form (the jobs move to My advances).
   const [state, action] = useActionState(async (p: ActionState, fd: FormData) => {
     const r = await requestAdvanceAction(p, fd);
@@ -71,6 +74,7 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kin
     lines: chosen.map(({ j, k, key }) => ({ transactionId: j.transactionId, kind: k.kind, cents: toC(lines[key].amount) ?? 0, overMaxReason: lines[key].reason, otherDescription: k.kind === OTHER ? lines[key].desc : "" })),
     others: others.map((o) => ({ kind: o.kind, cents: toC(o.amount) ?? 0, note: o.note, otherDescription: o.kind === OTHER ? o.desc : "" })),
     fundsTypeId: typeId || undefined,
+    ...(needsAccount ? { account } : {}),
   });
 
   return (
@@ -134,6 +138,15 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kin
               </label>
             ))}
           </div>
+        </fieldset>
+      )}
+      {needsAccount && (
+        <fieldset className="grid gap-2 rounded-xl border border-line p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]" data-request-account>
+          <legend className="px-1 text-[15px] font-semibold">Where Finance sends it</legend>
+          <div><label htmlFor={`${uid}-ap`} className="label">Bank or e-wallet</label><input id={`${uid}-ap`} value={account.provider} onChange={(e) => setAccount((x) => ({ ...x, provider: e.target.value }))} required maxLength={60} placeholder="BPI, GCash" className="input" aria-invalid={state?.field === "accountProvider"} /></div>
+          <div><label htmlFor={`${uid}-an`} className="label">Account name</label><input id={`${uid}-an`} value={account.name} onChange={(e) => setAccount((x) => ({ ...x, name: e.target.value }))} required maxLength={80} className="input" aria-invalid={state?.field === "accountName"} /></div>
+          <div><label htmlFor={`${uid}-ac`} className="label">Account number</label><input id={`${uid}-ac`} value={account.number} onChange={(e) => setAccount((x) => ({ ...x, number: e.target.value }))} required inputMode="numeric" maxLength={40} autoComplete="off" className="input" aria-invalid={state?.field === "accountNumber"} aria-describedby={`${uid}-ach`} /></div>
+          <p id={`${uid}-ach`} className="help sm:col-span-3">Only Finance sees the full number, when sending. After that only the last 4 digits are kept.</p>
         </fieldset>
       )}
       <fieldset className="rounded-xl border border-line p-3">
@@ -281,7 +294,10 @@ export function DecideAdvanceForm({ advanceId, lines, about }: { advanceId: stri
 }
 
 /** The release fields for a type: today's reference note for Cash advance; for a transfer the reference, the date and the receiving account (last 4 digits only). */
-function ReleaseFields({ type, uid, today, field }: { type: Pick<FundsTypeOption, "needsReference" | "needsAccount">; uid: string; today: string; field?: string }) {
+/** The account the processor typed at request (D-056): shown in full here only. */
+export interface RequestedAccount { provider: string; name: string; number: string }
+
+function ReleaseFields({ type, uid, today, field, account }: { type: Pick<FundsTypeOption, "needsReference" | "needsAccount">; uid: string; today: string; field?: string; account?: RequestedAccount | null }) {
   return (
     <>
       <div className="min-w-0 flex-1">
@@ -291,7 +307,18 @@ function ReleaseFields({ type, uid, today, field }: { type: Pick<FundsTypeOption
       {type.needsReference && (
         <div><label htmlFor={`${uid}-td`} className="label">Transfer date</label><input id={`${uid}-td`} type="date" name="transferDate" max={today} defaultValue={today} required className="input" aria-invalid={field === "transferDate"} /></div>
       )}
-      {type.needsAccount && (
+      {type.needsAccount && account && (
+        <fieldset className="flex flex-col gap-2 rounded-xl border border-line p-3 sm:basis-full" data-requested-account>
+          <legend className="px-1 text-[15px] font-semibold">Receiving account (from the request)</legend>
+          <p className="text-[15px]"><span className="font-semibold">{account.provider}</span> · {account.name} · <span className="font-mono" data-account-number>{account.number}</span></p>
+          <label className="inline-flex min-h-11 items-center gap-2 text-[15px]">
+            <input type="checkbox" name="accountChecked" required className="h-5 w-5 accent-[var(--navy)]" aria-invalid={field === "accountChecked"} />
+            I checked the receiving account
+          </label>
+          <p className="help">Only the last 4 digits are kept after you send it.</p>
+        </fieldset>
+      )}
+      {type.needsAccount && !account && (
         <fieldset className="grid gap-2 rounded-xl border border-line p-3 sm:basis-full sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_8rem]" data-account-fields>
           <legend className="px-1 text-[15px] font-semibold">Receiving account</legend>
           <div><label htmlFor={`${uid}-ap`} className="label">Bank or e-wallet</label><input id={`${uid}-ap`} name="accountProvider" required maxLength={60} placeholder="BPI, GCash" className="input" aria-invalid={field === "accountProvider"} /></div>
@@ -307,13 +334,13 @@ function ReleaseFields({ type, uid, today, field }: { type: Pick<FundsTypeOption
   );
 }
 
-export function ReleaseForm({ advanceId, type, today }: { advanceId: string; type: Pick<FundsTypeOption, "code" | "name" | "needsReference" | "needsAccount">; today: string }) {
+export function ReleaseForm({ advanceId, type, today, account }: { advanceId: string; type: Pick<FundsTypeOption, "code" | "name" | "needsReference" | "needsAccount">; today: string; account?: RequestedAccount | null }) {
   const [state, action] = useActionState(releaseAdvanceAction, null);
   const uid = useId();
   return (
     <form action={action} className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end" data-release-form={type.code}>
       <Hidden v={{ advanceId }} />
-      <ReleaseFields type={type} uid={uid} today={today} field={state?.field} />
+      <ReleaseFields type={type} uid={uid} today={today} field={state?.field} account={account} />
       <SubmitButton>{releaseVerb(type)}</SubmitButton>
       {state && <div className="sm:basis-full"><FormMessage state={state} /></div>}
     </form>
@@ -463,13 +490,13 @@ export function DecideSheetButton({ number, label, cls = "btn-secondary btn-sm f
 }
 
 /** Opens the release form of the advance's type in a Sheet ("Release" for cash, "Send" for a transfer). */
-export function ReleaseSheetButton({ number, advanceId, type, today }: { number: string; advanceId: string; type: Pick<FundsTypeOption, "code" | "name" | "needsReference" | "needsAccount">; today: string }) {
+export function ReleaseSheetButton({ number, advanceId, type, today, account }: { number: string; advanceId: string; type: Pick<FundsTypeOption, "code" | "name" | "needsReference" | "needsAccount">; today: string; account?: RequestedAccount | null }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button type="button" className="btn-gold btn-sm fl-btn" onClick={() => setOpen(true)} data-release-open={type.code}>{isTransfer(type) ? "Send" : "Release"}</button>
       <Sheet open={open} onClose={() => setOpen(false)} title={`${releaseVerb(type)}: ${number}`}>
-        {open && <ReleaseForm advanceId={advanceId} type={type} today={today} />}
+        {open && <ReleaseForm advanceId={advanceId} type={type} today={today} account={account} />}
       </Sheet>
     </>
   );
@@ -483,6 +510,51 @@ export function TopUpReleaseSheetButton({ number, ...form }: { number: string; t
       <button type="button" className="btn-gold btn-sm fl-btn" onClick={() => setOpen(true)}>Release</button>
       <Sheet open={open} onClose={() => setOpen(false)} title={`Release the top-up: ${number}`}>
         {open && <TopUpReleaseForm {...form} />}
+      </Sheet>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// D-056 item 1: receipt confirmation (processor) and clearing a mismatch (Finance)
+// ---------------------------------------------------------------------------
+
+export function ConfirmReceiptForm({ advanceId, number }: { advanceId: string; number: string }) {
+  const [state, action] = useActionState(confirmReceiptAction, null);
+  const uid = useId();
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-xl border border-line p-3" data-confirm-receipt={number}>
+      <Hidden v={{ advanceId }} />
+      <p className="text-[15px] font-semibold">Confirm you received it</p>
+      <p className="help">Type what your bank or e-wallet shows. It is checked against what Finance recorded.</p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <div><label htmlFor={`${uid}-r`} className="label">Reference number</label><input id={`${uid}-r`} name="ref" required maxLength={60} autoComplete="off" className="input" aria-invalid={state?.field === "ref"} /></div>
+        <div><label htmlFor={`${uid}-a`} className="label">Amount received (PHP)</label><input id={`${uid}-a`} name="amount" required inputMode="decimal" className="input" aria-invalid={state?.field === "amount"} /></div>
+        <div><label htmlFor={`${uid}-4`} className="label">Last 4 digits of the account</label><input id={`${uid}-4`} name="last4" required inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoComplete="off" className="input" aria-invalid={state?.field === "last4"} /></div>
+      </div>
+      <div className="flex justify-end"><SubmitButton>Confirm receipt</SubmitButton></div>
+      <FormMessage state={state} />
+    </form>
+  );
+}
+
+export function ResolveReceiptForm({ advanceId, number }: { advanceId: string; number: string }) {
+  const [open, setOpen] = useState(false);
+  const [state, action] = useActionState(resolveReceiptAction, null);
+  const close = useMemo(() => () => setOpen(false), []);
+  useCloseOnOk(state, close);
+  const uid = useId();
+  return (
+    <>
+      <button type="button" className="btn-secondary btn-sm" onClick={() => setOpen(true)}>Clear mismatch</button>
+      <Sheet open={open} onClose={close} title={`${number}: clear the receipt mismatch`}>
+        <form action={action} className="flex flex-col gap-3">
+          <Hidden v={{ advanceId }} />
+          <div><label htmlFor={`${uid}-r`} className="label">What did you check or correct?</label><textarea id={`${uid}-r`} name="remarks" rows={2} required minLength={5} maxLength={500} className="input" /></div>
+          <p className="help">The receipt then counts as confirmed. The processor is told.</p>
+          <FormMessage state={state} />
+          <div className="flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={close}>Cancel</button><SubmitButton>Clear</SubmitButton></div>
+        </form>
       </Sheet>
     </>
   );

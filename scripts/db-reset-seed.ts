@@ -101,7 +101,7 @@ async function main() {
     say("Users per decided role (active):");
     for (const r of await f.decidedRoleCounts()) say(`  ${r.decided.padEnd(20)} ${r.key.padEnd(11)} ${r.users}`);
     const loans = await prisma.loan.count();
-    const pending = await prisma.sourceChange.count({ where: { state: "OPEN" } });
+    const pending = await prisma.openItem.count({ where: { status: "PENDING" } });
     say(`Loan files: ${loans}. Pending myloans changes: ${pending}.`);
   } finally {
     await prisma.$disconnect();

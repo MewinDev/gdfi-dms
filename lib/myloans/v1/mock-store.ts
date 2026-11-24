@@ -7,6 +7,8 @@ import { completeSample } from "@/lib/myloans/mock-account";
 import { myLoansMode } from "@/lib/myloans/mode";
 import type { MyLoansRecord } from "@/lib/myloans/types";
 import type { MockBranchRow, MockData, MockProductRow, MockTxnRow } from "./mock-rows";
+import { sampleBranchRows } from "@/lib/branches/kit-file";
+import type { MyLoansBranchRow } from "@/lib/branches/file";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parseProductsTsv, PRODUCTS_FILE } from "./products-file";
@@ -66,6 +68,13 @@ export async function seedMockFromSamples(db: Db = prisma, now: Date = new Date(
   const recs = await sampleRecords(db, now);
   const branches = new Map<string, MockBranchRow>();
   const products = new Map<string, MockProductRow>();
+  // D-054: the branches are myloans' list with its real BranchIDs (the DMS keeps the same ids), keyed by code.
+  for (const b of sampleBranchRows()) {
+    branches.set(b.code, {
+      branchId: b.branchId ?? 9000 + branches.size, branchCode: b.code, branchName: b.name, areaId: b.areaId, areaName: b.areaName || null, divisionId: b.divisionId, divisionName: b.divisionName || null,
+      companyId: 1, companyName: "Global Dominion Financing Inc.", isActive: b.active ?? true, updatedAt: b.updatedAt ? new Date(b.updatedAt) : null,
+    });
+  }
   // The real product list first (D-049), so API 5 is myloans' list; sample loans use its ids by name.
   // Keyed by name and code: the samples may give one product name more than one code.
   for (const p of productsFromFile() ?? []) products.set(`${p.name.trim()}|${p.productCode}`, p);
@@ -73,7 +82,7 @@ export async function seedMockFromSamples(db: Db = prisma, now: Date = new Date(
   const branchIdOf = (r: MyLoansRecord) => {
     const key = r.branchCode ?? r.branchName ?? "?";
     if (!branches.has(key)) {
-      const num = r.branchCode && /^\d+$/.test(r.branchCode) ? Number(r.branchCode) : 9000 + branches.size;
+      const num = 9000 + branches.size; // a sample branch myloans' list does not have
       branches.set(key, {
         branchId: num, branchCode: r.branchCode, branchName: r.branchName ?? "Unknown branch", areaId: idOf(r.areaId), areaName: r.areaName ?? null, divisionId: idOf(r.divisionId), divisionName: r.divisionName ?? null,
         companyId: idOf(r.companyId) ?? 1, companyName: r.companyName ?? "Global Dominion Financing Inc.", isActive: true, updatedAt: null,
@@ -101,8 +110,33 @@ export async function seedMockFromSamples(db: Db = prisma, now: Date = new Date(
 /** Everything the mock answers from (filled from the samples the first time), with the simulated changes on top. */
 export async function loadMockData(db: Db = prisma): Promise<MockData> {
   if ((await db.mockMyLoansTxn.count()) === 0) await seedMockFromSamples(db);
-  const [txns, products, branches] = await Promise.all([db.mockMyLoansTxn.findMany(), db.mockMyLoansProduct.findMany(), db.mockMyLoansBranch.findMany()]);
+  const [txns, products, rawBranches] = await Promise.all([db.mockMyLoansTxn.findMany(), db.mockMyLoansProduct.findMany(), db.mockMyLoansBranch.findMany()]);
+  const branches = overlayBranches(rawBranches, await getSetting("myloans.mockBranches", db));
   return overlaySimulated({ txns, products, branches }, await getSetting("myloans.mockExtra", db), await getSetting("myloans.mockOverrides", db));
+}
+
+/**
+ * The kit's and the tests' branch changes (Settings key myloans.mockBranches: a rename, a code change, a closed or a
+ * new branch) on top of the mock's branch table, so API 4 and the loan feed say the same (D-054). Overrides are keyed by
+ * BranchID, or by "code:<code>".
+ */
+export function overlayBranches(rows: MockBranchRow[], ch: { overrides: Record<string, Partial<MyLoansBranchRow> & { removed?: boolean }>; extra: MyLoansBranchRow[] }): MockBranchRow[] {
+  const out = rows.map((b) => ({ ...b }));
+  for (const e of ch.extra ?? []) {
+    if (out.some((b) => b.branchId === e.branchId || b.branchCode === e.code)) continue;
+    out.push({ branchId: e.branchId ?? 9500 + out.length, branchCode: e.code, branchName: e.name, areaId: e.areaId, areaName: e.areaName || null, divisionId: e.divisionId, divisionName: e.divisionName || null, companyId: 1, companyName: "Global Dominion Financing Inc.", isActive: e.active ?? true, updatedAt: e.updatedAt ? new Date(e.updatedAt) : null });
+  }
+  const kept: MockBranchRow[] = [];
+  for (const b of out) {
+    const o = ch.overrides?.[String(b.branchId)] ?? (b.branchCode ? ch.overrides?.[`code:${b.branchCode}`] : undefined);
+    if (o?.removed) continue;
+    kept.push(o ? {
+      ...b, ...(o.code !== undefined ? { branchCode: o.code } : {}), ...(o.name !== undefined ? { branchName: o.name } : {}), ...(o.active !== undefined && o.active !== null ? { isActive: o.active } : {}),
+      ...(o.areaId !== undefined ? { areaId: o.areaId } : {}), ...(o.areaName !== undefined ? { areaName: o.areaName } : {}), ...(o.divisionId !== undefined ? { divisionId: o.divisionId } : {}), ...(o.divisionName !== undefined ? { divisionName: o.divisionName } : {}),
+      updatedAt: o.updatedAt ? new Date(o.updatedAt) : b.updatedAt,
+    } : b);
+  }
+  return kept;
 }
 
 const STATUS_ID: Record<string, number> = { RELEASED: 12, CANCELLED: 14, REPLACED: 12, NOT_RELEASED: 10 };
@@ -125,10 +159,14 @@ export function overlaySimulated(data: MockData, extra: MyLoansRecord[], overrid
     products.push({ productId: id, productCode: `P-SIM-${id}`, name: n, active: true });
     return id;
   };
+  // D-054: a branch is found by its code in myloans' list (its real BranchID); an unknown code gets a new id.
   const branchId = (code: string | null | undefined, name: string | null | undefined) => {
-    const num = code && /^\d+$/.test(code) ? Number(code) : null;
-    if (num !== null && !branches.some((b) => b.branchId === num)) branches.push({ branchId: num, branchCode: code!, branchName: name ?? code!, areaId: null, areaName: null, divisionId: null, divisionName: null, companyId: 1, companyName: null, isActive: true, updatedAt: null });
-    return num;
+    if (!code) return null;
+    const found = branches.find((b) => b.branchCode === code);
+    if (found) return found.branchId;
+    const id = Math.max(9800, ...branches.map((b) => b.branchId)) + 1;
+    branches.push({ branchId: id, branchCode: code, branchName: name ?? code, areaId: null, areaName: null, divisionId: null, divisionName: null, companyId: 1, companyName: null, isActive: true, updatedAt: null });
+    return id;
   };
   let nextId = Math.max(800_000, ...txns.map((t) => t.id)) + 1;
   for (const r of extra) {
