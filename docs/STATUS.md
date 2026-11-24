@@ -95,3 +95,10 @@ Phase A can go live without B and C: loans then stop at "For Vault Transmittal" 
 - **Module checklists** (`docs/checklists/`) and the gap summary (`docs/PHASE_A_GAPS.md`): proposals and questions only.
 - **Last full runs:** vitest 1,373 passed, 1 skipped (the hash test waiting for myloans); e2e (production build, 1 worker) 211 / 211 / 207 passed at 1440 / 820 / 390 with 1 failure at 390 (monitoring: a fixture due date turned overdue when the run crossed midnight; rerun 10 / 10 passed); the new accessibility spec 15 / 15; tsc and lint clean; permission, secret and migration scans pass.
 
+
+## Release note: Phase A go-live gaps (D-056), 19 to 24 November 2026
+
+- **Built:** DP receipt confirmation for fund transfers (reference, amount, last 4; a mismatch is flagged to Finance, who clears it with remarks; the LTO gate is a Settings switch, off); Cancel transaction (new tick, LA Supervisor/Head and Admin; reason; the job stops; released cash stays owed, said on the confirm step); the FT receiving account typed by the processor at request (full number only on Finance's send form, cleared at release); the four optional transactions with v2's papers; TAT defaults LA 1, DP 5, Finance 1 (migration 032).
+- **Docs:** D-056, `docs/BUSINESS_QUESTIONS.md` (every [TO CONFIRM] item, by who answers), checklists, UAT rows SUP-12, DP-11, FIN-9, kit items 46 and 47.
+- **Runs (24 November 2026):** vitest 1,380 passed, 1 skipped; tsc and lint clean; targeted e2e passed (cancel-transaction and funds-types at 1440 and 390; due-dates, journey, inbox, stage-map, loan-file-next-step, happy-path at 1440).
+- **Pending:** the final full e2e run. `next build` could not reach Google Fonts from this network; the fonts are being self-hosted so the build no longer needs it.
