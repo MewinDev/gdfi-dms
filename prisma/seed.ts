@@ -30,10 +30,23 @@ const TRANSACTION_TYPES = [
   { code: "MORTGAGE", name: "Mortgage", requiresDp: true, needsLto: true, ownerRole: "DP", sortOrder: 4, description: "LTO drop, annotation and pickup of OR/CR." },
 ];
 
+/**
+ * D-056 item 3 [TO CONFIRM with the LA Supervisor/Head]: v2 §4.5's four optional transactions. The Loan Associate adds
+ * them by hand (Add a transaction); the rules never create them. Editable in Settings like any custom type.
+ */
+const OPTIONAL_TRANSACTION_TYPES = [
+  { code: "CANCEL_MORTGAGE", name: "Cancellation of Mortgage", requiresDp: true, needsLto: true, ownerRole: "DP", sortOrder: 5, description: "Release of the chattel mortgage annotated on the OR/CR (optional; added by the Loan Associate)." },
+  { code: "TRANSFER_OWNERSHIP", name: "Transfer of Ownership", requiresDp: true, needsLto: true, ownerRole: "DP", sortOrder: 6, description: "Transfer of the vehicle to the new owner at the LTO (optional; added by the Loan Associate)." },
+  { code: "RENEWAL_OR", name: "Renewal of OR", requiresDp: true, needsLto: true, ownerRole: "DP", sortOrder: 7, description: "Renewal of the vehicle registration (optional; added by the Loan Associate)." },
+  { code: "PPSR_TERMINATION", name: "PPSR Termination", requiresDp: true, needsLto: true, ownerRole: "DP", sortOrder: 8, description: "Termination of the PPSR registration after full payment (optional; added by the Loan Associate)." },
+];
+
 const DOC_TYPES = [
   ["PN", "Promissory Note"], ["DS", "Disclosure Statement"], ["CHM", "Chattel Mortgage"], ["DOS", "Deed of Sale"],
   ["SI", "Sales Invoice"], ["ID", "Valid ID"], ["ORCR", "OR/CR"], ["OR", "Official Receipt (OR)"], ["CR", "Certificate of Registration (CR)"],
   ["INS", "Insurance policy"], ["PPSR", "PPSR certificate"], ["AMS", "Amortization schedule"], ["SPA", "Special Power of Attorney"],
+  ["RCM", "Release of Chattel Mortgage"], ["HPG", "PNP-HPG clearance"], ["STN", "Stencil (chassis and engine)"], ["CTPL", "CTPL insurance"],
+  ["EMI", "Emission test result"], ["PPSRT", "PPSR termination statement"], ["PAY", "Proof of full payment"],
   ["OTH", "Other document"],
 ] as const;
 
@@ -62,6 +75,30 @@ const CHECKLIST: Record<string, Rule[]> = {
     ["CR", "CR only", O, COPY, "Vehicle registration"],
     ["PPSR", "Previous PPSR certificate", P, COPY],
   ],
+  // D-056 item 3 [TO CONFIRM]: v2 §4.6's lists for the optional transactions, all required.
+  CANCEL_MORTGAGE: [
+    ["RCM", "Release of Chattel Mortgage (notarized)", R, ORIG],
+    ["ORCR", "OR/CR (original)", R, ORIG],
+    ["ID", "Valid IDs", R, COPY],
+  ],
+  TRANSFER_OWNERSHIP: [
+    ["DOS", "Deed of Sale", R, ORIG],
+    ["ORCR", "OR/CR (original)", R, ORIG],
+    ["ID", "Valid IDs of seller and buyer", R, COPY],
+    ["HPG", "PNP-HPG clearance", R, ORIG],
+    ["STN", "Stencil (chassis and engine)", R, ORIG],
+    ["CTPL", "CTPL insurance", R, ORIG],
+  ],
+  RENEWAL_OR: [
+    ["ORCR", "OR/CR (original)", R, ORIG],
+    ["CTPL", "CTPL insurance", R, ORIG],
+    ["EMI", "Emission test result", R, ORIG],
+  ],
+  PPSR_TERMINATION: [
+    ["PPSRT", "PPSR termination statement", R, ORIG],
+    ["PPSR", "PPSR registration reference", R, COPY],
+    ["PAY", "Proof of full payment", R, COPY],
+  ],
   MORTGAGE: [
     ["OR", "Official Receipt (OR)", R, ORIG],
     ["CR", "Certificate of Registration (CR)", R, ORIG],
@@ -74,19 +111,20 @@ const CHECKLIST: Record<string, Rule[]> = {
   ],
 };
 
+// D-056 item 9 [TO CONFIRM]: LA 1 (checklist, assign), DP 5 (Notary, PPSR, Mortgage), Finance 1 (release).
 const TATS: { key: string; phase: number; step: string; label: string; businessDays: number; note?: string }[] = [
   { key: "P1_SEARCH", phase: 1, step: "1.1", label: "Search PN", businessDays: 0, note: "Same day as release" },
   { key: "P1_OPEN", phase: 1, step: "1.4", label: "Open Loan File", businessDays: 0, note: "Same day" },
   { key: "P2_AUTO", phase: 2, step: "2.6", label: "Automatic classification and transactions", businessDays: 2, note: "Inside Day 2" },
-  { key: "P3_CHECKLIST", phase: 3, step: "3.1", label: "Checklist complete", businessDays: 2, note: "Day 2 from release" },
+  { key: "P3_CHECKLIST", phase: 3, step: "3.1", label: "Checklist complete", businessDays: 1 },
   { key: "P3_EDST", phase: 3, step: "3.3", label: "EDST entry", businessDays: 1 },
   { key: "P3_CA", phase: 3, step: "3.4", label: "Cash advance request", businessDays: 0, note: "Before assignment" },
   { key: "P3_CA_RELEASE", phase: 3, step: "3.5", label: "Cash advance release", businessDays: 1, note: "Per Finance policy" },
-  { key: "P3_ASSIGN", phase: 3, step: "3.6", label: "Assign to DP", businessDays: 2, note: "Day 2 from release" },
+  { key: "P3_ASSIGN", phase: 3, step: "3.6", label: "Assign to DP", businessDays: 1 },
   { key: "P4_ACCEPT", phase: 4, step: "4.1", label: "DP accepts or declines", businessDays: 0, note: "Same day" },
-  { key: "P4_NOTARY", phase: 4, step: "4.2", label: "Notary", businessDays: 3 },
+  { key: "P4_NOTARY", phase: 4, step: "4.2", label: "Notary", businessDays: 5 },
   { key: "P4_PPSR", phase: 4, step: "4.3", label: "PPSR registration", businessDays: 5 },
-  { key: "P4_MORTGAGE", phase: 4, step: "4.4", label: "Mortgage (LTO)", businessDays: 10 },
+  { key: "P4_MORTGAGE", phase: 4, step: "4.4", label: "Mortgage (LTO)", businessDays: 5 },
   { key: "P4_FORWARD", phase: 4, step: "4.6", label: "Forward package to branch", businessDays: 0, note: "Same day as pickup" },
   { key: "P5_ACCEPT", phase: 5, step: "5.1", label: "Receiving LA acceptance", businessDays: 2 },
   { key: "P6_VAULTED", phase: 6, step: "6.1", label: "Transmittal to vaulted", businessDays: 3 },
@@ -163,6 +201,8 @@ async function main() {
   await prisma.loanType.upsert({ where: { code: "Renewal" }, create: { code: "Renewal", name: "Renewal", description: "Mortgage when amount is PHP 1,000,000 or below" }, update: {} });
   // Transaction types
   for (const t of TRANSACTION_TYPES) await prisma.transactionType.upsert({ where: { code: t.code }, create: { ...t, builtIn: true }, update: { builtIn: true } });
+  // The optional ones (D-056): added by hand, so not built in; an existing row (perhaps edited in Settings) is kept.
+  for (const t of OPTIONAL_TRANSACTION_TYPES) await prisma.transactionType.upsert({ where: { code: t.code }, create: { ...t, builtIn: false }, update: {} });
   // Processing stages (proposed defaults; Settings > Processing stages). Existing stages are left as they are.
   for (const t of await prisma.transactionType.findMany({ where: { requiresDp: true } })) {
     const have = await prisma.processingStage.findMany({ where: { typeId: t.id }, select: { code: true, kind: true } });

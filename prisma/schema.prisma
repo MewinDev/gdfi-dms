@@ -1597,6 +1597,18 @@ model CashAdvance {
   accountProvider      String            @default("")
   accountName          String            @default("")
   accountLast4         String            @default("")
+  /// D-056: the full receiving account number the processor typed when requesting (a type that needs an account).
+  /// Shown in full only on Finance's release screen; cleared at release (the last 4 digits stay above).
+  accountNumber        String            @default("")
+  /// D-056: the processor's receipt confirmation (reference #, amount, last 4 checked against the release).
+  receiptConfirmedAt   DateTime?
+  receiptConfirmedById String?
+  /// A mismatch: when, and what was typed against what Finance recorded; Finance clears it with remarks.
+  receiptMismatchAt    DateTime?
+  receiptMismatchNote  String            @default("")
+  receiptResolvedAt    DateTime?
+  receiptResolvedById  String?
+  receiptResolveNote   String            @default("")
   /// Restarts at each carry-over decision.
   liquidationDueAt     DateTime?
   /// The start of the liquidation count (YYYY-MM-DD): the release or the latest carry-over decision (D-041 window).

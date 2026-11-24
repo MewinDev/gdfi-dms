@@ -2,7 +2,7 @@
 
 The automatic rules, the turnaround targets, the roles and examples of permissions.
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 ### Automatic rules (run once, when the LA clicks Open Loan File)
 
@@ -17,12 +17,12 @@ Last updated: 18 November 2026 (PHT)
 
 | Clock | Default |
 |---|---|
-| LA check and send | Day 2 from release |
+| LA check and send | 1 (D-056, to confirm) |
 | EDST | 1 |
 | DP accepts | Same day |
-| Notary | 3 |
-| Entry of PPSR | 5 |
-| Mortgage | 10 |
+| Notary | 5 (D-056, to confirm) |
+| Entry of PPSR | 5 (D-056, to confirm) |
+| Mortgage | 5 (D-056, to confirm) |
 | Receiving LA acceptance | 2 |
 | Transmittal to the vault | 3 |
 
