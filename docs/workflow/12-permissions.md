@@ -75,6 +75,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Mark a paper Missing | On Check papers: mark a paper Missing with a reason and remarks, so the file can still be sent. Edits after sending are kept in the history. | Loan File, Check papers | Tick papers | `papers:mark_missing` | LA, LA Supervisor/Head |
 | Receive a missing paper | Mark a missing paper Received, with the date it arrived. The reason and remarks stay in the history. | Loan File, Check papers and Missing papers | See loan files | `papers:receive_late` | SUPERADMIN, LA, Admin, LA Supervisor/Head |
 | Add a transaction | Add a custom transaction type to a loan file. | Loan File, Add a transaction | Tick papers | `transactions:add` | LA, LA Supervisor/Head |
+| Cancel a transaction | Cancel a transaction that is not done, with a reason (D-056). Open processor jobs stop; cash already released stays owed and is liquidated as usual. | Loan File, Cancel transaction | See loan files | `transactions:cancel` | Admin, LA Supervisor/Head |
 | Mark as done | Record the EDST reference, and mark custom transactions done. | Loan File, EDST and Mark as done | Tick papers | `transactions:complete` | LA, LA Supervisor/Head |
 | Raise a problem | Open a problem on a transaction the person works on. | Loan File, Job | See loan files | `problems:raise` | LA, DP, LA Supervisor/Head |
 | Resolve own problems | Resolve problems on transactions the person works on. | Loan File, Job | Raise a problem | `problems:resolve` | LA, DP, LA Supervisor/Head |
@@ -222,6 +223,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Mark a paper Missing | Loan File, Check papers | none (a missing paper blocked Send; the LA asked for it with checklist:tick) | `papers:mark_missing` | **Gap, closed** |
 | Receive a missing paper | Loan File, Check papers and Missing papers | none (new) | `papers:receive_late` | **Gap, closed** |
 | Add a transaction | Loan File, Add a transaction | transactions:add | `transactions:add` |  |
+| Cancel a transaction | Loan File, Cancel transaction | none (new, D-056) | `transactions:cancel` | **Gap, closed** |
 | Mark as done | Loan File, EDST and Mark as done | transactions:complete | `transactions:complete` |  |
 | Raise a problem | Loan File, Job | problems:raise | `problems:raise` |  |
 | Resolve own problems | Loan File, Job | problems:resolve | `problems:resolve` |  |

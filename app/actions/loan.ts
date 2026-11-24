@@ -24,6 +24,7 @@ import {
 import { simulate, type SimAction } from "@/lib/services/simulator";
 import { UserError } from "@/lib/services/errors";
 import { addProcessorNote, changeProcessor, pullBack } from "@/lib/services/sent-changes";
+import { cancelTransaction } from "@/lib/services/cancel-transaction";
 import { laChangeLtoOffice } from "@/lib/services/lto";
 import { markPaperMissing, receiveMissingPaper, saveMissingRemarks, setPaperIncluded, unmarkPaperMissing } from "@/lib/services/papers";
 
@@ -209,6 +210,19 @@ export async function pullBackAction(_prev: ActionState, fd: FormData): Promise<
     await pullBack(user, transactionId, { reason: str(fd, "reason") });
     await refreshSent(transactionId);
     return "Pulled back. It is ready to send again.";
+  });
+}
+
+/** D-056: cancel a transaction with a reason (the tick "Cancel a transaction"). */
+export async function cancelTransactionAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const user = await requirePermission(PERMISSIONS.TXN_CANCEL);
+    const transactionId = str(fd, "transactionId");
+    const msg = await cancelTransaction(user, { transactionId, reason: str(fd, "reason") });
+    await refreshSent(transactionId);
+    revalidatePath("/funds");
+    revalidatePath("/inbox");
+    return msg;
   });
 }
 

@@ -60,6 +60,8 @@ import { BORROWER_CHIP } from "@/lib/ui/borrower-chip";
 import { getSetting } from "@/lib/settings";
 import { poolLine } from "@/lib/services/dp-pool";
 import { PoolTakeBack } from "@/components/loan/pool-take-back";
+import { CancelTransaction } from "@/components/loan/cancel-transaction";
+import { cancelPreview } from "@/lib/services/cancel-transaction";
 
 type Ctx = Awaited<ReturnType<typeof getLoanContext>>;
 type Txn = LoanDetail["transactions"][number];
@@ -582,6 +584,8 @@ async function WorkView({ loan, ctx, user, selected, pending }: { loan: LoanDeta
   // The Processor job card appears only once the transaction was sent.
   const sent = selected.type.requiresDp && !PRE_SEND.includes(selected.status) && selected.status !== "CANCELLED";
   const jobCard = sent;
+  // D-056: Cancel transaction (its own tick), for one not done and not cancelled; the confirm step shows the cash.
+  const cancelInfo = can(user, PERMISSIONS.TXN_CANCEL) && inScope(user, loan.branchId) && !["COMPLETED", "CANCELLED"].includes(selected.status) ? await cancelPreview(user, selected.id) : null;
   const hold = openHold(selected.holds);
   // On hold: the transaction is locked (readable, controls disabled) until the holder resumes it.
   const locked = hold ? lockedMessage(hold.raisedByLabel, hold.raisedAt, hold.ownerLabel) : null;
@@ -728,6 +732,7 @@ async function WorkView({ loan, ctx, user, selected, pending }: { loan: LoanDeta
       {laCustom && <div id={`finish-${selected.id}`} className="scroll-mt-28"><MarkDone transactionId={selected.id} name={selected.type.name} ready={checklist.complete} /></div>}
       </div>
       </LockedArea>
+      {cancelInfo && <CancelTransaction transactionId={selected.id} name={cancelInfo.name} jobs={cancelInfo.jobs} cashWords={cancelInfo.words} />}
       {addable.length > 0 && <AddTransaction loanId={loan.id} types={addable} />}
       {/* Phone: room for the pinned Send bar, so everything below the panel can scroll above it. */}
       {send && la && PRE_SEND.includes(selected.status) && <div aria-hidden="true" className="h-36 sm:hidden" />}

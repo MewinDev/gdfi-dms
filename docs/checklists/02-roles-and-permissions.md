@@ -11,7 +11,7 @@ What each person may do. Roles are bundles of permission ticks (D-003); a person
 | # | Item | Status | Where | Who | Customizable? | Evidence | UAT check |
 |---|---|---|---|---|---|---|---|
 | 1 | Ten decided roles plus Operations Monitor (Superadmin, Admin, LA, LA Supervisor/Head, DP / Collateral & Mortgage, Finance, Custodian, Digicur, QA, Archiver) | ✅ Built | Settings, Roles and access | Superadmin | Yes (new roles, copies, inactive) | `lib/auth/permissions.ts` (`ROLE_DEFAULTS`), D-002 | Settings, Roles lists them |
-| 2 | Permission matrix: every role against 95 permissions, with tickboxes and plain-words summary | ✅ Built | Settings, Permissions | `roles:manage` (Superadmin) | Yes | `components/admin/permission-matrix.tsx`, e2e `role-editor.spec.ts` | UAT SA-1 |
+| 2 | Permission matrix: every role against 96 permissions, with tickboxes and plain-words summary | ✅ Built | Settings, Permissions | `roles:manage` (Superadmin) | Yes | `components/admin/permission-matrix.tsx`, e2e `role-editor.spec.ts` | UAT SA-1 |
 | 3 | Per-user overrides (extra or removed ticks) | ✅ Built | Users, Edit | `roles:manage` | Yes | D-008, `lib/auth/effective.ts`, `effective.test.ts` | UAT SA-2 |
 | 4 | Changes apply on the person's next click (no sign-out) | ✅ Built | all | n/a | No | `lib/auth/build-user.ts` | Untick, click: the button is gone |
 | 5 | Lock-out protection (cannot remove the last way to manage permissions) | ✅ Built | Settings, Permissions | Superadmin | No | e2e `roles.spec.ts` | Try to untick Manage permissions on the only Superadmin |

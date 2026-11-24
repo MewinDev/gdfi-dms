@@ -1,6 +1,6 @@
 # 11 Inbox, branch pool, Accept / Forward, TAT, Move work items
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -21,9 +21,9 @@ v2 §3.1 and §5.3: every person has a pending inbox; work is accepted before it
 | 9 | Away: items shown to supervisors; not named for new work | ✅ Built | Inbox, Home | `users:away` | No | D-046 | UAT SUP-8 |
 | 10 | Home lines for supervisors (waiting too long, with people away) | ✅ Built | Home | LA Supervisor/Head | No | e2e `home-compact.spec.ts` | UAT SUP-1 |
 | 11 | Return to the previous user with required remarks | ✅ Built (LA ↔ DP returns, declines, pull back) | Job, Loan file | by role | Return reasons | `return-to-la.ts`, `sent-changes.ts` | UAT DP-5 |
-| 12 | Admin cancels a transaction (v2 §5.3, §8 "Cancelled: Admin / Superadmin only") | ❌ Missing: no cancel action; a transaction ends only by completion, by the LA's pull back before accept, or when myloans cancels the loan (Open Item) | n/a | n/a | n/a | grep: no cancel service | n/a |
+| 12 | Cancel a transaction (v2 §5.3, §8): a reason, logged; the job stops; released cash stays owed (D-056 item 2) | ✅ Built (D-056: the tick goes to the LA Supervisor/Head and Admin, not only Admin) | Loan file, Cancel transaction | `transactions:cancel` (LA Supervisor/Head, Admin) | Tick per role or person | `lib/services/cancel-transaction.ts`; `tests/integration/phase-a-gaps.test.ts`; e2e `cancel-transaction.spec.ts` | UAT SUP-12 |
 | 13 | Correct a due date with a reason | ✅ Built | Inbox | `duedates:correct` | No | D-042 | n/a |
 
 ## D. Known limits and open questions
 
-- Admin cancel (row 12) is a gap: see `docs/PHASE_A_GAPS.md`. Reassign is covered by Move work items.
+- Cancel (row 12) was built on 19 to 24 November 2026 (D-056). Reassign is covered by Move work items.
