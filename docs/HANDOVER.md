@@ -34,6 +34,12 @@ Branch: `feature/foundation-settings-rbac-myloans`
 - **Commit only after reading the test result:** never chain `git commit` after a test or scan command (twice a commit went in with a failing secret scan).
 - **Known issue:** a dev-only React key warning on Funds (`docs/KNOWN_ISSUES.md`); run e2e on the production build.
 
+## Running long test runs
+
+- **Keep the PC from sleeping** for the whole run (a full `npm run e2e:groups` takes hours). On 24 November 2026 sleep cut a run short: a test hung for 1.1 hours with `ERR_NETWORK_IO_SUSPENDED`.
+- **Start Docker Desktop first.** The database (`gdfi-loan-dms-gdfi-dms-db-1`, port 5434 on this PC) runs in Docker and stops when Docker Desktop stops. The container has `restart: unless-stopped`, so it comes back by itself once Docker is running.
+- **If a run shows 0 passed / 0 failed** in every group, the server could not reach the database (the log shows `Can't reach database server at localhost:5434`): start Docker Desktop, run `npm run db:up`, wait for the container to show healthy (`docker compose ps`), then run again.
+
 ## CI (after piece 3): waiting for the project owner to confirm the GitHub setup
 
 Approved per `docs/CI_PROPOSAL.md`: full e2e on `main` and on ready pull requests only. Needed from the project owner:

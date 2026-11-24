@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { cleanSettingsTestRows, db, resetLoans } from "./db";
-import { pickLtoOffice, signIn, docShot } from "./helpers";
+import { giveLateReason, pickLtoOffice, signIn, docShot } from "./helpers";
 
 /**
  * Every transaction, in order, on the Loan File (All transactions) and Check documents (Transactions,
@@ -90,6 +90,7 @@ test("4 transactions: every one, in order, in both places; one wording for each 
   await page.locator("label", { hasText: "Test Document Processor" }).click();
   await page.getByText("No funds needed", { exact: true }).click();
   await pickLtoOffice(page);
+  await giveLateReason(page);
   await page.getByRole("button", { name: /^Send to (?!processor)/ }).click();
   await page.getByRole("dialog", { name: "Send it now?" }).getByRole("button", { name: "Send", exact: true }).click();
   await expect.poll(async () => (await txnOf("NOTARY")).status).toBe("ASSIGNED");

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { pickLtoOffice, signInWith, docShot } from "./helpers";
+import { giveLateReason, pickLtoOffice, signInWith, docShot } from "./helpers";
 
 /**
  * Softer borders and keyboard-only focus rings; the LA changes a sent job before the processor accepts;
@@ -84,6 +84,7 @@ test("Before accept the LA can change it; after a return the LA sees the papers 
   await page.locator("label", { hasText: "Test Document Processor" }).click();
   await page.getByText("No funds needed", { exact: true }).click();
   await pickLtoOffice(page);
+  await giveLateReason(page);
   await page.getByRole("button", { name: /^Send to (?!processor)/ }).click();
   await page.getByRole("dialog", { name: "Send it now?" }).getByRole("button", { name: "Send", exact: true }).click();
   await expect.poll(async () => (await txnOf("NOTARY")).status).toBe("ASSIGNED");

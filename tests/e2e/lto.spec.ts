@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
-import { openFundsDetails, signInWith, docShot } from "./helpers";
+import { giveLateReason, openFundsDetails, signInWith, docShot } from "./helpers";
 
 /**
  * "Needs LTO processing" per transaction type and the LTO office everywhere it is needed:
@@ -111,6 +111,7 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await page.goto("/loans/GD1652026901003?tab=todo&tx=NOTARY");
   const papers = page.getByRole("group", { name: /papers$/ }).first();
   for (const box of await papers.getByRole("checkbox").all()) if (!(await box.isChecked())) await box.check();
+  await giveLateReason(page);
   const why = page.locator('[id^="send-why-"]');
   const ready = page.getByRole("list", { name: "Ready to send?" });
   const office = page.getByLabel("LTO office", { exact: true });
@@ -130,8 +131,6 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
   await expect(page.getByText(/Notary goes to Test Document Processor \(.+\), processed at Z LTO Mandaue\./)).toBeVisible();
   await shot(page, "send-notary");
   await noSideways(page);
-  const late = page.getByLabel("Why is this late?");
-  if (await late.count()) await late.fill("Test run");
   await page.getByRole("button", { name: /^Send to (?!processor)/ }).click();
   await page.getByRole("dialog", { name: "Send it now?" }).getByRole("button", { name: "Send", exact: true }).click();
   const txn = await db.loanTransaction.findFirstOrThrow({ where: { loan: { pn: "GD1652026901003" }, type: { code: "NOTARY" } } });

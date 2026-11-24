@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { signInWith, docShot } from "./helpers";
+import { openFundsDetails, signInWith, docShot } from "./helpers";
 import { db, resetLoans } from "./db";
 import { approveWithConfirm } from "./approve";
 
@@ -185,6 +185,8 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
   await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=outstanding");
   const row = page.locator(`[data-advance="${ft.number}"]`);
+  // A tablet hides the money trail (where the mismatch shows) until the row's Details is open.
+  if (page.viewportSize()?.width === 820) await openFundsDetails(row);
   await expect(row.locator("[data-receipt-mismatch]").filter({ visible: true }).first()).toContainText("amount: typed ₱2,400.00");
   await row.getByRole("button", { name: "Clear mismatch" }).filter({ visible: true }).first().click();
   const clear = page.getByRole("dialog", { name: `${ft.number}: clear the receipt mismatch` });
