@@ -1,6 +1,6 @@
 # Business questions for the user demo
 
-Last updated: 19 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 Every working default still waiting for the business, from `docs/DECISIONS.md` (the **[TO CONFIRM]** items of D-056 and the older open ones), grouped by who answers. Each has what the DMS does today and one question. Every default can be changed in Settings or with one small change; nothing has to be rebuilt.
 
@@ -8,7 +8,7 @@ Every working default still waiting for the business, from `docs/DECISIONS.md` (
 
 | # | Topic | Today's default | Question | Source |
 |---|---|---|---|---|
-| L1 | Papers of the four optional transactions | v2 §4.6's lists, all required: Cancellation of Mortgage (notarized Release of Chattel Mortgage, original OR/CR, valid IDs); Transfer of Ownership (Deed of Sale, original OR/CR, seller and buyer valid IDs, PNP-HPG clearance, stencil, CTPL insurance); Renewal of OR (original OR/CR, CTPL insurance, emission test result); PPSR Termination (PPSR termination statement, PPSR registration reference, proof of full payment) | Are these the right papers, and which are optional? | D-056 item 3 |
+| L1 | Papers of the four optional transactions | v2 §4.6's lists, all required: Cancellation of Mortgage (notarized Release of Chattel Mortgage, original OR/CR, valid IDs); Transfer of Ownership (Deed of Sale, original OR/CR, seller and buyer valid IDs, PNP-HPG clearance, stencil, CTPL insurance); Renewal of OR (original OR/CR, CTPL insurance, emission test result); PPSR Termination (PPSR termination statement, PPSR registration reference, proof of full payment) | Are these the right papers, and which are optional? Does PPSR Termination go through the LTO (today it runs the LTO stages like For Entry PPSR)? | D-056 item 3 |
 | L2 | Papers of the four built-in transactions | Today's lists (for example Notary: Promissory Note, Disclosure Statement, Chattel Mortgage, 2 borrower IDs, Deed of Sale or Sales Invoice; Mortgage: OR, CR, notarized Chattel Mortgage, insurance policy). v2's samples differ: For EDST adds the DST form (BIR 2000); For Entry PPSR adds the PPSR registration form and EDST proof; Mortgage adds the PPSR proof, EDST proof and stencil | Keep today's lists, or add v2's papers? | D-056 item 7 |
 | L3 | Papers by loan type | Papers depend only on the transaction (not on New / Renewal or Financing / Refinancing) | Do any papers differ by loan type or classification? | D-056 item 7 |
 | L4 | When the optional transactions can be added | Any time before the papers go to the Vault, on any loan | Should some be unavailable for Untransferred or Not Mortgage loans, as v2 §4.5 says? | D-056 item 3, PHASE_A_GAPS S6 |

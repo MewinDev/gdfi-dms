@@ -1,6 +1,6 @@
 # Phase A gaps
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 Every ⚠️ Partial and ❌ Missing row of the module checklists (`docs/checklists/`) that matters for phase A (LA, DP and Funds on the live myloans feed), sorted into **needed for go-live**, **soon after go-live** and **later**. ⏸ Blocked rows (waiting for someone outside the team) are in `docs/STATUS.md`; 📦 phase B and C rows are not repeated here. Effort is developer-days for one experienced developer. **Decided on 19 November 2026 (D-056):** G2, G3, G4, G5 are being built; G6 and G7 wait for IT (Q10); S1, S2, S3 and S5 are settled as recorded in D-056; open business points are in `docs/BUSINESS_QUESTIONS.md`.
 
@@ -9,12 +9,12 @@ Every ⚠️ Partial and ❌ Missing row of the module checklists (`docs/checkli
 | # | Gap | Checklist row | Effort (days) | Depends on | Recommendation |
 |---|---|---|---|---|---|
 | G1 | Microsoft sign-in (Entra ID) | 01 #1, 21 #13 | 3 to 5 (already in "go-live preparation") | IT: app registration, redirect URL, which group signs in | Build now on a test tenant if IT can give one; it is the only way into staging and production. |
-| G2 | DP receipt confirmation with a mismatch flag (v2 §5.7: reference #, amount, last 4; mismatch to Finance and Admin; LTO waits) | 14 #10, 13 #10, 16 #8 | 2 to 3 | Decision Q1 | Build, as a light step: the DP presses "Received" (or "Does not match" with a reason); the LTO stage waits for it only on funded transactions. |
-| G3 | Admin cancels a transaction (v2 §5.3, §8: Admin / Superadmin only, with a reason, logged; reassign is Move work items) | 11 #12 | 1 to 2 | Decision Q2 | Build: Cancel transaction with a reason on the loan file, ticked for Admin; ends its work items, jobs and open funds lines. Without it a wrong transaction stays open for ever. |
-| G4 | Optional transactions (Cancellation of Mortgage, Transfer of Ownership, Renewal of OR, PPSR Termination) | 12 #8 | 0.5 (seed the four types and their papers) | Operations confirm the papers (Q3) | Seed them as addable transaction types for go-live; the availability matrix waits (S6). |
-| G5 | Checklist papers per transaction confirmed with Operations (v2 §4.6 sample lists) | 12 #13 | 0.5 (data entry) | Operations | Admin enters them in Settings before UAT. |
-| G6 | File storage on a persistent disk, or a cloud storage driver | 17 #6 | 0 (persistent disk) or 2 (driver) | Hosting decision | Choose a host with a persistent disk; build the driver only if the host has none. |
-| G7 | myloans authentication: v2 asks OAuth client credentials; built: Bearer API key | 07 #8 | 0 to 1 | myloans team (staging check) | Confirm in the staging check; add the token exchange only if myloans requires it. |
+| G2 | ✅ Built 24 Nov 2026 (D-056). DP receipt confirmation with a mismatch flag (v2 §5.7: reference #, amount, last 4; mismatch to Finance and Admin; LTO waits) | 14 #10, 13 #10, 16 #8 | 2 to 3 | Decision Q1 | Build, as a light step: the DP presses "Received" (or "Does not match" with a reason); the LTO stage waits for it only on funded transactions. |
+| G3 | ✅ Built 24 Nov 2026 (D-056: tick for the LA Supervisor/Head and Admin). Admin cancels a transaction (v2 §5.3, §8: Admin / Superadmin only, with a reason, logged; reassign is Move work items) | 11 #12 | 1 to 2 | Decision Q2 | Build: Cancel transaction with a reason on the loan file, ticked for Admin; ends its work items, jobs and open funds lines. Without it a wrong transaction stays open for ever. |
+| G4 | ✅ Built 24 Nov 2026 (D-056; papers to confirm). Optional transactions (Cancellation of Mortgage, Transfer of Ownership, Renewal of OR, PPSR Termination) | 12 #8 | 0.5 (seed the four types and their papers) | Operations confirm the papers (Q3) | Seed them as addable transaction types for go-live; the availability matrix waits (S6). |
+| G5 | ✅ As decided (D-056 item 7; to confirm). Checklist papers per transaction confirmed with Operations (v2 §4.6 sample lists) | 12 #13 | 0.5 (data entry) | Operations | Admin enters them in Settings before UAT. |
+| G6 | Waits for IT (Q10). File storage on a persistent disk, or a cloud storage driver | 17 #6 | 0 (persistent disk) or 2 (driver) | Hosting decision | Choose a host with a persistent disk; build the driver only if the host has none. |
+| G7 | Waits for IT and myloans (Q10). myloans authentication: v2 asks OAuth client credentials; built: Bearer API key | 07 #8 | 0 to 1 | myloans team (staging check) | Confirm in the staging check; add the token exchange only if myloans requires it. |
 | G8 | Loans already in process at go-live (papers and jobs) | 23 #12 | 1 to 2 (procedure and a short entry guide) | Go-live date, LA Supervisors | First load brings released loans into the pools; for loans already at the LTO, a one-page guide for entering them on day 1. |
 | G9 | Training material per role | 23 #13 | 2 to 3 (already in "go-live preparation") | UAT done | One-page quick guide per role from the UAT checklist and the demo script. |
 
@@ -89,7 +89,7 @@ So: 11 reports usable on go-live day in their current form (1 to 4, 10 to 15), 2
 | Production scheduler (blocked: hosting) | 1 |
 | CI (blocked: GitHub setup) | 1 |
 | Go-live preparation (Entra, staging, backups and monitoring set-up, first load, UAT, training, first weeks of support) | 10 to 15 |
-| Go-live gaps above (G2 to G7) | 4 to 9 |
-| **Phase A total** | **18 to 29 days** (about 4 to 6 weeks) |
+| Go-live gaps above: G2 to G5 built (24 Nov 2026); G6, G7 only if IT's answers need them | 0 to 3 |
+| **Phase A total** | **14 to 23 days** (about 3 to 5 weeks) |
 
 Piece 12 is done (it was 4 to 6 days of the earlier 18 to 26).

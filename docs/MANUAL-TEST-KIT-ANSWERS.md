@@ -1,6 +1,6 @@
 # Manual Test Kit: answers
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 What each PN of the [Manual Test Kit](MANUAL-TEST-KIT.md) is and what it is good for. Look here only if you get stuck: the point is to find it out by searching and opening the PN.
 
@@ -204,3 +204,8 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 43. **Not released, then released again.** The status card says first "The loan stays on hold until released again. Nothing is closed; it continues by itself when myloans shows it released." After Approve, the loan file says "On hold: not released in myloans. Send, Forward and new cash wait until myloans shows it released again." and Send is held. After "released again" and Refresh, the hold line is gone and no new Open Item waits.
 44. **A redo (new PN).** The status card says "This will move the loan file to PN GD…", naming the new PN. After Approve, the old PN is no longer a loan file of its own: the same loan file, with its ticked papers, now opens under the new PN, and the old PN stays in its history.
 45. **Branch pool to loan file.** Accept moves the item to My items. Open loan file opens it as usual; the item leaves the pool and My items (it is done).
+
+### Phase A gaps
+
+46. **Cancel a transaction.** The confirm step says the processor's job stops and that the released cash "stays owed. It must be liquidated within 2 working days after the cancellation (or the last LTO pickup, if later)". Without a reason it says to type one. After cancelling, the transaction shows Cancelled and the processor gets an update. LA Angono has no Cancel transaction button.
+47. **Fund transfer and its receipt.** Send shows the full account number with "I checked the receiving account"; without the tick it refuses. After sending, everywhere shows only "account ending" and the last 4 digits. A wrong amount says what does not match ("amount: typed ..., Finance recorded ..."); Finance sees "Receipt does not match" on Outstanding with **Clear mismatch**; after clearing, the processor's advance says "Receipt confirmed."

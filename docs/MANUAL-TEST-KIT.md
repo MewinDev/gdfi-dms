@@ -1,6 +1,6 @@
 # Manual Test Kit
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 Test GDFI DMS by hand from zero. The kit puts your own database (`gdfi_dms`) in a clean state: the settings, the branches and the sign-in accounts below, and a list of PNs that exist only in the sample MyLoans. Nothing is opened yet: you search each PN and open it yourself. The automated tests use another database (`gdfi_dms_test`).
 
@@ -244,6 +244,11 @@ Before these, as **Admin**, turn on the test simulator in Settings, System. "Sim
 43. **Not released, then released again.** As LA Angono open an Angono PN. As Admin, on its Journey tab, simulate "Set the loan not released", then press **Refresh from MyLoans**. On Open Items, read the status card (what approving does is said first) and **Approve** with remarks. As LA Angono, try **Send** on the loan file. As Admin, simulate "Set the loan released again" and press **Refresh from MyLoans**; read the loan file again.
 44. **A redo (new PN).** As LA Angono open another Angono PN and tick a few papers. As Admin, simulate "Create a replacement PN". On Open Items, read the status card, then **Approve** with remarks. Look for the loan by the old PN and by the new PN.
 45. **Branch pool to loan file.** After `npm run kit:demo`, as LA Angono open **Inbox, Branch pool**: press **Accept** on the first released loan waiting there, then open it from **My items** and **Open loan file**. Look at the pool again.
+
+### Phase A gaps (24 November 2026)
+
+46. **Cancel a transaction.** As LA Angono, send a transaction of an Angono loan to a processor; as that processor, accept it and ask for funds; as Finance, approve and release. Then as **LA Supervisor/Head**, open the loan file, press **Cancel transaction**, read the confirm step, press it once without a reason, then with one. Look for the same button as LA Angono.
+47. **Fund transfer and its receipt.** As a processor with an accepted job that needs funds, ask for a **Fund transfer**: fill in the bank or e-wallet, the account name and the account number. As Finance, open **Send** on it and read the account; send it with and without the tick. As the processor, on My funds, confirm the receipt with a wrong amount, then look at Funds, Outstanding as Finance and clear it.
 
 ## If the sign-in page keeps coming back
 

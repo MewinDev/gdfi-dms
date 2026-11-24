@@ -1,6 +1,6 @@
 # GDFI-DMS: project status
 
-As of 18 November 2026 (PHT), after piece 12 (D-055) and the module checklists. Branch `feature/foundation-settings-rbac-myloans`.
+As of 24 November 2026 (PHT), after the Phase A go-live gaps (D-056). Branch `feature/foundation-settings-rbac-myloans`.
 
 Effort is in **developer-days for one experienced developer**. Figures for the foundation pieces are the plan's estimates (`IMPLEMENTATION_PLAN.md`, section 1), adjusted for work already done. Figures for the later modules and go-live are **rough estimates** (no detailed plan yet); they will change once each module is planned.
 
@@ -10,10 +10,10 @@ Effort is in **developer-days for one experienced developer**. Figures for the f
 |---|---|
 | Foundation (real API verification, production scheduler, CI) | **4 to 5 days** |
 | Go-live preparation (phase A) | **10 to 15 days** |
-| Phase A go-live gaps (`docs/PHASE_A_GAPS.md` section 1, once decided) | **4 to 9 days** |
-| **Phase A go-live: LA, DP and Funds on the live myloans feed** | **18 to 29 days** (about 4 to 6 weeks) |
+| Phase A go-live gaps left (`docs/PHASE_A_GAPS.md`: the cloud file driver and myloans OAuth, only if IT's answers need them) | **0 to 3 days** |
+| **Phase A go-live: LA, DP and Funds on the live myloans feed** | **14 to 23 days** (about 3 to 5 weeks) |
 | v2 modules after the foundation (phases B and C) | **34 to 52 days** |
-| **Everything to the last phase** | **52 to 81 days** |
+| **Everything to the last phase** | **48 to 75 days** |
 
 Every foundation piece that can be built on the mock is built, piece 12 included. What is left for phase A: three items that wait for someone outside the team, go-live preparation, and the go-live gaps found by the module checklists (`docs/checklists/README.md`, `docs/PHASE_A_GAPS.md`), which wait for the project owner's decisions. Last full test run (18 November 2026): every automated test passes; see `docs/HANDOVER.md` for the numbers.
 
@@ -57,9 +57,9 @@ Every foundation piece that can be built on the mock is built, piece 12 included
 | Real API verification | As above | 2 to 3 | Staging access (C5) |
 | Production scheduler | As above | 1 | The hosting decision |
 | CI | As above | 1 | GitHub setup |
-| Go-live gaps | DP receipt confirmation, Admin cancel, the four optional transactions, checklist papers, and (if needed) a cloud file driver and myloans OAuth (`docs/PHASE_A_GAPS.md` G2 to G7) | 4 to 9 | The project owner's answers (Q1 to Q10) |
+| Go-live gaps | Built 24 Nov 2026 (D-056): receipt confirmation, Cancel transaction, the FT account, the four optional transactions, TAT defaults. Left, only if needed: a cloud file driver and myloans OAuth (G6, G7) | 0 to 3 | IT and myloans (Q10) |
 | Go-live preparation | Production sign-in (Entra), staging, backups and monitoring, the first load of open loans (branch-pool cutoff, `npm run sync:myloans -- --first-load`), user acceptance testing, training, the first weeks of support | 10 to 15 | Hosting, Entra setup, a go-live date |
-| | **Phase A total** | **18 to 29** | |
+| | **Phase A total** | **14 to 23** | |
 
 ## v2 modules after the foundation (rough estimates)
 
@@ -79,9 +79,9 @@ Every foundation piece that can be built on the mock is built, piece 12 included
 
 | Phase | Contents | Remaining effort (days) | Cumulative |
 |---|---|---|---|
-| **A** | Real API verification, production scheduler, CI, the go-live gaps and go-live preparation (above) | 18 to 29 | 18 to 29 |
-| **B** | Vault transmittal, Collateral (with vehicle details), Quality Assurance; related-loan tags (additional unit / replacement) return with vehicle data from myloans; the renewal link (previous loan / OldPNNo) (D-051) | 17 to 25 | 35 to 54 |
-| **C** | Digital Records, archival and warehousing, closure, retention | 17 to 27 | 52 to 81 |
+| **A** | Real API verification, production scheduler, CI, the go-live gaps left and go-live preparation (above) | 14 to 23 | 14 to 23 |
+| **B** | Vault transmittal, Collateral (with vehicle details), Quality Assurance; related-loan tags (additional unit / replacement) return with vehicle data from myloans; the renewal link (previous loan / OldPNNo) (D-051) | 17 to 25 | 31 to 48 |
+| **C** | Digital Records, archival and warehousing, closure, retention | 17 to 27 | 48 to 75 |
 
 Phase A can go live without B and C: loans then stop at "For Vault Transmittal" until phase B. Any myloans item still open at that point delays only the parts listed under "Blocked".
 
