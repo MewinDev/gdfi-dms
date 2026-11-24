@@ -1,6 +1,6 @@
 # 23 Operations (scheduler, environments, runbook, rollback, UAT)
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -24,6 +24,7 @@ Running the DMS for real: where it runs, what calls it on a schedule, how it goe
 | 12 | Data migration of loans already in process at go-live (v2 §13.6) | ⚠️ Partial: the first load brings released loans from the cutoff into the pools; papers and jobs already in process are entered by hand | n/a | Admin, LAs | Cutoff | runbook section 3 | n/a |
 | 13 | Training materials per role | ❌ Missing (the UAT checklist and the demo script are a start) | n/a | n/a | n/a | `docs/DEMO_SCRIPT.md` | n/a |
 | 14 | Monitoring of the running app (errors, uptime) beyond the health check | ⚠️ Partial: health check and the sync alert; no error tracking service | n/a | n/a | n/a | n/a | n/a |
+| 15 | The build needs no internet except the package registry (`npm install`): no Google Fonts, no telemetry | ✅ Built (D-057) | console | Developer, infrastructure | No | `package.json` (`NEXT_TELEMETRY_DISABLED`), `app/fonts/`; `docs/GO_LIVE_RUNBOOK.md` section 1 | Build with Google Fonts blocked: it succeeds |
 
 ## D. Known limits and open questions
 

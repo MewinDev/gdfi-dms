@@ -30,11 +30,11 @@ Status values: ✅ Built · ⚠️ Partial · ❌ Missing · ⏸ Blocked (by who
 | 18 | [Notifications and Home warnings](18-notifications-and-home.md) | 9 | 0 | 0 | 2 | 0 | 9 / 11 |
 | 19 | [Reports (the 19 v2 reports)](19-reports.md) (phase A) | 3 | 9 | 0 | 0 | 8 | 3 / 12 |
 | 20 | [Audit logs](20-audit-logs.md) | 8 | 0 | 1 | 0 | 1 | 8 / 9 |
-| 21 | [Security](21-security.md) | 12 | 0 | 1 | 1 | 0 | 12 / 14 |
+| 21 | [Security](21-security.md) | 13 | 0 | 1 | 1 | 0 | 13 / 15 |
 | 22 | [Backup and restore](22-backup-and-restore.md) | 7 | 0 | 0 | 2 | 0 | 7 / 9 |
-| 23 | [Operations](23-operations.md) | 7 | 2 | 1 | 4 | 0 | 7 / 14 |
+| 23 | [Operations](23-operations.md) | 8 | 2 | 1 | 4 | 0 | 8 / 15 |
 | 24 | [Test kit, seed data and demo](24-test-kit-and-demo.md) | 11 | 0 | 0 | 0 | 0 | 11 / 11 |
-| | **Total** | **246** | **25** | **8** | **14** | **15** | **246 / 293 (84%)** |
+| | **Total** | **248** | **25** | **8** | **14** | **15** | **248 / 295 (84%)** |
 
 (Module 19 counts row 0, "filters and export for all reports", as one ⚠️ besides the 19 reports.)
 

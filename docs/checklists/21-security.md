@@ -1,6 +1,6 @@
 # 21 Security (headers, cookies, secrets, scans)
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -24,6 +24,7 @@ Keep borrower data and the system safe with a small set of controls (D-055: mini
 | 12 | Rotate any secret ever pasted into chat or email before go-live | ⏸ Blocked (infrastructure, at go-live) | n/a | n/a | n/a | `docs/ENVIRONMENT.md` Production checklist step 6 | n/a |
 | 13 | Microsoft sign-in | ❌ Missing | n/a | n/a | n/a | module 01 row 1 | n/a |
 | 14 | Privacy notice | ✅ As decided: not needed (Changed by D-055) | n/a | n/a | n/a | D-055 | n/a |
+| 15 | No outside host in the browser or the build: fonts self-hosted (`next/font/local`), `font-src 'self'`, Next.js telemetry off; outside calls only from the server, set in the environment (Graph, Entra, myloans, S3 backups) | ✅ Built (D-057) | every page | n/a | No | `app/layout.tsx`, `app/fonts/`, `lib/security/headers.ts`, `lib/security/headers.test.ts` | Browser dev tools, Network: every request goes to the DMS address |
 
 ## D. Known limits and open questions
 

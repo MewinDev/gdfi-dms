@@ -1,6 +1,6 @@
 # Go-live runbook
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 24 November 2026 (PHT)
 
 How to bring GDFI-DMS live for phase A (LA, DP and Funds on the live myloans feed), how to keep it backed up, and how to step back if go-live day goes wrong. Decisions: D-021 (no test sign-in outside local), D-052 (one sync entry point), D-055 (backups, headers, this runbook).
 
@@ -16,6 +16,8 @@ How to bring GDFI-DMS live for phase A (LA, DP and Funds on the live myloans fee
 3. **Start the app.** Production refuses to start with an unsafe setting and names the variable (never its value). Fix and start again.
 4. **Health:** point the host's health check at `GET /api/health` (200 healthy, 503 when the database is down).
 5. **Security headers** are set by the app itself (`lib/security/headers.ts`): CSP, HSTS (production only), nosniff, frame DENY, Referrer-Policy same-origin. The host must serve https only.
+
+6. **No internet needed to build (D-057).** `next build` needs no internet access except the package registry for `npm install`: the font is self-hosted (`app/fonts`) and Next.js telemetry is off. At run time only the server calls outside hosts, each set in the environment: Microsoft Graph (email), Microsoft sign-in (Entra), the myloans API, and the backup bucket if backups go to S3. Allow those in the server's firewall; the browser needs only the DMS address.
 
 ## 2. Scheduler
 

@@ -854,3 +854,16 @@ Decisions D-008 to D-021 come from the project owner's answers to the Step 1 que
   9. **TAT targets:** LA 1 working day (Checklist complete, Assign to DP), DP 5 (Notary, PPSR registration, Mortgage), Finance 1 (cash advance release) as the seeded defaults. Databases that still have the earlier seeded values get the new ones (migration 032); a value an Admin already changed is kept. **[TO CONFIRM with the LA Head and Operations before UAT]**
 - **Not built until IT answers Q10:** the cloud file driver and myloans OAuth.
 - **Reason:** the user's decisions on the Phase A gap summary (D-055).
+
+
+## D-057 The build and the pages call no outside host: fonts self-hosted
+
+- **Date:** 24 November 2026
+- **Decision (the user's):** after `next build` failed because Google Fonts could not be reached (the final D-056 e2e run had to wait), the build must not depend on Google Fonts.
+  - **Inter is self-hosted:** `app/fonts/inter-latin-wght-normal.woff2` (the same Inter variable font, latin, weights 100 to 900, that Google Fonts served) with its licence `app/fonts/Inter-OFL-LICENSE.txt` (SIL Open Font License 1.1, which allows bundling). `app/layout.tsx` uses `next/font/local` with the same CSS variable (`--font-inter`) and `display: swap`, so the look does not change. The file was taken from the npm package `@fontsource-variable/inter` 5.3.0 (`npm pack`, not added as a dependency), because Google Fonts was unreachable.
+  - **Next.js telemetry is off** for `npm run dev`, `build`, `start` and the e2e runner (`NEXT_TELEMETRY_DISABLED=1`): it was the build's only other outside call.
+  - **CSP:** `font-src 'self'` only (the `data:` it allowed is no longer needed).
+  - **What still calls outside, on purpose, from the server only (each set from the environment):** Microsoft Graph for email (`login.microsoftonline.com` for the token, `graph.microsoft.com` to send), Microsoft sign-in (Entra, when built), the myloans API (`MYLOANS_BASE_URL`; the mock runs in process), and the backup bucket (`BACKUP_S3_ENDPOINT`, only when `BACKUP_TARGET=s3`). Nothing in the browser calls another host: no CDN, analytics or remote fonts.
+  - The build needs no internet access except the package registry (`npm install`); recorded in `docs/GO_LIVE_RUNBOOK.md`.
+  - `lib/security/headers.test.ts` checks `font-src 'self'` and that `app/layout.tsx` does not use Google Fonts.
+- **Reason:** a build that depends on an outside host fails when that host or the network is down; the production server may have no general internet access.
