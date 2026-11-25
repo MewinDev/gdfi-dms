@@ -17,6 +17,9 @@ export interface LoanListCard extends LoanCardData {
   /** The account at a glance: "New · Auto Refinancing" and "Released Nov 10, 2026". */
   loanText: string;
   releasedText: string;
+  /** D-058 card badges: "New" / "Renewal" and "Financing" / "Refinancing" ("" when not known). */
+  loanType: string;
+  classification: string;
   /** My loans' Next step column: the stage map's Next step text (or "Fix a problem first"), and its tooltip. */
   nextText: string;
   nextTip?: string;
@@ -37,6 +40,8 @@ export function cardFor(r: LoanRow, cal: WorkCalendar): LoanListCard {
     flags,
     loanText: [r.loanType, r.productName?.trim()].filter(Boolean).join(" · "),
     releasedText: `Released ${dayText(r.releasedAt)}`,
+    loanType: r.loanType?.trim() ?? "",
+    classification: r.classification === "FINANCING" ? "Financing" : r.classification === "REFINANCING" ? "Refinancing" : "",
     pn: r.pn,
     borrowerName: r.borrowerName,
     branch: r.branch,

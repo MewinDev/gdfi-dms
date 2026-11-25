@@ -30,6 +30,7 @@ import { FundsList, FundsRow, FundsSearch, FundsSummary, KeepTabInView, LockNote
 import { formerlyText, releaseLine } from "@/lib/funds/types";
 import { searchTerms, DASH, PRINTABLE_STATUSES, agingTone, daysText, type ListItem } from "@/lib/funds/list-view";
 import { PrinterIcon } from "@/components/ui/icons";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 
 export const metadata: Metadata = { title: "Funds" };
 
@@ -501,11 +502,11 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
           {seen.length === 1 && <p className="mt-1 text-[15px] font-semibold text-navy" data-funds-types-line>{TYPE_TITLE[seen[0]]}</p>}
           {gaps.length > 0 && <p role="status" className="mt-2 rounded-xl border border-act-line bg-act-bg px-3 py-2 text-sm text-ink" data-funds-health>{gaps.join(" ")} Requests of that type wait; the Admin is told. Change it in Settings, Roles.</p>}
         </div>
-        <nav aria-label="Funds tabs" className="funds-tabs flex min-w-0 overflow-x-auto border-b border-line sm:col-span-2" data-funds-tabs>
+        <ScrollFade className="sm:col-span-2"><nav aria-label="Funds tabs" className="funds-tabs flex min-w-0 overflow-x-auto border-b border-line" data-funds-tabs data-scroll-row>
           {TABS.map(([k, l]) => (
             <Link key={k} href={href({ tab: k })} aria-current={tab === k ? "page" : undefined} className="tab shrink-0" data-tab={k}>{l}<span className="tab-count" data-tab-count>{counts[k]}</span></Link>
           ))}
-        </nav>
+        </nav></ScrollFade>
         <KeepTabInView />
       </div>
 
@@ -516,8 +517,9 @@ export default async function FundsPage({ searchParams }: { searchParams: Promis
             <nav aria-label="Type" className="seg" data-funds-type-filter>
               <Link href={href({ ftype: null })} aria-current={!ftype ? "page" : undefined} className="seg-item">All <span className="seg-count">{allCount}</span></Link>
               {typeChoices.map((t) => (
-                <Link key={t.id} href={href({ ftype: t.code })} aria-current={ftype === t.code ? "page" : undefined} className="seg-item" data-filter-type={t.code} aria-label={`${t.code} · ${t.name}, ${typeCount(t.code)}`}>
-                  {t.code}<span className="hidden sm:inline"> · {t.name}</span> <span className="seg-count" data-type-count>{typeCount(t.code)}</span>
+                <Link key={t.id} href={href({ ftype: t.code })} aria-current={ftype === t.code ? "page" : undefined} className="seg-item" data-filter-type={t.code}>
+                  {/* The name is the visible text (axe): on a phone the type's name is there for screen readers only. */}
+                  {t.code}<span className="sr-only sm:not-sr-only"> · {t.name}</span> <span className="seg-count" data-type-count>{typeCount(t.code)}</span>
                 </Link>
               ))}
             </nav>

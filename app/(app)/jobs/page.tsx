@@ -6,6 +6,7 @@ import { JOB_TABS, myJobs, type JobTab } from "@/lib/services/job-queries";
 import { FUNDS_LABEL, type FundsStatus } from "@/lib/funds/rules";
 import { PageHeader } from "@/components/ui/basics";
 import { JobRow } from "@/components/jobs/job-row";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 
 export const metadata: Metadata = { title: "Jobs" };
 
@@ -35,7 +36,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   return (
     <div className="dense flex w-full flex-col gap-4">
       <PageHeader title="Jobs" help="Your jobs. Open one to accept it, log attempts, complete and forward it." />
-      <nav aria-label="Job tabs" className="flex overflow-x-auto border-b border-line">
+      <ScrollFade><nav aria-label="Job tabs" className="flex overflow-x-auto border-b border-line" data-scroll-row>
         {JOB_TABS.map((t) => {
           const n = all.filter((r) => r.tab === t.key).length;
           return (
@@ -44,7 +45,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
             </Link>
           );
         })}
-      </nav>
+      </nav></ScrollFade>
       <form action="/jobs" className="grid gap-2 sm:grid-cols-2 sm:items-end lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
         <input type="hidden" name="tab" value={tab} />
         <div>

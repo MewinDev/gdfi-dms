@@ -2,7 +2,7 @@
 
 What is built today, what is planned, and the questions still open for the business.
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 25 November 2026 (PHT)
 
 ## Status
 
@@ -54,7 +54,7 @@ Checked against the code and the tests on 8 November 2026. Each row gives one li
 | Rule 9: the turnaround time never pauses for a missing paper | Built | No clock reads the missing state (lib/workflow/tat.ts unchanged); the integration test sends and finishes the job on the usual clock. |
 | Rule 10: no alerts and no emails; Monitoring filter "Has missing papers" with a count | Built | Integration test: no missing_paper email is queued; Monitoring lists the papers and their days missing. |
 | The Received tick at Accept and "Some papers are missing" (Return to LA with those papers pre-selected) | Built | Integration test: one Received by the processor movement per paper received; the missing papers go back to the LA. |
-| Phone bottom bar on the DP Job page (main next action, 48 px) | Built | Playwright at 390: bar visible above the bottom navigation, 48 px high; hidden at 820 and 1440. |
+| Phone bottom bar on the DP Job page (main next action, 48 px) | Built | Playwright at 390: bar visible at the bottom of the screen (no bottom navigation since D-058), 48 px high; hidden at 820 and 1440 (`job-stages.spec.ts`, 25 Nov 2026). |
 | Funds types: Cash advance (CA) and Fund transfer (FT) as a managed list (`fundtypes:manage`, seeded "Proposed, to be confirmed with Finance"), with Import / Export | Built | Integration test funds-types: seeded list, rename keeps old records' copy, refused without the permission, Import / Export round trip; Playwright Settings screen on 9 November 2026. |
 | The DP picks the type on the request; Finance changes it before release with remarks (audited, in the record's history); top-ups and carry-overs follow the record | Built | Integration test: default Cash advance, Fund transfer chosen, change refused after release and without 5-character remarks, top-up inherits and can change at release. |
 | Release by type: Fund transfer needs the reference number, transfer date and receiving account (last 4 digits only, a longer number refused); Cash advance unchanged | Built | Unit tests of the release rules; integration test of both releases; Playwright release form for each type at 1440 and 390. |

@@ -1,6 +1,6 @@
 # Module checklists
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 25 November 2026 (PHT)
 
 One file per module (D-055). Each has: A) purpose and roles; B) a checklist row per feature or requirement (status, where, who, customizable, evidence, UAT check); C) for the phase A workflow modules (12 to 16, 19), every v2 requirement and every step of the v2 .docx charts, with "Changed by D-xxx" where a decision replaced a v2 rule; D) known limits and open questions. Module 04 is the master list of everything customizable, including every permission tick and its default roles.
 
@@ -11,7 +11,7 @@ Status values: ✅ Built · ⚠️ Partial · ❌ Missing · ⏸ Blocked (by who
 | # | Module | ✅ | ⚠️ | ❌ | ⏸ | 📦 | Readiness |
 |---|---|---|---|---|---|---|---|
 | 01 | [Sign-in and accounts](01-sign-in-and-accounts.md) | 9 | 0 | 1 | 0 | 0 | 9 / 10 (Entra missing) |
-| 02 | [Roles and permissions](02-roles-and-permissions.md) | 12 | 0 | 0 | 0 | 0 | 12 / 12 |
+| 02 | [Roles and permissions](02-roles-and-permissions.md) | 13 | 0 | 0 | 0 | 0 | 13 / 13 |
 | 03 | [Branch scope and data access](03-branch-scope-and-data-access.md) | 9 | 0 | 0 | 0 | 0 | 9 / 9 |
 | 04 | [Settings and customization (master list)](04-settings-and-customization.md) | 3 | 2 | 2 | 0 | 2 | 3 / 7 |
 | 05 | [Working-days calendar](05-working-days-calendar.md) | 9 | 0 | 0 | 1 | 0 | 9 / 10 |
@@ -33,8 +33,8 @@ Status values: ✅ Built · ⚠️ Partial · ❌ Missing · ⏸ Blocked (by who
 | 21 | [Security](21-security.md) | 13 | 0 | 1 | 1 | 0 | 13 / 15 |
 | 22 | [Backup and restore](22-backup-and-restore.md) | 7 | 0 | 0 | 2 | 0 | 7 / 9 |
 | 23 | [Operations](23-operations.md) | 8 | 2 | 1 | 4 | 0 | 8 / 15 |
-| 24 | [Test kit, seed data and demo](24-test-kit-and-demo.md) | 11 | 0 | 0 | 0 | 0 | 11 / 11 |
-| | **Total** | **248** | **25** | **8** | **14** | **15** | **248 / 295 (84%)** |
+| 24 | [Test kit, seed data and demo](24-test-kit-and-demo.md) | 12 | 0 | 0 | 0 | 0 | 12 / 12 |
+| | **Total** | **250** | **25** | **8** | **14** | **15** | **250 / 297 (84%)** |
 
 (Module 19 counts row 0, "filters and export for all reports", as one ⚠️ besides the 19 reports.)
 

@@ -1,6 +1,6 @@
 # 24 Test kit, seed data and demo
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 25 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -20,7 +20,8 @@ How the team tests by hand and shows the system: the Manual Test Kit (clean stat
 | 8 | e2e in groups at 1440, 820 and 390 px, production build, 1 worker | ✅ Built | `npm run e2e:groups` | Developer | n/a | `scripts/e2e-groups.ts` | n/a |
 | 9 | Documentation screenshots on purpose only | ✅ Built | `npm run docs:screenshots` | Developer | n/a | D-042 | n/a |
 | 10 | Volume test database (separate, 15,000 loans) | ✅ Built | `npm run volume` | Developer | n/a | module 23 row 11 | n/a |
-| 11 | Accessibility and phone-width basics on the main screens of each role (language, heading, names, labels, alt text, no sideways scroll) | ✅ Built | e2e | Developer | n/a | e2e `a11y-basics.spec.ts` (15 / 15, 19 Nov 2026) | n/a |
+| 11 | Accessibility and phone-width basics on the main screens of each role (language, heading, names, labels, alt text, no sideways scroll) | ✅ Built | e2e | Developer | n/a | e2e `a11y-basics.spec.ts` (15 / 15, 19 Nov 2026; 15 / 15 again 25 Nov 2026) | n/a |
+| 12 | axe (WCAG 2.1 A and AA) on the main screens of each role at 1440, 820 and 390, and the open phone drawer; readability at 320, 360, 390, 844 × 390, 820, 1024 and 1440 (no sideways scroll, 44 px tap targets, 16 px fields and 14 px text on phones, nothing cut on My loans cards) (D-058) | ✅ Built | e2e | Developer | n/a | e2e `axe.spec.ts` and `ui-refresh.spec.ts` (25 Nov 2026, all pass; axe found and the fix closed two name mismatches: Home counts, Funds type filter on phones) | n/a |
 
 ## D. Known limits and open questions
 

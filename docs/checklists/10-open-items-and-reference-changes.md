@@ -1,6 +1,6 @@
 # 10 Open Items and Reference data changes
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 25 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -19,7 +19,7 @@ v2 §5.2 and Chart 9: a myloans change to a loan or borrower field waits as an O
 | 7 | While a loan is not Released: Send, Forward and new cash wait (Changed by D-053: v2 lets work continue) | ✅ Built | Loan file | n/a | No | `lib/services/source-blocks.ts` | Kit item 34 |
 | 8 | Cash out on a cancelled loan: Ask for the cash back before approving | ✅ Built | Open Items | approvers | No | `lib/services/open-items.ts` | Kit item 34 |
 | 9 | Unassigned queue for branches without an approver; Admin Home warning | ✅ Built | Open Items, Unassigned | All-branches approvers | No | D-011 | UAT ADM-6 |
-| 10 | Top-menu link with the pending count; Home card; waiting colours | ✅ Built | top menu, Home | approvers | Colours | D-054 | Count matches the list |
+| 10 | Menu link with the pending count (the sidebar at every width, D-058); Home card; waiting colours | ✅ Built | sidebar, Home | approvers | Colours | D-054, D-058; e2e `nav-sidebar.spec.ts` badges (25 Nov 2026) | Count matches the list |
 | 11 | Decided tab with filters (PN, branch, field) | ✅ Built | Open Items, Decided | approvers | No | `app/(app)/open-items/page.tsx` | Filter by PN |
 | 12 | Notify the current holder and approvers of a new Open Item | ✅ Built (one update per loan and run, field names only, plus the email event "source_changed"; banner, menu count, Home card) | Updates, email | approvers, holders | Email event switch | `lib/services/open-items.ts` (`notify`) | Raise one: the approver gets an update |
 | 13 | A loan cannot be Stored (closed) with an unresolved Open Item | 📦 Later phase (C: closure) | n/a | n/a | n/a | v2 §5.2 | n/a |

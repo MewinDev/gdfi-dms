@@ -49,3 +49,7 @@ export const FlaskIcon = (p: P) => <Svg {...p}><path d="M9 3h6M10 3v6L4.5 18.5A2
 /** Two arrows passing each other: a fund transfer. */
 export const ChartIcon = (p: P) => <Svg {...p}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></Svg>;
 export const TransferIcon = (p: P) => <Svg {...p}><path d="M4 8h14l-3-3" /><path d="M20 16H6l3 3" /></Svg>;
+export const MenuIcon = (p: P) => <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16" /></Svg>;
+/** Sidebar collapse (panel with the arrow pointing in) and expand (arrow pointing out). */
+export const PanelCloseIcon = (p: P) => <Svg {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /><path d="M16 10l-2 2 2 2" /></Svg>;
+export const PanelOpenIcon = (p: P) => <Svg {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /><path d="M14 10l2 2-2 2" /></Svg>;

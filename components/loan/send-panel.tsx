@@ -398,7 +398,7 @@ export function SendPanel(p: SendPanelProps) {
           </p>
           <p role="status" aria-live="polite" className="text-[13px] text-ink-2">{p.savedText && <span className="inline-flex items-center gap-1"><CheckIcon size={14} />{p.savedText}</span>}</p>
         </div>
-        <div className="fixed inset-x-0 bottom-[calc(69px+env(safe-area-inset-bottom))] z-20 flex flex-col gap-1.5 border-t border-line bg-cream px-4 pb-3 pt-3 shadow-[0_-4px_12px_rgb(12_35_64/0.08)] sm:static sm:shadow-none sm:z-auto sm:shrink-0 sm:flex-row-reverse sm:items-center sm:border-0 sm:bg-transparent sm:p-0">
+        <div className="fixed inset-x-0 bottom-0 z-20 flex flex-col gap-1.5 border-t border-line bg-cream px-4 pb-[calc(12px+env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_12px_rgb(12_35_64/0.08)] sm:static sm:shadow-none sm:z-auto sm:shrink-0 sm:flex-row-reverse sm:items-center sm:border-0 sm:bg-transparent sm:p-0">
           <button type="submit" className="btn-gold h-12 w-full px-6 sm:w-auto" disabled={!!reason || pending} aria-describedby={reason ? reasonId : undefined}>
             {pool ? "Send to the branch pool" : dp ? `Send to ${dp.name}` : "Send to processor"}
           </button>

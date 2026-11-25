@@ -10,6 +10,8 @@ import { OI_FIELDS, statusOutcome, type FeedStateWord, type OpenItemField } from
 import { openItemsFor, ruleGroupEffect, seesUnassigned, outstandingCash, type Tab } from "@/lib/services/open-items";
 import { PageHeader } from "@/components/ui/basics";
 import { CashBackForm, DecideForm, MoveCashForm } from "@/components/open-items/decide-form";
+import { ScrollFade } from "@/components/ui/scroll-fade";
+import { CopyButton } from "@/components/ui/copy-button";
 
 export const metadata: Metadata = { title: "Open Items" };
 
@@ -50,22 +52,22 @@ export default async function OpenItemsPage({ searchParams }: { searchParams: Pr
   return (
     <div className="dense flex w-full flex-col gap-4" data-open-items-page>
       <PageHeader title="Open Items" help="myloans changed these loans. Nothing changes in the DMS until you approve. Reject keeps the DMS value. Oldest first." />
-      <nav aria-label="Open Items tabs" className="flex overflow-x-auto border-b border-line">
+      <ScrollFade><nav aria-label="Open Items tabs" className="flex overflow-x-auto border-b border-line" data-scroll-row>
         {tabs.map((t) => (
           <Link key={t.key} href={q(t.key)} aria-current={tab === t.key ? "page" : undefined} className="tab shrink-0" data-oi-tab={t.key}>
             {t.label}{t.n !== undefined && <span className="ml-1 text-ink-2">{t.n}</span>}
             {t.red ? <span className="chip c-bad ml-2">{t.red} waiting too long</span> : null}
           </Link>
         ))}
-      </nav>
-      <form className="flex flex-wrap items-end gap-3" data-oi-filter>
+      </nav></ScrollFade>
+      <form className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap" data-oi-filter>
         <input type="hidden" name="tab" value={tab} />
-        <div className="flex flex-col gap-1"><label htmlFor="oi-pn" className="label">PN</label><input id="oi-pn" name="pn" defaultValue={sp.pn ?? ""} className="input w-48" /></div>
+        <div className="col-span-2 flex flex-col gap-1"><label htmlFor="oi-pn" className="label">PN</label><input id="oi-pn" name="pn" defaultValue={sp.pn ?? ""} className="input sm:w-48" /></div>
         <div className="flex flex-col gap-1"><label htmlFor="oi-branch" className="label">Branch</label>
           <select id="oi-branch" name="branch" defaultValue={sp.branch ?? ""} className="input"><option value="">All</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
         <div className="flex flex-col gap-1"><label htmlFor="oi-field" className="label">Field</label>
           <select id="oi-field" name="field" defaultValue={sp.field ?? ""} className="input"><option value="">All</option>{(Object.keys(OI_FIELDS) as OpenItemField[]).map((f) => <option key={f} value={f}>{OI_FIELDS[f].label}</option>)}</select></div>
-        <button type="submit" className="btn-ghost btn-sm">Show</button>
+        <button type="submit" className="btn-ghost btn-sm col-span-2 sm:col-span-1">Show</button>
         {(sp.pn || sp.branch || sp.field) && <Link href={`/open-items?tab=${tab}`} className="link text-sm">Clear</Link>}
       </form>
 
@@ -98,32 +100,39 @@ export default async function OpenItemsPage({ searchParams }: { searchParams: Pr
               const cash = status ? await outstandingCash(prisma, head.loanId) : [];
               return (
                 <li key={c.key} className="card flex flex-col gap-3 px-4 py-3 sm:px-5" data-oi-card={c.group ? "rules" : head.field} data-pn={head.loan.pn}>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <Link href={`/loans/${head.loan.pn}`} className="link mono font-semibold">{head.loan.pn}</Link>
-                    <span className="min-w-0 flex-1 truncate">{head.loan.borrowerName} · {head.branchName}</span>
-                    <span className={`chip ${TONE[head.tone]} h-6 text-xs`} data-oi-waiting={head.tone}>Waiting {head.waitingDays} working day{head.waitingDays === 1 ? "" : "s"}</span>
+                  {/* D-058: the card pattern of every list: name (wraps) and the chip, then the PN (copy), then the branch. */}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                      <span className="min-w-0 flex-auto break-words text-base font-semibold text-navy" data-oi-borrower>{head.loan.borrowerName}</span>
+                      <span className={`chip ${TONE[head.tone]} ml-auto shrink-0`} data-oi-waiting={head.tone}>Waiting {head.waitingDays} working day{head.waitingDays === 1 ? "" : "s"}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Link href={`/loans/${head.loan.pn}`} className="link break-all font-mono text-[15px] font-semibold">{head.loan.pn}</Link>
+                      <CopyButton text={head.loan.pn} label={`Copy PN ${head.loan.pn}`} />
+                    </div>
+                    <p className="text-sm text-ink-2">{head.branchName}</p>
                   </div>
                   <dl className="flex flex-col gap-1 text-sm">
                     {c.items.map((r) => (
                       <div key={r.id} className="flex flex-wrap gap-x-2" data-oi-item={r.field}>
-                        <dt className="font-semibold">{r.fieldLabel} <span className="mono text-[12px] font-normal text-ink-2">{r.number}</span></dt>
-                        <dd>DMS: {value(r, "oldValue")} → myloans: <strong>{value(r, "newValue")}</strong> <span className="text-[12px] text-ink-2">· raised {fmtShort(r.raisedAt)}</span></dd>
+                        <dt className="font-semibold">{r.fieldLabel} <span className="mono text-[13px] font-normal text-ink-2">{r.number}</span></dt>
+                        <dd>DMS: {value(r, "oldValue")} → myloans: <strong>{value(r, "newValue")}</strong> <span className="text-[13px] text-ink-2">· raised {fmtShort(r.raisedAt)}</span></dd>
                       </div>
                     ))}
                   </dl>
-                  {c.group && <p className="text-[13px] text-ink-2" data-oi-group-note>Loan type, amount, product and release date are decided together.</p>}
+                  {c.group && <p className="text-sm text-ink-2" data-oi-group-note>Loan type, amount, product and release date are decided together.</p>}
                   {effect && <ul className="list-disc pl-5 text-sm" data-oi-effect>{effect.sentences.map((s) => <li key={s}>{s}</li>)}</ul>}
-                  {status && <p className="rounded-xl bg-bad-bg px-3 py-2 text-[13px] text-bad-fg" data-oi-blocked>Send, Forward and new cash wait until this is decided.</p>}
-                  {status && (() => { const raw = (head.newRaw ?? {}) as { state?: FeedStateWord; replacedByPn?: string | null }; const o = loan?.replacedByPn && loan.replacedByPn === raw.replacedByPn ? { kind: "close" as const, text: `This will close the loan file (it is linked to ${loan.replacedByPn} on Related loans).` } : statusOutcome(raw.state ?? "NotReleased", raw.replacedByPn ?? null); return <p className="rounded-xl bg-fill px-3 py-2 text-[13px] font-semibold" data-oi-outcome={o.kind}>If you approve: {o.text} Reject keeps the loan as it is in the DMS.</p>; })()}
+                  {status && <p className="rounded-xl bg-bad-bg px-3 py-2 text-sm text-bad-fg" data-oi-blocked>Send, Forward and new cash wait until this is decided.</p>}
+                  {status && (() => { const raw = (head.newRaw ?? {}) as { state?: FeedStateWord; replacedByPn?: string | null }; const o = loan?.replacedByPn && loan.replacedByPn === raw.replacedByPn ? { kind: "close" as const, text: `This will close the loan file (it is linked to ${loan.replacedByPn} on Related loans).` } : statusOutcome(raw.state ?? "NotReleased", raw.replacedByPn ?? null); return <p className="rounded-xl bg-fill px-3 py-2 text-sm font-semibold" data-oi-outcome={o.kind}>If you approve: {o.text} Reject keeps the loan as it is in the DMS.</p>; })()}
                   {status && cash.length > 0 && head.canDecide && (statusOutcome(((head.newRaw ?? {}) as { state?: FeedStateWord }).state ?? "NotReleased", null).kind === "close" || !!loan?.replacedByPn) && (
                     <div className="flex flex-col gap-2" data-oi-cash>
-                      <p className="text-[13px]">Cash is still out: {cash.map((x) => `${x.number} (${x.dp.name}${seesAmounts ? `, ${peso(x.cents)}` : ""}${x.notReleased ? ", not released yet" : ""})`).join(", ")}.</p>
+                      <p className="text-sm">Cash is still out: {cash.map((x) => `${x.number} (${x.dp.name}${seesAmounts ? `, ${peso(x.cents)}` : ""}${x.notReleased ? ", not released yet" : ""})`).join(", ")}.</p>
                       <CashBackForm loanId={head.loanId} />
                       {loan?.replacedByPn && cash.filter((x) => !x.notReleased).map((x) => <MoveCashForm key={x.lineId} loanId={head.loanId} lineId={x.lineId} label={`Move ${x.number} to ${loan.replacedByPn}`} />)}
                     </div>
                   )}
                   {head.canDecide ? <DecideForm itemId={head.id} picks={!!effect?.needsPicks} label={`${head.loan.pn} ${c.items.map((i) => i.fieldLabel).join(", ")}`} />
-                    : <p className="text-[13px] text-ink-2" data-oi-readonly>Waiting for an approver of {head.branchName}.</p>}
+                    : <p className="text-sm text-ink-2" data-oi-readonly>Waiting for an approver of {head.branchName}.</p>}
                 </li>
               );
             }))}

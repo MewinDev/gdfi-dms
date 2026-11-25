@@ -203,17 +203,17 @@ body {
   :where([tabindex="-1"]):focus {
     outline: none;
   }
-  /* Phone: the top bar and the bottom bar stay on screen, so a control scrolled into view (keyboard focus,
-     a jump link) stops clear of them instead of underneath. */
-  @media (max-width: 37.4999rem) {
+  /* Phone: the top bar (and a pinned action bar, when there is one) stay on screen, so a control scrolled
+     into view (keyboard focus, a jump link) stops clear of them instead of underneath. */
+  @media (max-width: 47.9999rem) {
     html {
       scroll-padding-top: 4.5rem;
-      scroll-padding-bottom: 9rem;
+      scroll-padding-bottom: 6rem;
     }
   }
   /* Tablet and desktop: the 72px top bar is sticky too, so focus and jump links stop below it
      (Find a loan's title was partly hidden under it). */
-  @media (min-width: 37.5rem) {
+  @media (min-width: 48rem) {
     html {
       scroll-padding-top: 5.5rem;
     }
@@ -940,6 +940,44 @@ body {
   .login-chip {
     @apply inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4;
   }
+}
+
+/* D-058 readability on phones (below 768px). Outside the layers on purpose, so it beats any text-[13px] on a
+   field: 16px text in every field (iPhone Safari zooms the page on focus below 16px). */
+@media (max-width: 47.9999rem) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+/* Tabs that scroll sideways: a soft fade at an edge that has more (set by the ScrollFade helper). */
+[data-scroll-fade] {
+  position: relative;
+}
+[data-scroll-fade]::before,
+[data-scroll-fade]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  width: 32px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms;
+  z-index: 1;
+}
+[data-scroll-fade]::before {
+  left: 0;
+  background: linear-gradient(to right, var(--white), rgb(255 255 255 / 0));
+}
+[data-scroll-fade]::after {
+  right: 0;
+  background: linear-gradient(to left, var(--white), rgb(255 255 255 / 0));
+}
+[data-scroll-fade~="start"]::before,
+[data-scroll-fade~="end"]::after {
+  opacity: 1;
 }
 
 @media print {

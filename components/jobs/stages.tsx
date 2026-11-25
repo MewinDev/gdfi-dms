@@ -234,17 +234,17 @@ export function ForwardToBranchForm({ assignmentId, branches, loanBranch, paperC
   );
 }
 
-/** Phone: the main next action pinned above the bottom navigation (large target). */
+/** Phone: the main next action pinned to the bottom of the screen (large target; D-058: no bottom bar). */
 export function PinnedAction({ label, targetId, href }: { label: string; targetId: string; href?: string }) {
   if (href) {
     return (
-      <div className="no-print fixed inset-x-0 bottom-[calc(68px+env(safe-area-inset-bottom))] z-20 border-t border-line bg-white px-4 py-2 sm:hidden" data-pinned-action>
+      <div className="no-print fixed inset-x-0 bottom-0 z-20 border-t border-line bg-white px-4 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))] sm:hidden" data-pinned-action>
         <Link href={href} className="btn-primary flex h-12 w-full items-center justify-center text-[16px] no-underline">{label}</Link>
       </div>
     );
   }
   return (
-    <div className="no-print fixed inset-x-0 bottom-[calc(68px+env(safe-area-inset-bottom))] z-20 border-t border-line bg-white px-4 py-2 sm:hidden" data-pinned-action>
+    <div className="no-print fixed inset-x-0 bottom-0 z-20 border-t border-line bg-white px-4 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))] sm:hidden" data-pinned-action>
       <button
         type="button" className="btn-primary h-12 w-full text-[16px]"
         onClick={() => {

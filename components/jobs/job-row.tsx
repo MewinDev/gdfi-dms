@@ -17,17 +17,17 @@ export function JobRow({ r, showDp = false }: { r: Row; showDp?: boolean }) {
     >
       <span className="hidden sm:block"><Avatar name={r.borrower} size={40} /></span>
       <span className="min-w-0 flex-1 leading-snug">
-        <span className="block truncate text-[15px] font-semibold sm:text-base">{r.borrower}</span>
-        <span className="block text-[13px] text-ink-2">
-          {r.pn} · {txnName(r.typeCode, r.typeName)} · {r.branch}{showDp ? ` · ${r.dpName}` : ""}
+        <span className="block break-words text-base font-semibold">{r.borrower}</span>
+        <span className="block break-words text-sm text-ink-2">
+          <span className="break-all font-mono">{r.pn}</span> · {txnName(r.typeCode, r.typeName)} · {r.branch}{showDp ? ` · ${r.dpName}` : ""}
         </span>
-        {r.replaces && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-ink-2" data-replacement><span className="chip c-navy">Replacement</span>of {r.replaces}: its own turnaround time</span>}
-        {r.pasuyo && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-ink-2"><span className="chip c-wait">Pasuyo</span>{r.pasuyo}</span>}
-        {r.problem && <span className="block text-[13px] font-semibold text-bad-fg">Problem: {r.problem.reason}{r.problem.outsideControl ? " · Outside our control" : ""}</span>}
-        {r.hold && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-ink" data-hold-chip><span className="chip c-hold h-6 px-2 text-xs"><PauseIcon size={12} strokeWidth={2.6} />On hold</span>{holdRowLine(r.hold.reason, r.hold.days)}</span>}
-        {r.incomplete && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-act-fg"><span className="chip c-act">Package incomplete</span>{r.incomplete}</span>}
-        {r.returnedHow && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-ink-2" data-returned-chip><span className="chip c-wait">{r.returnedHow}</span></span>}
-        {r.stage && <span className="block text-[13px] text-ink-2" data-job-stage>Stage: {r.stage}</span>}
+        {r.replaces && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-ink-2" data-replacement><span className="chip c-navy">Replacement</span>of {r.replaces}: its own turnaround time</span>}
+        {r.pasuyo && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-ink-2"><span className="chip c-wait">Pasuyo</span>{r.pasuyo}</span>}
+        {r.problem && <span className="block text-sm font-semibold text-bad-fg">Problem: {r.problem.reason}{r.problem.outsideControl ? " · Outside our control" : ""}</span>}
+        {r.hold && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-ink" data-hold-chip><span className="chip c-hold h-6 px-2 text-xs"><PauseIcon size={12} strokeWidth={2.6} />On hold</span>{holdRowLine(r.hold.reason, r.hold.days)}</span>}
+        {r.incomplete && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm font-semibold text-act-fg"><span className="chip c-act">Package incomplete</span>{r.incomplete}</span>}
+        {r.returnedHow && <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-ink-2" data-returned-chip><span className="chip c-wait">{r.returnedHow}</span></span>}
+        {r.stage && <span className="block text-sm text-ink-2" data-job-stage>Stage: {r.stage}</span>}
         <span className="mt-1 flex flex-wrap gap-1.5 md:hidden">
           <TatChip data={r.tat} />
           {r.funds !== "NOT_NEEDED" && <FundsChip status={r.funds} />}

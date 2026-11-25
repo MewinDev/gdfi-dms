@@ -2,29 +2,23 @@ import Link from "next/link";
 import { Avatar, ToneChip } from "@/components/ui/basics";
 import { CheckIcon, InfoIcon } from "@/components/ui/icons";
 import type { LoanListCard } from "@/lib/ui/loan-cards";
+import { CopyButton } from "@/components/ui/copy-button";
 
 /**
- * Columns (from 640px): Borrower, Loan, Next step, Due, the action. The header row and every row use the
- * same grid, so the columns line up from row to row.
- */
-const GRID = "sm:grid sm:grid-cols-[minmax(0,1fr)_8.5rem_9rem_6.5rem] sm:items-center sm:gap-x-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_10rem_8rem_4.5rem] lg:gap-x-4";
-
-/**
- * My loans (Loan Associate): one block, a hairline between rows, about 56px a row, two lines in each column:
- * Borrower (avatar, name, PN · branch), Loan (amount; loan type · product), Next step (the stage map's Next
- * step text, "Waiting for: …" on hover; released on), Due, Open. A small header row only from five rows. On a phone the amount joins the PN line and the
- * loan type, product and release date go on one grey line; the whole row is the touch target (Open stays
- * for screen readers).
+ * My loans (D-058): one card per loan, the same on every width, one column under 1024px and two from there.
+ *   1  avatar, borrower name, the deadline chip on the right ("Late by 4 days"). The name's flex basis is its
+ *      full width, so when name and chip do not fit on one line the chip moves to the next line (right-aligned)
+ *      and the name keeps the whole width (it wraps only when longer than that)
+ *   2  PN (monospace) and a Copy button
+ *   3  branch · amount
+ *   4  the next step in full (the stage map's Next step text, "Waiting for: …" on hover)
+ *   5  small badges: loan type (New / Renewal), classification (Financing / Refinancing), the flags; released on
+ * The whole card opens the loan file (a stretched link on the name); nothing important is cut with "…".
  */
 export function MyLoansList({ cards }: { cards: LoanListCard[] }) {
   return (
-    <section aria-label="Loan files" className="overflow-hidden rounded-lg border border-line bg-white" data-loan-list>
-      {cards.length >= 5 && (
-        <div className={`hidden border-b border-line px-4 py-2 text-[12px] text-ink-2 ${GRID}`} aria-hidden="true" data-list-head>
-          <span>Borrower</span><span>Loan</span><span>Next step</span><span>Due</span><span className="hidden lg:block" />
-        </div>
-      )}
-      <ul>
+    <section aria-label="Loan files" data-loan-list>
+      <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {cards.map((c) => <Row key={c.pn} c={c} />)}
       </ul>
     </section>
@@ -32,61 +26,52 @@ export function MyLoansList({ cards }: { cards: LoanListCard[] }) {
 }
 
 function Due({ due }: { due: LoanListCard["due"] }) {
-  if (!due) return <span className="text-[13px] text-ink-2">-</span>;
+  if (!due) return null;
   // Amber or red only when due today or late; otherwise plain grey text.
-  return due.hot ? <ToneChip tone={due.tone}>{due.text}</ToneChip> : <span className="text-[13px] text-ink-2">{due.text}</span>;
+  return due.hot ? <ToneChip tone={due.tone}>{due.text}</ToneChip> : <span className="inline-flex h-7 items-center text-sm text-ink-2">{due.text}</span>;
 }
 
-/** "Something is different" chips: two at most, the rest as "+N" (My loans and the Loans table). */
+/** "Something is different" chips, each in full (they wrap onto another line rather than cut). */
 export function Flags({ flags }: { flags: LoanListCard["flags"] }) {
   if (!flags.length) return null;
-  const shown = flags.slice(0, 2);
-  const rest = flags.slice(2);
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-1" data-flags>
-      {shown.map((f) => (
-        <span key={f.text} title={f.text} className={`chip h-5 max-w-[14rem] truncate px-2 text-[11px] ${f.tone === "bad" ? "c-bad" : f.tone === "wait" ? "c-wait" : "c-act"}`}>{f.text}</span>
+    <span className="contents" data-flags>
+      {flags.map((f) => (
+        <span key={f.text} className={`chip h-auto min-h-6 whitespace-normal px-2 py-0.5 text-[13px] ${f.tone === "bad" ? "c-bad" : f.tone === "wait" ? "c-wait" : "c-act"}`}>{f.text}</span>
       ))}
-      {rest.length > 0 && <span className="chip c-mute h-5 px-2 text-[11px]" title={rest.map((f) => f.text).join(", ")}>+{rest.length}</span>}
     </span>
   );
 }
 
 function Row({ c }: { c: LoanListCard }) {
   return (
-    <li className="border-b border-line last:border-0">
-      <Link href={`/loans/${c.pn}`} className={`block px-3 py-2.5 text-inherit no-underline hover:bg-fill sm:min-h-14 sm:px-4 sm:py-2 ${GRID}`} data-loan-row={c.pn}>
-        {/* Borrower: avatar, name (and on a phone the due chip), then PN · branch (· amount on a phone) and any flags. */}
-        <span className="flex min-w-0 items-center gap-3">
-          <Avatar name={c.borrowerName} size={32} />
-          <span className="min-w-0 flex-1 leading-snug">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 truncate text-[15px] font-semibold text-navy">{c.borrowerName}</span>
-              <span className="ml-auto shrink-0 sm:hidden"><Due due={c.due} /></span>
-            </span>
-            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span className="min-w-0 truncate text-[13px] text-ink-2">{c.pn} · {c.branch}<span className="sm:hidden"> · {c.amountText}</span></span>
-              <Flags flags={c.flags} />
-            </span>
-            {/* Phone: the step, then the account details, on one line. */}
-            <span className="block truncate text-[12px] text-ink-2 sm:hidden" data-loan-details>
-              <span className="text-[13px] font-semibold text-ink" title={c.nextTip}>{c.nextText}</span>{[c.loanText, c.releasedText].filter(Boolean).map((t) => ` · ${t}`).join("")}
-            </span>
-          </span>
-        </span>
-        {/* From 640px: the amount, then loan type · product. */}
-        <span className="hidden min-w-0 leading-snug sm:block" data-loan-col>
-          <span className="block text-sm font-semibold tabular-nums text-ink">{c.amountText}</span>
-          <span className="block truncate text-[12px] text-ink-2" title={c.loanText}>{c.loanText || "-"}</span>
-        </span>
-        <span className="hidden min-w-0 leading-snug sm:block" data-step>
-          <span className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink" title={c.nextTip} data-next-text>{c.nextText}</span>
-          <span className="block truncate text-[12px] text-ink-2">{c.releasedText}</span>
-        </span>
-        <span className="hidden sm:block" data-due><Due due={c.due} /></span>
-        {/* Under 1024px the whole row is the link; "Open" stays for keyboard and screen readers only. */}
-        <span className="sr-only lg:not-sr-only lg:justify-self-end"><span className="btn-ghost min-h-8 px-3 text-[13px]">Open</span></span>
-      </Link>
+    <li className="relative flex min-w-0 flex-col gap-1.5 rounded-xl border border-line bg-white px-4 py-3 hover:border-line-strong hover:bg-fill-soft" data-loan-row={c.pn}>
+      {/* 1: avatar, name, deadline */}
+      <div className="flex min-w-0 items-start gap-3">
+        <Avatar name={c.borrowerName} size={40} />
+        <div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-x-3 gap-y-1 pt-1.5">
+          <Link href={`/loans/${c.pn}`} className="min-w-0 flex-auto break-words text-base font-semibold leading-snug text-navy no-underline after:absolute after:inset-0 after:rounded-xl after:content-['']" data-loan-name>
+            {c.borrowerName}
+          </Link>
+          <span className="ml-auto shrink-0" data-due><Due due={c.due} /></span>
+        </div>
+      </div>
+      {/* 2: PN, copyable */}
+      <div className="flex min-w-0 items-center gap-1 pl-[52px]">
+        <span className="break-all font-mono text-[15px] text-ink" data-pn>{c.pn}</span>
+        <CopyButton text={c.pn} label={`Copy PN ${c.pn}`} />
+      </div>
+      {/* 3: branch · amount */}
+      <p className="pl-[52px] text-sm text-ink-2" data-branch-amount>{c.branch} · <span className="font-semibold tabular-nums text-ink">{c.amountText}</span></p>
+      {/* 4: the next step in full */}
+      <p className="pl-[52px] text-[15px] font-semibold leading-snug text-ink" title={c.nextTip} data-step data-next-text>{c.nextText}</p>
+      {/* 5: badges */}
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 pl-[52px]" data-badges>
+        {c.loanType && <span className="chip c-mute h-6 px-2 text-[13px]" data-badge="loan-type">{c.loanType}</span>}
+        {c.classification && <span className="chip c-wait h-6 px-2 text-[13px]" data-badge="classification">{c.classification}</span>}
+        <Flags flags={c.flags} />
+        <span className="text-[13px] text-ink-2">{c.releasedText}</span>
+      </div>
     </li>
   );
 }

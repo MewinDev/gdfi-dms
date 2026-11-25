@@ -64,7 +64,7 @@ export function SummaryStrip({ items }: { items: Segment[] }) {
             <>
               {/* Phone: the number with the icon on its right, the label under both. From 640px: the icon on the left. */}
               {s.icon && <span className="col-start-2 row-start-1 sm:col-start-1 sm:row-span-2"><IconTile tone={tone} data={s.dot && on ? { "data-dot": s.dot } : undefined}>{s.icon}</IconTile></span>}
-              <span className={`col-start-1 row-start-1 text-[20px] font-semibold leading-none sm:col-start-2 sm:text-[22px] ${on ? "text-navy" : "text-ink-2"}`}>{s.n}</span>
+              <span className={`col-start-1 row-start-1 text-[20px] font-semibold leading-none sm:col-start-2 sm:text-[22px] ${on ? "text-navy" : "text-ink-2"}`}>{s.n}</span>{" "}
               <span className="col-span-2 row-start-2 mt-1 text-[12px] leading-tight text-ink-2 sm:col-span-1 sm:col-start-2 sm:text-[13px]">{s.label}</span>
             </>
           );
@@ -72,6 +72,7 @@ export function SummaryStrip({ items }: { items: Segment[] }) {
           return (
             <li key={s.key} className="min-w-0" data-segment={s.key} data-count={s.n}>
               {s.href ? (
+                // The visible text ("1 Need you now", with the space between) is the start of the name (axe).
                 <Link href={s.href} aria-label={`${s.n} ${s.label}, open`} className={`${cls} text-inherit no-underline hover:border-line-strong hover:bg-fill`}>{body}</Link>
               ) : (
                 <span className={cls} aria-label={`${s.n} ${s.label}`}>{body}</span>

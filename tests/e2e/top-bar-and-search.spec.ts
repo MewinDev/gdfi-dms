@@ -43,7 +43,7 @@ test("LA: the Loans page has the search, and / focuses it", async ({ page }) => 
   const box = visibleSearchBox(page);
   await expect(box).toBeVisible();
   // Live MyLoans suggestions: PN or borrower name (the mock supports search).
-  await expect(box).toHaveAttribute("placeholder", "PN, borrower name, CIN or CIF");
+  await expect(box).toHaveAttribute("placeholder", "Search PN, name or CIN");
   // The samples: one closed row; opened, three of them.
   const samples = page.getByRole("main").locator("[data-home-samples]").first();
   await expect(samples).not.toHaveAttribute("open", "");
@@ -65,10 +65,17 @@ test("LA: the Loans page has the search, and / focuses it", async ({ page }) => 
 test("LA: Find loan opens Loans with the search focused", async ({ page }) => {
   await signIn(page, "la");
   const vw = page.viewportSize()!.width;
-  test.skip(vw < 600, "Phones have no Find loan button in the top bar; Loans is in the bottom bar.");
+  test.skip(vw < 768, "Phones have no Find loan button in the top bar; My loans is in the menu (D-058).");
   await topBar(page).getByRole("link", { name: "Find loan" }).click();
   await expect(page).toHaveURL(/\/loans/);
   await expect(visibleSearchBox(page)).toBeFocused();
+  // One Find loan per page: My loans has its own beside the search box, so the header has none there.
+  await expect(topBar(page).getByRole("link", { name: "Find loan" })).toHaveCount(0);
+  await expect(page.getByRole("main").getByRole("button", { name: "Find loan" })).toHaveCount(1);
+  for (const p of ["/inbox", "/notifications"]) {
+    await page.goto(p);
+    await expect(topBar(page).getByRole("link", { name: "Find loan" })).toBeVisible();
+  }
 });
 
 test("Admin: no Find loan button; Settings and Loans have a clean top bar; Loans search filters the list", async ({ page }) => {

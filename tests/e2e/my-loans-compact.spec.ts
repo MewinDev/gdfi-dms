@@ -3,9 +3,10 @@ import { cleanTestRoles, db, resetLoans } from "./db";
 import { signIn, visibleSearchBox, watchConsole, docShot } from "./helpers";
 
 /**
- * My loans, compact and minimalist: title only, one 40px toolbar (Find loan inside the box, Filters beside it),
- * the samples in one closed row (test mode), underline tabs with counts, "Showing X of Y" only with a filter or a
- * search, one list block with aligned columns (Borrower, Loan, Next step, Due, Open), calm empty lines.
+ * My loans, compact and minimalist: title only, one toolbar (the search, Find loan and Filters; on a phone the box
+ * is full width and the two buttons go under it), the samples in one closed row (test mode), underline tabs with
+ * counts, "Showing X of Y" only with a filter or a search, the loan cards (D-058: five lines, one column under
+ * 1024px and two from there), calm empty lines.
  * Screenshots at 1440, 820 and 390: docs/screenshots/my-loans-compact/.
  */
 const DIR = "docs/screenshots/my-loans-compact";
@@ -50,7 +51,7 @@ test.afterAll(async () => {
   await resetLoans();
 });
 
-test("LA with one loan: title only, one toolbar (Find loan once), samples closed, underline tabs, one compact row", async ({ page }) => {
+test("LA with one loan: title only, one toolbar (Find loan once), samples closed, underline tabs, one card", async ({ page }) => {
   const clean = watchConsole(page);
   await loan("Ana Villanueva");
   await signIn(page, "la");
@@ -58,54 +59,49 @@ test("LA with one loan: title only, one toolbar (Find loan once), samples closed
   await expect(main(page).getByRole("heading", { level: 1, name: "My loans" })).toBeVisible();
   await expect(main(page).getByText("Find a loan by its number")).toHaveCount(0); // no subtitle
   await expect(main(page).getByRole("button", { name: "Find loan" })).toHaveCount(1);
-  // One 40px toolbar row.
+  // One toolbar row from 600px; two on a phone (the box, then Find loan and Filters).
   const bar = main(page).locator("[data-loans-toolbar]");
-  expect(Math.round((await bar.boundingBox())!.height)).toBeLessThanOrEqual(44);
-  await expect(visibleSearchBox(page)).toHaveAttribute("placeholder", "PN, borrower name, CIN or CIF");
+  expect(Math.round((await bar.boundingBox())!.height)).toBeLessThanOrEqual(width(page) >= 600 ? 48 : 108);
+  await expect(visibleSearchBox(page)).toHaveAttribute("placeholder", "Search PN, name or CIN");
   // Samples: one closed row.
   const samples = main(page).locator("[data-home-samples]").first();
   await expect(samples).not.toHaveAttribute("open", "");
   // Tabs: labels, order, counts; no "Showing" line without a filter.
   await expect(tabs(page).getByRole("link")).toHaveText([/^My queue\s*1$/, /^All branch loans\s*1$/, /^Problems\s*0$/, /^Archived\s*0$/]);
   await expect(tabs(page).getByRole("link", { name: /^My queue/ })).toHaveAttribute("aria-current", "page");
-  expect(await tabs(page).getByRole("link", { name: /^My queue/ }).evaluate((e) => getComputedStyle(e).borderBottomWidth)).toBe("2px");
+  expect(await tabs(page).getByRole("link", { name: /^My queue/ }).evaluate((e) => getComputedStyle(e).borderBottomWidth)).toBe("3px");
   await expect(main(page).locator("[data-showing]")).toHaveCount(0);
   await expect(main(page).getByText(/Showing \d+ loan file/)).toHaveCount(0);
-  // One block, one row, no header row under five rows.
+  // One list, one card: name, PN, branch · amount, the next step, the badges.
   await expect(main(page).locator("[data-loan-list]")).toHaveCount(1);
   await expect(rows(page)).toHaveCount(1);
-  await expect(main(page).locator("[data-list-head]")).toHaveCount(0);
   const row = rows(page).first();
-  await expect(row).toContainText("Ana Villanueva");
-  await expect(row).toContainText("GD1652026907701 · Angono");
-  await expect(row).toContainText("₱401,000");
-  await expect(row).toContainText("New · Auto Refinancing");
-  await expect(row).toContainText("Check documents");
-  // The Next step text (stage map) may take two lines: about 70px a row.
-  if (width(page) >= 640) expect((await row.boundingBox())!.height).toBeLessThanOrEqual(76);
-  else expect((await row.boundingBox())!.height).toBeLessThanOrEqual(80); // three short lines
+  await expect(row.locator("[data-loan-name]")).toHaveText("Ana Villanueva");
+  await expect(row.locator("[data-pn]")).toHaveText("GD1652026907701");
+  await expect(row.locator("[data-branch-amount]")).toHaveText("Angono · ₱401,000");
+  await expect(row.locator("[data-next-text]")).toContainText("Check documents");
+  await expect(row.locator('[data-badge="loan-type"]')).toHaveText("New");
+  await expect(row.locator('[data-badge="classification"]')).toHaveText("Refinancing");
+  // Five short lines.
+  expect((await row.boundingBox())!.height).toBeLessThanOrEqual(220);
   await noSideways(page);
   await shot(page, "la-one-loan");
   clean();
 });
 
-test("LA with twelve loans: header row, aligned columns, seven rows in view at 1440; a filter shows its chip and Showing X of Y", async ({ page }) => {
+test("LA with twelve loans: two columns of cards from 1024px, one under it; a filter shows its chip and Showing X of Y", async ({ page }) => {
   const clean = watchConsole(page);
   for (let i = 0; i < 12; i++) await loan(NAMES[i], { loanType: i < 4 ? "Renewal" : "New" });
   await signIn(page, "la");
   await page.goto("/loans?tab=all");
   await expect(rows(page)).toHaveCount(12);
-  await expect(main(page).locator("[data-list-head]")).toBeVisible().catch(async () => {
-    if (width(page) >= 640) throw new Error("the header row should show from five rows");
-  });
-  if (width(page) >= 640) {
-    // The step column starts at the same x on every row.
-    const xs = await rows(page).locator("[data-step]").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
-    expect(new Set(xs).size).toBe(1);
-  }
-  if (width(page) === 1440) {
-    // Seven rows in view at 1440 (the Next step text may take two lines).
-    expect(await rows(page).nth(6).evaluate((e) => e.getBoundingClientRect().bottom)).toBeLessThanOrEqual(900);
+  // The next step starts at the same x in every card of a column.
+  const xs = await rows(page).locator("[data-step]").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
+  expect(new Set(xs).size).toBe(width(page) >= 1024 ? 2 : 1);
+  if (width(page) >= 1024) {
+    // Two cards side by side.
+    const [a, b] = await rows(page).evaluateAll((els) => els.slice(0, 2).map((e) => Math.round(e.getBoundingClientRect().top)));
+    expect(a).toBe(b);
   }
   await noSideways(page);
 
