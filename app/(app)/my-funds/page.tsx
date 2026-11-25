@@ -18,6 +18,7 @@ import { AdvanceStatusChip } from "@/components/funds/advance-status";
 import { FundsTypePill } from "@/components/funds/funds-type-pill";
 import { RecordHistory } from "@/components/funds/record-history";
 import { defaultFundsType, maskedAccount, releaseLine } from "@/lib/funds/types";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 
 export const metadata: Metadata = { title: "My funds" };
 
@@ -63,13 +64,13 @@ export default async function MyFundsPage({ searchParams }: { searchParams: Prom
   return (
     <div className="dense funds-compact flex w-full flex-col gap-4">
       <PageHeader title="My funds" help="Ask Finance for cash for your jobs, then liquidate with receipts and return the rest." />
-      <nav aria-label="My funds tabs" className="flex overflow-x-auto border-b border-line">
+      <ScrollFade><nav aria-label="My funds tabs" className="flex overflow-x-auto border-b border-line" data-scroll-row>
         {TABS.map(([k, l]) => (
           <Link key={k} href={`/my-funds?tab=${k}`} aria-current={tab === k ? "page" : undefined} className="tab shrink-0">
             {l}{k === "liquidation" && open.length > 0 && <span className="ml-1 text-ink-2">{open.length}</span>}
           </Link>
         ))}
-      </nav>
+      </nav></ScrollFade>
       {exception && overdue.length > 0 && <p role="status" className="rounded-xl bg-wait-bg px-4 py-3 text-[15px] text-wait-fg">Finance let you submit one more request while an advance is overdue.</p>}
 
       {tab === "request" && (

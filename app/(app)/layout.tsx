@@ -13,7 +13,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireUser();
   // D-053: Open Items in the menu, with the pending count, for the approvers (either approver tick).
   const approver = can(user, PERMISSIONS.SOURCE_REVIEW) || can(user, PERMISSIONS.SOURCE_REVIEW_BORROWER);
-  const [unread, inbox, openItems] = await Promise.all([unreadNotificationCount(user), inboxCount(user), approver ? pendingOpenItemCount(user) : Promise.resolve(0)]);
+  const [unread, inbox, openItems] = await Promise.all([
+    unreadNotificationCount(user), inboxCount(user), approver ? pendingOpenItemCount(user) : Promise.resolve(0),
+  ]);
   // Every item follows the person's permissions (no role names).
   const worksLoans = can(user, PERMISSIONS.CHECKLIST_TICK); // Loan Associate workspace: "My loans", Find loan
   const settings = SETTINGS_PERMISSIONS.some((p) => can(user, p));
@@ -26,23 +28,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // The processor works from Jobs (and sees each loan file from there), so Loans is not in their nav.
     // D-046: the inbox (my items and the branch pools) for whoever takes work: LA, DP, Finance, or moves it.
     ...([PERMISSIONS.CHECKLIST_TICK, PERMISSIONS.JOBS_WORK, PERMISSIONS.WORKITEMS_MOVE].some((p) => can(user, p)) || canFundsAny(user) ? [{ href: "/inbox", label: "Inbox", icon: "inbox" as const, badge: inbox }] : []),
-    ...(approver ? [{ href: "/open-items", label: "Open Items", short: "Items", icon: "openitems" as const, badge: openItems }] : []),
+    ...(approver ? [{ href: "/open-items", label: "Open Items", icon: "openitems" as const, badge: openItems }] : []),
     ...(can(user, PERMISSIONS.JOBS_WORK) ? [{ href: "/jobs", label: "Jobs", icon: "jobs" as const }] : []),
-    ...(can(user, PERMISSIONS.FUNDS_REQUEST) ? [{ href: "/my-funds", label: "My funds", short: "Funds", icon: "funds" as const }] : []),
+    ...(can(user, PERMISSIONS.FUNDS_REQUEST) ? [{ href: "/my-funds", label: "My funds", icon: "funds" as const }] : []),
     ...(canFundsAny(user) ? [{ href: "/funds", label: "Funds", icon: "funds" as const }] : []),
-    ...(can(user, PERMISSIONS.LOANS_VIEW) && !(can(user, PERMISSIONS.JOBS_WORK) && !worksLoans) ? [worksLoans ? { href: "/loans", label: "My loans", short: "Loans", icon: "loans" as const } : { href: "/loans", label: "Loans", icon: "loans" as const }] : []),
-    ...(monitoring ? [{ href: "/monitoring", label: "Monitoring", short: "Monitor", icon: "monitor" as const }] : []),
+    ...(can(user, PERMISSIONS.LOANS_VIEW) && !(can(user, PERMISSIONS.JOBS_WORK) && !worksLoans) ? [worksLoans ? { href: "/loans", label: "My loans", icon: "loans" as const } : { href: "/loans", label: "Loans", icon: "loans" as const }] : []),
+    ...(monitoring ? [{ href: "/monitoring", label: "Monitoring", icon: "monitor" as const }] : []),
     // Updates sits in the nav when there are no admin items (otherwise the bell in the top bar is enough).
     ...(admin.some(Boolean) ? [] : [{ href: "/notifications", label: "Updates", icon: "updates" as const, badge: unread }]),
     ...(admin[0] ? [{ href: "/admin/users", label: "Users", icon: "users" as const }] : []),
     ...(settings ? [{ href: "/admin/settings", label: "Settings", icon: "settings" as const }] : []),
-    ...(auditHref ? [{ href: auditHref, label: "Audit Log", short: "Audit", icon: "audit" as const }] : []),
+    ...(auditHref ? [{ href: auditHref, label: "Audit Log", icon: "audit" as const }] : []),
   ];
-  const subtitle = hasAllBranches(user) ? `${user.roleName} · All branches` : user.branchNames.length > 3 ? `${user.roleName} · ${user.branchNames.length} branches` : user.branchNames.join(" · ");
+  // D-058: the sidebar's person block: "All branches", the one branch, or "3 branches" (the names in a tooltip).
+  const all = hasAllBranches(user);
+  const branchList = all ? [] : user.branchNames;
+  const branches = all ? "All branches" : branchList.length > 1 ? `${branchList.length} branches` : (branchList[0] ?? "");
 
   return (
     <>
-      <AppShell items={items} user={{ name: user.name, subtitle }} unread={unread} testMode={isTestMode()} staging={appEnv() === "staging"} mockMyLoans={myLoansMode() === "mock"} findLoan={worksLoans && can(user, PERMISSIONS.LOANS_SEARCH)}>
+      <AppShell items={items} user={{ id: user.id, name: user.name, role: user.roleName, branches, branchList: branchList.length > 1 ? branchList : [] }} unread={unread} testMode={isTestMode()} staging={appEnv() === "staging"} mockMyLoans={myLoansMode() === "mock"} findLoan={worksLoans && can(user, PERMISSIONS.LOANS_SEARCH)}>
         {children}
       </AppShell>
     </>

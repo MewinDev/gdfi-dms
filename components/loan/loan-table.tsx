@@ -102,15 +102,15 @@ function Row({ r, cal }: { r: LoanRow; cal: WorkCalendar }) {
   const td = "px-3 py-2 align-middle first:pl-4 last:pr-4";
   return (
     <tr className="relative border-b border-line last:border-0 hover:bg-fill has-[a:focus-visible]:outline-2 has-[a:focus-visible]:-outline-offset-2 has-[a:focus-visible]:outline-navy" data-loan-row={r.pn}>
-      <td className={`${td} max-w-[12rem] lg:max-w-[15rem]`} data-col="borrower">
+      <td className={`${td} min-w-[11rem] lg:min-w-[14rem] xl:min-w-[16rem]`} data-col="borrower">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           {/* The whole row is the link (it covers the row); the same target as before. */}
-          <Link href={`/loans/${r.pn}`} className="min-w-0 truncate font-semibold text-navy no-underline outline-none after:absolute after:inset-0 after:content-['']">
+          <Link href={`/loans/${r.pn}`} className="min-w-0 break-words font-semibold text-navy no-underline outline-none after:absolute after:inset-0 after:content-['']">
             {r.borrowerName}<span className="sr-only">, open the loan file</span>
           </Link>
           <Flags flags={f.c.flags} />
         </span>
-        <span className="block truncate text-[12px] text-ink-2"><span className="font-mono">{r.pn}</span><span className="lg:hidden"> · {r.branchName || r.branch}</span></span>
+        <span className="block break-all text-[13px] text-ink-2"><span className="font-mono">{r.pn}</span><span className="lg:hidden"> · {r.branchName || r.branch}</span></span>
       </td>
       <td className={`${td} hidden max-w-[8rem] truncate lg:table-cell`} data-col="branch">{r.branchName || r.branch}</td>
       <td className={`${td} max-w-[10rem] lg:max-w-[12rem]`} data-col="product">
@@ -133,15 +133,15 @@ function PhoneRow({ r, cal }: { r: LoanRow; cal: WorkCalendar }) {
   return (
     <li className="border-b border-line last:border-0">
       <Link href={`/loans/${r.pn}`} className="flex min-h-11 flex-col gap-0.5 px-3 py-2.5 text-inherit no-underline hover:bg-fill" data-loan-row={r.pn}>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate text-[15px] font-semibold text-navy">{r.borrowerName}</span>
-          <span className="ml-auto shrink-0"><Tat due={f.c.due} deadline={r.tat?.deadline} /></span>
+        <span className="flex min-w-0 items-start gap-2">
+          <span className="min-w-0 flex-1 break-words text-[15px] font-semibold text-navy">{r.borrowerName}</span>
+          <span className="shrink-0"><Tat due={f.c.due} deadline={r.tat?.deadline} /></span>
         </span>
-        {f.c.flags.length > 0 && <Flags flags={f.c.flags} />}
-        <span className="truncate text-[13px] text-ink-2"><span className="font-mono">{r.pn}</span> · {r.branchName || r.branch}</span>
-        <span className="truncate text-[13px] text-ink-2">{f.product} · {r.loanType} · {f.released} · {f.amount}</span>
+        {f.c.flags.length > 0 && <span className="flex flex-wrap gap-1"><Flags flags={f.c.flags} /></span>}
+        <span className="break-words text-sm text-ink-2"><span className="break-all font-mono">{r.pn}</span> · {r.branchName || r.branch}</span>
+        <span className="text-sm text-ink-2">{f.product} · {r.loanType} · {f.released} · {f.amount}</span>
         <StageMark stage={f.stage} />
-        <span className="text-[13px] text-ink-2" title={f.ownerTip}>{r.nextStep.label}</span>
+        <span className="text-sm text-ink" title={f.ownerTip}>{r.nextStep.label}</span>
       </Link>
     </li>
   );

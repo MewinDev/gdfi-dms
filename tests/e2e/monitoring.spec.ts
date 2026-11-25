@@ -119,7 +119,7 @@ test("DP monitor: grouped by area then branch, availability, drill-down without 
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Monitoring:");
   await expect(page.getByText("Includes time on hold").first()).toBeVisible();
   // No Home or loan files for this role.
-  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Home", exact: true })).toHaveCount(0);
+  await expect(page.locator('#main-sidebar nav[aria-label="Main"] a[href="/dashboard"]')).toHaveCount(0);
   const tile = (label: string) => page.locator(`[data-tile="${label}"]`);
   await expect(tile("Assigned")).toContainText("2");
   await expect(tile("Overdue")).toContainText("1");

@@ -164,9 +164,11 @@ Component classes: `.btn-gold` (the one main action), `.btn-navy`, `.btn-ghost`,
 
 | Component | File | Notes |
 |---|---|---|
-| `AppShell` | `components/ui/app-shell.tsx` | Sidebar (1024px+), 88px icon rail (640-1023px), top header + bottom tab bar (below 640px). `/` focuses Find a loan. |
+| `AppShell` | `components/ui/app-shell.tsx` | One sidebar, three behaviours (D-058): full 264px (1280px+, collapsible), 72px icon rail with tooltips (768-1279px, expandable; both choices remembered per person), a drawer opened by ☰ below 768px. No bottom bar. `/` focuses Find a loan. |
+| `ScrollFade` | `components/ui/scroll-fade.tsx` | Tabs that scroll sideways: a fade at the edge with more, the selected tab kept in view |
+| `CopyButton` | `components/ui/copy-button.tsx` | Copy a PN (44px target; sits above a card's stretched link) |
 | `FindLoan` | `components/ui/find-loan.tsx` | Search box for a PN, CIN or CIF (placeholder "PN, CIN or CIF"), `id="find-loan"` |
-| `HomeLoanRow`, `MyLoansList` | `components/home/home-loan-row.tsx`, `components/loan/my-loans-list.tsx` | Home rows and the My loans list; the whole row is the link (their data type `LoanCardData` is in `components/ui/loan-card.tsx`) |
+| `HomeLoanRow`, `MyLoansList` | `components/home/home-loan-row.tsx`, `components/loan/my-loans-list.tsx` | Home rows and the My loans cards (five lines, nothing cut, D-058); the whole row or card is the link (their data type `LoanCardData` is in `components/ui/loan-card.tsx`) |
 | `Stepper` | `components/ui/stepper.tsx` | The 10 steps from the stage map (`lib/workflow/stage-map.ts`); under 1024px one line "Step N of 10 · name" with a 10-segment bar |
 | `Avatar`, `ToneChip`, `Banner` | `components/ui/basics.tsx` | |
 | `Sheet` | `components/ui/sheet.tsx` | Native `<dialog>`: centered card, bottom sheet on phones, or side panel (`side`) |
@@ -179,11 +181,14 @@ Component classes: `.btn-gold` (the one main action), `.btn-navy`, `.btn-ghost`,
 
 | Width | Layout |
 |---|---|
-| 1024px and up (`lg`) | 248px sidebar, content max 1100px, main column + 300px side column |
-| 640-1023px (`sm`) | 88px icon rail, one column, side cards below |
-| below 640px | Top header + bottom tab bar, 16px side padding, full-width buttons, pinned Send button on the checklist screen |
+| 1280px and up (`xl`) | 264px sidebar (collapsible to the rail) |
+| 768-1279px (`md`) | 72px icon rail (expandable to the full sidebar) |
+| below 768px | One-line navy header with ☰ (the sidebar as a drawer), logo, "GDFI DMS" and the bell |
+| 1024px and up (`lg`) | Content: main column + side column; My loans cards in two columns |
+| 600px and up (`sm`, set to 37.5rem in `globals.css`) | Content: tablet layouts (tables instead of phone lists) |
+| below 600px | 16px side padding, full-width buttons, pinned Send / next-action bar at the bottom of the screen |
 
-Full-height shells use `100dvh`. Checked with no horizontal scroll at 1440, 1280, 1024, 820, 390 and 320px.
+Full-height shells use `100dvh`. Phones: 16px fields, 14px body text, 44px tap targets (D-058). Checked with no horizontal scroll at 1440, 1024, 844 × 390, 820, 390, 360 and 320px (`tests/e2e/ui-refresh.spec.ts`), and with axe at 1440, 820 and 390 (`tests/e2e/axe.spec.ts`).
 
 ### What differs from the mockups
 
@@ -191,11 +196,11 @@ Full-height shells use `100dvh`. Checked with no horizontal scroll at 1440, 1280
 - Each ticked paper shows its Document ID as a small caption, which the mockup rows do not have.
 - The LTO office field appears in the send block for Mortgage only (it is required there); the mockup shows Notary, which does not need it.
 - "Who should do it" is a standard dropdown with the Recommended chip drawn inside it, not a custom list.
-- The Find a loan placeholder is "PN, CIN or CIF" on every page (one text fits every width).
-- The sidebar shows a sign-out button next to the user; on phones, sign out is at the bottom of Updates. The mockups do not show sign out.
+- The Find a loan page's placeholder is "PN, CIN or CIF"; the My loans / Loans search says "Search PN, name or CIN" (D-058).
+- The sidebar (and the phone drawer) ends with a pinned block: avatar, name, role, branches and a Sign out icon (D-058); the collapse button is an icon beside the logo. Away is set on the Inbox, not shown in the sidebar. The mockups do not show sign out.
 - Phases 4 to 10 have no LA screens yet, so "Check the returned package" and "Send the papers to the vault" show the step without a button.
 - Admin keeps a Journey tab (with the test simulator) on the Loan File; the LA sees three tabs and can open the full 10-phase view from More loan details.
-- The tablet Home mockup labels the rail item "Loans"; the phone tab bar says "My loans", as in the phone mockup.
+- The mockups' phone tab bar is replaced by the drawer (D-058); the rail shows icons only, with the full name as a tooltip.
 
 ---
 

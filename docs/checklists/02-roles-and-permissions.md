@@ -1,6 +1,6 @@
 # 02 Roles and permissions
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 25 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -21,7 +21,8 @@ What each person may do. Roles are bundles of permission ticks (D-003); a person
 | 9 | One Finance role; CA and FT per person ("Handles CA / FT") (Changed by D-009: v2 had two Finance roles) | ✅ Built | Users, Edit | Admin | Yes | D-009, D-034 | A CA-only Finance user cannot see FT |
 | 10 | Role matrix download (CSV) | ✅ Built | Settings, Permissions | `roles:manage` | No | `app/api/settings/roles-matrix` | Download opens in Excel |
 | 11 | Permission scan: every server action and route checks a permission | ✅ Built | n/a | n/a | No | `lib/auth/permission-scan.test.ts` | n/a (automated) |
-| 12 | Role by screen: each role's menu and refused pages | ✅ Built | all | n/a | No | e2e `role-screens.spec.ts` (18 Nov 2026) | UAT per role, first row |
+| 12 | Role by screen: each role's menu and refused pages | ✅ Built | all | n/a | No | e2e `role-screens.spec.ts` (18 Nov 2026; again 25 Nov 2026 with the D-058 sidebar, 21 / 21) | UAT per role, first row |
+| 13 | One sidebar at every width (D-058): only the permitted pages, count badges on Inbox and Open Items, the active page marked, the icon-only collapse button at the top beside the logo (tooltip, aria-label); the person's block pinned to the bottom (avatar, name, role, branches with a tooltip when several, Sign out icon; the menu scrolls above it), no Away line (Away stays on the Inbox); TEST MODE one line, never in production; phone drawer (tap outside, swipe left, Esc or a page closes it; focus kept inside), tablet rail (expand, remembered), desktop full (collapse, remembered); no bottom bar | ✅ Built | every page | n/a | Per person: rail or full (this browser) | e2e `nav-sidebar.spec.ts` at 1440, 820 and 390 (25 Nov 2026, after the review changes, all pass); unit `lib/test-mode.test.ts` | Phone: ☰ opens the menu, a tap outside closes it; tablet: Expand, reload, still expanded; hover the Sign out icon: tooltip |
 
 ## D. Known limits and open questions
 

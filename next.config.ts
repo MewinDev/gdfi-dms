@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   // Every page depends on the signed-in user (session cookie), so pages render dynamically.
   // Cache Components is left off on purpose.
   poweredByHeader: false,
+  // D-058: no Next.js dev indicator (the "N" badge) in the corner: testers took it for part of the app.
+  // Compile and runtime errors still show. It never shows in production.
+  devIndicators: false,
   // D-055: the security headers, one place (lib/security/headers.ts).
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders({ dev: process.env.NODE_ENV !== "production", production: process.env.APP_ENV === "production" }) }];

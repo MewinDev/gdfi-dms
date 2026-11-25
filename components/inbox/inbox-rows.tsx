@@ -43,34 +43,35 @@ function Row({ r, x, pool, move, moving: busy }: { r: InboxRow; x: RowExtras; po
   const [moving, setMoving] = useState(false);
   const acceptable = !x.noAccept && (r.state === "POOL" || r.state === "INBOX") && r.kind !== "FUND_REQUEST" && r.kind !== "PACKAGE";
   return (
-    <li className="flex flex-col gap-2 px-4 py-3 sm:px-5" data-inbox-row={r.label} data-state={r.state}>
+    <li className="relative flex flex-col gap-2 px-4 py-3 hover:bg-fill-soft sm:px-5" data-inbox-row={r.label} data-state={r.state}>
+      {/* D-058: the text keeps the whole width when the due column does not fit beside it (that column drops below). */}
       <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-        <div className="min-w-0 flex-1">
-          <Link href={r.link} className="text-[15px] font-semibold text-navy underline-offset-2 hover:underline">{r.label}</Link>
-          <p className="text-[13px] text-ink-2">
+        <div className="min-w-0 flex-auto basis-[18rem]">
+          <Link href={r.link} className="break-words text-base font-semibold text-navy underline-offset-2 after:absolute after:inset-0 after:content-[''] hover:underline">{r.label}</Link>
+          <p className="mt-0.5 text-sm text-ink-2">
             <span className="chip c-wait mr-1.5">{r.kindText}</span>
             {r.branchName}{r.holder && !pool ? ` · ${r.holder}` : ""}
           </p>
-          <p className="text-[13px]">
+          <p className="text-sm">
             <span className={pool || r.state !== "HELD" ? POOL_TEXT[r.poolTone] : "text-ink-2"} data-pool-tone={r.poolTone}>{r.state === "HELD" ? `Accepted after ${r.waiting === 0 ? "less than a day" : `${r.waiting} working day${r.waiting === 1 ? "" : "s"}`}` : r.waitingText}</span>
             <span className="text-ink-2"> · arrived {r.arrivedText}</span>
             {r.candidate && <span className="text-ink-2" data-candidate> · released {r.candidate.releaseDate}{r.candidate.amount ? ` · ${r.candidate.amount}` : ""}</span>}
           </p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
+        <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
           {r.paused ? <span className="chip c-hold" data-due-tone="paused">Paused</span>
             : r.dueText ? <span className={`chip ${DUE_CHIP[r.tone ?? "green"]}`} data-due-tone={r.tone}>Due {r.dueText}</span>
-            : r.state !== "HELD" ? <span className="text-[13px] text-ink-2">Due date starts at accept</span> : null}
-          <span className="text-[12px] text-ink-2">{r.measureText}</span>
+            : r.state !== "HELD" ? <span className="text-sm text-ink-2">Due date starts at accept</span> : null}
+          <span className="text-[13px] text-ink-2">{r.measureText}</span>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="relative z-10 flex flex-wrap items-center gap-x-4 gap-y-1 self-start">
         {acceptable ? <AcceptButton id={r.id} /> : <Link href={r.link} className="btn-secondary btn-sm">Open</Link>}
-        {!acceptable && r.state !== "HELD" && <span className="text-[13px] text-ink-2">{r.kind === "PACKAGE" ? "Receive it to accept it." : "Approve or Release counts as accepting it."}</span>}
+        {!acceptable && r.state !== "HELD" && <span className="text-sm text-ink-2">{r.kind === "PACKAGE" ? "Receive it to accept it." : "Approve or Release counts as accepting it."}</span>}
         {x.giveTo && !moving && <button type="button" className="link inline-flex min-h-11 items-center text-[13px]" onClick={() => setMoving(true)} data-move-open>Move</button>}
         {x.correct && r.dueDate && r.kind !== "DP_JOB" && <CorrectDueDate subjectType="WorkItem" subjectId={r.id} current={r.dueDate} />}
       </div>
-      {moving && x.giveTo && <MoveForm r={r} people={x.giveTo} action={move} pending={busy} onClose={() => setMoving(false)} />}
+      {moving && x.giveTo && <div className="relative z-10"><MoveForm r={r} people={x.giveTo} action={move} pending={busy} onClose={() => setMoving(false)} /></div>}
     </li>
   );
 }

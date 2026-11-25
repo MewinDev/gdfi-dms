@@ -7,8 +7,8 @@ import { LiveFindInput } from "@/components/ui/live-find-input";
 import type { FilterField } from "@/lib/ui/loan-filters";
 
 /**
- * Loans toolbar: one row with the search (PN, CIN or CIF; "/" focuses it), one Filters button with a
- * count, and Export CSV where allowed. Filters open as a popover under the button on desktop and as
+ * Loans toolbar: the search (PN, name or CIN; "/" focuses it), its button and one Filters button with a
+ * count. Filters open as a popover under the button on desktop and as
  * a bottom sheet on tablet and phone. Esc or a click outside closes it without changing anything.
  */
 export function LoansToolbar({
@@ -19,34 +19,39 @@ export function LoansToolbar({
   /** Loan files the current filters show (the panel starts from this). */
   resultCount: number;
 }) {
+  // D-058: on a phone the box is full width and its button and Filters sit on the row below (nothing cut);
+  // from 600px all three share one row. The button is outside the form (form="…") so the rows can differ.
+  const formId = "loans-search-form";
   return (
-    <div className="flex items-center gap-2" data-loans-toolbar>
-      <form action={search.action} method="get" role="search" aria-label="Search" className="min-w-0 flex-1">
+    <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap" data-loans-toolbar>
+      <form id={formId} action={search.action} method="get" role="search" aria-label="Search" className="w-full min-w-0 sm:w-auto sm:flex-1">
         {Object.entries(search.hidden ?? {}).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null))}
-        {/* One 40px row: the box with its button inside the right end (32px). */}
-        <div className="flex h-10 items-center gap-2 rounded-lg border border-line-input bg-white pl-3 pr-1 focus-within:border-navy focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-navy" data-search-box>
-          <span className="text-ink-2"><SearchIcon size={16} /></span>
+        <div className="relative flex h-12 items-center gap-2 rounded-lg border border-line-input bg-white px-3 focus-within:border-navy focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-navy sm:h-11" data-search-box>
+          <span className="text-ink-2"><SearchIcon size={18} /></span>
           <label htmlFor="find-loan" className="sr-only">Find a loan</label>
           {search.suggest ? (
             <LiveFindInput
               defaultValue={search.defaultValue} autoFocus={search.autoFocus} required={search.required ?? true}
-              placeholder="PN, borrower name, CIN or CIF"
-              className="h-9 w-full min-w-0 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
+              placeholder={SEARCH_PLACEHOLDER} panelAlign="row"
+              className="h-10 w-full min-w-0 bg-transparent text-base text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none sm:text-[15px]"
             />
           ) : (
             <input
               id="find-loan" name="q" defaultValue={search.defaultValue} autoFocus={search.autoFocus} required={search.required ?? true} autoComplete="off"
-              placeholder="Search by PN, CIN or CIF"
-              className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none"
+              placeholder={SEARCH_PLACEHOLDER}
+              className="h-full min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-2 focus-visible:outline-none sm:text-[15px]"
             />
           )}
-          <button type="submit" className="btn-navy h-8 min-h-8 shrink-0 rounded-md px-3 text-[13px]">{search.buttonLabel ?? "Search"}</button>
         </div>
       </form>
+      <button type="submit" form={formId} className="btn-navy h-11 min-h-11 flex-1 rounded-lg px-4 text-[15px] sm:flex-none" data-search-submit>{search.buttonLabel ?? "Search"}</button>
       <FiltersButton {...filters} resultCount={resultCount} />
     </div>
   );
 }
+
+/** The one placeholder of the loan search box (My loans, Loans). */
+export const SEARCH_PLACEHOLDER = "Search PN, name or CIN";
 
 function FiltersButton({ fields, hidden, activeCount, clearHref, resultCount }: { fields: FilterField[]; hidden: Record<string, string | undefined>; activeCount: number; clearHref: string; resultCount: number }) {
   const wrap = useRef<HTMLDivElement>(null);
@@ -91,10 +96,10 @@ function FiltersButton({ fields, hidden, activeCount, clearHref, resultCount }: 
       <button
         ref={btn} type="button" onClick={() => (mode === "closed" ? open() : close())} aria-haspopup="dialog" aria-expanded={mode !== "closed"}
         aria-label={activeCount ? `Filters, ${activeCount} on` : "Filters"}
-        className="btn-ghost h-10 min-h-10 gap-2 rounded-lg px-2.5 text-sm max-sm:min-w-11 sm:px-3.5"
+        className="btn-ghost h-11 min-h-11 gap-2 rounded-lg px-3.5 text-[15px]"
       >
         <FilterIcon size={18} />
-        <span className="hidden sm:inline">Filters</span>
+        <span>Filters</span>
         {activeCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-navy px-1.5 text-[11px] font-bold text-white" data-filter-count>{activeCount}</span>}
       </button>
       <dialog

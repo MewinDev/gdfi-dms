@@ -11,6 +11,7 @@ import { giveToCandidates, itemsWithAway, myItems, poolItems, type InboxRow } fr
 import { PageHeader } from "@/components/ui/basics";
 import { poolColours } from "@/lib/services/pool-colours";
 import { AwayForm, InboxList, type RowExtras } from "@/components/inbox/inbox-rows";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 
 export const metadata: Metadata = { title: "Inbox" };
 
@@ -64,14 +65,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   return (
     <div className="dense flex w-full flex-col gap-4">
       <PageHeader title="Inbox" help="Your work, least time left first. Take new work from your branch pool: the first to accept gets it." />
-      <nav aria-label="Inbox tabs" className="flex overflow-x-auto border-b border-line">
+      <ScrollFade><nav aria-label="Inbox tabs" className="flex overflow-x-auto border-b border-line" data-scroll-row>
         {tabs.map((t) => (
           <Link key={t.key} href={`/inbox?tab=${t.key}`} aria-current={tab === t.key ? "page" : undefined} className="tab shrink-0" data-inbox-tab={t.key}>
             {t.label} <span className="ml-1 text-ink-2">{t.n}</span>
             {t.red ? <span className="chip c-bad ml-2" title="Waiting too long">{t.red} waiting too long</span> : null}
           </Link>
         ))}
-      </nav>
+      </nav></ScrollFade>
 
       {tab === "mine" && (
         <section aria-label="Away" className="card px-4 py-3 sm:px-5">

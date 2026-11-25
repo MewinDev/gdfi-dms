@@ -3,8 +3,8 @@ import { signInWith, SUPERADMIN, type TestUser } from "./helpers";
 
 /**
  * Role by screen (piece 12, D-055): each phase A role signs in, sees its own menu, and a page it may not use is
- * "not found" even by typing the address (DP: Settings opens for its "See expense kinds" tick). The menu is read from the server's list (every Main navigation, the
- * rail and the phone's bar alike), so the check holds at every width.
+ * "not found" even by typing the address (DP: Settings opens for its "See expense kinds" tick). The menu is read from the sidebar's Main navigation (D-058: the
+ * same sidebar at every width, in the page even while a phone keeps it closed), so the check holds at every width.
  */
 async function menu(page: Page): Promise<string[]> {
   await page.goto("/dashboard");

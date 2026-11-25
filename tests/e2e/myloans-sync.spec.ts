@@ -124,11 +124,11 @@ test("Amount change (piece 8): the LA sees the banner and the Open items row; Se
 
   await signInWith(page, BUTTONS.admin);
   await page.goto("/dashboard");
-  // D-053: Open Items in the top menu, with the pending count, for the approvers.
-  // ("Open Items" on wide screens, "Items" on the rail and the phone's bottom bar.)
-  const menu = page.getByRole("navigation", { name: "Main" }).filter({ visible: true }).first().locator('a[href="/open-items"]');
-  await expect(menu).toContainText(/Items/);
-  await expect(menu).toContainText("1");
+  // D-053: Open Items in the menu, with the pending count, for the approvers (D-058: the sidebar at every
+  // width; the link's name carries the count, the badge shows it).
+  const menu = page.locator('#main-sidebar nav[aria-label="Main"] a[href="/open-items"]');
+  await expect(menu).toHaveAttribute("aria-label", "Open Items, 1"); // (on a phone the sidebar is closed, so no computed name)
+  await expect(menu.locator("[data-nav-badge]")).toHaveText("1");
   await page.goto(`/open-items?pn=${PN}`);
   const card = page.locator(`[data-oi-card="rules"][data-pn="${PN}"]`);
   await expect(card.locator('[data-oi-item="amount"]')).toContainText("₱1,000,000.00");

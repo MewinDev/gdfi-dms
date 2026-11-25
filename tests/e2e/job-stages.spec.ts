@@ -291,15 +291,15 @@ test("Screens: Settings Processing stages, DP Home with On hold (a returned job 
   await signInWith(page, BUTTONS.dp);
   const n = await jobOf(PN, "NOTARY");
   await accept(page, n.id);
-  // Phone: the main next action pinned above the bottom navigation, 48px high.
+  // Phone: the main next action pinned to the bottom of the screen (D-058: no bottom bar), 48px high.
   const bar = page.locator("[data-pinned-action]");
   if ((page.viewportSize()?.width ?? 0) < 640) {
     await expect(bar).toBeVisible();
     await expect(bar.getByRole("button")).toHaveText("Start Notarization");
     const box = (await bar.getByRole("button").boundingBox())!;
     expect(box.height).toBeGreaterThanOrEqual(48);
-    const nav = (await page.getByRole("navigation", { name: "Main" }).filter({ visible: true }).last().boundingBox())!;
-    expect((await bar.boundingBox())!.y + (await bar.boundingBox())!.height).toBeLessThanOrEqual(nav.y + 1);
+    const vh = page.viewportSize()!.height;
+    expect(Math.round((await bar.boundingBox())!.y + (await bar.boundingBox())!.height)).toBe(vh);
     await shot(page, "job-phone-bottom-bar", false);
   } else {
     await expect(bar).toBeHidden();
