@@ -4,7 +4,7 @@ import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
  * The stage map (phase 1, display only; lib/workflow/stage-map.ts): the loan-file stepper's new step names
- * and current step, and the Next step texts on My loans with their "Waiting for: …" tooltip.
+ * and current step, and the Status / next step texts on Loans with their "Waiting for: …" tooltip.
  * Screenshots at 1440, 820 and 390: docs/screenshots/stage-map/ (the Loans table one is in loans-table.spec.ts).
  */
 const DIR = "docs/screenshots/stage-map";
@@ -76,7 +76,7 @@ test("the loan-file stepper: the 10 new step names, the current step from the st
   clean();
 });
 
-test("My loans: the Next step column shows the stage map's text with its tooltip", async ({ page }) => {
+test("Loans (D-059): the Status / next step shows the stage map's text with its tooltip", async ({ page }) => {
   const clean = watchConsole(page);
   const want: [string, string, string, string | null][] = [
     ["Ana Villanueva", "For checklist", "Check documents, then assign to DP", "Waiting for: Loan Associate"],
@@ -87,17 +87,14 @@ test("My loans: the Next step column shows the stage map's text with its tooltip
   ];
   for (const [name, stage] of want) await loan(name, stage);
   await signIn(page, "la");
-  await page.goto("/loans?tab=all");
-  const rows = main(page).locator("[data-loan-row]");
+  await page.goto("/loans");
+  const rows = main(page).locator("[data-loan-row]:visible");
   await expect(rows).toHaveCount(want.length);
   for (const [name, , next, tip] of want) {
-    const row = rows.filter({ hasText: name });
-    if (width(page) >= 640) {
-      const cell = row.locator("[data-next-text]");
-      await expect(cell).toHaveText(next);
-      if (tip) await expect(cell).toHaveAttribute("title", tip);
-      else expect(await cell.getAttribute("title"), name).toBeNull();
-    } else await expect(row).toContainText(next);
+    const cell = rows.filter({ hasText: name }).locator("[data-next-text]");
+    await expect(cell).toHaveText(next);
+    if (tip) await expect(cell).toHaveAttribute("title", tip);
+    else expect(await cell.getAttribute("title"), name).toBeNull();
   }
   await noSideways(page);
   await page.evaluate(() => document.fonts.ready);
@@ -137,20 +134,17 @@ test("fix: the stepper at steps 6, 9 and 10 (In Safekeeping, Closure), no sidewa
   clean();
 });
 
-test("fix: the Loans table shows 'In safekeeping' for a loan in that stage", async ({ page }) => {
+test("fix: the Loans list shows the In safekeeping next step for a loan in that stage", async ({ page }) => {
   const clean = watchConsole(page);
   await loan("Tess Ramos", "In Safekeeping");
   await loan("Pedro Cruz", "For Vault Transmittal");
   await loan("Gina Lopez", "In transit to Vault");
   await signIn(page, "admin");
-  await page.goto("/loans?tab=all");
+  // D-059: one Status / next step column (no Stage column); the loan file keeps the stage name and step.
+  await page.goto("/loans");
   const rows = main(page).locator("[data-loan-row]:visible");
   await expect(rows).toHaveCount(3);
-  const row = rows.filter({ hasText: "Tess Ramos" });
-  await expect(row.locator("[data-stage-name]")).toHaveText("In safekeeping");
-  await expect(row).toContainText("Kept in the vault until the loan is fully paid");
-  if (width(page) >= 1024) await expect(row.locator("[data-stage-name]")).toHaveAttribute("data-stage-step", "9");
-  await expect(rows.filter({ hasText: "Gina Lopez" }).locator("[data-stage-name]")).toHaveText("Receiving");
+  await expect(rows.filter({ hasText: "Tess Ramos" }).locator("[data-next-text]")).toHaveText("Kept in the vault until the loan is fully paid");
   await noSideways(page);
   await page.evaluate(() => document.fonts.ready);
   await docShot(page, { path: `${FIX_DIR}/loans-table-in-safekeeping-${width(page)}.png`, fullPage: true });

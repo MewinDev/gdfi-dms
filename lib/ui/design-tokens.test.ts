@@ -52,6 +52,16 @@ describe("Funds type pills (a label, not a status)", () => {
   });
 });
 
+describe("D-060: the myloans · Not yet in DMS badge", () => {
+  it("soft background, dark text, AA contrast (with secondary text too), a border; not a status colour", () => {
+    expect(lum(parse(token("myloans-bg")))).toBeGreaterThan(0.8);
+    expect(contrast(token("myloans-fg"), token("myloans-bg"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token("ink-2"), token("myloans-bg"))).toBeGreaterThanOrEqual(4.5);
+    expect(() => token("myloans-line")).not.toThrow();
+    for (const s of STATUSES) expect(token("myloans-bg")).not.toBe(token(`${s}-bg`));
+  });
+});
+
 describe("Soft status palette", () => {
   it.each(STATUSES)("%s: a very light background, a dark text colour and a thin border", (s) => {
     const bg = parse(token(`${s}-bg`));

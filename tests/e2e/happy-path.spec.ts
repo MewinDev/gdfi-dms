@@ -14,8 +14,8 @@ test("LA: find GD1012026901001, open loan file, tick the papers, send to a proce
   // Find a loan
   await page.goto("/loans");
   const main = page.getByRole("main");
-  await main.getByLabel("Find a loan").fill("GD1012026901001");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.locator("#find-loan").fill("GD1012026901001");
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   await expect(main.locator("[data-find-source]")).toBeVisible();
   await expect(main.getByText('This is a Refinancing loan: the product name contains "refinanc".')).toBeVisible();
   await expect(main.getByText("Notary, EDST, Entry of PPSR, Mortgage")).toBeVisible();
@@ -54,8 +54,8 @@ test("LA: find GD1012026901001, open loan file, tick the papers, send to a proce
   await page.goto("/loans/GD1012026901001?tab=todo&tx=NOTARY");
   await expect(page.getByRole("region", { name: "Notary: job" }).getByText(/Waiting for them to accept\./)).toBeVisible();
 
-  // The sample now says "Opened" (My loans: the samples are one closed row; open it first)
-  await page.goto("/loans");
+  // The sample now says "Opened" (D-059: the samples are on Home, one closed row; open it first)
+  await page.goto("/dashboard");
   const samples = page.getByRole("main").locator("[data-home-samples]").first();
   await samples.locator("summary").click();
   await expect(samples.getByRole("button", { name: /Maria Santos/ })).toContainText("Opened");

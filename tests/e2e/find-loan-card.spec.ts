@@ -28,7 +28,7 @@ async function noSideways(page: Page) {
 }
 /** The page title is fully visible: below the sticky top bar and inside the window. */
 async function titleClear(page: Page) {
-  const r = await main(page).getByRole("heading", { level: 1, name: "Find a loan" }).evaluate((h) => {
+  const r = await main(page).getByRole("heading", { level: 1, name: "Loans" }).evaluate((h) => {
     const t = h.getBoundingClientRect();
     const bar = Array.from(document.querySelectorAll("header")).find((x) => getComputedStyle(x).position === "sticky" && x.getBoundingClientRect().height > 0);
     return { top: t.top, bottom: t.bottom, barBottom: bar ? bar.getBoundingClientRect().bottom : 0, vh: window.innerHeight };
@@ -56,11 +56,11 @@ test("nothing chosen: compact card, separate answer buttons, Open disabled with 
 
   // No repeats: the PN once in the card, no branch or product in the header, no "all good" chips, one subtitle.
   await expect(c.locator("[data-find-pn]")).toHaveText(FIN);
-  await expect(c.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText(["Loan Released", "MyLoans"]);
+  await expect(c.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText(["Loan Released", "myloans · Not yet in DMS"]);
   await expect(c.locator("[data-find-amber]")).toHaveCount(0);
   for (const gone of ["Your branch", "Details complete", "Next: we set up", "Pick both answers"]) await expect(main(page).getByText(gone)).toHaveCount(0);
   await expect(main(page).getByText("Nothing is saved until you open the loan file.")).toHaveCount(0); // only once both are chosen
-  await expect(c.locator("dt")).toHaveCount(8);
+  await expect(c.locator("dt")).toHaveCount(11); // D-060: CIN, Classification and Status in myloans too
 
   // Two radio groups, labelled by their question; nothing chosen at the start.
   for (const q of ["Is it an Undertaking?", "Is the OR/CR transferred?"]) {

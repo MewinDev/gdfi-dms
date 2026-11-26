@@ -32,11 +32,11 @@ test("header: breadcrumb above, no boxed Back button beside the title, subtitle 
   await expect(title).toBeVisible();
   await expect(main.getByRole("link", { name: /Back to home/ })).toHaveCount(0);
   if (phone(page)) {
-    await expect(main.getByRole("link", { name: /My loans/ }).first()).toBeVisible();
+    await expect(main.getByRole("link", { name: /^‹?\s*Loans$/ }).first()).toBeVisible();
   } else {
     const crumbs = main.getByRole("navigation", { name: "Breadcrumb" });
     await expect(crumbs.getByRole("link", { name: "Home" })).toBeVisible();
-    await expect(crumbs.getByRole("link", { name: "My loans" })).toBeVisible();
+    await expect(crumbs.getByRole("link", { name: "Loans", exact: true })).toBeVisible();
     await expect(crumbs.getByText("GD1012026901001")).toHaveAttribute("aria-current", "page");
   }
   const sub = main.getByText("Maria Santos · GD1012026901001 · Antipolo · ₱450,000 · New");
@@ -50,7 +50,7 @@ test("header: breadcrumb above, no boxed Back button beside the title, subtitle 
   await page.getByRole("link", { name: "Start checking" }).click();
   await expect(main.getByRole("heading", { level: 1, name: "Check documents" })).toBeVisible();
   if (!phone(page)) {
-    await expect(main.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Home›My loans›GD1012026901001›Check documents");
+    await expect(main.getByRole("navigation", { name: "Breadcrumb" })).toContainText("Home›Loans›GD1012026901001›Check documents");
   }
   await noSideScroll(page);
 });

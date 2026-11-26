@@ -22,14 +22,14 @@ async function change(pn: string, over: Record<string, unknown>) {
 }
 async function findAndOpen(page: Page, pn: string) {
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
   await expect(page).toHaveURL(new RegExp(`/loans/${pn}`));
 }
 async function openPn(page: Page, pn = PN) {
-  await page.goto(`/loans?fill=${pn}`);
+  await page.goto(`/loans?q=${pn}`);
   await findAndOpen(page, pn);
 }
 async function refresh(page: Page, pn = PN) {
@@ -51,7 +51,7 @@ test.afterAll(async () => {
   await setting("simulator.enabled", false);
 });
 
-test("Branch pool → loan file: the LA accepts a released loan from the pool, opens it, and the pool item is done", async ({ page }) => {
+test("Branch pool → loan file: the LA opens a released loan from the pool (View details, its preview, Open loan file); the pool item is done", async ({ page }) => {
   const branch = await db.branch.findUniqueOrThrow({ where: { code: "165" } });
   await db.sourceLoanCandidate.create({ data: { externalLoanId: 990_003, cin: "CIN-FAKE-990003", pn: PN, borrowerName: "Pool Borrower", branchCode: "165", branchName: "Angono", amount: "1000000.00", releaseDate: new Date(Date.now() - 3 * 86_400_000) } });
   await db.workItem.create({ data: { kind: "LOAN_CANDIDATE", subjectId: PN, role: "LA", branchId: branch.id, pn: PN, label: `${PN}: Pool Borrower`, state: "POOL", measure: "WAITING" } });
@@ -59,12 +59,15 @@ test("Branch pool → loan file: the LA accepts a released loan from the pool, o
   await page.goto("/inbox?tab=pool");
   const row = page.locator(`[data-inbox-row="${PN}: Pool Borrower"]`);
   await expect(row).toBeVisible();
-  await row.locator("[data-accept]").click();
-  await expect.poll(async () => (await db.workItem.findFirstOrThrow({ where: { kind: "LOAN_CANDIDATE", subjectId: PN } })).state).toBe("HELD");
-  await page.goto("/inbox");
-  await page.locator(`[data-inbox-row="${PN}: Pool Borrower"]`).getByRole("link", { name: `${PN}: Pool Borrower` }).click();
-  await expect(page).toHaveURL(new RegExp(`/loans\\?fill=${PN}`));
-  await findAndOpen(page, PN);
+  // D-060: no Accept; View details opens the loan preview, and Open loan file makes the loan file.
+  await expect(row.locator("[data-accept]")).toHaveCount(0);
+  await row.getByRole("link", { name: "View details" }).click();
+  await expect(page).toHaveURL(new RegExp(`/loans/preview/${PN}$`));
+  // A Financing loan: the two questions first, then Open loan file.
+  await page.getByRole("main").getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
+  await page.getByRole("main").getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
+  await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
+  await expect(page).toHaveURL(new RegExp(`/loans/${PN}`));
   await expect.poll(async () => (await db.workItem.findFirstOrThrow({ where: { kind: "LOAN_CANDIDATE", subjectId: PN } })).state).toBe("DONE");
   await noSideways(page);
 });

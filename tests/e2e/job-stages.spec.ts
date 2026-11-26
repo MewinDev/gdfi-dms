@@ -22,9 +22,9 @@ async function noSideways(page: Page) {
   expect(over, `page scrolls sideways by ${over}px`).toBeLessThanOrEqual(0);
 }
 async function openPn(page: Page, pn: string) {
-  await page.goto(`/loans?fill=${pn}`);
+  await page.goto(`/loans?q=${pn}`);
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   const und = main.getByRole("radio", { name: "Undertaking", exact: true });
   if (await und.count()) {
     await und.check({ force: true });

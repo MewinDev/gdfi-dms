@@ -25,9 +25,9 @@ test.beforeEach(async () => {
 test.afterAll(clearAway);
 
 async function openPn(page: Page) {
-  await page.goto(`/loans?fill=${PN}`);
+  await page.goto(`/loans?q=${PN}`);
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   const open = main.getByRole("button", { name: "Open loan file" });
   await expect(async () => {
     await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });

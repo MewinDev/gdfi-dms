@@ -24,9 +24,9 @@ async function noSideways(page: Page) {
 }
 const toast = (page: Page) => page.locator("[data-live-toast]");
 async function openPn3(page: Page) {
-  await page.goto("/loans?fill=GD1652026901003");
+  await page.goto("/loans?q=GD1652026901003");
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();

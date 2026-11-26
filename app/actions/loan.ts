@@ -3,12 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { can, getCurrentUser, requirePermission } from "@/lib/auth/current-user";
-import { listLoans } from "@/lib/services/queries";
+import { getCurrentUser, requirePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { runAction, str, strOrNull, type ActionState } from "@/lib/action";
 import { openLoanFile, refreshFromMyLoans } from "@/lib/services/loan-file";
 import { refreshFoundLoan } from "@/lib/services/find-local";
+import { forgetCached } from "@/lib/myloans/client";
 import {
   addCustomTransaction,
   assignToDp,
@@ -68,10 +68,20 @@ export async function openLoanFileAction(_prev: ActionState, fd: FormData): Prom
     if (ft && ft !== "UNDERTAKING" && ft !== "NON_UNDERTAKING") throw new UserError("Pick Undertaking or Non-Undertaking.", "financingType");
     if (orcr && orcr !== "TRANSFERRED" && orcr !== "UNTRANSFERRED") throw new UserError("Pick ORCR Transferred or Untransferred.", "orcrStatus");
     const r = await openLoanFile(user, { pn: str(fd, "pn"), financingType: ft as never, orcrStatus: orcr as never });
-    target = `/loans/${r.pn}?tab=transactions${r.alreadyOpen ? (r.byOther ? "&notice=just-opened" : "&notice=already-open") : "&notice=opened"}`;
+    // D-060: someone else opened it a moment before: the preview says who and when, with a link to view it.
+    target = r.alreadyOpen && r.byOther ? `/loans/preview/${r.pn}?taken=1` : `/loans/${r.pn}?tab=transactions${r.alreadyOpen ? "&notice=already-open" : "&notice=opened"}`;
   });
   if (state?.ok && target) redirect(target);
   return state;
+}
+
+/** D-060: Refresh from myloans on the preview page: forget the short-cache answer for this PN, then show the page again (API 1 once more, logged). */
+export async function refreshPreviewAction(fd: FormData): Promise<void> {
+  await requirePermission(PERMISSIONS.LOANS_SEARCH);
+  const pn = str(fd, "pn").trim().toUpperCase();
+  if (!/^[A-Z0-9]{6,40}$/.test(pn)) return;
+  forgetCached(pn);
+  redirect(`/loans/preview/${encodeURIComponent(pn)}?refreshed=${Date.now()}`);
 }
 
 export async function refreshLoanAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -326,15 +336,6 @@ export async function reportProblemAction(_prev: ActionState, fd: FormData): Pro
     revalidateLoan(await pnOfLoan(loanId));
     return "Problem reported. Your supervisor has been told.";
   });
-}
-
-/** "Show results (N)" in the Filters panel: how many loan files the chosen filters would show. Read-only. */
-export async function countLoansAction(fd: FormData): Promise<number | null> {
-  const user = await getCurrentUser();
-  if (!user || !can(user, PERMISSIONS.LOANS_VIEW)) return null;
-  const v = (k: string) => (typeof fd.get(k) === "string" && fd.get(k) ? String(fd.get(k)) : undefined);
-  const rows = await listLoans(user, { tab: v("tab") ?? "queue", stage: v("stage"), classification: v("classification"), branch: v("branch"), loanType: v("loanType"), tat: v("tat"), needsAction: v("needsAction"), q: v("q") });
-  return rows.length;
 }
 
 /** The LA confirms the papers the processor handed over with a Return to LA (some may be "Not received"). */

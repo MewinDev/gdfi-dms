@@ -125,11 +125,11 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
       <PageTop
         crumbs={[
           { label: "Home", href: "/dashboard" },
-          { label: la ? "My loans" : "Loans", href: "/loans" },
+          { label: "Loans", href: "/loans" },
           { label: loan.pn, href: workTxn ? `${base}?tab=todo` : undefined },
           ...(workTxn ? [{ label: "Check documents" }] : []),
         ]}
-        back={workTxn ? { label: "Loan File", href: `${base}?tab=todo` } : { label: la ? "My loans" : "Loans", href: "/loans" }}
+        back={workTxn ? { label: "Loan File", href: `${base}?tab=todo` } : { label: "Loans", href: "/loans" }}
         title={workTxn ? "Check documents" : "Loan File"}
         subtitle={workTxn
           ? <>{txnName(workTxn.type.code, workTxn.type.name)} · {loan.borrowerName} · <span className="mono" data-pn>{loan.pn}</span></>

@@ -257,8 +257,8 @@ test("Check documents: the Send panel shows availability chips, the processor on
   await signInWith(page, BUTTONS.la);
   await page.goto("/loans");
   const main = page.getByRole("main");
-  await main.getByLabel("Find a loan").fill("GD1012026901001");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.locator("#find-loan").fill("GD1012026901001");
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   await main.getByRole("button", { name: "Open loan file" }).click();
   await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
   await page.goto("/loans/GD1012026901001?tab=todo&tx=NOTARY");

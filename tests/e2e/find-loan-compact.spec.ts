@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, visibleSearchBox, watchConsole, signInWith, docShot } from "./helpers";
+import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
  * Find a loan, the compact page: the search row, the slim sample list, one result card, the two
@@ -26,47 +26,6 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
-test("empty page: title, one search row, slim samples (one line each, details in the tooltip)", async ({ page }) => {
-  const clean = watchConsole(page);
-  await signIn(page, "la");
-  await page.goto("/search");
-  await expect(main(page).getByRole("heading", { level: 1, name: "Find a loan" })).toBeVisible();
-  await expect(main(page).getByText("Loan files in the DMS first; a full PN not opened here yet is looked up in MyLoans.")).toBeVisible();
-  const box = visibleSearchBox(page);
-  await expect(box).toHaveAttribute("placeholder", "PN, CIN or CIF");
-  await expect(box).toBeFocused();
-  // Input and button: the same height.
-  const [b1, b2] = [await box.locator("xpath=..").boundingBox(), await main(page).getByRole("button", { name: "Find loan" }).boundingBox()];
-  expect(Math.round(b1!.height)).toBe(Math.round(b2!.height));
-
-  const samples = main(page).getByRole("region", { name: "Sample loans" });
-  await expect(samples.getByText("TEST MODE")).toBeVisible();
-  if (width(page) < 640) {
-    // Phone: folded under one button.
-    await samples.getByRole("button", { name: "Show 3" }).click();
-  }
-  const chips = samples.getByRole("button", { name: /^GD/ });
-  await expect(chips).toHaveCount(3);
-  const maria = samples.getByRole("button", { name: /Maria Santos/ });
-  await expect(maria).toHaveAttribute("title", /No questions\. Mortgage, 4 transactions\./);
-  await expect(samples.getByText("No questions. Mortgage, 4 transactions.")).toHaveCount(0);
-  // PN and name only; the branch is in the tooltip.
-  await expect(maria).toHaveText(/^GD1012026901001\s*Maria Santos$/);
-  await expect(maria).toHaveAttribute("title", /Antipolo/);
-  // One line each.
-  const h = (await maria.boundingBox())!.height;
-  expect(h).toBeLessThan(48);
-  await noSideways(page);
-  await shot(page, "empty");
-
-  // Picking a sample puts its PN in the box; nothing is searched.
-  await maria.click();
-  await expect(box).toHaveValue("GD1012026901001");
-  await expect(page).toHaveURL(/\/search$/);
-  expect(await db.loan.count()).toBe(0);
-  clean();
-});
-
 test("loan found with both questions: Open loan file disabled until both are picked; no message before trying", async ({ page }) => {
   const clean = watchConsole(page);
   await signIn(page, "la");
@@ -74,7 +33,7 @@ test("loan found with both questions: Open loan file disabled until both are pic
   const card = main(page).locator("[data-find-preview]");
   await expect(card.locator("[data-find-source]")).toBeVisible();
   // Only the status and the source on the right; no "all good" chips, no "Next:" line.
-  await expect(card.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText(["Loan Released", "MyLoans"]);
+  await expect(card.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText(["Loan Released", "myloans · Not yet in DMS"]);
   for (const gone of ["Your branch", "Details complete", "Source: MyLoans", "Next: we set up the loan file"]) await expect(card.getByText(gone)).toHaveCount(0);
   for (const k of ["Amount released", "Branch", "Released on", "Loan type"]) await expect(card.getByText(k, { exact: true })).toBeVisible();
   await expect(main(page).getByText("What happens next")).toHaveCount(0);
@@ -175,73 +134,3 @@ test("messages: one compact line each, the PN, and Try again", async ({ page }) 
   clean();
 });
 
-test("the result box clears as soon as the PN in the box changes or a sample is picked", async ({ page }) => {
-  await signIn(page, "la");
-  await page.goto("/search?q=GD1652026901003");
-  const result = main(page).locator("[data-find-result]");
-  await expect(result).toContainText("Ana Villanueva");
-  await expect(main(page).getByRole("radio", { name: "Undertaking", exact: true })).toBeFocused(); // the page is ready
-  const box = visibleSearchBox(page);
-  await box.press("End");
-  await box.press("Backspace");
-  await expect(result).toHaveCount(0);
-  await box.pressSequentially("3"); // the same PN again: its result may show again
-  await expect(result).toContainText("Ana Villanueva");
-
-  // A status card too.
-  await page.goto("/search?q=GD1652026901008");
-  await expect(main(page).locator("[data-find-status]")).toBeVisible();
-  await box.fill("GD1652026901004");
-  await expect(main(page).locator("[data-find-status]")).toHaveCount(0);
-  await box.press("Enter");
-  await expect(page).toHaveURL(/q=GD1652026901004/);
-  await expect(result).toContainText("Ramon Garcia");
-
-  // Picking a sample clears it as well (the suggestions close first: Esc).
-  await box.press("Escape");
-  const samples = main(page).getByRole("region", { name: "Sample loans" });
-  if (width(page) < 640) await samples.getByRole("button", { name: "Show 3" }).click();
-  await samples.getByRole("button", { name: /Maria Santos/ }).click();
-  await expect(box).toHaveValue("GD1012026901001");
-  await expect(result).toHaveCount(0);
-});
-
-test("the dropdown never asks MyLoans: a whole PN not saved gets the quiet hint, wherever it is", async ({ page }) => {
-  // The rest of the dropdown (saved loans, Outside your branches, nothing for random text) is in
-  // find-loan-local-first.spec.ts.
-  await signIn(page, "la");
-  await page.goto("/search");
-  const box = visibleSearchBox(page);
-  for (const pn of ["GD3902026901007", "GD1012026999999"]) { // Alaminos in MyLoans; not in MyLoans at all
-    await box.fill(pn);
-    await expect(page.locator("[data-find-unsaved]")).toHaveText("Not opened in the DMS yet. Press Find loan to look it up in MyLoans.");
-    await expect(page.locator("[data-find-outside]")).toHaveCount(0);
-  }
-  await shot(page, "dropdown-unsaved");
-});
-
-test("samples: an Angono Loan Associate sees no Antipolo sample", async ({ page }) => {
-  const angono = await db.branch.findUniqueOrThrow({ where: { code: "165" } });
-  const la = await db.role.findUniqueOrThrow({ where: { key: "LA" } });
-  await db.user.deleteMany({ where: { email: "zz.find.angono@gdfi.ph" } });
-  const u = await db.user.create({ data: { email: "zz.find.angono@gdfi.ph", name: "Zz Angono LA", roleId: la.id, isTestUser: true, homeBranchId: angono.id } });
-  await db.userAccessGrant.create({ data: { userId: u.id, kind: "BRANCH", branchId: angono.id } });
-  await db.userBranch.create({ data: { userId: u.id, branchId: angono.id } });
-  try {
-    await signInWith(page, { other: `Zz Angono LA (${la.name})` });
-    for (const url of ["/search", "/loans", "/dashboard"]) {
-      await page.goto(url);
-      // Find a loan: the slim row; My loans and Home: the closed row (its lines are counted closed too).
-      const samples = main(page).locator("[data-samples-slim], [data-home-samples]").first();
-      await expect(samples.getByText("GD1652026901003")).toHaveCount(1);
-      await expect(samples.getByText("GD1652026901004")).toHaveCount(1);
-      await expect(samples.getByText("GD1012026901001")).toHaveCount(0);
-      await expect(samples.getByText("Antipolo")).toHaveCount(0);
-    }
-    // The real search is unchanged: typing the Antipolo PN is still refused as outside the branches.
-    await page.goto("/search?q=GD1012026901001");
-    await expect(main(page).locator("[data-find-problem]")).toContainText("This loan is outside your branches.");
-  } finally {
-    await db.user.delete({ where: { id: u.id } });
-  }
-});

@@ -1,7 +1,7 @@
 /**
  * Piece 10b (D-046, D-053): released loans not yet in the DMS wait in the branch's LA pool. One item per PN; the
  * waiting time starts when it entered the pool (the sync), not at the release date; an unknown branch goes to the
- * Branch review (Admin's Home warning) and enters the pool once the branch exists; Accept opens Find loan with the PN;
+ * Branch review (Admin's Home warning) and enters the pool once the branch exists; taking an item leads to the Loans search for the PN (D-060: no Accept button; View details opens the preview);
  * opening it closes the item; leaving the pool for each reason; the amount only for people allowed to see amounts;
  * branch scope. Test database, the myloans mock in-process.
  */
@@ -79,11 +79,11 @@ describe("the branch pool (10b)", () => {
     expect((await poolItems(await asUser("test.la@gdfi.ph"))).find((r) => r.pn === PN_A)!.candidate).toMatchObject({ amount: "₱350,000.00" });
   });
 
-  it("Accept opens Find loan with the PN; opening the loan file closes the item and the candidate", async () => {
+  it("taking the item (the service; D-060 removed the Accept button) leads to the Loans search for the PN; opening the loan file closes the item and the candidate", async () => {
     await released(970_002, PN_B, "101", 3);
     await sync();
     const it = (await item(PN_B))!;
-    expect(await acceptWork(la, it.id)).toBe(`/loans?fill=${PN_B}`);
+    expect(await acceptWork(la, it.id)).toBe(`/loans?q=${PN_B}`); // D-059: the Loans page is the search
     await openLoanFile(la, { pn: PN_B });
     expect(await item(PN_B)).toMatchObject({ state: "DONE", outcome: "DONE" });
     expect(await prisma.sourceLoanCandidate.count({ where: { pn: PN_B } })).toBe(0);

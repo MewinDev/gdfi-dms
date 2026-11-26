@@ -40,7 +40,7 @@ test("Find loan: a wrong PN says which part is wrong and never asks MyLoans; a p
   await page.goto("/loans?find=1");
   await visibleSearchBox(page).fill("GD10120269010");
   await visibleSearchBox(page).press("Enter");
-  await expect(page).toHaveURL(/\/search\?q=/);
+  await expect(page).toHaveURL(/\/loans\?q=/); // D-059: the Loans page is the search
   const err = page.locator("[data-pn-error]");
   await expect(err).toContainText("This does not look like a PN. Example: GD1012026900001");
   await expect(err.locator("[data-pn-part]")).toHaveText("The running number must be 5 digits (this one has 3).");

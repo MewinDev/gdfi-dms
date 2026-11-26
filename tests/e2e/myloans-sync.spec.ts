@@ -27,9 +27,9 @@ async function change(pn: string, over: Record<string, unknown>) {
   await setting("myloans.mockOverrides", all);
 }
 async function openPn(page: Page, pn = PN) {
-  await page.goto(`/loans?fill=${pn}`);
+  await page.goto(`/loans?q=${pn}`);
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();
@@ -77,29 +77,6 @@ test("Settings: the MyLoans sync card (piece 7): Run now raises a review item an
   await shot(page, "myloans-sync-card");
   await noSideways(page);
   await db.setting.deleteMany({ where: { key: "myloans.sync" } });
-});
-
-test("Find loan: suggestions from the DMS from 3 characters, at most 8; nothing for no match", async ({ page }) => {
-  await signInWith(page, BUTTONS.la);
-  await openPn(page);
-  await page.goto("/loans?find=1");
-  const box = page.locator("#find-loan");
-  await box.fill("PN");
-  await expect(page.locator("[data-find-results]")).toHaveCount(0);
-  await box.fill("GD16520269010");
-  const list = page.getByRole("listbox", { name: "Loan files in the DMS" });
-  await expect(list.getByRole("option").first()).toBeVisible();
-  expect(await list.getByRole("option").count()).toBeLessThanOrEqual(8);
-  await expect(list.getByRole("option", { name: new RegExp(PN) })).toContainText("Ana Villanueva");
-  await shot(page, "find-loan-search");
-  await noSideways(page);
-  await box.fill("zzzz-nobody");
-  await expect(list).toHaveCount(0);
-  await expect(page.locator("[data-find-results]")).toHaveCount(0);
-  await box.fill(PN);
-  await list.getByRole("option", { name: new RegExp(PN) }).click();
-  await expect(page).toHaveURL(new RegExp(`/search\\?q=${PN}`));
-  await expect(page.locator(`[data-find-saved="${PN}"]`)).toBeVisible();
 });
 
 test("Amount change (piece 8): the LA sees the banner and the Open items row; Send held where it reaches; the approver approves it on Open Items", async ({ page }) => {

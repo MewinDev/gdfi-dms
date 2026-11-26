@@ -109,7 +109,7 @@ test("LA with nothing: zeros muted, You're all caught up, one All clear line; sa
   await shot(page, "la-nothing");
   await samples.locator("summary").click();
   await expect(samples.getByRole("button", { name: /^GD/ }).first()).toBeVisible();
-  await expect(samples.getByText("Pick one, then press Find loan.")).toBeVisible();
+  await expect(samples.getByText("Pick one to look it up on Loans.")).toBeVisible();
   clean();
 });
 
@@ -119,10 +119,10 @@ test("LA with one task: Do these next first, one compact row (no Next step label
   await signInWith(page, BUTTONS.la);
   await layoutRules(page);
   await expect(seg(page, "need")).toHaveAttribute("data-count", "1");
-  await expect(seg(page, "need").getByRole("link", { name: "1 Need you now, open" })).toHaveAttribute("href", "/loans?tab=queue");
+  await expect(seg(page, "need").getByRole("link", { name: "1 Need you now, open" })).toHaveAttribute("href", "/loans?status=needs");
   await expect(seg(page, "need").locator('[data-dot="act"]')).toHaveCount(1);
-  await expect(seg(page, "waiting").getByRole("link")).toHaveAttribute("href", "/loans?tab=all&group=waiting");
-  await expect(seg(page, "problems").getByRole("link")).toHaveAttribute("href", "/loans?tab=exceptions");
+  await expect(seg(page, "waiting").getByRole("link")).toHaveAttribute("href", "/loans");
+  await expect(seg(page, "problems").getByRole("link")).toHaveAttribute("href", "/loans?status=problems");
   const list = main(page).locator("[data-do-next]");
   await expect(list.getByRole("heading", { name: "Do these next" })).toBeVisible();
   const row = list.locator("[data-home-row]");
@@ -149,7 +149,7 @@ test("LA with eight tasks and two waiting: six rows and See all (8); Waiting on 
   const list = main(page).locator("[data-do-next]");
   await expect(list.locator("[data-home-row]")).toHaveCount(6);
   await expect(list.locator("[data-see-all]")).toHaveText("See all (8)");
-  await expect(list.locator("[data-see-all]")).toHaveAttribute("href", "/loans?tab=queue");
+  await expect(list.locator("[data-see-all]")).toHaveAttribute("href", "/loans?status=needs");
   // Only the first row has the navy Continue.
   await expect(list.locator("[data-home-row]").first()).toContainText("Continue");
   await expect(list.locator("[data-home-row]").nth(1)).toContainText("Open");

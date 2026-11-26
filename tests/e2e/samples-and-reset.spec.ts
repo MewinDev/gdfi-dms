@@ -26,17 +26,19 @@ test("fresh start: Home shows the empty state and the three sample loans", async
   const { cards } = await openGroup(page, "Sample loans");
   await expect(cards).toHaveCount(3);
 
-  // Home has no search box: a card opens My loans with the PN in its box. Nothing is searched or saved.
+  // Home has no search box: a card looks the PN up on the Loans page (D-059). Nothing is saved.
   await cards.filter({ hasText: "Ana Villanueva" }).click();
-  await expect(page).toHaveURL(/\/loans\?fill=GD1652026901003/);
+  await expect(page).toHaveURL(/\/loans\?q=GD1652026901003/);
   await expect(visibleSearchBox(page)).toHaveValue("GD1652026901003");
-  await expect(visibleSearchBox(page)).toBeFocused();
+  await expect(page.getByRole("main").locator("[data-find-preview]")).toBeVisible();
   expect(await db.loan.count()).toBe(0);
 });
 
-test("Find a loan: only the 3 samples are listed; a card fills the box; other mock PNs still work if typed", async ({ page }) => {
+test("samples on Home only (D-059): the 3 are listed; a card looks it up; other mock PNs still work if typed on Loans", async ({ page }) => {
   await signIn(page, "la");
   await page.goto("/loans");
+  await expect(group(page, "Sample loans")).toHaveCount(0); // not on the Loans page
+  await page.goto("/dashboard");
   const { g: samples, cards } = await openGroup(page, "Sample loans");
   await expect(cards).toHaveCount(3);
   for (const s of ["GD1012026901001", "GD1652026901003", "GD1652026901004"]) await expect(samples.getByText(s, { exact: true })).toBeVisible();
@@ -45,13 +47,13 @@ test("Find a loan: only the 3 samples are listed; a card fills the box; other mo
   await expect(group(page, "Data-check samples")).toHaveCount(0);
 
   await cards.filter({ hasText: "Maria Santos" }).click();
-  const box = page.getByRole("main").getByLabel("Find a loan");
+  const box = page.getByRole("main").locator("#find-loan");
   await expect(box).toHaveValue("GD1012026901001");
   expect(await db.loan.count()).toBe(0);
 
   // Not listed, but still works when typed: myloans says it is not a released loan (D-051), nothing saved.
   await box.fill("GD1652026901008");
-  await page.getByRole("main").getByRole("button", { name: /^Find/ }).click();
+  await page.getByRole("main").getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.locator('[data-find-status="not_selectable"] [data-status-text]')).toHaveText(/^Not released in myloans/);
   expect(await db.loan.count()).toBe(0);
 });
@@ -70,9 +72,9 @@ test("Admin: Show data-check test PNs; starting over is the Test kit, which is n
     await toggle.getByRole("button", { name: "Turn on" }).click();
     await expect(toggle.getByRole("button", { name: "Turn off" })).toBeVisible();
   }
-  // The Loan Associate now sees them on My loans (where the search and samples live).
+  // The Loan Associate now sees them on Home, under the sample loans (D-059: the Loans page has no samples).
   await signIn(page, "la");
-  await page.goto("/loans");
+  await page.goto("/dashboard");
   // A second closed row under the sample loans; what each one tests is in its tooltip.
   const { g: extra } = await openGroup(page, "Data-check samples");
   await expect(extra.getByText("GD1012026999999", { exact: true })).toBeVisible();
