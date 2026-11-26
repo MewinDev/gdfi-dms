@@ -32,7 +32,7 @@ test("LA: no search in the top bar on Home and Loan File; the system name is on 
   await page.goto("/search?q=GD1012026901001");
   await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
   await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
-  await expectCleanTopBar(page, "Loan File");
+  await expectCleanTopBar(page, "Maria Santos"); // D-062: the loan file's h1 is the borrower's name
   await expect(visibleSearchBox(page)).toHaveCount(0);
 });
 

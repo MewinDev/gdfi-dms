@@ -56,7 +56,9 @@ test("Loan File: Opened at Antipolo, now at Angono after a MyLoans branch change
   await page.goto("/search?q=GD1012026901001");
   await page.getByRole("button", { name: /Open loan file/ }).click();
   await expect(page).toHaveURL(/\/loans\/GD1012026901001/);
-  await expect(page.locator("[data-opened-at]")).toHaveText("Opened at Antipolo");
+  // D-062: the branch badge's tooltip says where it was opened; the line shows only when it differs.
+  await expect(page.locator("[data-loan-header] [data-fact=\"branch\"]")).toHaveAttribute("title", "Opened at Antipolo");
+  await expect(page.locator("[data-opened-at]")).toHaveCount(0);
   // MyLoans now says Angono (165); an approver approves the Branch Open Item.
   const over = { "GD1012026901001": { branchName: "Angono", branchCode: "165", changedAt: new Date().toISOString() } };
   await db.setting.upsert({ where: { key: "myloans.mockOverrides" }, create: { key: "myloans.mockOverrides", value: over }, update: { value: over } });
@@ -65,7 +67,7 @@ test("Loan File: Opened at Antipolo, now at Angono after a MyLoans branch change
   // Refresh from MyLoans asks MyLoans afresh. A refresh on open may reuse the answer the server kept for
   // up to a minute (lib/myloans/client.ts), and an earlier spec in the same server may have just asked
   // for this PN, before the branch change was set.
-  await page.getByRole("button", { name: "Refresh from MyLoans" }).click();
+  await page.getByRole("button", { name: "Refresh from myloans" }).click();
   await expect(page.locator("[data-open-items-banner]")).toContainText("1 Open Item from myloans: Branch.");
   await page.goto("/open-items?pn=GD1012026901001");
   const card = page.locator('[data-oi-card="branchCode"][data-pn="GD1012026901001"]');

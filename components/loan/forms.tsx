@@ -1,6 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useId, useState } from "react";
+import { useFormStatus } from "react-dom";
+import { RefreshIcon } from "@/components/ui/icons";
 import {
   overrideAction,
   refreshLoanAction,
@@ -13,14 +15,43 @@ import { plainMessage } from "@/lib/ui/plain";
 // Refresh from MyLoans
 // ---------------------------------------------------------------------------
 
-export function RefreshButton({ loanId, label = "Refresh from MyLoans" }: { loanId: string; label?: string }) {
+/**
+ * D-062: Refresh from myloans as an icon button in the loan summary header (the preview's look, D-060): a 28 px
+ * square (44 px to tap on a phone), its name and the last check in a small navy popover on hover or keyboard focus,
+ * and for screen readers (aria-label, aria-describedby). The answer ("No changes.") shows beside it.
+ */
+export function RefreshIconButton({ loanId, lastChecked }: { loanId: string; lastChecked: string }) {
   const [state, action] = useActionState(refreshLoanAction, null);
+  const tipId = useId();
   return (
-    <form action={action} className="flex flex-col items-end gap-1">
+    <form action={action} className="flex min-w-0 flex-wrap items-center gap-2" data-refresh-form>
       <input type="hidden" name="loanId" value={loanId} />
-      <SubmitButton className="btn-secondary btn-sm" pendingText="Calling MyLoans...">{label}</SubmitButton>
-      <div className="max-w-xs"><FormMessage state={state ? { ...state, message: plainMessage(state.message), error: plainMessage(state.error) } : null} /></div>
+      <RefreshSubmit tipId={tipId} lastChecked={lastChecked} />
+      {state && (
+        <span role={state.ok ? "status" : "alert"} className={`min-w-0 text-xs font-semibold ${state.ok ? "text-ok-fg" : "text-bad-fg"}`} data-refresh-result>
+          {state.ok ? plainMessage(state.message) : plainMessage(state.error)}
+        </span>
+      )}
     </form>
+  );
+}
+
+function RefreshSubmit({ tipId, lastChecked }: { tipId: string; lastChecked: string }) {
+  const { pending } = useFormStatus();
+  const name = pending ? "Asking myloans..." : "Refresh from myloans";
+  return (
+    <span className="group/refresh relative inline-flex">
+      <button type="submit" aria-label={name} aria-describedby={tipId} disabled={pending}
+        className="relative inline-flex h-7 w-7 items-center justify-center rounded-md border border-line-input bg-white text-navy hover:bg-fill focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy disabled:opacity-60 before:absolute before:-inset-2 before:content-[''] md:before:hidden"
+        data-refresh-loan>
+        <RefreshIcon size={15} className={pending ? "animate-spin motion-reduce:animate-none" : undefined} />
+      </button>
+      <span id={tipId} role="tooltip"
+        className="pointer-events-none hidden absolute right-0 top-full z-30 mt-1.5 w-max max-w-[min(240px,calc(100vw-48px))] whitespace-normal rounded-lg bg-navy px-2.5 py-1 text-xs font-medium text-white shadow-lg ring-1 ring-white/20 group-hover/refresh:block group-has-[:focus-visible]/refresh:block"
+        data-refresh-tooltip>
+        {name} · last checked {lastChecked}
+      </span>
+    </span>
   );
 }
 

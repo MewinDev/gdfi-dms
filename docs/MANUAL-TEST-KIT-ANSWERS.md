@@ -1,6 +1,6 @@
 # Manual Test Kit: answers
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 27 November 2026 (PHT)
 
 What each PN of the [Manual Test Kit](MANUAL-TEST-KIT.md) is and what it is good for. Look here only if you get stuck: the point is to find it out by searching and opening the PN.
 
@@ -148,7 +148,7 @@ All of them are in the sample MyLoans only, released on the day the kit was buil
 ### MyLoans account details (11 November 2026)
 
 17. **Find a loan, account details.** Chips on the right: **Loan Released** (the status by name, never a number) and a grey **MyLoans**; no "Your branch", "Details complete" or "Loan found" chip (an amber chip shows only when something is wrong). Two rows of four: Amount released, Released on, Loan type, Product, then Branch (Angono), Area (LUZON 1 (NGMA + RIZAL)), Division (Branch Division), Company (Global Dominion Financing Inc.). Names only: no CIN, CIF, vehicle, source loan ID, product code or any ID.
-18. **More loan details.** Closed until you open it. Then, in two columns: Identity (PN, Source loan ID, CIN, CIF), Loan (borrower, amount, released on, loan type, product name, product code), Organization (Company "1 · Global Dominion Financing Inc.", Division "1 · Branch Division", Area "1 · LUZON 1 (NGMA + RIZAL)", Branch "165 · Angono"), Status (Status ID 12, Loan Released, Active Yes), Source (MyLoans, retrieved at, last checked, last updated in MyLoans, opened at), then **Why this was set up**: "Mortgage needed · This is a Renewal loan of ₱1,000,000 or below." (no rule number).
+18. **Loan at a glance** (D-062). Always shown, no open / close: Type, Mortgage needed, OR/CR, Send by, CIN, CIF, Area "LUZON 1 (NGMA + RIZAL)", Opened (the status in myloans, "Loan Released", is the chip beside the due badge in the summary card), (today, by the LA), and **Why this was set up**: "Mortgage needed · This is a Renewal loan of ₱1,000,000 or below." (no rule number). No codes or IDs for the LA. As **Admin**, a small **myloans codes** section adds: Source loan ID, Product code "AF-001", Branch "165 · Angono", Area "1 · LUZON 1 (NGMA + RIZAL)", Division "1 · Branch Division", Company "1 · Global Dominion Financing Inc.", Status ID 12, Active Yes, Retrieved and Updated in myloans (times).
 19. **Feed quality (Admin).** With no loan files yet it says "No loan files yet"; once some are open, "All 15 items given (N loan files)", or the items MyLoans left empty with their counts (warnings; opening is never blocked). On Find a loan, Admin sees a "Data check (Admin)" line only when MyLoans left the product, area, division or company empty.
 
 ### Find a loan, local first (11 November 2026)

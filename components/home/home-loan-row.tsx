@@ -27,7 +27,7 @@ export function HomeLoanRow({ d, primary = false, due = false }: { d: LoanCardDa
           <span className="min-w-0 truncate text-[15px] font-semibold text-navy">{d.borrowerName}</span>
           {short && <span className="shrink-0 sm:hidden">{chip}</span>}
         </span>
-        <span className="block truncate text-[13px] text-ink-2">{d.pn} · {d.branch} · {d.amountText}</span>
+        <span className="block truncate text-[13px] text-ink-2">{d.pn} · {d.branch}{d.amountText ? ` · ${d.amountText}` : ""}</span>
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-semibold text-ink sm:hidden">
           {d.action}
           {!short && chip}

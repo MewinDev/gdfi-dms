@@ -18,7 +18,7 @@ test.beforeEach(async () => {
 });
 
 const BUTTONS = { la: "Continue as Loan Associate", admin: "Continue as Admin", dp: "Continue as Test Document Processor" } as const;
-const wide = (page: Page) => page.viewportSize()!.width >= 1100;
+const wide = (page: Page) => page.viewportSize()!.width >= 1280; // D-062: the side column from 1280px
 async function shot(page: Page, name: string, fullPage = true) {
   await page.waitForTimeout(300); // let button colour transitions finish
   await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });

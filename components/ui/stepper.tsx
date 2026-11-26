@@ -110,7 +110,7 @@ function Dot({ n, state, mark }: { n: number; state: "Done" | "Now" | "Later"; m
     );
   }
   return (
-    <span className={`z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${state === "Now" ? (mark === "problem" ? "bg-[var(--bad-fg)] text-white" : "bg-gold text-navy") : "border-[1.5px] border-[rgb(12_35_64/0.3)] bg-white text-[rgb(12_35_64/0.55)]"}`}>
+    <span className={`z-[1] flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${state === "Now" ? (mark === "problem" ? "bg-[var(--bad-fg)] text-white" : "bg-gold text-navy") : "border-[1.5px] border-[rgb(12_35_64/0.3)] bg-white text-ink-2"}`}>
       {n}
     </span>
   );

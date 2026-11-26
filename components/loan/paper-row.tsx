@@ -58,6 +58,68 @@ export interface PaperTools {
 /** Optional and not part of this file: the row stays quiet. */
 export const isQuiet = (l: PaperLine, on: boolean) => !l.required && !l.included && !on && !l.missing;
 
+/**
+ * The row's "More actions" menu (its name; the paper's name is its description): a quiet 28 px "⋯" button (grey, no border; navy on hover or focus; 44 px to tap on a
+ * phone) that opens a small menu under it with the one action. Keyboard: Enter, Space or Arrow Down opens it and
+ * focuses the item; Esc or Tab closes it and gives the focus back; a click outside closes it.
+ */
+function RowMenu({ label, nameId, item, disabled }: { label: string; nameId: string; item: { text: string; onSelect: () => void; data: "mark" | "undo" }; disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const first = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLSpanElement>(null);
+  const menuId = useId();
+  useEffect(() => {
+    if (!open) return;
+    first.current?.focus();
+    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  const close = (focus = true) => { setOpen(false); if (focus) btn.current?.focus(); };
+  return (
+    <span ref={box} className="relative inline-flex">
+      {/* Named "More actions", described by the paper's name: the paper's name alone always means its tick box. */}
+      <button ref={btn} type="button" aria-label="More actions" aria-describedby={nameId} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
+        disabled={disabled} title="More actions"
+        onClick={() => setOpen((x) => !x)}
+        onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); } }}
+        className={`relative inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-2 before:absolute before:-inset-1.5 before:content-[''] hover:bg-fill hover:text-navy focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-navy disabled:opacity-50 md:h-7 md:w-7 md:before:hidden ${open ? "bg-fill text-navy" : ""}`}
+        data-row-menu>
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+      </button>
+      {open && (
+        <span id={menuId} role="menu" aria-label="More actions" title={label}
+          onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); close(); } if (e.key === "Tab") close(false); }}
+          className="absolute right-0 top-full z-30 mt-1 flex min-w-44 flex-col rounded-lg border border-line bg-white p-1 shadow-lg">
+          <button ref={first} type="button" role="menuitem" onClick={() => { close(false); item.onSelect(); }}
+            className="flex min-h-11 items-center gap-2 rounded-md px-2.5 text-left text-[13px] font-semibold text-navy hover:bg-fill focus-visible:bg-fill focus-visible:outline-none md:min-h-8"
+            data-mark-missing={item.data === "mark" ? "" : undefined} data-undo-missing={item.data === "undo" ? "" : undefined}>
+            {item.data === "mark" ? <FlagIcon /> : <XSmallIcon />}{item.text}
+          </button>
+        </span>
+      )}
+    </span>
+  );
+}
+
+function XSmallIcon() {
+  return (
+    <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+  );
+}
+
+/** The row's small chips: 20 px, 12 px text. */
+const TAG = "inline-flex h-5 items-center whitespace-nowrap rounded-full border px-1.5 text-xs font-semibold";
+
+function FlagIcon() {
+  return (
+    <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" />
+    </svg>
+  );
+}
+
 export function PaperRow({ l, on, disabled, onToggle, highlight, tools, onMissing, groupMet = false }: {
   l: PaperLine; on: boolean; disabled: boolean; onToggle: () => void; highlight: boolean; tools: PaperTools | null;
   /** The row was marked Missing (or the mark taken back): the parent drops the Present tick. */
@@ -114,58 +176,63 @@ export function PaperRow({ l, on, disabled, onToggle, highlight, tools, onMissin
 
   const canMarkHere = !!tools?.canMark && !disabled && !late && !quiet && !(groupMet && !isMissing);
   return (
-    <div className={`flex scroll-mt-28 flex-col rounded-[10px] border transition-[box-shadow,border-color] ${highlight ? "border-gold shadow-[0_0_0_3px_var(--act-bg)]" : tone}`}
+    <div className={`flex scroll-mt-28 flex-col rounded-lg border transition-[box-shadow,border-color] ${highlight ? "border-gold shadow-[0_0_0_3px_var(--act-bg)]" : tone}`}
       data-paper-row={l.id} data-state={late ? "received-late" : isMissing ? (noRemarks ? "missing-no-remarks" : "missing") : on ? "present" : quiet ? "left-out" : "open"}>
-      <div className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-1.5">
+      {/* D-062: one compact line (36 px from 768 px, 44 px to tap on a phone): checkbox · name · its chips right after
+          the name (status, Required/Optional, Original/Copy, 12 px); the actions (Mark missing, Include) at the end. */}
+      <div className="flex min-h-9 items-start gap-2 px-2.5 py-1 sm:px-3 md:items-center md:py-0.5">
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
         <label
           id={`line-${l.id}`}
           data-highlight={highlight ? "true" : undefined}
           title={l.documentId ?? undefined}
-          className={`flex min-w-0 flex-1 basis-[200px] cursor-pointer items-center gap-3 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${disabled ? "cursor-default" : ""}`}
+          className={`relative flex min-h-8 min-w-0 cursor-pointer items-center gap-2.5 rounded-sm before:absolute before:-inset-y-1.5 before:inset-x-0 before:content-[''] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy md:before:hidden ${disabled ? "cursor-default" : ""}`}
         >
-          <span className={`relative flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md border-2 ${on ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.3)] bg-white"}`}>
-            {on && <CheckIcon size={14} strokeWidth={3} />}
-            <input type="checkbox" aria-label={`${l.label}: Present`} className="absolute -inset-0.5 m-0 cursor-pointer opacity-0 disabled:cursor-default" checked={on} disabled={disabled || late || (isMissing && tools?.sentBefore)} onChange={onToggle} />
+          <span className={`relative flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border-2 ${on ? "border-navy bg-navy text-white" : "border-[rgb(12_35_64/0.35)] bg-white"}`}>
+            {on && <CheckIcon size={12} strokeWidth={3} />}
+            <input type="checkbox" aria-label={`${l.label}: Present`} className="absolute -inset-1 m-0 cursor-pointer opacity-0 disabled:cursor-default" checked={on} disabled={disabled || late || (isMissing && tools?.sentBefore)} onChange={onToggle} />
           </span>
-          <span className="min-w-0 flex-1 leading-snug">
-            <span className={`text-[15px] ${quiet ? "font-medium text-ink-2" : "font-semibold text-ink"}`}>{l.label}</span>
-            {l.documentId && on && <span className="mono ml-2 text-xs text-ink-2">{l.documentId}</span>}
-            {/* The one marker of a paper the DP returned: under the name on a phone, beside it from the tablet up. */}
-            {l.returned && !on && <span className="mt-0.5 block w-fit rounded-md border border-act-line bg-act-bg px-1.5 py-0.5 text-xs font-semibold text-act-fg sm:ml-2 sm:mt-0 sm:inline" data-returned-marker>{l.returned}</span>}
-          </span>
+          <span id={`name-${l.id}`} className={`min-w-0 text-sm leading-snug [overflow-wrap:anywhere] ${quiet ? "font-medium text-ink-2" : "font-semibold text-ink"}`} data-paper-name>{l.label}</span>
         </label>
-        <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        <span className="flex min-w-0 flex-wrap items-center gap-1" data-paper-tags>
+          {on && <span className={`${TAG} border-ok-line bg-ok-bg text-ok-fg`} data-status-chip="received">Received</span>}
+          {isMissing && <span className={`${TAG} ${noRemarks ? "border-bad-line bg-bad-bg text-bad-fg" : "border-act-line bg-act-bg text-act-fg"}`} data-missing-tag data-status-chip="missing">{noRemarks ? "Missing, remarks needed" : "Missing, with remarks"}</span>}
+          {late && <span className={`${TAG} border-ok-line bg-ok-bg text-ok-fg`} data-late-tag data-status-chip="received-late">Received late</span>}
           {l.requested && !on && (
             <span tabIndex={0} title={l.requestedInfo} aria-label={`Requested. ${l.requestedInfo ?? ""}`} data-requested
-              className="group/req relative rounded-md bg-bad-bg px-1.5 py-0.5 text-xs font-semibold text-bad-fg outline-none focus-visible:outline-2 focus-visible:outline-navy">
+              className={`${TAG} group/req relative border-bad-line bg-bad-bg text-bad-fg outline-none focus-visible:outline-2 focus-visible:outline-navy`}>
               Requested
               {l.requestedInfo && (
-                <span role="tooltip" className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 hidden w-max max-w-[240px] whitespace-normal rounded-lg bg-navy px-2.5 py-1.5 text-xs font-medium text-white shadow-lg group-hover/req:block group-focus/req:block">{l.requestedInfo}</span>
+                <span role="tooltip" className="pointer-events-none absolute bottom-full left-0 z-20 mb-1 hidden w-max max-w-[240px] whitespace-normal rounded-lg bg-navy px-2.5 py-1.5 text-xs font-medium text-white shadow-lg group-hover/req:block group-focus/req:block">{l.requestedInfo}</span>
               )}
             </span>
           )}
-          {isMissing && <span className={`rounded-md px-1.5 py-0.5 text-xs font-semibold ${noRemarks ? "bg-white text-bad-fg" : "bg-white text-act-fg"}`} data-missing-tag>{noRemarks ? "Missing, remarks needed" : "Missing, with remarks"}</span>}
-          {late && <span className="rounded-md bg-ok-bg px-1.5 py-0.5 text-xs font-semibold text-ok-fg" data-late-tag>Received late</span>}
+          {/* The one marker of a paper the DP returned. */}
+          {l.returned && !on && <span className={`${TAG} border-act-line bg-act-bg text-act-fg`} data-returned-marker>{l.returned}</span>}
+          {l.required
+            ? <span className={`${TAG} border-transparent bg-act-bg text-act-fg`} data-req-tag>Required</span>
+            : <span className={`${TAG} border-transparent bg-fill-strong text-ink-2`} data-req-tag>Optional</span>}
+          <span className={`${TAG} border-line bg-white text-ink-2`} data-orig-tag>{l.originality === "ORIGINAL" ? "Original" : "Copy"}</span>
+          {l.documentId && on && <span className="mono text-xs text-ink-2">{l.documentId}</span>}
+        </span>
+        </span>
+        <span className="flex shrink-0 items-center justify-end gap-1.5">
           {!l.required && (tools?.canMark || tools?.canReceive || !disabled) && !late && (
-            <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-md px-1.5 text-xs font-semibold ${disabled || pending ? "text-ink-2" : "cursor-pointer text-navy"}`} data-include>
+            <label className={`relative inline-flex min-h-8 items-center gap-1.5 rounded-md px-1 text-xs font-semibold before:absolute before:-inset-y-1.5 before:inset-x-0 before:content-[''] md:before:hidden ${disabled || pending ? "text-ink-2" : "cursor-pointer text-navy"}`} data-include>
               <input type="checkbox" className="h-4 w-4 accent-[var(--navy)]" checked={!!l.included || on || isMissing} disabled={disabled || pending || (isMissing && tools?.sentBefore)}
                 onChange={(e) => include(e.target.checked)} />
-              Include in this file
+              <span className="max-sm:hidden">Include in this file</span><span className="sm:hidden">Include</span>
             </label>
           )}
-          {canMarkHere && !isMissing && !on && (
-            <button type="button" onClick={markMissing} disabled={pending} className="btn-ghost min-h-9 px-2.5 text-xs" data-mark-missing>Missing</button>
+          {/* One quiet "⋯" menu per row (D-062 review): the row reads as one line; the action is still one click away
+              and clearly a control (a menu button), never a chip that looks like a status. */}
+          {canMarkHere && ((!isMissing && !on) || (isMissing && !tools?.sentBefore)) && (
+            <RowMenu label={l.label} nameId={`name-${l.id}`} disabled={pending}
+              item={!isMissing ? { text: "Mark as missing", onSelect: markMissing, data: "mark" } : { text: "Not missing", onSelect: undo, data: "undo" }} />
           )}
-          {canMarkHere && isMissing && !tools?.sentBefore && (
-            <button type="button" onClick={undo} disabled={pending} className="link min-h-9 text-xs" data-undo-missing>Not missing</button>
-          )}
-          {l.required
-            ? <span className="rounded-md bg-act-bg px-1.5 py-0.5 text-xs font-semibold text-act-fg">Required</span>
-            : <span className="rounded-md bg-fill-strong px-1.5 py-0.5 text-xs font-semibold text-ink-2">Optional</span>}
-          <span className="text-xs text-ink-2">{l.originality === "ORIGINAL" ? "Original" : "Copy"}</span>
         </span>
       </div>
-      {error && <p role="alert" className="mx-3.5 mb-2 rounded-lg bg-white px-3 py-1.5 text-[13px] font-semibold text-bad-fg">{error}</p>}
+      {error && <p role="alert" className="mx-3 mb-1.5 rounded-lg bg-white px-3 py-1 text-[13px] font-semibold text-bad-fg">{error}</p>}
       {(isMissing || late) && tools && (
         <MissingBox l={l} tools={tools} editable={!!tools.canMark} late={late} open={noRemarks && !disabled} focus={justMarked} />
       )}

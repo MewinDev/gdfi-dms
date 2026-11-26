@@ -48,3 +48,23 @@ test("axe: the phone drawer, open", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Menu" })).toBeVisible();
   await axe(page, "drawer open");
 });
+
+test("axe: the loan file (D-062): To do, Check documents, Documents and Journey; also at 1366px", async ({ page }) => {
+  test.setTimeout(300_000);
+  const { resetLoans } = await import("./db");
+  await resetLoans();
+  await signInWith(page, "Continue as Loan Associate");
+  const pn = "GD1012026901001";
+  await page.goto(`/search?q=${pn}`);
+  await page.getByRole("main").getByRole("button", { name: "Open loan file" }).click();
+  await expect(page).toHaveURL(new RegExp(`/loans/${pn}`));
+  const widths = page.viewportSize()!.width === 1440 ? [1440, 1366] : [page.viewportSize()!.width];
+  for (const w of widths) {
+    await page.setViewportSize({ width: w, height: 900 });
+    for (const q of ["", "?tab=todo&tx=NOTARY", "?tab=documents", "?tab=journey"]) {
+      await page.goto(`/loans/${pn}${q}`);
+      await page.waitForLoadState("networkidle");
+      await axe(page, `loan file ${q || "To do"} at ${w}px`);
+    }
+  }
+});

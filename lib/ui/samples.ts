@@ -4,12 +4,13 @@ import { getSetting } from "@/lib/settings";
 import { isTestMode } from "@/lib/test-mode";
 import { dataCheckSamples, sampleLoans, type SampleLoan } from "@/lib/myloans/samples";
 import { inBranches, parseAmount } from "@/lib/myloans/data-check";
-import type { CurrentUser } from "@/lib/auth/current-user";
+import { can, type CurrentUser } from "@/lib/auth/current-user";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { hasAllBranches } from "@/lib/auth/scope";
 import type { SampleCard } from "@/components/loan/sample-loans";
 import { peso } from "./plain";
 
-function toCards(list: SampleLoan[], opened: Set<string>): SampleCard[] {
+function toCards(list: SampleLoan[], opened: Set<string>, seesAmounts = true): SampleCard[] {
   return list.map((s) => {
     const amount = parseAmount(s.record?.totalReleasedAmount);
     return {
@@ -19,7 +20,8 @@ function toCards(list: SampleLoan[], opened: Set<string>): SampleCard[] {
       branch: s.record?.branchName ?? "No branch",
       product: s.record?.productName ?? "",
       loanType: s.record?.loanType ?? "-",
-      amountText: amount === null ? "-" : peso(amount),
+      // D-062: no amount without "See loan amounts".
+      amountText: !seesAmounts ? "-" : amount === null ? "-" : peso(amount),
       opened: opened.has(s.pn),
     };
   });
@@ -37,7 +39,7 @@ export function samplesForUser(list: SampleLoan[], user: Pick<CurrentUser, "scop
 }
 
 /** Sample cards for the current user (empty when TEST_MODE is off). */
-export async function loadSampleCards(user: Pick<CurrentUser, "scopeBranchIds" | "branchNames" | "branchCodes">): Promise<{ samples: SampleCard[]; dataCheck: SampleCard[] }> {
+export async function loadSampleCards(user: CurrentUser): Promise<{ samples: SampleCard[]; dataCheck: SampleCard[] }> {
   const test = isTestMode();
   if (!test) return { samples: [], dataCheck: [] };
   const show = await getSetting("samples.showDataCheck");
@@ -46,5 +48,5 @@ export async function loadSampleCards(user: Pick<CurrentUser, "scopeBranchIds" |
   const opened = new Set(
     (await prisma.loan.findMany({ where: { pn: { in: [...s, ...d].map((x) => x.pn) } }, select: { pn: true } })).map((l) => l.pn),
   );
-  return { samples: toCards(s, opened), dataCheck: toCards(d, opened) };
+  return { samples: toCards(s, opened, can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS)), dataCheck: toCards(d, opened, can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS)) };
 }

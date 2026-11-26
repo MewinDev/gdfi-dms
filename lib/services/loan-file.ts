@@ -23,6 +23,7 @@ import {
   type OrcrStatus,
   type RuleOutcome,
   type TransactionCode,
+  determineMortgage,
 } from "@/lib/rules";
 import { businessDate, startOfBusinessDay } from "@/lib/time";
 import { recomputeStage } from "./stage";
@@ -59,7 +60,10 @@ export type PnLookupResult =
       kind: "preview";
       pn: string;
       record: MyLoansRecord;
-      amount: number;
+      /** The released amount; null without "See loan amounts" (D-062: then it is not sent to the browser). */
+      amount: number | null;
+      /** Rule 4 worked out on the server (at or under the threshold): what the page needs instead of the amount. */
+      mortgageMet: boolean;
       /** The checked loan type and product name: what the rules read (the card shows what will be set up). */
       loanType: LoanTypeValue;
       productName: string | null;
@@ -127,7 +131,13 @@ export async function lookupPn(user: CurrentUser, input: string): Promise<PnLook
     ? (await prisma.loan.findUnique({ where: { pn }, select: { branchId: true } }))?.branchId ?? null
     : rec?.branchCode ? (await prisma.branch.findUnique({ where: { code: rec.branchCode }, select: { id: true } }))?.id ?? null : null;
   await logPnSearch(user, pn, outcome, { statusId: rec?.statusId ?? null, feedState: r.kind === "not_selectable" ? r.feedState : rec?.feedState ?? null, loanBranchId });
-  return r;
+  return can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS) ? r : withoutAmount(r);
+}
+
+/** D-062: without "See loan amounts" the lookup carries no amount (the preview, the search card, the status cards). */
+function withoutAmount(r: PnLookupResult): PnLookupResult {
+  const out = "record" in r && r.record ? { ...r, record: { ...r.record, totalReleasedAmount: null } } : r;
+  return out.kind === "preview" ? { ...out, amount: null } : out;
 }
 
 async function lookupPnInner(user: CurrentUser, input: string): Promise<PnLookupResult> {
@@ -211,6 +221,7 @@ async function lookupPnInner(user: CurrentUser, input: string): Promise<PnLookup
     pn,
     record: lookup.record,
     amount: check.normalized.totalReleasedAmount,
+    mortgageMet: determineMortgage(check.normalized.loanType, check.normalized.totalReleasedAmount).result === "MORTGAGE",
     loanType: check.normalized.loanType,
     productName: check.normalized.productName,
     classification: cls.classification,

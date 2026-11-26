@@ -60,18 +60,22 @@ export function PackageSummary({ done, total, received = done }: PaperSummary) {
 }
 
 /**
- * Desktop (1100 and up): "Transactions (n)", every transaction in its fixed number order. Each row:
+ * Desktop (1280 and up, D-062): "Transactions (n)", every transaction in its fixed number order. Each row:
  * number, name, one status pill, one short line (who it was sent to and the LTO office are in the
  * detail only). The open one stays in its place and is marked (very light tint, thin left accent,
  * "Open now"); the order never changes.
  */
-export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; selected: string; summary: PaperSummary }) {
+export function TxnSideList({ items, selected, summary, details }: { items: TxnItem[]; selected: string; summary: PaperSummary; details?: React.ReactNode }) {
   const select = useSelect();
   return (
+    <>
+    {/* D-062 (the user's review): the loan in its own card (name, due, refresh, PN, details), then the work in the next
+        card (required papers and the transactions). */}
+    {details && <div className="card px-3 py-2.5" data-card-identity>{details}</div>}
     <section aria-labelledby="all-txns" className="card flex shrink-0 flex-col overflow-hidden">
-      <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
+      <div className="flex flex-col gap-2 border-b border-line px-3 py-2.5">
         <PackageSummary {...summary} />
-        <h2 id="all-txns" className="text-[15px] font-bold text-navy">Transactions ({items.length})</h2>
+        <h2 id="all-txns" className="text-sm font-bold text-navy">Transactions ({items.length})</h2>
       </div>
       <ul>
         {items.map((i) => {
@@ -79,10 +83,10 @@ export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; se
           return (
             <li key={i.code} className="border-t border-[rgb(12_35_64/0.1)] first:border-t-0">
               <button type="button" onClick={() => (on ? undefined : select(i))} data-txn={i.code} aria-current={on ? "true" : undefined}
-                className={`flex min-h-16 w-full items-start gap-3 px-4 py-2 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-navy ${on ? "bg-select-bg shadow-[inset_3px_0_0_var(--gold)]" : "hover:bg-fill"}`}>
+                className={`flex min-h-12 w-full items-start gap-2.5 px-3 py-1.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-navy ${on ? "bg-select-bg shadow-[inset_3px_0_0_var(--gold)]" : "hover:bg-fill"}`}>
                 <span className="pt-0.5"><Badge item={i} selected={on} /></span>
                 <span className="min-w-0 flex-1 leading-snug">
-                  <span className="flex items-center gap-2"><span className="min-w-0 flex-1 text-[15px] font-semibold text-ink">{i.name}</span>{on && <OpenNow />}</span>
+                  <span className="flex items-center gap-2"><span className="min-w-0 flex-1 text-sm font-semibold text-ink">{i.name}</span>{on && <OpenNow />}</span>
                   {/* One status word; the day count and the due note in grey. What to do is in the "Do this now" card. */}
                   <span className="mt-0.5 block"><TxnStatusChips s={i.status} /></span>
                 </span>
@@ -92,11 +96,12 @@ export function TxnSideList({ items, selected, summary }: { items: TxnItem[]; se
         })}
       </ul>
     </section>
+    </>
   );
 }
 
 /** Tablet and phone: every transaction as a card in number order; only the strip scrolls, to keep the open card in view. */
-export function TxnStrip({ items, selected, summary }: { items: TxnItem[]; selected: string; summary: PaperSummary }) {
+export function TxnStrip({ items, selected, summary, details }: { items: TxnItem[]; selected: string; summary: PaperSummary; details?: React.ReactNode }) {
   const select = useSelect();
   const ref = useRef<HTMLUListElement>(null);
   useEffect(() => {
@@ -108,26 +113,31 @@ export function TxnStrip({ items, selected, summary }: { items: TxnItem[]; selec
     if (left < ul.scrollLeft || left + card.offsetWidth > ul.scrollLeft + ul.clientWidth) ul.scrollTo({ left: Math.max(0, left - 16), behavior: "smooth" });
   }, [selected]);
   return (
+    <>
+    {/* D-062: the loan in its own box, outside the Transactions region (three columns of details on a tablet). */}
+    {details && <div className="rounded-xl border border-line bg-white px-3 py-2 sm:[&_dl]:grid-cols-3" data-card-identity>{details}</div>}
     <section aria-label="Transactions" className="flex min-w-0 flex-col gap-2">
       <PackageSummary {...summary} />
-      <ul ref={ref} className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
+      <ul ref={ref} className="-mx-4 flex snap-x snap-mandatory gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
         {items.map((i) => {
           const on = i.code === selected;
           return (
             <li key={i.code} className="shrink-0 snap-start">
               <button type="button" onClick={() => (on ? undefined : select(i))} aria-current={on ? "true" : undefined} data-txn={i.code}
-                className={`flex h-full min-h-14 w-[184px] flex-col items-start gap-1 rounded-xl border px-3 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy ${on ? "border-line-soft bg-select-bg shadow-[inset_3px_0_0_var(--gold)]" : "border-line bg-white hover:border-navy/40"}`}>
+                className={`flex h-full min-h-11 w-[168px] flex-col items-start gap-0.5 rounded-lg border px-2.5 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy ${on ? "border-line-soft bg-select-bg shadow-[inset_3px_0_0_var(--gold)]" : "border-line bg-white hover:border-navy/40"}`}>
                 <span className="flex w-full items-center gap-2">
-                  <Badge item={i} selected={on} /><span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{i.name}</span>
+                  <Badge item={i} selected={on} /><span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{i.name}</span>
                 </span>
-                {/* One status word and the day count: what to do is in the "Do this now" card. */}
-                <span className="flex w-full items-center gap-2"><span className="min-w-0 flex-1"><TxnStatusChips s={i.status} /></span>{on && <OpenNow />}</span>
+                {/* One status word and the day count; "Open now" goes under them when the card is too narrow (D-062:
+                    neither the name nor the status is squeezed). */}
+                <span className="flex w-full flex-wrap items-center gap-x-2 gap-y-1"><span className="whitespace-nowrap"><TxnStatusChips s={i.status} /></span>{on && <OpenNow />}</span>
               </button>
             </li>
           );
         })}
       </ul>
     </section>
+    </>
   );
 }
 

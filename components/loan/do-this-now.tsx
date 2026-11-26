@@ -209,7 +209,7 @@ function NowContent({ step, p }: { step: DoNowStep; p: DoThisNowProps }) {
     case "hold":
       return p.hold ? (
         <HoldSummary bare id={p.hold.id} hold={p.hold.brief} now={p.hold.now} canResume={p.hold.canResume} canAddDetails={p.hold.canAddDetails}
-          transfer={p.hold.transfer} clockNote resumeClass="btn-gold btn-sm" />
+          transfer={p.hold.transfer} clockNote resumeClass="btn-gold btn-xs" />
       ) : null;
     case "problem":
       return (

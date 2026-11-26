@@ -32,6 +32,14 @@ import { logPnSearch } from "./pn-search-log";
 
 const OPEN = ["POOL", "INBOX", "HELD"];
 
+/**
+ * Who sees a loan's released amount: the "See loan amounts" tick (D-062; the Loans table and cards, the loan summary
+ * header). Without it the amount is not put in what the page sends.
+ */
+export function seesReleasedAmounts(user: CurrentUser): boolean {
+  return can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS);
+}
+
 export interface LoanListItem {
   key: string;
   source: "dms" | "pool";
@@ -214,12 +222,14 @@ export async function loanListPage(user: CurrentUser, p: LoanListParams, now: Da
       where: { ...scope, ...searchWhere(p.q), archivedAt: { not: null }, ...(p.branch ? { AND: [{ branchId: p.branch }] } : {}), ...(p.with === "me" ? { openedById: user.id } : {}) },
     });
   }
-  const shown = sortRows(lean.filter((r) => passes(r, p, user.id)), p.sort, p.dir);
+  // Without "See loan amounts" an amount sort would still reveal the order: it falls back to the default (due).
+  const sort = p.sort === "amount" && !seesReleasedAmounts(user) ? "due" : p.sort;
+  const shown = sortRows(lean.filter((r) => passes(r, p, user.id)), sort, sort === p.sort ? p.dir : "asc");
   const info = pageInfo(shown.length, p.page, p.per);
   const page = shown.slice(info.from ? info.from - 1 : 0, info.to);
 
-  // The released amount is part of every loan file its viewer can open (the user's review, 26 November 2026: shown to every role).
-  const seesAmounts = true;
+  // The released amount: only with "See loan amounts" (D-062).
+  const seesAmounts = seesReleasedAmounts(user);
   const rows = await details(user, page, poolRows.map((x) => x), seesAmounts, now);
 
   // Source 3 and the PN check (only for a search).

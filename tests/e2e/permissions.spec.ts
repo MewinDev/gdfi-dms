@@ -41,22 +41,22 @@ test("Loan File: no Refresh button without the tick; it appears once Admin ticks
   await page.goto(`/search?q=${PN}`);
   await page.getByRole("button", { name: /Open loan file/ }).click();
   await expect(page).toHaveURL(new RegExp(`/loans/${PN}`));
-  await expect(page.getByRole("button", { name: "Refresh from MyLoans" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh from myloans" })).toBeVisible();
 
   const role = await noRefreshUser();
   await signInWith(page, { other: "Zz No Refresh LA (Z LA (no refresh))" });
   await page.goto(`/loans/${PN}`);
   const strip = page.locator("[data-source-strip]");
-  await expect(strip.locator("[data-last-checked]")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Refresh from MyLoans" })).toHaveCount(0);
+  await expect(page.locator("[data-last-checked]")).toBeVisible(); // D-062: "myloans checked" in the header's second line (no refresh tick)
+  await expect(page.getByRole("button", { name: "Refresh from myloans" })).toHaveCount(0);
   await shot(page, "loan-file-no-refresh");
 
   // Admin ticks it (the role editor's own path is covered by role-editor.spec.ts); the person's next page follows.
   await db.role.update({ where: { id: role.id }, data: { permissions: [...LA_TICKS, "loans:refresh"] } });
   await page.reload();
-  await expect(page.getByRole("button", { name: "Refresh from MyLoans" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh from myloans" })).toBeVisible();
   await shot(page, "loan-file-with-refresh");
-  await page.getByRole("button", { name: "Refresh from MyLoans" }).click();
+  await page.getByRole("button", { name: "Refresh from myloans" }).click();
   await expect(strip).toContainText(/No changes|Changes found|small details/);
 });
 
@@ -70,5 +70,5 @@ test("Loan File: without \"See when MyLoans was last checked\" the strip shows n
   await page.goto(`/loans/${PN}`);
   await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expect(page.locator("[data-last-checked]")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Refresh from MyLoans" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Refresh from myloans" })).toHaveCount(0);
 });

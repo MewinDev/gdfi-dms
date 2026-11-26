@@ -1,6 +1,6 @@
 # 12 LA workflow (Phase A)
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 26 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -36,6 +36,7 @@ The Loan Associate opens the loan file, answers the preview card, gets the trans
 | 24 | Transmit to the vault with the transmittal form (courier, tracking #, mode) (§5.8, Chart 7) | 📦 Later phase (B: vault transmittal) | n/a | n/a | n/a | `docs/STATUS.md` phase B | n/a |
 | 25 | View own transactions and demerits (§7) | ⚠️ Partial: My loans and Inbox; demerits are phase B | My loans | LA | No | e2e `my-loans-compact.spec.ts` | UAT LA-1 |
 | 26 | Holds and problems on the LA's own work | ✅ Built | Loan file | `holds:raise`, `problems:raise` | Reasons | module 16 | UAT LA-9 |
+| 27 | The loan file, compact (D-062): one summary card on every tab (top of the page; on Check documents the top of the transactions card) (the name, with the due badge, branch badge and Refresh from myloans icon at the right of its line; the PN with Copy under it; Product · Loan type (New or Renewal) · Amount · Released on as label-above-value cells; the step as a 20 px heading; on Check documents the name with the due badge and refresh, the PN, and six details with Branch and Assigned to at the top of the transactions card instead); Check documents with one hint line and one progress per transaction (no "Do this now" card for ordinary work, no "Go to the papers", one Send button: the panel's); paper rows about 36 px with their chips after the name and Mark as missing in a quiet "⋯" row menu; the Send panel compact; 14 px body, 36 px buttons from 768 px, 44 px on phones; right panel from 1280 px | ✅ Built | Loan file (all tabs) | `loans:view`; refresh `loans:refresh`; last checked `myloans:view` | No | e2e `loan-file-layout.spec.ts`, `loan-file-next-step.spec.ts`, `ui-refresh.spec.ts` (readability 320 to 1440 px), `axe.spec.ts` (1440, 1366, 820, 390); screenshots `docs/screenshots/ui-refresh/loan-*-{390,820,1440}.png` | Open a loan file: the header, then tick a paper and see the hint change |
 
 ## D. Known limits and open questions
 

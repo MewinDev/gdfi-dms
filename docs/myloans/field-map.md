@@ -2,7 +2,7 @@
 
 MyLoans is the source of truth for a loan's account details. This page lists the 15 items the DMS receives, keeps and shows, where each comes from in the MyLoans team's source query, where it is stored, where it is shown and how a change to it is treated.
 
-Last updated: 12 November 2026 (PHT)
+Last updated: 27 November 2026 (PHT)
 
 - **Source query (reference only):** [released-loans-source.sql](released-loans-source.sql). It defines the read-only view the MyLoans team will expose behind the API. The DMS never runs it and never connects to MYLOSDB or MYLMSDB.
 - **One place knows MyLoans names:** `lib/myloans/live-mapping.ts` (`mapLoan`). The rest of the DMS uses the normalized record (`MyLoansRecord`, `lib/myloans/types.ts`).
@@ -49,7 +49,7 @@ Also kept, not one of the 15: `TransactionIsActive` → `sourceIsActive` (loan f
 ## Where it is shown
 
 - **Find a loan** (names only, no codes or IDs): borrower name, PN and product in the header; the status name, "Your branch", "Details complete" and "Source: MyLoans" as chips; amount released, released on, loan type, product, branch, area, division and company in two rows of four.
-- **Loan file, More loan details** (collapsed): Identity (PN, source loan ID, CIN, CIF), Loan (borrower name, amount released, released on, loan type, product name, product code), Organization (company, division, area and branch, each "ID · name"), Status (status ID, status name, active), Source (MyLoans, retrieved at, last checked, last updated in MyLoans, opened at), and Why this was set up (the rule by name and reason, never a number). The only everyday screen that shows branch code, area ID, division ID, company ID and status ID.
+- **Loan file, Loan at a glance** (D-062; no open / close): Type, Mortgage needed, OR/CR, Send by, CIN, CIF, Area (name), Opened (when, by whom) and Why this was set up (the rule by name and reason, never a number). What the loan summary header already shows (PN, borrower, amount, release date, loan type, product) is not repeated. For people who manage the myloans link (`myloans:manage`, Admin) a small **myloans codes** section adds the source loan ID, product code, branch, area, division and company (each "ID · name"), status ID, active, retrieved and updated in myloans: the only screen that shows those codes and IDs. (Until D-062 this was a collapsed "More loan details" list shown to everyone.)
 
 ## Questions for MyLoans
 

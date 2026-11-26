@@ -42,7 +42,7 @@ async function openPn(page: Page, pn: string, questions = true) {
 }
 async function refresh(page: Page, pn: string) {
   await page.goto(`/loans/${pn}?tab=todo`);
-  await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from MyLoans" }).click();
+  await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from myloans" }).click();
   await expect(page.getByText("Changes found: an Open Item waits for an approver.")).toBeVisible();
 }
 /** The Open Items page for one PN, and the card of one field (or the rule group). */
@@ -115,10 +115,10 @@ test("4. Branch change: access follows the old branch until an approver approves
     // An Antipolo-only person still sees it while Admin has not decided; an Angono-only person does not yet.
     await only(antipolo.id);
     await page.goto(`/loans/${ANTIPOLO_PN}`);
-    await expect(page.getByRole("heading", { name: "Loan File" })).toBeVisible();
+    await expect(page.locator("[data-loan-header]")).toBeVisible();
     await only(angono.id);
     await page.goto(`/loans/${ANTIPOLO_PN}`);
-    await expect(page.getByRole("heading", { name: "Loan File" })).toHaveCount(0);
+    await expect(page.locator("[data-loan-header]")).toHaveCount(0);
     // The approver: the Branch Open Item (old and new), then Approve with remarks.
     await signInWith(page, BUTTONS.admin);
     const card = await openItemsCard(page, ANTIPOLO_PN, "branchCode");
@@ -132,10 +132,10 @@ test("4. Branch change: access follows the old branch until an approver approves
     // Approved: the Angono-only person sees it, the Antipolo-only person no longer does.
     await signInWith(page, BUTTONS.la);
     await page.goto(`/loans/${ANTIPOLO_PN}`);
-    await expect(page.getByRole("heading", { name: "Loan File" })).toBeVisible();
+    await expect(page.locator("[data-loan-header]")).toBeVisible();
     await only(antipolo.id);
     await page.goto(`/loans/${ANTIPOLO_PN}`);
-    await expect(page.getByRole("heading", { name: "Loan File" })).toHaveCount(0);
+    await expect(page.locator("[data-loan-header]")).toHaveCount(0);
   } finally {
     await db.userBranch.deleteMany({ where: { userId: la.id } });
     for (const b of la.branches) await db.userBranch.create({ data: { userId: la.id, branchId: b.branchId } });

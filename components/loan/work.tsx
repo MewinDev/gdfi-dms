@@ -9,7 +9,7 @@ import {
 } from "@/app/actions/loan";
 import { Sheet } from "@/components/ui/sheet";
 import { ToneChip } from "@/components/ui/basics";
-import { AlertIcon, CheckIcon, PauseIcon, PlusIcon, InfoIcon } from "@/components/ui/icons";
+import { AlertIcon, CheckIcon, ChevronRightIcon, PauseIcon, PlusIcon, InfoIcon } from "@/components/ui/icons";
 import { plainMessage } from "@/lib/ui/plain";
 import { checklistStatus, receivedText, type ChecklistStatus } from "@/lib/workflow/checklist";
 
@@ -66,6 +66,12 @@ export interface WorkCardProps {
   assignmentText: string | null;
   edstReference: string | null;
   send: SendOptions | null;
+  /**
+   * D-062: the one-line hint in the header. `text` for a fixed sentence (on hold, a problem, a returned paper);
+   * otherwise it is worked out from the ticks on screen ("Tick the 5 required papers, then send to DP"), and
+   * `done` once they are all ticked. null: no hint (sent, done).
+   */
+  guide?: { text: string | null; after: string | null; done: string | null } | null;
 }
 
 export function WorkCard(p: WorkCardProps) {
@@ -139,54 +145,61 @@ export function WorkCard(p: WorkCardProps) {
     <PaperRow key={l.id} l={l} on={checked.has(l.id)} disabled={!p.editable} onToggle={() => toggle(l.id)} highlight={highlight.includes(l.id)} tools={p.papers ?? null} onMissing={dropTick} groupMet={groupMet(l)} />
   );
 
+  const remaining = status.requiredTotal - status.requiredDone;
+  const guideText = !p.guide ? null
+    : p.guide.text ? p.guide.text
+    : complete ? p.guide.done
+    : remaining > 0 ? `Tick the ${status.requiredDone > 0 ? `${remaining} remaining` : remaining} required paper${remaining === 1 ? "" : "s"}${p.guide.after ? `, then ${p.guide.after}` : ""}`
+    : null;
   const hint = p.code === "EDST" && p.status === "FOR_CHECKLIST" ? "You do this one. Tick the papers first, then enter it in EDST and record the reference here." : null;
 
   const savedText =
     save.state === "saving" ? "Saving..." : save.state === "saved" ? "Saved just now" : save.state === "error" ? null : p.lines.some((l) => l.checked) ? "All changes saved" : null;
 
   return (
-    <section aria-labelledby={`w-${p.txnId}`} className="flex flex-col overflow-hidden sm:rounded-[14px] sm:border sm:border-line-soft sm:bg-white sm:shadow-[var(--shadow-soft)]">
-      {/* Header row: number, name, counts on the same line, status chip (the phone page header shows the name) */}
-      <div className="flex min-h-14 items-center gap-3 bg-fill px-4 py-2 max-sm:sr-only sm:px-5">
-        <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold text-xs font-bold text-navy">{p.index}</span>
-        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2.5">
-          <h2 id={`w-${p.txnId}`} className="text-[17px] font-bold text-navy">{p.name}</h2>
-          {p.round && <span className="tag self-center" data-round>{p.round}</span>}
+    <section aria-labelledby={`w-${p.txnId}`} className="flex flex-col overflow-hidden rounded-xl border border-line-soft bg-white sm:shadow-[var(--shadow-soft)]" data-work-card>
+      {/* D-062 header: number, name, chips; the one-line hint (what to do now); the one progress of this transaction
+          (text and a thin bar). The step's own button is in the Send panel (or EDST, Mark as done) below: never twice. */}
+      <div className="flex flex-col gap-1.5 border-b border-line bg-fill px-3 py-2 sm:px-4" data-txn-header>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold text-[11px] font-bold text-navy">{p.index}</span>
+          <h2 id={`w-${p.txnId}`} className="min-w-0 text-base font-bold text-navy">{p.name}</h2>
+          {p.total !== undefined && <span className="text-xs text-ink-2" data-txn-position>Transaction {p.index} of {p.total}</span>}
+          {p.round && <span className="tag" data-round>{p.round}</span>}
           {(p.titleChips ?? []).map((c) => <TitleChip key={c.id} c={c} />)}
-          {p.total !== undefined && <span className="basis-full text-xs text-ink-2" data-txn-position>Transaction {p.index} of {p.total}</span>}
-          {hint && <span className="self-center text-ink-2" title={hint} aria-label={hint} role="img"><InfoIcon size={16} /></span>}
-          {status.requiredTotal > 0 && (
-            <span className="text-[13px] text-ink-2" data-paper-count>{countText}{status.optionalTotal > 0 ? ` · ${status.optionalDone} of ${status.optionalTotal} optional` : ""}</span>
-          )}
+          {hint && <span className="text-ink-2" title={hint} aria-label={hint} role="img"><InfoIcon size={14} /></span>}
+          {complete && status.requiredTotal > 0 && status.exceptions.length === 0 && <ToneChip tone="ok" check>All documents checked</ToneChip>}
+          {complete && status.exceptions.length > 0 && <ToneChip tone="act">{status.exceptions.length} missing, with remarks</ToneChip>}
         </div>
-        {complete && status.requiredTotal > 0 && status.exceptions.length === 0 && <ToneChip tone="ok" check>All documents checked</ToneChip>}
-        {complete && status.exceptions.length > 0 && <ToneChip tone="act">{status.exceptions.length} missing, with remarks</ToneChip>}
+        {guideText && <p className="text-sm font-medium leading-snug text-ink md:text-[13px]" data-txn-hint>{guideText}</p>}
+        {status.requiredTotal > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-txn-progress>
+            <span className="text-xs text-ink-2" data-paper-count>{countText}{status.optionalTotal > 0 ? ` · ${status.optionalDone} of ${status.optionalTotal} optional` : ""}</span>
+            <span className="block h-1 w-full max-w-48 overflow-hidden rounded-full bg-fill-strong" role="progressbar" aria-label={`${p.name}: required papers received`} aria-valuemin={0} aria-valuemax={status.requiredTotal} aria-valuenow={status.requiredReceived}>
+              <span className="block h-full rounded-full bg-ok-fg" style={{ width: `${Math.round((status.requiredReceived / status.requiredTotal) * 100)}%` }} />
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-col gap-2 sm:px-5 sm:py-4">
-        {/* Phone: the header row is hidden, so show the open-item chips and the progress here */}
-        {(p.titleChips ?? []).length > 0 && <p className="flex flex-wrap gap-1.5 sm:hidden">{(p.titleChips ?? []).map((c) => <TitleChip key={c.id} c={c} phone />)}</p>}
-        <p className="text-[13px] text-ink-2 sm:hidden">
-          {p.total !== undefined && <span data-txn-position>Transaction {p.index} of {p.total} · </span>}
-          {missingRequired > 0 ? countText : `${countText} ticked`}{status.optionalTotal > 0 ? ` · ${status.optionalDone} of ${status.optionalTotal} optional` : ""}
-        </p>
-        <div id={`papers-${p.txnId}`} className="grid scroll-mt-28 grid-cols-1 gap-1.5" role="group" aria-label={`${p.name} papers`}>
+      <div className="flex flex-col gap-1.5 px-2 py-2 sm:px-4 sm:py-3">
+        <div id={`papers-${p.txnId}`} className="grid scroll-mt-28 grid-cols-1 gap-1" role="group" aria-label={`${p.name} papers`}>
           {required.map(row)}
           {groups.map((g) => (
             <div key={g} className="contents">
-              <p className="pt-1 text-xs font-semibold uppercase tracking-[0.05em] text-ink-2">{g}: pick at least one</p>
+              <p className="pt-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-2" data-group-label>{g}: pick at least one</p>
               {p.lines.filter((l) => l.required && l.kind === "ONE_OF" && (l.group ?? l.label) === g).map(row)}
             </div>
           ))}
           {optional.length > 0 && (
-            <h4 className="pt-1 text-xs font-bold uppercase tracking-[0.06em] text-ink-2">Optional</h4>
+            <h3 className="pt-1 text-[11px] font-bold uppercase tracking-[0.06em] text-ink-2">Optional</h3>
           )}
           {optional.map(row)}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px]">
           {p.editable && !adding && (
-            <button type="button" onClick={() => setAdding(true)} className="inline-flex min-h-11 items-center gap-1 font-semibold text-navy underline underline-offset-2">
+            <button type="button" onClick={() => setAdding(true)} className="inline-flex min-h-11 items-center gap-1 font-semibold text-navy underline underline-offset-2 md:min-h-8">
               <PlusIcon size={14} /> Add another paper
             </button>
           )}
@@ -209,7 +222,7 @@ export function WorkCard(p: WorkCardProps) {
       </div>
 
       {/* Action area: a footer section of the card (the "Do this now" card's last step points here) */}
-      <div id={`act-${p.txnId}`} className="flex scroll-mt-28 flex-col gap-3 border-t border-[rgb(12_35_64/0.1)] pt-4 empty:hidden sm:px-5 sm:pb-4">
+      <div id={`act-${p.txnId}`} className="flex scroll-mt-28 flex-col gap-3 border-t border-[rgb(12_35_64/0.1)] px-3 py-3 empty:hidden sm:px-4">
         {p.assignmentText && <p className="rounded-xl bg-wait-bg px-4 py-3 text-[15px] text-wait-fg">{p.assignmentText}</p>}
         {p.code === "EDST" && p.status === "COMPLETED" && (
           <p className="rounded-xl bg-ok-bg px-4 py-3 text-[15px] text-ok-fg">EDST done. Reference {p.edstReference}.</p>
@@ -230,7 +243,7 @@ export function WorkCard(p: WorkCardProps) {
 /** The small chip beside the title: where an open item is (the Open items card is the alert). */
 function TitleChip({ c, phone = false }: { c: { id: string; text: string; tone: "bad" | "hold" }; phone?: boolean }) {
   return (
-    <span id={phone ? `open-${c.id}-m` : `open-${c.id}`} data-title-chip={c.tone} className={`chip ${c.tone === "hold" ? "c-hold" : "c-bad"} h-6 self-center px-2 text-xs ${phone ? "" : "max-sm:hidden"}`}>
+    <span id={phone ? `open-${c.id}-m` : `open-${c.id}`} data-title-chip={c.tone} className={`chip ${c.tone === "hold" ? "c-hold" : "c-bad"} h-6 self-center px-2 text-xs`}>
       {c.tone === "hold" ? <PauseIcon size={12} strokeWidth={2.6} /> : <AlertIcon size={12} strokeWidth={2.6} />}
       {c.text}
     </span>
@@ -263,7 +276,11 @@ function EdstDone({ txnId, waiting }: { txnId: string; waiting: boolean }) {
 // Problems: report one, mark one as fixed
 // ===========================================================================
 
-export function ReportProblem({ loanId, missingTxns, compact = false }: { loanId: string; missingTxns: { id: string; name: string; href: string }[]; compact?: boolean }) {
+export function ReportProblem({ loanId, missingTxns, compact = false, row = false }: {
+  loanId: string; missingTxns: { id: string; name: string; href: string }[]; compact?: boolean;
+  /** D-062: one quiet row, "Something wrong?" with an alert icon and a chevron; the whole row opens it. */
+  row?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<"MISSING_PAPER" | "WRONG_DETAILS" | "OTHER">("MISSING_PAPER");
   const [txn, setTxn] = useState(missingTxns[0]?.id ?? "");
@@ -279,54 +296,64 @@ export function ReportProblem({ loanId, missingTxns, compact = false }: { loanId
   ];
   return (
     <>
-      <button type="button" className={compact ? "inline-flex min-h-11 items-center text-[15px] font-semibold text-navy underline underline-offset-2" : "btn-navy self-start"} onClick={() => setOpen(true)}>{compact ? "Report a problem" : "Report"}</button>
-      <Sheet open={open} onClose={() => setOpen(false)} title="Report a problem">
+      {row ? (
+        <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label="Something wrong? Report a problem"
+          className="group flex min-h-10 w-full items-center gap-2 rounded-xl border border-line bg-white px-3 py-1 text-left hover:bg-fill focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+          data-report-row>
+          <span aria-hidden="true" className="text-ink-2 group-hover:text-navy"><AlertIcon size={14} /></span>
+          <span className="min-w-0 flex-1 text-[13px] text-ink">Something wrong?</span>
+          <span aria-hidden="true" className="text-ink-2 group-hover:text-navy"><ChevronRightIcon size={16} /></span>
+        </button>
+      ) : (
+        <button type="button" className={compact ? "inline-flex min-h-11 items-center text-[13px] font-semibold text-navy underline underline-offset-2 md:min-h-8" : "btn-navy self-start"} onClick={() => setOpen(true)}>{compact ? "Report a problem" : "Report"}</button>
+      )}
+      <Sheet open={open} onClose={() => setOpen(false)} title="Report a problem" compact>
         {done ? (
           <div className="flex flex-col gap-4">
-            <p className="rounded-xl bg-ok-bg px-4 py-3 text-[15px] text-ok-fg">Thank you. Your supervisor has been told. You can see it under Problems on the To do tab.</p>
-            <button type="button" className="btn-navy" onClick={() => setOpen(false)}>Close</button>
+            <p className="rounded-lg bg-ok-bg px-3 py-2 text-[13px] text-ok-fg">Thank you. Your supervisor has been told. You can see it under Problems on the To do tab.</p>
+            <button type="button" className="btn-navy min-h-11 self-start px-4 text-sm md:min-h-9" onClick={() => setOpen(false)}>Close</button>
           </div>
         ) : (
-          <form action={actionB} className="flex flex-col gap-4">
+          <form action={actionB} className="flex flex-col gap-3" data-report-form>
             <input type="hidden" name="loanId" value={loanId} />
             <input type="hidden" name="kind" value={kind} />
-            <fieldset className="flex flex-col gap-2.5">
-              <legend className="mb-2 text-[15px] font-semibold">What is wrong?</legend>
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="mb-1.5 text-sm font-semibold">What is wrong?</legend>
               {choices.map(([v, l, h]) => (
-                <label key={v} className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${kind === v ? "border-2 border-navy bg-hover" : "border-line bg-white"}`}>
-                  <input type="radio" name="kindChoice" value={v} checked={kind === v} onChange={() => setKind(v)} className="h-5 w-5 accent-[var(--navy)]" />
-                  <span><span className="block text-base font-semibold">{l}</span><span className="block text-sm text-ink-2">{h}</span></span>
+                <label key={v} className={`flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-1.5 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${kind === v ? "border-navy bg-hover shadow-[inset_0_0_0_1px_var(--navy)]" : "border-line bg-white"}`}>
+                  <input type="radio" name="kindChoice" value={v} checked={kind === v} onChange={() => setKind(v)} className="h-4 w-4 shrink-0 accent-[var(--navy)]" />
+                  <span className="min-w-0"><span className="block text-sm font-semibold">{l}</span><span className="block text-xs leading-snug text-ink-2">{h}</span></span>
                 </label>
               ))}
             </fieldset>
             {useMissing && missingTxns.length > 0 && (
               <div>
-                <label htmlFor="rp-txn" className="label">Which part is missing a paper?</label>
-                <select id="rp-txn" value={txn} onChange={(e) => setTxn(e.target.value)} className="input">
+                <label htmlFor="rp-txn" className="label text-xs">Which part is missing a paper?</label>
+                <select id="rp-txn" value={txn} onChange={(e) => setTxn(e.target.value)} className="input min-h-11 rounded-lg text-sm md:min-h-9">
                   {missingTxns.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
             )}
             {useMissing && missingTxns.length === 0 ? (
               <div className="flex flex-col gap-3">
-                <p className="rounded-xl bg-fill px-4 py-3 text-[15px] text-ink">Every transaction has been sent. A paper is marked Missing on its checklist while the transaction is with you; the processor returns it if a paper is not there.</p>
-                <button type="button" className="btn-ghost btn-lg" onClick={() => setOpen(false)}>Close</button>
+                <p className="rounded-lg bg-fill px-3 py-2 text-[13px] text-ink">Every transaction has been sent. A paper is marked Missing on its checklist while the transaction is with you; the processor returns it if a paper is not there.</p>
+                <button type="button" className="btn-ghost min-h-11 self-start px-4 text-sm md:min-h-9" onClick={() => setOpen(false)}>Close</button>
               </div>
             ) : useMissing ? (
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <a href={missingTxns.find((t) => t.id === txn)?.href ?? "#"} className="btn-gold btn-lg">Go to the papers</a>
-                <button type="button" className="btn-ghost btn-lg" onClick={() => setOpen(false)}>Cancel</button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <a href={missingTxns.find((t) => t.id === txn)?.href ?? "#"} className="btn-gold min-h-11 px-4 text-sm md:min-h-9">Go to the papers</a>
+                <button type="button" className="btn-ghost min-h-11 px-4 text-sm md:min-h-9" onClick={() => setOpen(false)}>Cancel</button>
               </div>
             ) : (
               <>
                 <div>
-                  <label htmlFor="rp-text" className="label">Tell us what happened</label>
-                  <textarea id="rp-text" name="details" rows={4} maxLength={1000} required className="input" aria-invalid={state?.field === "details"} />
+                  <label htmlFor="rp-text" className="label text-xs">Tell us what happened</label>
+                  <textarea id="rp-text" name="details" rows={3} maxLength={1000} required className="input rounded-lg py-2 text-sm" aria-invalid={state?.field === "details"} />
                 </div>
-                {state && !state.ok && <p role="alert" className="rounded-xl bg-bad-bg px-4 py-3 text-sm text-bad-fg">{plainMessage(state.error)}</p>}
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <button type="submit" className="btn-gold btn-lg" disabled={pending}>{pending ? "Sending..." : "Send report"}</button>
-                  <button type="button" className="btn-ghost btn-lg" onClick={() => setOpen(false)}>Cancel</button>
+                {state && !state.ok && <p role="alert" className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad-fg">{plainMessage(state.error)}</p>}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button type="submit" className="btn-gold min-h-11 px-4 text-sm md:min-h-9" disabled={pending}>{pending ? "Sending..." : "Send report"}</button>
+                  <button type="button" className="btn-ghost min-h-11 px-4 text-sm md:min-h-9" onClick={() => setOpen(false)}>Cancel</button>
                 </div>
               </>
             )}

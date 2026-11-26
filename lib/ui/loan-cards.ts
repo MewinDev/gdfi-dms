@@ -45,7 +45,7 @@ export function cardFor(r: LoanRow, cal: WorkCalendar): LoanListCard {
     pn: r.pn,
     borrowerName: r.borrowerName,
     branch: r.branch,
-    amountText: peso(r.amount),
+    amountText: r.amount === null ? null : peso(r.amount),
     // Home rows and cards: the stage's name (stage map). My loans' Next step column: nextText.
     action: problem ? "Fix a problem first" : stageLabel(r.stage),
     nextText: problem ? "Fix a problem first" : r.nextStep.label,

@@ -67,7 +67,8 @@ export async function JourneyTab({ loan, user, params }: { loan: LoanDetail; use
 
   const views: [View, string][] = [["story", "Story"], ["docs", "By document"], ["log", "Full log"]];
   return (
-    <div className="flex min-w-0 flex-col gap-3" data-journey data-journey-view={view}>
+    // D-062 review: the whole width, tighter gaps.
+    <div className="flex min-w-0 flex-col gap-2" data-journey data-journey-view={view}>
       <WhereNow lines={story.where} />
       <JourneySwitch current={view} items={views.map(([k, l]) => ({ key: k, label: l, href: href({ journey: k }) }))} />
       <div id="journey-panel" role="tabpanel" aria-labelledby={`journey-tab-${view}`} className="min-w-0">
@@ -119,13 +120,13 @@ const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 function WhereNow({ lines }: { lines: WhereLine[] }) {
   return (
-    <section aria-labelledby="where-now" className="card px-3 py-2.5 sm:px-4" data-where-now>
-      <h2 id="where-now" className="text-[15px] font-bold text-navy">Where it is now</h2>
+    <section aria-labelledby="where-now" className="card px-3 py-2" data-where-now>
+      <h2 id="where-now" className="text-sm font-bold text-navy">Where it is now</h2>
       <ul className="mt-1 flex flex-col divide-y divide-line">
         {lines.length === 0 && <li className="py-1.5 text-sm text-ink-2">No transactions.</li>}
         {lines.map((l) => (
-          <li key={l.key} className="flex flex-col gap-1 py-1.5 sm:flex-row sm:items-center sm:gap-3" data-where-line data-strip={l.codes.join(" ")}>
-            <p className="flex min-w-0 flex-1 items-start gap-2 text-sm leading-6 text-ink">
+          <li key={l.key} className="flex flex-col gap-1 py-1 sm:flex-row sm:items-center sm:gap-3" data-where-line data-strip={l.codes.join(" ")}>
+            <p className="flex min-w-0 flex-1 items-start gap-2 text-[13px] leading-5 text-ink">
               <WherePill kind={l.kind} />
               <span className="min-w-0 break-words">
                 <strong className="font-semibold">{l.label}</strong>: {lowerFirst(undoubleRole(l.text))}
@@ -170,7 +171,7 @@ function StoryView({ story, now, txns, params, href }: {
   const any = counts.some(([, n]) => n > 0);
 
   return (
-    <section aria-label="Story" className="card flex min-w-0 flex-col gap-2 p-3 sm:p-4" data-story>
+    <section aria-label="Story" className="card flex min-w-0 flex-col gap-2 p-3" data-story>
       {any && (
         // One soft badge per kind, in the colour and icon of its lines (grey at 0); pressing one shows only those lines.
         <div role="group" aria-label="What held it up" className="flex flex-wrap items-center gap-1.5" data-story-counts>
@@ -179,7 +180,7 @@ function StoryView({ story, now, txns, params, href }: {
             const on = flag === k;
             return (
               <Link key={k} href={href({ ...keep, flag: on ? undefined : k })} scroll={false} aria-current={on ? "true" : undefined}
-                className={`chip ${n ? st.chip : "c-mute"} h-auto min-h-11 gap-1 px-2.5 text-xs font-semibold no-underline sm:min-h-7 ${on ? "ring-2 ring-navy ring-offset-1" : ""} ${n ? "" : "opacity-80"}`}
+                className={`chip ${n ? st.chip : "c-mute"} h-auto min-h-9 gap-1 px-2 text-[11px] font-semibold no-underline sm:min-h-6 relative before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] sm:before:hidden ${on ? "ring-2 ring-navy ring-offset-1" : ""} ${n ? "" : "opacity-80"}`}
                 data-story-count={k} data-count={n}>
                 <st.Icon size={12} strokeWidth={2.6} />{n} {w}{n === 1 ? "" : "s"}
               </Link>
@@ -191,13 +192,13 @@ function StoryView({ story, now, txns, params, href }: {
         <div role="group" aria-label="Show" className="inline-flex overflow-hidden rounded-lg border border-line-strong">
           {FILTERS.map(([k, l]) => (
             <Link key={k} href={href({ ...keep, show: k === "all" ? undefined : k })} scroll={false} aria-current={show === k ? "true" : undefined}
-              className={`inline-flex min-h-11 items-center px-3 text-sm font-semibold no-underline sm:min-h-8 ${show === k ? "bg-navy text-white" : "bg-white text-navy hover:bg-fill"}`}>{l}</Link>
+              className={`inline-flex min-h-9 items-center px-2.5 text-xs font-semibold no-underline sm:min-h-7 relative before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] sm:before:hidden ${show === k ? "bg-navy text-white" : "bg-white text-navy hover:bg-fill"}`}>{l}</Link>
           ))}
         </div>
         <div role="group" aria-label="Transaction" className="flex min-w-0 flex-wrap gap-1.5">
           {[{ code: "", name: "Whole loan" }, ...txns].map((t) => (
             <Link key={t.code || "all"} href={href({ ...keep, txn: t.code || undefined })} scroll={false} aria-current={txn === t.code ? "true" : undefined}
-              className={`inline-flex min-h-11 items-center rounded-full border px-3 text-[13px] font-semibold no-underline sm:min-h-8 ${txn === t.code ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-navy hover:bg-fill"}`}>{t.name}</Link>
+              className={`inline-flex min-h-9 items-center rounded-full border px-2.5 text-xs font-semibold no-underline sm:min-h-7 relative before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] sm:before:hidden ${txn === t.code ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-navy hover:bg-fill"}`}>{t.name}</Link>
           ))}
         </div>
       </div>
@@ -223,7 +224,7 @@ function StoryRow({ l }: { l: StoryLine }) {
   return (
     <li className={`flex min-w-0 gap-2.5 rounded-lg px-2 py-1 sm:gap-3 ${tint}`} data-story-line data-flag={l.flag ?? undefined} data-system={l.system ? "" : undefined}>
       <time dateTime={l.at.toISOString()} className="w-[60px] shrink-0 pt-px text-xs tabular-nums leading-5 text-ink-2 sm:w-[68px]" data-story-time>{timeText(l.at)}</time>
-      <p className={`min-w-0 flex-1 break-words text-sm leading-5 ${l.system ? "text-ink-2" : "text-ink"}`}>
+      <p className={`min-w-0 flex-1 break-words text-[13px] leading-5 ${l.system ? "text-ink-2" : "text-ink"}`}>
         {l.flag && <FlagChip flag={l.flag} word={FLAG_WORD[l.flag]} />}
         <span data-story-sentence>{l.sentence}</span>
         {l.system && <>{" · "}{l.system.count} step{l.system.count === 1 ? "" : "s"}</>}
@@ -248,16 +249,16 @@ function DocsBoard({ columns, words, attentionFirst, href }: { columns: DocColum
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-ink-2">Each transaction from opened to done. Press a step for its details.</p>
         <Link href={href({ journey: "docs", order: attentionFirst ? undefined : "attention" })} scroll={false} aria-pressed={attentionFirst}
-          className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold no-underline sm:min-h-8 ${attentionFirst ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-navy hover:bg-fill"}`} data-attention-first>
+          className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold no-underline sm:min-h-7 relative before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] sm:before:hidden ${attentionFirst ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-navy hover:bg-fill"}`} data-attention-first>
           {attentionFirst && <CheckIcon size={13} strokeWidth={2.6} />}Needs attention first
         </Link>
       </div>
 
       {/* Tablet and desktop: columns (two per row on tablet; side by side on desktop, scrolling inside the board only). */}
       <div className="relative hidden min-w-0 md:block">
-        <div className={`grid min-w-0 grid-cols-2 gap-3 lg:flex lg:overflow-x-auto ${wide ? "lg:pr-10" : ""}`} data-board>
+        <div className={`grid min-w-0 grid-cols-2 gap-2 lg:flex lg:overflow-x-auto ${wide ? "lg:pr-10" : ""}`} data-board>
           {cols.map((c) => (
-            <section key={c.id} aria-labelledby={`col-${c.code}`} className={`card flex min-w-0 flex-col p-3 lg:min-w-[232px] lg:flex-1 ${c.attention ? "border-act-line" : ""}`} data-doc-column={c.code} data-attention={c.attention || undefined}>
+            <section key={c.id} aria-labelledby={`col-${c.code}`} className={`card flex min-w-0 flex-col p-2.5 lg:min-w-[220px] lg:flex-1 ${c.attention ? "border-act-line" : ""}`} data-doc-column={c.code} data-attention={c.attention || undefined}>
               <ColumnHead c={c} word={words.get(c.id)} id={`col-${c.code}`} />
               <Milestones c={c} />
             </section>
@@ -275,7 +276,7 @@ function DocsBoard({ columns, words, attentionFirst, href }: { columns: DocColum
       <div className="flex min-w-0 flex-col gap-2 md:hidden">
         {cols.map((c) => (
           <details key={c.id} open={openOnPhone.has(c.id)} className={`card group min-w-0 ${c.attention ? "border-act-line" : ""}`} data-doc-card={c.code} data-attention={c.attention || undefined}>
-            <summary className="flex min-h-12 list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+            <summary className="flex min-h-11 list-none items-center gap-2 px-3 py-1.5 [&::-webkit-details-marker]:hidden">
               <ColumnHead c={c} word={words.get(c.id)} id={`card-${c.code}`} />
               <ChevronDownIcon size={16} className="ml-auto shrink-0 text-ink-2 transition-transform group-open:rotate-180 motion-reduce:transition-none" />
             </summary>
@@ -290,7 +291,7 @@ function DocsBoard({ columns, words, attentionFirst, href }: { columns: DocColum
 function ColumnHead({ c, word, id }: { c: DocColumn; word: TxnStatus | undefined; id: string }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-      <h3 id={id} className="min-w-0 text-[15px] font-bold text-navy">{c.name}</h3>
+      <h3 id={id} className="min-w-0 text-sm font-bold text-navy">{c.name}</h3>
       {word && <span className={`chip ${TONE_CLS[word.pill.tone] ?? "c-mute"} h-6 px-2 text-xs`} data-column-status>{word.pill.text}</span>}
       {c.note && <span className={`text-xs ${c.note.late ? "font-semibold text-bad-fg" : "text-ink-2"}`}>{c.note.text}</span>}
     </div>
@@ -314,7 +315,7 @@ function Milestones({ c }: { c: DocColumn }) {
           <span aria-hidden="true" className={`relative z-[1] mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${DOT[m.state]}`} />
           <MilestoneButton title={`${c.name}: ${m.label}`} details={m.details.map((d) => ({ when: fmtShort(d.at), text: d.text }))}
             className="-my-0.5 flex min-h-11 min-w-0 flex-1 flex-col items-start rounded-lg px-1.5 py-0.5 text-left hover:bg-fill sm:min-h-0">
-            <span className={`block text-sm font-semibold ${m.state === "later" ? "text-ink-2" : "text-ink"}`}>
+            <span className={`block text-[13px] font-semibold ${m.state === "later" ? "text-ink-2" : "text-ink"}`}>
               {m.label}<span className="sr-only">, {STATE_WORD[m.state]}</span>
             </span>
             {m.state === "done" && (
@@ -353,12 +354,12 @@ function Milestones({ c }: { c: DocColumn }) {
 function FullLog({ j, open, papersOpen, sys, na, codes }: { j: Journey; open: boolean; papersOpen: boolean; sys: boolean; na: boolean; codes: string[] }) {
   const today = businessDate(j.now);
   return (
-    <div className="flex min-w-0 flex-col gap-3" data-log-root data-sys-off={sys ? undefined : ""} data-na-off={na ? undefined : ""}>
+    <div className="flex min-w-0 flex-col gap-2" data-log-root data-sys-off={sys ? undefined : ""} data-na-off={na ? undefined : ""}>
       <details open={open} className="card group min-w-0 overflow-hidden" data-full-log>
-        <summary className="flex min-h-12 cursor-pointer list-none items-start gap-2 px-3 py-2.5 sm:px-4 [&::-webkit-details-marker]:hidden">
+        <summary className="flex min-h-11 cursor-pointer list-none items-start gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
           <ChevronRightIcon size={18} className="mt-0.5 shrink-0 text-navy transition-transform group-open:rotate-90 motion-reduce:transition-none" />
           <span className="min-w-0">
-            <span className="block text-[15px] font-bold text-navy">Full audit log</span>
+            <span className="block text-sm font-bold text-navy">Full audit log</span>
             <span className="block text-[13px] text-ink-2">Every step, including automatic ones. For checking.</span>
           </span>
         </summary>
@@ -368,14 +369,14 @@ function FullLog({ j, open, papersOpen, sys, na, codes }: { j: Journey; open: bo
         </ol>
       </details>
       <details className="card group min-w-0 overflow-hidden" data-papers-log open={papersOpen}>
-        <summary className="flex min-h-12 cursor-pointer list-none items-start gap-2 px-3 py-2.5 sm:px-4 [&::-webkit-details-marker]:hidden">
+        <summary className="flex min-h-11 cursor-pointer list-none items-start gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
           <ChevronRightIcon size={18} className="mt-0.5 shrink-0 text-navy transition-transform group-open:rotate-90 motion-reduce:transition-none" />
           <span className="min-w-0">
-            <span className="block text-[15px] font-bold text-navy">Papers: who has them</span>
+            <span className="block text-sm font-bold text-navy">Papers: who has them</span>
             <span className="block text-[13px] text-ink-2">Each paper&apos;s trail: who held it, where and for how long.</span>
           </span>
         </summary>
-        <div className="border-t border-line p-3 sm:p-4"><DocsList docs={docItems(j, codes)} /></div>
+        <div className="border-t border-line p-3"><DocsList docs={docItems(j, codes)} /></div>
       </details>
     </div>
   );
@@ -403,8 +404,8 @@ function StateChip({ state }: { state: StepState }) {
 function PhaseBlock({ p, now, today }: { p: JPhase; now: Date; today: string }) {
   return (
     <li className="min-w-0 border-t border-line" data-phase={p.n}>
-      <h3 className="flex flex-wrap items-center gap-2 bg-fill px-3 py-1.5 sm:px-4">
-        <span className="min-w-0 flex-1 text-sm font-bold text-navy">Phase {p.n}: {p.title}</span>
+      <h3 className="flex flex-wrap items-center gap-2 bg-fill px-3 py-1">
+        <span className="min-w-0 flex-1 text-[13px] font-bold text-navy">Phase {p.n}: {p.title}</span>
         <span className="text-xs text-ink-2">{p.state === "done" ? "Done" : p.state === "current" ? "Now" : "Later"}</span>
       </h3>
       <ul className="flex flex-col">
@@ -433,13 +434,13 @@ function LogRow({ s, now, today }: { s: JStep; now: Date; today: string }) {
   const late = s.tat.late > 0 && s.state !== "na" && s.state !== "later";
   const dueToday = !late && !s.end && s.start && s.tat.deadline === today;
   return (
-    <li id={`step-${s.key}`} className={`flex min-w-0 scroll-mt-28 flex-col gap-1 border-t border-line px-3 py-2 first:border-t-0 sm:px-4 ${s.open ? "bg-gold-soft" : ""}`}
+    <li id={`step-${s.key}`} className={`flex min-w-0 scroll-mt-28 flex-col gap-0.5 border-t border-line px-3 py-1.5 first:border-t-0 ${s.open ? "bg-gold-soft" : ""}`}
       data-step={s.key} data-log-row data-log-sys={system || undefined} data-log-na={s.state === "na" || undefined} data-log-who={s.ownerRoles.join(" ")} data-log-text={text}
       aria-current={s.open ? "step" : undefined}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <StateChip state={s.state} />
         <span className="mono text-[11px] text-ink-2">{s.stepId}</span>
-        <span className={`min-w-0 text-sm font-semibold ${s.state === "na" ? "text-ink-2" : "text-ink"}`}>{s.title}</span>
+        <span className={`min-w-0 text-[13px] font-semibold ${s.state === "na" ? "text-ink-2" : "text-ink"}`}>{s.title}</span>
         {s.txnName && <span className="chip c-mute h-5 px-1.5 text-[11px]">{txnName(s.txnCode ?? "", s.txnName)}</span>}
         {s.simulated && <span className="chip c-act h-5 px-1.5 text-[11px]">Simulated</span>}
         <span className="flex flex-wrap items-center gap-1 sm:ml-auto">
@@ -484,7 +485,7 @@ function LogRow({ s, now, today }: { s: JStep; now: Date; today: string }) {
       {(s.holds.length > 0 || s.problems.length > 0 || s.attempts.length > 0) && (
         <ul className="ml-1 flex min-w-0 flex-col gap-1 border-l-2 border-line pl-3" aria-label="Holds, problems and attempts">
           {s.holds.map((h) => (
-            <li key={h.id} className={`px-2 py-1 text-[13px] ${h.resumedAt ? "rounded-lg bg-fill" : "hold-card pl-4"}`} data-sub="hold">
+            <li key={h.id} className={`px-2 py-1 text-[13px] ${h.resumedAt ? "rounded-lg bg-fill" : "hold-card px-2"}`} data-sub="hold">
               <p className="flex flex-wrap items-center gap-1.5 font-semibold">
                 <span className="text-hold-fg"><PauseIcon size={13} /></span>
                 On hold: {h.reason}

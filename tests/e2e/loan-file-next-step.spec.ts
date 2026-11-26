@@ -4,7 +4,9 @@ import { signInWith, docShot } from "./helpers";
 import { cleanSettingsTestRows, db, resetLoans } from "./db";
 
 /**
- * Check documents: "Do this now" (one next step, each fact once). Test database only (gdfi_dms_test).
+ * Check documents: "Do this now" (one next step, each fact once). D-062: ticking and sending are one hint line in the
+ * transaction's header (the Send panel keeps the one Send button); the card stays for a hold, a problem, papers handed back and
+ * the processor's findings. Test database only (gdfi_dms_test).
  * Screenshots: docs/screenshots/loan-file-next-step/ (1440, 820 and 390 px).
  */
 const DIR = "docs/screenshots/loan-file-next-step";
@@ -21,7 +23,7 @@ test.afterAll(async () => {
 });
 
 const BUTTONS = { la: "Continue as Loan Associate", dp: "Continue as Test Document Processor" } as const;
-const wide = (page: Page) => page.viewportSize()!.width >= 1100;
+const wide = (page: Page) => page.viewportSize()!.width >= 1280;
 async function shot(page: Page, name: string) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(300);
@@ -70,7 +72,10 @@ async function send(page: Page, code: string) {
 /** The card, its step that is now, and a step by kind. */
 const card = (page: Page) => page.locator("[data-do-now]");
 const step = (page: Page, kind: string) => card(page).locator(`[data-step="${kind}"]`);
-/** The status word of a transaction in the list at this width (side list at 1100+, strip below). */
+/** D-062: the transaction header's one-line hint; the removed header button (it must stay gone). */
+const hint = (page: Page) => page.locator("[data-txn-hint]");
+const nextButton = (page: Page) => page.locator("[data-next-action]");
+/** The status word of a transaction in the list at this width (side list at 1280+, strip below). */
 const statusWord = (page: Page, code: string) => page.locator(`[data-txn=${code}] [data-status-chip]`).filter({ visible: true });
 const openItems = (page: Page) => page.locator("[data-open-items]").filter({ visible: true });
 
@@ -79,12 +84,26 @@ test("Do this now: returned, confirm in one click, the reason once, hold, proble
   await signInWith(page, BUTTONS.la);
   await openPn3(page);
 
-  // Normal work: the card is short (tick, then send).
+  // Normal work (D-062): no card; one hint in the header, the progress once, Send to DP disabled with its hint.
   await page.goto(`/loans/${PN}?tab=todo&tx=NOTARY`);
-  await expect(card(page)).toHaveAttribute("data-tone", "normal");
-  await expect(step(page, "tick")).toHaveAttribute("data-step-state", "now");
-  await expect(step(page, "send")).toHaveAttribute("data-step-state", "next");
-  await expect(step(page, "send")).toContainText("After step 1");
+  await expect(card(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Go to the papers" })).toHaveCount(0);
+  await expect(hint(page)).toHaveText(/^Tick the \d+ required papers?, then send to DP$/);
+  await expect(page.locator("[data-paper-count]")).toHaveCount(1);
+  // One Send button only: the Send panel's (no second "Send to DP" in the header, the user's review).
+  await expect(nextButton(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Send to (?!processor)/ })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^Send to (?!processor)/ })).toBeDisabled();
+  // Why it is locked: the first thing missing; the words are the link to the first unticked paper (no "Show", no count).
+  const blocker = page.locator("[data-send-blocker]").filter({ visible: true });
+  await expect(blocker.locator('[id^="send-why-"]')).toHaveText(/^Tick \d+ more required papers?$/);
+  await expect(blocker.getByRole("button", { name: "Show" })).toHaveCount(0);
+  await expect(blocker).not.toContainText("more to do");
+  await blocker.getByRole("button", { name: /^Tick \d+ more required papers?$/ }).click();
+  await expect(page.locator('[data-highlight="true"]').first()).toBeVisible();
+  // The summary in two lines: where it goes, then the funds.
+  await expect(page.locator("[data-send-where]")).toHaveText(/^Notary goes to .+\.$/);
+  await expect(page.locator("[data-send-funds]")).toHaveText(/^Funds: not answered\.$/);
   await expect(openItems(page)).toHaveCount(0);
 
   // NOTARY sent, accepted, and returned by the DP for one named paper (all papers handed over).
@@ -129,7 +148,7 @@ test("Do this now: returned, confirm in one click, the reason once, hold, proble
   await expect(page.locator("[data-txn=NOTARY] [data-status-line]")).toHaveCount(0);
   await expect(openItems(page)).toHaveCount(0);
   // The returned paper carries one small marker in the checklist.
-  await expect(page.locator(`#line-${paper.id} [data-returned-marker]`).filter({ visible: true })).toHaveText("Returned: missing paper");
+  await expect(page.locator(`[data-paper-row="${paper.id}"] [data-returned-marker]`).filter({ visible: true })).toHaveText("Returned: missing paper");
   await expect(page.locator("[data-requested]")).toHaveCount(0);
   await noSideways(page);
   await shot(page, "returned-now-confirm");
@@ -187,9 +206,9 @@ test("Do this now: returned, confirm in one click, the reason once, hold, proble
   // Ready to send: the papers are ticked, Send is the step.
   await tickAll(page, "PPSR");
   await page.reload();
-  await expect(card(page)).toHaveAttribute("data-tone", "normal");
-  await expect(step(page, "tick")).toHaveAttribute("data-step-state", "done");
-  await expect(step(page, "send")).toHaveAttribute("data-step-state", "now");
+  await expect(card(page)).toHaveCount(0);
+  await expect(hint(page)).toHaveText("All required papers are ticked: choose a processor below and send it to DP.");
+  await expect(nextButton(page)).toHaveCount(0);
   await expect(statusWord(page, "PPSR")).toHaveText("Ready to send");
   await noSideways(page);
   await shot(page, "normal-ready-to-send");

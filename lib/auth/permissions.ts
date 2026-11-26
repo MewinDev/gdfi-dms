@@ -10,6 +10,7 @@
 export const PERMISSIONS = {
   // Loans
   LOANS_VIEW: "loans:view", // see loan files (branch scope comes from the person's Branch access)
+  LOANS_VIEW_AMOUNTS: "loans:view_amounts", // D-062: see a loan's released amount anywhere (without it the server never sends it)
   LOANS_SEARCH: "loans:search", // find a loan (PN search, MyLoans preview)
   LOANS_OPEN: "loans:open", // open a new loan file
   LOANS_EXPORT: "loans:export", // export loans (CSV)
@@ -100,7 +101,7 @@ export const PERMISSIONS = {
   EMAIL_VIEW: "email:view", // see the email settings and recent emails
   EMAIL_MANAGE: "email:manage", // email notifications: on/off, events, messages, test send, resend
   // MyLoans and sync
-  MYLOANS_VIEW: "myloans:view", // see "MyLoans · Last checked" on a loan file
+  MYLOANS_VIEW: "myloans:view", // see when myloans was last checked on a loan file (D-062: the Refresh tooltip, or "myloans checked" in the header)
   LOANS_REFRESH: "loans:refresh", // Refresh from MyLoans on a loan file
   SOURCE_REVIEW: "myloans:review", // decide MyLoans changes: Apply, Keep current, Close as cancelled, replacement PNs (was source:review)
   SOURCE_REVIEW_BORROWER: "myloans:review_borrower", // decide MyLoans corrections of the borrower's details (loans in the person's branches)
@@ -190,6 +191,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     key: "loans", label: "Loans", items: [
       { key: P.LOANS_VIEW, label: "See loan files", help: "Open and read loan files, Home and Updates. Which branches depends on the person's Branch access.", can: "see loan files", where: "Loans, Loan File, Home, Updates", was: "loans:view" },
+      { key: P.LOANS_VIEW_AMOUNTS, label: "See loan amounts", help: "Show a loan's released amount: the loan file, the Loans table and cards, the loan preview, the PN search, Home, the Inbox and Open Items. Without it the amount is not shown and not sent to the browser; the rules that need it still run on the server.", requires: [P.LOANS_VIEW], can: "see loan amounts", where: "Loan File, Loans, loan preview, PN search, Home, Inbox, Open Items", was: "loans:view_amounts" },
       { key: P.LOANS_SEARCH, label: "Find a loan", help: "Search the loan files in the DMS, and look up a full PN in MyLoans to see the preview.", requires: [P.LOANS_VIEW], can: "find loans", where: "Find loan, Search", was: "loans:search" },
       { key: P.LOANS_OPEN, label: "Open a loan file", help: "Start a new loan file from a MyLoans loan.", requires: [P.LOANS_SEARCH], can: "open new loan files", where: "Search, Open loan file", was: "loans:open" },
       { key: P.LOANS_EXPORT, label: "Export loans (CSV)", help: "Download the loan list as a spreadsheet file.", requires: [P.LOANS_VIEW], can: "export the loan list", where: "Loans, Export", was: "loans:export", hidden: true },
@@ -276,7 +278,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   },
   {
     key: "myloans", label: "MyLoans and sync", items: [
-      { key: P.MYLOANS_VIEW, label: "See when MyLoans was last checked", help: "Show \"MyLoans · Last checked\" on a loan file.", requires: [P.LOANS_VIEW], can: "see when MyLoans was last checked", where: "Loan File, top strip", was: "loans:view" },
+      { key: P.MYLOANS_VIEW, label: "See when MyLoans was last checked", help: "Show when myloans was last checked on a loan file: in the Refresh button's tooltip, or \"myloans checked\" in the summary header.", requires: [P.LOANS_VIEW], can: "see when MyLoans was last checked", where: "Loan File, summary header", was: "loans:view" },
       { key: P.LOANS_RECLASSIFY, label: "Reclassify a loan", help: "When the keyword rules changed after a loan file was opened (\"Classification changed since accepted\"): apply the new Financing or Refinancing result, with remarks. Sent work never changes.", requires: [P.LOANS_VIEW], can: "reclassify a loan file", where: "Loan File, Classification changed since accepted", was: "new on 17 November 2026" },
       { key: P.LOANS_REFRESH, label: "Refresh a loan from MyLoans", help: "The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now.", requires: [P.MYLOANS_VIEW], view: P.MYLOANS_VIEW, can: "refresh a loan from MyLoans", where: "Loan File, Refresh from MyLoans", was: "none (shown to everyone who sees the loan file)" },
       { key: P.SOURCE_REVIEW, label: "Review MyLoans changes", help: "Approve or reject Open Items on loan fields (loan type, amount, product, release date, branch, status), for the branches in your access; ask for cash back, link a replacement PN, copy reusable papers.", requires: [P.LOANS_VIEW], can: "review MyLoans changes", where: "Loan File, Open items, MyLoans changes", was: "source:review (also Admin by role name)" },
@@ -428,9 +430,9 @@ export const FUNDS_BOTH_TYPES: Permission[] = [
 ];
 
 /** The Loan Associate's ticks (also the base of the LA Supervisor/Head, D-002). */
-const LA_PERMISSIONS: Permission[] = [P.LOANS_VIEW, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING, P.PAPERS_RECEIVE_LATE, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP];
+const LA_PERMISSIONS: Permission[] = [P.LOANS_VIEW, P.LOANS_VIEW_AMOUNTS, P.LOANS_SEARCH, P.LOANS_OPEN, P.CHECKLIST_TICK, P.PAPERS_MARK_MISSING, P.PAPERS_RECEIVE_LATE, P.TXN_ADD, P.TXN_COMPLETE, P.DP_SEND, P.RETURNS_ACCEPT, P.FUNDS_FLAG, P.FUNDS_KINDS_VIEW, P.PROBLEMS_RAISE, P.PROBLEMS_RESOLVE, P.HOLDS_RAISE, P.HOLDS_RESOLVE, ...SOURCE_STRIP];
 /** Finance's default ticks (D-034): every funds tick of both types (the person's Handles CA / FT and branches decide). */
-const FIN_DEFAULT: Permission[] = [P.LOANS_VIEW, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW];
+const FIN_DEFAULT: Permission[] = [P.LOANS_VIEW, P.LOANS_VIEW_AMOUNTS, ...FUNDS_BOTH_TYPES, P.FUNDS_EXCEPTION, P.FUNDS_KINDS_VIEW, P.FUNDS_KINDS_MANAGE, P.JOURNEY_VIEW_AMOUNTS, P.MYLOANS_VIEW];
 /** The LA Supervisor/Head's oversight ticks (D-034): what the former Branch Supervisors kept as grants, now the role's own. */
 const SUP_OVERSIGHT: Permission[] = [P.PROBLEMS_RESOLVE_ANY, P.MONITOR_DP, P.MONITOR_LTO, P.REPORTS_TAT, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH, P.REFDATA_VIEW];
 /**
@@ -449,8 +451,9 @@ export const DAY_TO_DAY_PERMISSIONS: Permission[] = [
   ...WORKFLOW_PERMISSIONS, ...OPEN_ITEM_APPROVER_KEYS, P.TXN_CANCEL, P.HOLDS_TRANSFER, P.PROBLEMS_RESOLVE_ANY, P.LTO_REPORTS_MANAGE, P.LTO_REPORTS_NOTIFY, P.LOANS_RECLASSIFY, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH, P.SETTINGS_CLASSIFICATION,
 ];
 /** Keys added on 17 November 2026 (D-031): the role migration ignores them when it compares a role with an earlier default. */
-// (Also D-056: `transactions:cancel`, added to the SUP and ADMIN roles by migration 032.)
-export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW, P.DUEDATES_CORRECT, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH, P.REFDATA_VIEW, P.TXN_CANCEL];
+// (Also D-056: `transactions:cancel`, added to the SUP and ADMIN roles by migration 032; and D-062: `loans:view_amounts`,
+// added to the LA, SUP, FIN, ADMIN and SUPERADMIN roles by migration 034.)
+export const KEYS_ADDED_D031: Permission[] = [P.SETTINGS_CLASSIFICATION, P.LOANS_RECLASSIFY, P.FILES_LOG_VIEW, P.DUEDATES_CORRECT, P.WORKITEMS_MOVE, P.USERS_AWAY, P.REPORTS_PNSEARCH, P.REFDATA_VIEW, P.TXN_CANCEL, P.LOANS_VIEW_AMOUNTS];
 
 /**
  * Seeded built-in roles: the defaults that "Reset to default" restores. The ten decided roles (D-002) plus

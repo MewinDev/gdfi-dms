@@ -12,7 +12,7 @@ test.beforeEach(async () => {
 });
 
 const BUTTONS = { la: "Continue as Loan Associate", dp: "Continue as Test Document Processor" } as const;
-const wide = (page: Page) => page.viewportSize()!.width >= 1100;
+const wide = (page: Page) => page.viewportSize()!.width >= 1280; // D-062: the side column from 1280px
 async function shot(page: Page, name: string, fullPage = true) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;

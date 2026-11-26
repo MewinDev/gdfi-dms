@@ -15,7 +15,8 @@ const focusGroup = (g: HTMLDivElement | null, preventScroll = false) =>
 export interface RuleFacts {
   productName: string | null;
   loanType: LoanTypeValue;
-  amount: number;
+  /** Rule 4 worked out on the server (D-062: the page never gets the amount for this). */
+  mortgageMet: boolean;
 }
 
 /**
@@ -54,7 +55,7 @@ export function OpenLoanForm({ pn, financing, canOpen, facts }: { pn: string; fi
       outcome = evaluateLoanRules({
         productName: facts.productName,
         loanType: facts.loanType,
-        totalReleasedAmount: facts.amount,
+        mortgageMet: facts.mortgageMet,
         financingType: financing ? (ft as "UNDERTAKING" | "NON_UNDERTAKING") : null,
         orcrStatus: financing ? (orcr as "TRANSFERRED" | "UNTRANSFERRED") : null,
       });

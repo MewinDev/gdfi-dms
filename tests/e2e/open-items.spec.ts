@@ -14,7 +14,7 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
-const wide = (page: Page) => page.viewportSize()!.width >= 1100;
+const wide = (page: Page) => page.viewportSize()!.width >= 1280; // D-062: the side column from 1280px
 async function shot(page: Page, name: string, fullPage = true) {
   const dir = process.env.SHOTS_DIR;
   if (!dir) return;
@@ -202,6 +202,6 @@ test("Report a problem, Missing paper: it goes to the papers, where each paper h
   await page.getByRole("link", { name: "Go to the papers" }).click();
   await expect(page).toHaveURL(/tx=/);
   await expect(page).not.toHaveURL(/ask=missing/);
-  await expect(page.locator("[data-mark-missing]").first()).toBeVisible();
+  await expect(page.locator("[data-row-menu]").first()).toBeVisible(); // D-062: Mark as missing is in the row's "⋯" menu
   expect(await db.loanException.count({ where: { type: { in: ["LEGAL_DOCS_COMPLETION", "MISSING_PAPER"] } } })).toBe(0);
 });

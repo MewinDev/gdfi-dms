@@ -20,7 +20,7 @@ export function CancelTransaction({ transactionId, name, jobs, cashWords }: { tr
   const uid = useId();
   return (
     <div className="flex justify-end" data-cancel-transaction>
-      <button type="button" className="btn-ghost btn-sm text-bad-fg" onClick={() => setOpen(true)}>Cancel transaction</button>
+      <button type="button" className="btn-ghost btn-xs text-bad-fg" onClick={() => setOpen(true)}>Cancel transaction</button>
       <GuardedSheet open={open} onClose={close} title={`Cancel ${name}`}>
         <form action={action} className="flex flex-col gap-3">
           <input type="hidden" name="transactionId" value={transactionId} />
