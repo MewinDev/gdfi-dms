@@ -60,7 +60,7 @@ test("nothing chosen: compact card, separate answer buttons, Open disabled with 
   await expect(c.locator("[data-find-amber]")).toHaveCount(0);
   for (const gone of ["Your branch", "Details complete", "Next: we set up", "Pick both answers"]) await expect(main(page).getByText(gone)).toHaveCount(0);
   await expect(main(page).getByText("Nothing is saved until you open the loan file.")).toHaveCount(0); // only once both are chosen
-  await expect(c.locator("dt")).toHaveCount(11); // D-060: CIN, Classification and Status in myloans too
+  await expect(c.locator("dt")).toHaveCount(10); // D-060: CIN and Classification too (the status in myloans is the chip)
 
   // Two radio groups, labelled by their question; nothing chosen at the start.
   for (const q of ["Is it an Undertaking?", "Is the OR/CR transferred?"]) {
@@ -72,7 +72,7 @@ test("nothing chosen: compact card, separate answer buttons, Open disabled with 
   for (const name of ["financingType", "orcrStatus"]) {
     const [a, b] = await c.locator(`[data-question="${name}"] label`).all();
     const [ba, bb] = [(await a.boundingBox())!, (await b.boundingBox())!];
-    expect(ba.height).toBeGreaterThanOrEqual(44);
+    expect(ba.height).toBeGreaterThanOrEqual(page.viewportSize()!.width < 768 ? 44 : 36); // compact from 768px, 44px to tap on a phone
     expect(Math.abs(ba.width - bb.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(ba.y - bb.y)).toBeLessThan(2);
     expect(bb.x - (ba.x + ba.width)).toBeGreaterThanOrEqual(6);
@@ -89,7 +89,7 @@ test("nothing chosen: compact card, separate answer buttons, Open disabled with 
   else expect(q2.y).toBeGreaterThan(q1.y + q1.height - 1);
 
   await expect(openBtn(page)).toBeDisabled();
-  await expect(c.locator("[data-open-hint]")).toHaveText("Choose both answers");
+  await expect(c.locator("[data-open-hint]")).toHaveText("Answer both questions to open the loan file");
   await expect(c.locator("[data-setup]")).toHaveCount(0);
   if (width(page) === 1440) {
     // The whole card, the questions and the buttons fit a 1440×900 window.
@@ -121,7 +121,7 @@ test("both chosen: the buttons fill navy with a check, one choice each, keyboard
   await page.keyboard.press("Space");
   await expect(und).toBeChecked();
   await expect(non).not.toBeChecked();
-  await expect(c.locator("[data-open-hint]")).toHaveText("Choose the OR/CR answer");
+  await expect(c.locator("[data-open-hint]")).toHaveText("Answer the OR/CR question to open the loan file");
 
   // Clicking the chosen one again keeps it chosen (no empty state); the other one replaces it.
   const trans = c.locator('[data-choice="TRANSFERRED"]');

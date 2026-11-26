@@ -91,7 +91,8 @@ test("one Loans page: no tabs or samples; status chips and Filters on one row wi
   await page.goto("/loans?status=new");
   const pool = rows(page).filter({ has: page.locator(`[data-pn]`, { hasText: `${PREFIX}1` }) });
   await expect(pool.locator("[data-not-in-dms]")).toHaveText("myloans · Not yet in DMS");
-  await expect(pool).toContainText("Branch pool");
+  // D-060: the table says "Branch pool" (the full wording in its tooltip); a card says "In the branch pool since ...".
+  await expect(pool).toContainText(phone(page) ? "In the branch pool since" : "Branch pool");
   await expect(pool.getByRole("link", { name: /^View details of/ })).toHaveAttribute("href", `/loans/preview/${PREFIX}1`);
   await expect(main(page).getByRole("button", { name: /Accept/ })).toHaveCount(0);
   await page.goto("/loans");

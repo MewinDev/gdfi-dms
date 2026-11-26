@@ -67,7 +67,7 @@ test("the LA sends to the Branch DP pool; a processor accepts it from the Inbox 
   await page.goto("/inbox?tab=pool");
   const row = page.locator("[data-inbox-row]", { hasText: PN }).filter({ hasText: "Processor's job" });
   await expect(row).toBeVisible();
-  await expect(row).toContainText("Arrived today");
+  await expect(row).toContainText(/In the branch pool since [A-Z][a-z]{2} \d{1,2} · less than a day/); // D-060 wording
   await shot(page, "branch-pool");
   await row.getByRole("button", { name: "Accept" }).click();
   await expect(page).toHaveURL(/\/jobs\/[a-z0-9]+$/);

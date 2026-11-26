@@ -33,11 +33,11 @@ test("Find a loan: the short list, names only; More loan details: the full set w
   await expect(card.locator("[data-find-amber]")).toHaveCount(0);
   await expect(card.getByText("Loan found")).toHaveCount(0);
 
-  // The facts by name (D-060 adds CIN, Classification and Status in myloans).
-  await expect(card.locator("dt")).toHaveText(["Amount released", "Released on", "Loan type", "Product", "Branch", "Area", "Division", "Company", "CIN", "Classification", "Status in myloans"]);
+  // The facts by name (D-060 adds CIN and Classification; the status in myloans is the chip, not a fact).
+  await expect(card.locator("dt")).toHaveText(["Amount released", "Released on", "Loan type", "Product", "Branch", "Area", "Division", "Company", "CIN", "Classification"]);
   const values = await card.locator("dd").allTextContents();
   expect(values[0]).toBe("₱1,000,000");
-  expect(values.slice(2)).toEqual(["Renewal", "Auto Financing", "Angono", "LUZON 1 (NGMA + RIZAL)", "Branch Division", "Global Dominion Financing Inc.", "CIN-771003", "Financing", "Loan Released"]); // D-060: CIN, Classification, Status in myloans
+  expect(values.slice(2)).toEqual(["Renewal", "Auto Financing", "Angono", "LUZON 1 (NGMA + RIZAL)", "Branch Division", "Global Dominion Financing Inc.", "CIN-771003", "Financing"]); // D-060: CIN, Classification
   // No codes or IDs (the CIN is shown since D-060); the other identity details live on the loan file.
   const text = (await card.textContent()) ?? "";
   for (const hidden of ["AF-001", "CIF", "Vehicle", "Toyota", "Source loan ID", "ML-2026", "Status ID", "Area ID", "(165)", "· 165"]) expect(text).not.toContain(hidden);

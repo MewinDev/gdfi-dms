@@ -56,8 +56,9 @@ function Row({ r, x, pool, move, moving: busy }: { r: InboxRow; x: RowExtras; po
             {r.branchName}{r.holder && !pool ? ` · ${r.holder}` : ""}
           </p>
           <p className="text-sm">
-            <span className={pool || r.state !== "HELD" ? POOL_TEXT[r.poolTone] : "text-ink-2"} data-pool-tone={r.poolTone}>{r.state === "HELD" ? `Accepted after ${r.waiting === 0 ? "less than a day" : `${r.waiting} working day${r.waiting === 1 ? "" : "s"}`}` : r.waitingText}</span>
-            <span className="text-ink-2"> · arrived {r.arrivedText}</span>
+            {/* D-060: an item in a branch pool says how long it has been there, counted from its arrival. */}
+            <span className={pool || r.state !== "HELD" ? POOL_TEXT[r.poolTone] : "text-ink-2"} data-pool-tone={r.poolTone} data-pool-since={r.poolText ? "" : undefined}>{r.state === "HELD" ? `Accepted after ${r.waiting === 0 ? "less than a day" : `${r.waiting} working day${r.waiting === 1 ? "" : "s"}`}` : r.poolText ?? r.waitingText}</span>
+            {!r.poolText && <span className="text-ink-2"> · arrived {r.arrivedText}</span>}
             {r.candidate && <span className="text-ink-2" data-candidate> · released {r.candidate.releaseDate}{r.candidate.amount ? ` · ${r.candidate.amount}` : ""}</span>}
             {candidate && <> <NotInDmsBadge className="ml-1 align-[1px]" /></>}
           </p>

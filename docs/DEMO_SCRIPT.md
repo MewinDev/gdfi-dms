@@ -1,6 +1,6 @@
 # Demo script: 30 minutes on the test kit
 
-Last updated: 18 November 2026 (PHT)
+Last updated: 26 November 2026 (PHT)
 
 A walkthrough for three users (one Loan Associate, one Document Processor, one Finance person) on the clean Manual Test Kit with the demo items (`npm run kit:demo`). It shows the everyday flow, the Inbox and the TAT report (piece 9, D-046). Everything is sample data: nothing here is a real loan.
 
@@ -86,7 +86,7 @@ The users choose between these two flows (question 6 below; this settles D-024).
    - GD1652026903016 is **amber** (due today);
    - the new items are **green**;
    - GD1652026903017 shows **Paused** (on hold for the client's papers) and is listed last.
-2. **Branch pool**: two released loans not yet in the DMS. GD1652026903014 is **amber** ("Waiting 1 working day"), GD1652026903015 **red** ("Waiting 3 working days"), and the tab says "1 waiting too long". **Accept** on one opens Find loan with the PN filled in; opening it takes it out of the pool.
+2. **Branch pool**: two released loans not yet in the DMS. GD1652026903014 is **amber** ("In the branch pool since <date> · 1 working day"), GD1652026903015 **red** ("… · 3 working days"; D-060: kit:demo moves their release date back to the arrival, so a loan never waits from before it was released), and the tab says "1 waiting too long". **Accept** on one opens Find loan with the PN filled in; opening it takes it out of the pool.
 3. The pool limits are a setting: **Settings, Inbox waiting colours** (amber after 1, red after 2 working days by default).
 
 ### 8. Away and Move work items (LA Angono, then LA Supervisor/Head, minutes 24 to 27)

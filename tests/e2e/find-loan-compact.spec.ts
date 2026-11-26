@@ -44,7 +44,7 @@ test("loan found with both questions: Open loan file disabled until both are pic
   await expect(und).toBeFocused();
   // Disabled, with one short hint; no per-question message yet.
   await expect(openBtn(page)).toBeDisabled();
-  await expect(card.locator("[data-open-hint]")).toHaveText("Choose both answers");
+  await expect(card.locator("[data-open-hint]")).toHaveText("Answer both questions to open the loan file");
   await expect(card.locator("[data-open-nothing-saved]")).toHaveCount(0);
   await expect(card.locator("[data-setup]")).toHaveCount(0); // nothing set up until both are answered
   await expect(main(page).getByText("Please pick one to continue.")).toHaveCount(0);
@@ -54,9 +54,9 @@ test("loan found with both questions: Open loan file disabled until both are pic
   const q2 = (await card.locator('[data-question="orcrStatus"]').boundingBox())!;
   if (width(page) >= 768) expect(Math.abs(q1.y - q2.y)).toBeLessThan(2);
   else expect(q2.y).toBeGreaterThan(q1.y + q1.height - 1);
-  // Two separate, equal-width buttons with a gap, at least 44px tall.
+  // Two separate, equal-width buttons with a gap, 44px tall on a phone, 36px from 768px (compact).
   const [b1, b2] = [(await card.locator('[data-choice="UNDERTAKING"]').boundingBox())!, (await card.locator('[data-choice="NON_UNDERTAKING"]').boundingBox())!];
-  expect(b1.height).toBeGreaterThanOrEqual(44);
+  expect(b1.height).toBeGreaterThanOrEqual(page.viewportSize()!.width < 768 ? 44 : 36);
   expect(Math.abs(b1.width - b2.width)).toBeLessThanOrEqual(1);
   expect(b2.x - (b1.x + b1.width)).toBeGreaterThanOrEqual(6);
   expect(Math.abs(b1.y - b2.y)).toBeLessThan(2);
@@ -64,7 +64,7 @@ test("loan found with both questions: Open loan file disabled until both are pic
   // Arrow keys move inside a question.
   await page.keyboard.press("ArrowRight");
   await expect(main(page).getByRole("radio", { name: "Non-Undertaking" })).toBeChecked();
-  await expect(card.locator("[data-open-hint]")).toHaveText("Choose the OR/CR answer"); // one still empty
+  await expect(card.locator("[data-open-hint]")).toHaveText("Answer the OR/CR question to open the loan file"); // one still empty
   await noSideways(page);
   await shot(page, "found-questions");
   if (width(page) === 1440) {

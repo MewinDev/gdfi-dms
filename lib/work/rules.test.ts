@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addWorkingDays, DEFAULT_WORKING_WEEKDAYS, daysFor } from "@/lib/calendar/core";
-import { isAway, outcomeText, poolTone, roundDue, roundResult, waitingDays, waitingText } from "./rules";
+import { isAway, outcomeText, poolArrival, poolSinceText, poolTone, roundDue, roundResult, waitingDays, waitingText } from "./rules";
 
 /** D-046: the six worked examples the user checked (Mon-Sat; Nov 2026 Mon 23 ... Mon 30) and the pool colours. */
 const plain = daysFor({ workingWeekdays: DEFAULT_WORKING_WEEKDAYS, entries: [] }, null);
@@ -49,6 +49,16 @@ describe("pool colours and Away (D-046)", () => {
     expect(poolTone(2, 2, 3)).toBe("amber");
     expect(waitingText(0)).toBe("Arrived today");
     expect(waitingText(2)).toBe("Waiting 2 working days");
+  });
+
+  it("D-060: a pool item never arrives before the loan's release; the pool wording", () => {
+    const released = new Date("2026-11-19T00:00:00Z");
+    expect(poolArrival(new Date("2026-11-16T01:00:00Z"), released).toISOString()).toBe("2026-11-19T00:00:00.000Z"); // the kit's "4 working days ago"
+    expect(poolArrival(new Date("2026-11-20T03:00:00Z"), released).toISOString()).toBe("2026-11-20T03:00:00.000Z"); // later: kept
+    expect(poolArrival(new Date("2026-11-20T03:00:00Z"), null).toISOString()).toBe("2026-11-20T03:00:00.000Z"); // no release date known
+    expect(poolSinceText("Nov 24", 2)).toBe("In the branch pool since Nov 24 · 2 working days");
+    expect(poolSinceText("Nov 26", 1)).toBe("In the branch pool since Nov 26 · 1 working day");
+    expect(poolSinceText("Nov 26", 0)).toBe("In the branch pool since Nov 26 · less than a day");
   });
 
   it("away from and to, both days included", () => {

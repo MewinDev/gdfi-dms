@@ -13,8 +13,9 @@ import { businessDate, fmtDate, fmtShort } from "@/lib/time";
 import { daysFor, dueTone, pausedDays, type DueTone, type WorkCalendar } from "@/lib/calendar/core";
 import { loadCalendar } from "@/lib/calendar/load";
 import { canFunds } from "@/lib/funds/access";
-import { isAway, outcomeText, poolTone, roundDue, roundResult, waitingDays, waitingText, type Outcome, type PoolTone } from "@/lib/work/rules";
+import { isAway, outcomeText, poolArrival, poolSinceText, poolTone, roundDue, roundResult, waitingDays, waitingText, type Outcome, type PoolTone } from "@/lib/work/rules";
 import { UserError } from "./errors";
+import { dayText } from "@/lib/ui/plain";
 
 /**
  * Piece 9 (D-014, D-015, D-046): the inbox engine. Every hand-off is a WorkItem round with its history
@@ -252,6 +253,8 @@ export async function refuseAway(db: Tx | typeof prisma, userId: string, now: Da
 export interface InboxRow {
   id: string; kind: WorkKind; role: WorkRole; kindText: string; label: string; pn: string | null; link: string; branchName: string;
   state: string; holder: string | null; arrivedText: string; waiting: number; waitingText: string; poolTone: PoolTone;
+  /** D-060: an item waiting in a branch pool: "In the branch pool since Nov 24 · 2 working days" (from its arrival). */
+  poolText: string | null;
   dueDate: string | null; dueText: string | null; tone: DueTone | null; paused: boolean; measureText: string;
   /** 10b: a released loan not yet in the DMS: its release date (the waiting time is from when it entered the pool), and the amount for people who may see amounts. */
   candidate?: { releaseDate: string; amount: string | null } | null;
@@ -287,6 +290,7 @@ async function rows(db: typeof prisma, where: Prisma.WorkItemWhereInput, now: Da
     return {
       id: it.id, kind: it.kind as WorkKind, role: it.role as WorkRole, kindText: KIND_WORDS[it.kind as WorkKind] ?? it.kind, label: it.label, pn: it.pn, link: linkOf(it, job?.id), branchName: branches.find((b) => b.id === it.branchId)?.name ?? "",
       state: it.state, holder: it.holder?.name ?? null, arrivedText: fmtShort(it.arrivedAt), waiting, waitingText: waitingText(waiting), poolTone: poolTone(waiting, amber, red),
+      poolText: it.state === "POOL" ? poolSinceText(dayText(it.arrivedAt, { year: false }), waiting) : null,
       dueDate: due, dueText: due ? fmtDate(due) : null, tone: due ? dueTone(due, today, days, cal.amberWithinDays ?? 1, paused) : null, paused,
       measureText: it.measure === "WAITING" ? "Time to act (from arrival)" : "Turnaround time (from accept)",
       candidate: it.kind === "LOAN_CANDIDATE" && candidates.has(it.subjectId) ? (() => {
@@ -372,8 +376,10 @@ export async function tatByPerson(u: CurrentUser, f: { from?: string; to?: strin
 // ---------------------------------------------------------------------------
 
 /** A released loan from myloans lands in the branch pool, until an LA opens it (Find loan closes it). */
-export async function receiveReleasedLoan(tx: Tx, loan: { pn: string; branchId: string; borrowerName: string; at?: Date }) {
-  return arriveItem(tx, { kind: "LOAN_CANDIDATE", subjectId: loan.pn, role: "LA", branchId: loan.branchId, pn: loan.pn, label: `${loan.pn}: ${loan.borrowerName}`, targetKey: "P1_OPEN", measure: "WAITING", at: loan.at });
+/** D-060: the pool item arrives now (or `at`), never before the loan's release date (poolArrival; the database checks it too). */
+export async function receiveReleasedLoan(tx: Tx, loan: { pn: string; branchId: string; borrowerName: string; at?: Date; releasedAt?: Date | null }) {
+  const at = poolArrival(loan.at ?? new Date(), loan.releasedAt);
+  return arriveItem(tx, { kind: "LOAN_CANDIDATE", subjectId: loan.pn, role: "LA", branchId: loan.branchId, pn: loan.pn, label: `${loan.pn}: ${loan.borrowerName}`, targetKey: "P1_OPEN", measure: "WAITING", at });
 }
 
 export { outcomeText };

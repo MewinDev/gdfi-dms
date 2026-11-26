@@ -35,8 +35,8 @@ export function OpenLoanForm({ pn, financing, canOpen, facts }: { pn: string; fi
 
   /** The first question still empty, so focus can go there. */
   const firstEmpty = () => (ft === null ? ftRef.current : orcr === null ? orcrRef.current : null);
-  /** The missing answer, named, next to the disabled button. */
-  const missing = ft === null && orcr === null ? "Choose both answers" : ft === null ? "Choose the Undertaking answer" : orcr === null ? "Choose the OR/CR answer" : null;
+  /** D-060: the missing answer, named, right beside the disabled button (no warning colour until Open is pressed). */
+  const missing = ft === null && orcr === null ? "Answer both questions to open the loan file" : ft === null ? "Answer the Undertaking question to open the loan file" : orcr === null ? "Answer the OR/CR question to open the loan file" : null;
 
   // After a loan is found, focus goes to the first question (once, on arrival), without scrolling the page:
   // the page title stays in view under the top bar.
@@ -67,7 +67,7 @@ export function OpenLoanForm({ pn, financing, canOpen, facts }: { pn: string; fi
     <form
       action={action}
       noValidate
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-3"
       onSubmit={(e) => {
         if (ready && !pending) return;
         // The button looks and reads disabled; pressing it shows what is missing instead of sending.
@@ -77,7 +77,7 @@ export function OpenLoanForm({ pn, financing, canOpen, facts }: { pn: string; fi
     >
       <input type="hidden" name="pn" value={pn} />
       {financing && (
-        <div className="grid grid-cols-1 gap-x-6 gap-y-3 md:grid-cols-2" data-open-questions>
+        <div className="grid grid-cols-1 gap-x-5 gap-y-2.5 md:grid-cols-2" data-open-questions>
           <Choice
             groupRef={ftRef}
             legend="Is it an Undertaking?"
@@ -108,20 +108,21 @@ export function OpenLoanForm({ pn, financing, canOpen, facts }: { pn: string; fi
           aria-disabled={!ready || pending}
           aria-describedby={canOpen && !answered ? "open-hint" : undefined}
           aria-busy={pending}
-          className="btn-gold h-11 min-h-11 px-5"
+          className="btn-gold h-11 min-h-11 px-4 text-sm md:h-9 md:min-h-9"
           data-open-loan
         >
           {pending ? "Opening..." : "Open loan file"}
         </button>
-        <Link href="/loans" className="inline-flex h-11 items-center rounded-xl px-3 text-[15px] font-semibold text-navy no-underline hover:bg-fill">Cancel</Link>
-        {/* One muted line: what is missing while the button is disabled, otherwise that nothing is saved yet. */}
+        {/* One muted line right beside the button (D-060, the user's review): what is missing while it is disabled,
+            otherwise that nothing is saved yet. On a phone it wraps under the button; Cancel comes last. */}
         {!canOpen ? (
-          <span className="basis-full text-[13px] text-ink-2 sm:ml-auto sm:basis-auto">Your role does not allow opening loan files.</span>
+          <span className="basis-full text-[13px] text-ink-2 sm:basis-auto">Your role does not allow opening loan files.</span>
         ) : missing && financing ? (
-          <span id="open-hint" className="basis-full text-[13px] text-ink-2 sm:ml-auto sm:basis-auto" data-open-hint>{missing}</span>
+          <span id="open-hint" className="basis-full text-[13px] text-ink-2 sm:basis-auto" data-open-hint>{missing}</span>
         ) : (
-          <span className="basis-full text-[13px] text-ink-2 sm:ml-auto sm:basis-auto" data-open-nothing-saved>Nothing is saved until you open the loan file.</span>
+          <span className="basis-full text-[13px] text-ink-2 sm:basis-auto" data-open-nothing-saved>Nothing is saved until you open the loan file.</span>
         )}
+        <Link href="/loans" className="inline-flex h-11 items-center rounded-lg px-3 text-sm font-semibold text-navy no-underline hover:bg-fill sm:ml-auto md:h-9">Cancel</Link>
       </div>
     </form>
   );
@@ -130,8 +131,8 @@ export function OpenLoanForm({ pn, financing, canOpen, facts }: { pn: string; fi
 /** "What will be set up": each rule that fired, its title and its one sentence (lib/rules/names.ts). */
 function SetUp({ outcome }: { outcome: RuleOutcome }) {
   return (
-    <section aria-labelledby="setup-title" className="rounded-xl bg-cream px-3.5 py-2.5 text-[13px] leading-snug" data-setup>
-      <h3 id="setup-title" className="text-[13px] font-bold text-navy">
+    <section aria-labelledby="setup-title" className="rounded-lg bg-cream px-3 py-2 text-xs leading-snug" data-setup>
+      <h3 id="setup-title" className="text-xs font-bold text-navy">
         What will be set up: <span className="font-semibold" data-setup-txns>{outcome.transactions.map((t) => txnName(t, TRANSACTION_LABEL[t])).join(", ")}</span>
       </h3>
       <ul className="mt-1 flex flex-col gap-0.5">
@@ -160,7 +161,7 @@ function Choice({
   const legendId = `${name}-legend`;
   return (
     <fieldset className="min-w-0" aria-describedby={error ? errId : undefined} data-question={name}>
-      <legend id={legendId} className="mb-1.5 text-sm font-semibold text-navy">{legend}</legend>
+      <legend id={legendId} className="mb-1 text-[13px] font-semibold text-navy">{legend}</legend>
       <div ref={groupRef} role="radiogroup" aria-labelledby={legendId} className="grid grid-cols-2 gap-2" data-pills>
         {options.map(([v, l]) => {
           const on = value === v;
@@ -168,7 +169,7 @@ function Choice({
             <label key={v}
               data-choice={v}
               data-chosen={on || undefined}
-              className={`flex min-h-11 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border px-2 py-1.5 text-center text-[14px] leading-tight transition-colors sm:text-[15px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold ${
+              className={`flex min-h-11 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 py-1 text-center text-sm leading-tight transition-colors md:min-h-9 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-gold ${
                 on ? "border-navy bg-navy font-bold text-white" : `bg-white font-semibold text-navy hover:border-navy has-[:focus-visible]:border-navy ${error ? "border-act-line" : "border-line-strong"}`
               }`}>
               <input type="radio" name={name} value={v} checked={on} aria-checked={on} onChange={() => onChange(v)} required className="sr-only" />
@@ -178,7 +179,7 @@ function Choice({
           );
         })}
       </div>
-      {error && <p id={errId} role="alert" className="mt-1.5 text-sm font-semibold text-act-fg">{error}</p>}
+      {error && <p id={errId} role="alert" className="mt-1 text-[13px] font-semibold text-act-fg">{error}</p>}
     </fieldset>
   );
 }
