@@ -30,9 +30,9 @@ async function change(pn: string, over: Record<string, unknown>) {
   await setting("myloans.mockOverrides", all);
 }
 async function openPn(page: Page, pn: string, questions = true) {
-  await page.goto(`/loans?fill=${pn}`);
+  await page.goto(`/loans?q=${pn}`);
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   if (questions) {
     await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
     await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });

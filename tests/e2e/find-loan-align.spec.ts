@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { db, resetLoans } from "./db";
-import { signIn, visibleSearchBox, watchConsole, docShot } from "./helpers";
+import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
  * Find a loan, alignment: one page container and one grid. Measures bounding boxes so a stray margin or
@@ -37,51 +37,23 @@ async function noOverflow(page: Page) {
   expect(out, out.join("\n")).toEqual([]);
 }
 
-/** Title, search box, sample label and (when given) the result card or message share the left edge; the search row and the card share the right edge. */
+/** D-059: title, search box and (when given) the result card or message share the left edge; the card spans the
+ * filter bar (the search and filter rows) to its right edge. Sample loans are on Home now. */
 async function sameEdges(page: Page, result?: Locator) {
-  const title = await box(main(page).getByRole("heading", { level: 1, name: "Find a loan" }));
-  const row = await box(main(page).locator("[data-find-row]"));
-  const input = await box(visibleSearchBox(page).locator("xpath=ancestor::div[@data-find-box]"));
-  const sample = await box(main(page).getByRole("heading", { name: "Sample loans" }));
+  const title = await box(main(page).getByRole("heading", { level: 1, name: "Loans" }));
+  const bar = await box(main(page).locator("[data-loans-search]").locator("xpath=.."));
+  const input = await box(main(page).locator("[data-loans-search]"));
   expect(Math.abs(input.x - title.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(sample.x - title.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(row.x - title.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(bar.x - title.x)).toBeLessThanOrEqual(1);
   if (result) {
     const card = await box(result);
     expect(Math.abs(card.x - title.x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(right(card) - right(row))).toBeLessThanOrEqual(1);
+    expect(Math.abs(right(card) - right(bar))).toBeLessThanOrEqual(1);
   }
 }
 
 test.beforeEach(async () => {
   await resetLoans();
-});
-
-test("empty page: title, search box and samples share the page edges; the dropdown too", async ({ page }) => {
-  const clean = watchConsole(page);
-  await signIn(page, "la");
-  await page.goto("/search");
-  await sameEdges(page);
-  // The page uses the same container as My loans: as wide as the main area allows.
-  const mainBox = await box(main(page));
-  const row = await box(main(page).locator("[data-find-row]"));
-  const pad = await main(page).evaluate((m) => parseFloat(getComputedStyle(m).paddingRight));
-  expect(Math.abs(right(row) - (right(mainBox) - pad))).toBeLessThanOrEqual(1);
-  await noOverflow(page);
-  await shot(page, "empty");
-
-  // The suggestions dropdown lines up with the search box on the left and the search row on the right.
-  await visibleSearchBox(page).fill("GD3902026901007");
-  const panel = page.locator("[data-find-results]");
-  await expect(panel).toBeVisible();
-  const p = await box(panel);
-  const input = await box(main(page).locator("[data-find-box]"));
-  expect(Math.abs(p.x - input.x)).toBeLessThanOrEqual(1);
-  const edge = width(page) < 640 ? right(input) : right(row);
-  expect(Math.abs(right(p) - edge)).toBeLessThanOrEqual(1);
-  await noOverflow(page);
-  await shot(page, "dropdown");
-  clean();
 });
 
 test("loan found: details and questions share columns, the chosen button fills navy, keyboard focus is a separate gold ring", async ({ page }) => {
@@ -93,8 +65,8 @@ test("loan found: details and questions share columns, the chosen button fills n
   await sameEdges(page, card);
 
   const facts = card.locator("dl > div");
-  // Two rows of four (the details are checked in myloans-fields.spec.ts).
-  await expect(facts).toHaveCount(8);
+  // Rows of four (the details are checked in myloans-fields.spec.ts).
+  await expect(facts).toHaveCount(11); // D-060: + CIN, Classification, Status in myloans
   const f = await Promise.all([0, 1, 2, 3].map((i) => box(facts.nth(i))));
   const q1 = await box(card.locator('[data-question="financingType"]'));
   const q2 = await box(card.locator('[data-question="orcrStatus"]'));

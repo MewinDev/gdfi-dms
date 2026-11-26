@@ -32,9 +32,9 @@ async function noSideways(page: Page) {
 /** LA opens GD1652026901003 and sends Mortgage (needs funds: LTO fee) to the test DP, who accepts. */
 async function acceptedMortgageNeedingFunds(page: Page) {
   await signInWith(page, BUTTONS.la);
-  await page.goto("/loans?fill=GD1652026901003");
+  await page.goto("/loans?q=GD1652026901003");
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();

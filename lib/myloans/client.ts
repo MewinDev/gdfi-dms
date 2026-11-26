@@ -86,6 +86,12 @@ export function readStats(): CallStats { return { ...stats, ms: [...stats.ms] };
 /** Tests only: the short cache, in-flight calls and statistics of this process (the shared count is in the database). */
 export function resetClient() { inflight.clear(); cache.clear(); beginStats(); }
 
+/** D-060: Refresh from myloans on the preview page: the next lookup of this PN asks myloans again. */
+export function forgetCached(pn: string) {
+  const key = cleanPn(pn);
+  for (const k of [...cache.keys()]) if (k === key || k.startsWith(`${key}|`)) cache.delete(k);
+}
+
 /** An answer for this PN is in the short cache (reusing it costs no call). */
 export function hasCached(pn: string, now: number = Date.now(), variant?: string) {
   const hit = cache.get(variant ? `${cleanPn(pn)}|${variant}` : cleanPn(pn));

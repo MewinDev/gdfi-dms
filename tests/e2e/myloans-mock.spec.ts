@@ -33,7 +33,7 @@ test("the MOCK banner is on every page; the panel switches a failure on and off 
   await signIn(page, "admin");
   for (const path of ["/dashboard", "/loans", "/admin/settings"]) {
     await page.goto(path);
-    await expect(page.locator("[data-mock-banner]")).toContainText("MOCK myloans data");
+    await expect(page.locator("[data-mock-banner]")).toContainText("MOCK myloans"); // "data · loans come from..." from 768px, "· sample data" on a phone
   }
   await page.goto("/admin/settings?open=system");
   const panel = page.locator("[data-myloans-mock]");

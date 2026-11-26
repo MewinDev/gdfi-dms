@@ -3,12 +3,15 @@ import { databaseName } from "./load-files";
 import { testDatabaseRefusal, testDatabaseUrl, pointAtTestDatabase, withDatabaseName } from "./test-db";
 
 const url = (db: string) => `postgresql://gdfi:secret@localhost:5434/${db}?schema=public`;
+/** The same on 127.0.0.1: the test URL never says localhost (IPv6 first on Windows: a 2-second wait each new connection). */
+const url4 = (db: string) => url(db).replace("@localhost:", "@127.0.0.1:");
 
 describe("The automated tests' database", () => {
   it("is gdfi_dms_test: DATABASE_URL with the name swapped, or TEST_DATABASE_URL", () => {
     expect(databaseName(testDatabaseUrl({ DATABASE_URL: url("gdfi_dms") })!)).toBe("gdfi_dms_test");
-    expect(testDatabaseUrl({ DATABASE_URL: url("gdfi_dms") })).toBe(url("gdfi_dms_test"));
-    expect(testDatabaseUrl({ DATABASE_URL: url("gdfi_dms"), TEST_DATABASE_URL: url("my_test") })).toBe(url("my_test"));
+    expect(testDatabaseUrl({ DATABASE_URL: url("gdfi_dms") })).toBe(url4("gdfi_dms_test"));
+    expect(testDatabaseUrl({ DATABASE_URL: url("gdfi_dms"), TEST_DATABASE_URL: url("my_test") })).toBe(url4("my_test"));
+    expect(testDatabaseUrl({ DATABASE_URL: "postgresql://u:p@db.example:5432/x" })).toBe("postgresql://u:p@db.example:5432/gdfi_dms_test"); // other hosts unchanged
     expect(testDatabaseUrl({})).toBeNull();
     expect(withDatabaseName(url("a"), "b")).toBe(url("b"));
   });

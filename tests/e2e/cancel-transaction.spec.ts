@@ -9,9 +9,9 @@ import { db, resetLoans } from "./db";
 const PN = "GD1652026901003";
 
 async function openPn(page: Page) {
-  await page.goto(`/loans?fill=${PN}`);
+  await page.goto(`/loans?q=${PN}`);
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();

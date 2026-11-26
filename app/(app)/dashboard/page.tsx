@@ -66,9 +66,9 @@ export default async function HomePage() {
 
   // The counts, the same queries as before; the review counts join the strip for the people who review.
   const strip: Segment[] = [
-    { key: "need", n: need.length, label: "Need you now", href: "/loans?tab=queue", dot: "act", icon: <ClockIcon size={18} /> },
-    { key: "waiting", n: waiting.length, label: "Waiting on others", href: "/loans?tab=all&group=waiting", icon: <HourglassIcon size={18} /> },
-    { key: "problems", n: problems.length, label: problems.length === 1 ? "Problem to fix" : "Problems to fix", href: "/loans?tab=exceptions", dot: "bad", icon: <WarningIcon size={18} /> },
+    { key: "need", n: need.length, label: "Need you now", href: "/loans?status=needs", dot: "act", icon: <ClockIcon size={18} /> },
+    { key: "waiting", n: waiting.length, label: "Waiting on others", href: "/loans", icon: <HourglassIcon size={18} /> },
+    { key: "problems", n: problems.length, label: problems.length === 1 ? "Problem to fix" : "Problems to fix", href: "/loans?status=problems", dot: "bad", icon: <WarningIcon size={18} /> },
     ...(openItems ? [{ key: "open-items", n: openItems.waiting, label: "Open Items", href: openItems.waiting + openItems.unassigned ? "/open-items" : undefined, dot: "bad" as const, icon: <RefreshIcon size={18} /> }] : []),
     ...(branches ? [{ key: "branches", n: branches.count, label: "Branch review", href: branches.count ? "#brv-h" : undefined, dot: "act" as const, icon: <BuildingIcon size={18} /> }] : []),
   ];
@@ -85,12 +85,12 @@ export default async function HomePage() {
 
   // The side column only when it has something: test-mode samples or updates. Otherwise the main column
   // takes the width (up to 960px) instead of leaving an empty right half.
-  const side = samples.samples.length > 0 || updates.length > 0;
+  const side = samples.samples.length > 0 || samples.dataCheck.length > 0 || updates.length > 0;
 
   return (
     <div className="flex w-full flex-col gap-4" data-home="main">
       <HomeHeader name={user.name} now={now}>
-        <Link href="/loans?tab=queue" className="btn-ghost btn-sm">See all my loans</Link>
+        <Link href="/loans?with=me" className="btn-ghost btn-sm">See all my loans</Link>
       </HomeHeader>
 
       <div className={side ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start" : "max-w-[960px]"}>
@@ -100,12 +100,12 @@ export default async function HomePage() {
           {next.length === 0 ? (
             <CaughtUp />
           ) : (
-            <ListBlock id="next-title" title="Do these next" icon={<ChecklistIcon size={15} />} more={{ href: "/loans?tab=queue", total: need.length, shown: next.length }} data={{ "data-do-next": "" }}>
+            <ListBlock id="next-title" title="Do these next" icon={<ChecklistIcon size={15} />} more={{ href: "/loans?status=needs", total: need.length, shown: next.length }} data={{ "data-do-next": "" }}>
               {next.map((c, i) => <HomeLoanRow key={c.pn} d={c} primary={i === 0} due={c.urgency % 10 >= 2} />)}
             </ListBlock>
           )}
-          <CollapsedLoans id="waiting" title="Waiting on others" icon={<HourglassIcon size={15} />} rows={waiting} href="/loans?tab=all&group=waiting" />
-          <CollapsedLoans id="problems" icon={<WarningIcon size={15} />} tone="bad" title={problems.length === 1 ? "Problem to fix" : "Problems to fix"} rows={problems} href="/loans?tab=exceptions" />
+          <CollapsedLoans id="waiting" title="Waiting on others" icon={<HourglassIcon size={15} />} rows={waiting} href="/loans" />
+          <CollapsedLoans id="problems" icon={<WarningIcon size={15} />} tone="bad" title={problems.length === 1 ? "Problem to fix" : "Problems to fix"} rows={problems} href="/loans?status=problems" />
 
           {alerts.length > 0 ? alerts : <AllClear />}
         </div>
@@ -134,7 +134,11 @@ export default async function HomePage() {
               </aside>
             )}
             {samples.samples.length > 0 && (
-              <SampleLoans id="home-samples" title="Sample loans" intro="Pick one, then press Find loan." samples={samples.samples} collapsed />
+              <SampleLoans id="home-samples" title="Sample loans" intro="Pick one to look it up on Loans." samples={samples.samples} collapsed />
+            )}
+            {/* D-059: the Loans page has no samples now; Admin's data-check PNs are here with the others. */}
+            {samples.dataCheck.length > 0 && (
+              <SampleLoans id="home-datacheck" title="Data-check samples" intro="These test the checks that refuse a loan. Pick one to look it up on Loans." samples={samples.dataCheck} collapsed />
             )}
           </div>
         )}

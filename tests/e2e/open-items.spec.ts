@@ -39,9 +39,9 @@ async function addProblem(code: string, daysAgo: number) {
   await db.problem.create({ data: { loanId: t.loanId, transactionId: t.id, reasonId: reason.id, raisedByLabel: "Test Document Processor", raisedAt: new Date(Date.now() - daysAgo * 86_400_000) } });
 }
 async function openPn3(page: Page) {
-  await page.goto("/loans?fill=GD1652026901003");
+  await page.goto("/loans?q=GD1652026901003");
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main.getByRole("button", { name: "Open loan file" }).click();

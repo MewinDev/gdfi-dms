@@ -26,8 +26,8 @@ const ICONS: Record<NavIcon, (p: { size?: number }) => React.ReactNode> = {
   home: HomeIcon, loans: FolderIcon, updates: BellIcon, users: UsersIcon, settings: SettingsIcon, audit: ListIcon, jobs: ChecklistIcon, funds: CoinsIcon, monitor: ChartIcon, inbox: InboxIcon, openitems: RefreshIcon,
 };
 
-/** Pages with their own search box: the header has no Find loan button there (one Find loan per page). */
-const hasSearchBox = (pathname: string) => pathname === "/loans" || pathname === "/search";
+/** The Loans page has the search box (D-059): the header has no Find loan button there (one search per page). */
+const hasSearchBox = (pathname: string) => pathname === "/loans";
 
 /* ---------------------------------------------------------------------------------------------------------------
  * D-058: one sidebar, three behaviours (no bottom bar).
@@ -219,7 +219,7 @@ function SidebarBody({
             </span>
           </span>
           <form action={signOut} className="shrink-0">
-            <button type="submit" aria-label="Sign out" data-nav-signout {...on("Sign out", footPlace(true))}
+            <button type="submit" aria-label="Sign out" data-nav-signout {...on("Sign out")}
               className="flex h-11 w-11 items-center justify-center rounded-[10px] text-white/85 hover:bg-white/10 hover:text-white">
               <LogOutIcon size={20} />
             </button>

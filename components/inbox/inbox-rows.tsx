@@ -6,6 +6,7 @@ import { acceptWorkAction, moveItemAction, setAwayAction } from "@/app/actions/w
 import { FormMessage } from "@/components/form-status";
 import { CorrectDueDate } from "@/components/jobs/due-date";
 import type { InboxRow } from "@/lib/services/work-items";
+import { NotInDmsBadge } from "@/components/loan/not-in-dms-badge";
 
 /**
  * The Inbox rows (D-046): what it is, where it is, how long it waited, when it is due, and one button.
@@ -41,7 +42,9 @@ export function InboxList({ rows, extras = {}, empty, pool = false }: { rows: In
 
 function Row({ r, x, pool, move, moving: busy }: { r: InboxRow; x: RowExtras; pool: boolean; move: MoveAction; moving: boolean }) {
   const [moving, setMoving] = useState(false);
-  const acceptable = !x.noAccept && (r.state === "POOL" || r.state === "INBOX") && r.kind !== "FUND_REQUEST" && r.kind !== "PACKAGE";
+  // D-060: a released loan not yet in the DMS has no Accept: View details opens its preview (Open loan file is there).
+  const candidate = r.kind === "LOAN_CANDIDATE";
+  const acceptable = !x.noAccept && !candidate && (r.state === "POOL" || r.state === "INBOX") && r.kind !== "FUND_REQUEST" && r.kind !== "PACKAGE";
   return (
     <li className="relative flex flex-col gap-2 px-4 py-3 hover:bg-fill-soft sm:px-5" data-inbox-row={r.label} data-state={r.state}>
       {/* D-058: the text keeps the whole width when the due column does not fit beside it (that column drops below). */}
@@ -56,18 +59,19 @@ function Row({ r, x, pool, move, moving: busy }: { r: InboxRow; x: RowExtras; po
             <span className={pool || r.state !== "HELD" ? POOL_TEXT[r.poolTone] : "text-ink-2"} data-pool-tone={r.poolTone}>{r.state === "HELD" ? `Accepted after ${r.waiting === 0 ? "less than a day" : `${r.waiting} working day${r.waiting === 1 ? "" : "s"}`}` : r.waitingText}</span>
             <span className="text-ink-2"> · arrived {r.arrivedText}</span>
             {r.candidate && <span className="text-ink-2" data-candidate> · released {r.candidate.releaseDate}{r.candidate.amount ? ` · ${r.candidate.amount}` : ""}</span>}
+            {candidate && <> <NotInDmsBadge className="ml-1 align-[1px]" /></>}
           </p>
         </div>
         <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
           {r.paused ? <span className="chip c-hold" data-due-tone="paused">Paused</span>
             : r.dueText ? <span className={`chip ${DUE_CHIP[r.tone ?? "green"]}`} data-due-tone={r.tone}>Due {r.dueText}</span>
-            : r.state !== "HELD" ? <span className="text-sm text-ink-2">Due date starts at accept</span> : null}
+            : r.state !== "HELD" ? <span className="text-sm text-ink-2">{candidate ? "Due date starts when its loan file is opened" : "Due date starts at accept"}</span> : null}
           <span className="text-[13px] text-ink-2">{r.measureText}</span>
         </div>
       </div>
       <div className="relative z-10 flex flex-wrap items-center gap-x-4 gap-y-1 self-start">
-        {acceptable ? <AcceptButton id={r.id} /> : <Link href={r.link} className="btn-secondary btn-sm">Open</Link>}
-        {!acceptable && r.state !== "HELD" && <span className="text-sm text-ink-2">{r.kind === "PACKAGE" ? "Receive it to accept it." : "Approve or Release counts as accepting it."}</span>}
+        {acceptable ? <AcceptButton id={r.id} /> : <Link href={r.link} className="btn-secondary btn-sm" data-view>{candidate ? "View details" : "Open"}</Link>}
+        {!acceptable && !candidate && r.state !== "HELD" && <span className="text-sm text-ink-2">{r.kind === "PACKAGE" ? "Receive it to accept it." : "Approve or Release counts as accepting it."}</span>}
         {x.giveTo && !moving && <button type="button" className="link inline-flex min-h-11 items-center text-[13px]" onClick={() => setMoving(true)} data-move-open>Move</button>}
         {x.correct && r.dueDate && r.kind !== "DP_JOB" && <CorrectDueDate subjectType="WorkItem" subjectId={r.id} current={r.dueDate} />}
       </div>

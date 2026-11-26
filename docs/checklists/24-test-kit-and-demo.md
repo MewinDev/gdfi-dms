@@ -1,6 +1,6 @@
 # 24 Test kit, seed data and demo
 
-Last updated: 25 November 2026 (PHT)
+Last updated: 26 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -17,7 +17,7 @@ How the team tests by hand and shows the system: the Manual Test Kit (clean stat
 | 5 | `db:reset-seed`: fake data at every stage with pending Open Items; pools via first load | ✅ Built | console | Developer | n/a | `scripts/db-reset-seed.ts`, README | n/a |
 | 6 | Sample myloans (mock) with the real branch list and products; simulator (now also not released / released again) | ✅ Built | Settings, System and test mode | `simulator:use` | n/a | `lib/myloans/v1/mock-store.ts`, `lib/services/source-sync.ts` | Kit items 30 to 45 |
 | 7 | Separate test database for vitest and e2e (`gdfi_dms_test`); destructive guards | ✅ Built | n/a | n/a | n/a | `lib/env/test-db.ts`, `lib/env/destructive.ts` | n/a |
-| 8 | e2e in groups at 1440, 820 and 390 px, production build, 1 worker | ✅ Built | `npm run e2e:groups` | Developer | n/a | `scripts/e2e-groups.ts` | n/a |
+| 8 | e2e in groups at 1440, 820 and 390 px, production build, 1 worker | ✅ Built | `npm run e2e:groups` | Developer | n/a | `scripts/e2e-groups.ts`; last full run 26 Nov 2026: 208 / 208 / 207 passed, 5 test-side failures fixed and rerun green (`docs/STATUS.md`); the test database URL uses 127.0.0.1 (`lib/env/test-db.ts`: "localhost" cost 2 s a new connection on Windows) | n/a |
 | 9 | Documentation screenshots on purpose only | ✅ Built | `npm run docs:screenshots` | Developer | n/a | D-042 | n/a |
 | 10 | Volume test database (separate, 15,000 loans) | ✅ Built | `npm run volume` | Developer | n/a | module 23 row 11 | n/a |
 | 11 | Accessibility and phone-width basics on the main screens of each role (language, heading, names, labels, alt text, no sideways scroll) | ✅ Built | e2e | Developer | n/a | e2e `a11y-basics.spec.ts` (15 / 15, 19 Nov 2026; 15 / 15 again 25 Nov 2026) | n/a |

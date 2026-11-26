@@ -32,7 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ...(can(user, PERMISSIONS.JOBS_WORK) ? [{ href: "/jobs", label: "Jobs", icon: "jobs" as const }] : []),
     ...(can(user, PERMISSIONS.FUNDS_REQUEST) ? [{ href: "/my-funds", label: "My funds", icon: "funds" as const }] : []),
     ...(canFundsAny(user) ? [{ href: "/funds", label: "Funds", icon: "funds" as const }] : []),
-    ...(can(user, PERMISSIONS.LOANS_VIEW) && !(can(user, PERMISSIONS.JOBS_WORK) && !worksLoans) ? [worksLoans ? { href: "/loans", label: "My loans", icon: "loans" as const } : { href: "/loans", label: "Loans", icon: "loans" as const }] : []),
+    ...(can(user, PERMISSIONS.LOANS_VIEW) && !(can(user, PERMISSIONS.JOBS_WORK) && !worksLoans) ? [{ href: "/loans", label: "Loans", icon: "loans" as const }] : []),
     ...(monitoring ? [{ href: "/monitoring", label: "Monitoring", icon: "monitor" as const }] : []),
     // Updates sits in the nav when there are no admin items (otherwise the bell in the top bar is enough).
     ...(admin.some(Boolean) ? [] : [{ href: "/notifications", label: "Updates", icon: "updates" as const, badge: unread }]),

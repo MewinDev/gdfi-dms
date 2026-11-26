@@ -39,9 +39,9 @@ const txnOf = (code: string) => db.loanTransaction.findFirstOrThrow({ where: { l
 /** Opens the sample loan; ticks every Notary paper and one Mortgage paper (ticked papers get a Document ID). */
 async function setUp(page: Page) {
   await signInWith(page, "Continue as Loan Associate");
-  await page.goto(`/loans?fill=${PN}`);
+  await page.goto(`/loans?q=${PN}`);
   const main = page.getByRole("main");
-  await main.getByRole("button", { name: /^Find/ }).click();
+  await main.getByRole("button", { name: "Search", exact: true }).click();
   const open = main.getByRole("button", { name: "Open loan file" });
   await expect(async () => {
     await main.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });

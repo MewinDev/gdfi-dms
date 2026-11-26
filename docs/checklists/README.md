@@ -1,6 +1,6 @@
 # Module checklists
 
-Last updated: 25 November 2026 (PHT)
+Last updated: 26 November 2026 (PHT)
 
 One file per module (D-055). Each has: A) purpose and roles; B) a checklist row per feature or requirement (status, where, who, customizable, evidence, UAT check); C) for the phase A workflow modules (12 to 16, 19), every v2 requirement and every step of the v2 .docx charts, with "Changed by D-xxx" where a decision replaced a v2 rule; D) known limits and open questions. Module 04 is the master list of everything customizable, including every permission tick and its default roles.
 
@@ -17,10 +17,10 @@ Status values: ✅ Built · ⚠️ Partial · ❌ Missing · ⏸ Blocked (by who
 | 05 | [Working-days calendar](05-working-days-calendar.md) | 9 | 0 | 0 | 1 | 0 | 9 / 10 |
 | 06 | [Product classification](06-product-classification.md) | 7 | 0 | 0 | 0 | 0 | 7 / 7 |
 | 07 | [myloans API](07-myloans-api.md) | 9 | 1 | 0 | 2 | 0 | 9 / 12 |
-| 08 | [PN # search](08-pn-search.md) | 9 | 0 | 0 | 0 | 0 | 9 / 9 |
+| 08 | [PN # search](08-pn-search.md) | 11 | 0 | 0 | 0 | 0 | 11 / 11 |
 | 09 | [myloans sync](09-myloans-sync.md) | 12 | 0 | 0 | 2 | 0 | 12 / 14 |
 | 10 | [Open Items and Reference data changes](10-open-items-and-reference-changes.md) | 13 | 1 | 0 | 0 | 1 | 13 / 14 |
-| 11 | [Inbox, branch pool, Accept / Forward, TAT, Move work items](11-inbox-pool-and-tat.md) | 13 | 0 | 0 | 0 | 0 | 13 / 13 |
+| 11 | [Inbox, branch pool, Accept / Forward, TAT, Move work items](11-inbox-pool-and-tat.md) | 14 | 0 | 0 | 0 | 0 | 14 / 14 |
 | 12 | [LA workflow](12-la-workflow.md) (phase A) | 24 | 1 | 0 | 0 | 1 | 24 / 25 |
 | 13 | [DP workflow](13-dp-workflow.md) (phase A) | 17 | 3 | 0 | 0 | 0 | 17 / 20 |
 | 14 | [Finance and funds](14-finance-funds.md) (phase A) | 16 | 2 | 0 | 0 | 0 | 16 / 18 |
@@ -34,13 +34,13 @@ Status values: ✅ Built · ⚠️ Partial · ❌ Missing · ⏸ Blocked (by who
 | 22 | [Backup and restore](22-backup-and-restore.md) | 7 | 0 | 0 | 2 | 0 | 7 / 9 |
 | 23 | [Operations](23-operations.md) | 8 | 2 | 1 | 4 | 0 | 8 / 15 |
 | 24 | [Test kit, seed data and demo](24-test-kit-and-demo.md) | 12 | 0 | 0 | 0 | 0 | 12 / 12 |
-| | **Total** | **250** | **25** | **8** | **14** | **15** | **250 / 297 (84%)** |
+| | **Total** | **253** | **25** | **8** | **14** | **15** | **253 / 300 (84%)** |
 
 (Module 19 counts row 0, "filters and export for all reports", as one ⚠️ besides the 19 reports.)
 
 ## Overall phase A readiness
 
-**Not ready for go-live yet.** Everything that can be built on the mock is built and tested (vitest 1,373 passed; full e2e, see `docs/STATUS.md`). What stands between today and go-live:
+**Not ready for go-live yet.** Everything that can be built on the mock is built and tested (vitest 1,399 passed; full e2e 26 November 2026, 208 / 208 / 207 at 1440 / 820 / 390, the 5 test-side failures fixed and rerun green; see `docs/STATUS.md`). What stands between today and go-live:
 
 1. **Blocked by others (⏸):** Microsoft sign-in set-up (IT), myloans staging access (C5), the hosting decision (scheduler, backups, file storage), the GitHub setup (CI), the official holiday list (Admin), UAT on staging.
 2. **Go-live gaps:** the DP receipt confirmation, Cancel transaction, the FT account at request, the four optional transactions and the TAT defaults were built on 19 to 24 November 2026 (D-056). Left: Entra sign-in (go-live preparation) and, only if IT's answers need them, a cloud file driver and myloans OAuth (`docs/PHASE_A_GAPS.md`).

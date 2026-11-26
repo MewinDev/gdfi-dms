@@ -19,9 +19,18 @@ export function withDatabaseName(url: string, name: string): string {
 
 /** The test database URL: TEST_DATABASE_URL, or DATABASE_URL pointed at gdfi_dms_test. Null when neither is set. */
 export function testDatabaseUrl(env: Record<string, string | undefined> = process.env): string | null {
-  if (env.TEST_DATABASE_URL) return env.TEST_DATABASE_URL;
+  if (env.TEST_DATABASE_URL) return ipv4Localhost(env.TEST_DATABASE_URL);
   const base = env.DIRECT_URL || env.DATABASE_URL;
-  return base ? withDatabaseName(base, TEST_DATABASE_NAME) : null;
+  return base ? ipv4Localhost(withDatabaseName(base, TEST_DATABASE_NAME)) : null;
+}
+
+/**
+ * "localhost" as 127.0.0.1. On Windows "localhost" tries IPv6 (::1) first; the Docker database listens on 127.0.0.1
+ * only, so every new connection waited about 2 seconds before falling back (measured 26 November 2026: 2,090 ms
+ * against 33 ms), which made the first /api/health check of a fresh test server time out (database "down", 503).
+ */
+export function ipv4Localhost(url: string): string {
+  return url.replace(/@localhost([:/])/, "@127.0.0.1$1");
 }
 
 /** Points DATABASE_URL and DIRECT_URL at the test database (in `env`). Returns its name. */

@@ -12,6 +12,9 @@ export interface LoanTatInput {
   releasedAt: Date;
   /** Transaction type codes currently with a DP (for "In process"). */
   inProcessCodes?: string[];
+  /** The two dates as Philippine YYYY-MM-DD when already known (the Loans page reads them so from the database, D-059). */
+  stageSinceYmd?: string;
+  releasedYmd?: string;
 }
 
 export interface LoanTat {
@@ -26,8 +29,8 @@ export interface LoanTat {
  */
 export function loanTat(input: LoanTatInput, tats: TatMap, days: Days, now: Date = new Date()): LoanTat | null {
   const today = businessDate(now);
-  const since = businessDate(input.stageSince);
-  const release = businessDate(input.releasedAt);
+  const since = input.stageSinceYmd ?? businessDate(input.stageSince);
+  const release = input.releasedYmd ?? businessDate(input.releasedAt);
   let deadline: string;
   let basis: string;
   switch (input.stage) {

@@ -33,14 +33,14 @@ export function SampleLoans({ title, intro, samples, compact = false, row = fals
   const [picked, setPicked] = useState<string | null>(null);
   const [shown, setShown] = useState(false); // phone only (the slim list)
   const router = useRouter();
-  // Home has no search box: open My loans with the PN already in its box (nothing is searched).
+  // Home has no search box: the Loans page searches the PN (D-059).
   const pick = (pn: string) => {
     if (fillSearch(pn)) setPicked(pn);
-    else router.push(`/loans?fill=${encodeURIComponent(pn)}`);
+    else router.push(`/loans?q=${encodeURIComponent(pn)}`);
   };
   const pill = <span className="inline-flex h-6 items-center rounded-full bg-navy px-2.5 text-[11px] font-bold tracking-[0.04em] text-white">TEST MODE</span>;
   const chip = (s: SampleCard) => (s.opened ? <span className="chip c-ok">Opened</span> : <span className="chip c-act">Try it</span>);
-  const pickedNote = <span className="text-xs font-semibold text-navy">PN added to the search box. Press Find loan.</span>;
+  const pickedNote = <span className="text-xs font-semibold text-navy">PN added to the search box. Press Search.</span>;
 
   if (row) {
     // My loans: one tight row under the search (scrolls sideways on phone).

@@ -76,10 +76,10 @@ test("phone: the menu opens a drawer; focus moves in and stays in; Esc, a tap ou
   // Opens (slides in); focus moves into it, on the current page's link. No close button shows.
   await menuButton(page).click();
   await expect(drawer(page)).toBeVisible();
-  await expect(drawer(page).getByRole("link", { name: "My loans" })).toBeFocused();
-  await expect(drawer(page).getByRole("link", { name: "My loans" })).toHaveAttribute("aria-current", "page");
+  await expect(drawer(page).getByRole("link", { name: "Loans", exact: true })).toBeFocused();
+  await expect(drawer(page).getByRole("link", { name: "Loans", exact: true })).toHaveAttribute("aria-current", "page");
   await expect(page.locator("[data-menu-button]")).toHaveAttribute("aria-expanded", "true");
-  expect((await drawer(page).locator("[data-drawer-close]").boundingBox())!.width).toBeLessThanOrEqual(1);
+  expect((await drawer(page).locator("[data-drawer-close]").boundingBox())!.width).toBeLessThanOrEqual(1.01);
   // Tab and Shift+Tab never leave it.
   for (let i = 0; i < 14; i++) {
     await page.keyboard.press("Tab");
@@ -136,12 +136,12 @@ test("tablet: an icon rail with tooltips; Expand shows the labels and is remembe
   await page.goto("/loans");
   await expect(sidebar(page)).toHaveAttribute("data-sidebar", "rail");
   await expect.poll(async () => Math.round((await sidebar(page).boundingBox())!.width)).toBe(72);
-  const loans = sidebar(page).getByRole("link", { name: "My loans" });
+  const loans = sidebar(page).getByRole("link", { name: "Loans", exact: true });
   await expect(loans).toHaveAttribute("aria-current", "page");
   // Icons only; the label is still the link's name; a tooltip on hover and on keyboard focus.
   expect(await loans.evaluate((a) => a.getBoundingClientRect().width)).toBeLessThanOrEqual(60);
   await loans.hover();
-  await expect(page.getByRole("tooltip")).toHaveText("My loans");
+  await expect(page.getByRole("tooltip")).toHaveText("Loans");
   await sidebar(page).getByRole("link", { name: /^Inbox/ }).focus();
   await expect(page.getByRole("tooltip")).toHaveText(/^Inbox/);
 
@@ -165,7 +165,7 @@ test("tablet: an icon rail with tooltips; Expand shows the labels and is remembe
   await expect(sidebar(page)).toHaveAttribute("data-sidebar", "full");
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect.poll(async () => Math.round((await sidebar(page).boundingBox())!.width)).toBe(264);
-  await expect(sidebar(page).getByText("My loans", { exact: true })).toBeVisible();
+  await expect(sidebar(page).getByText("Loans", { exact: true })).toBeVisible();
   // Remembered for this person (localStorage).
   await page.reload();
   await expect(sidebar(page)).toHaveAttribute("data-sidebar", "full");

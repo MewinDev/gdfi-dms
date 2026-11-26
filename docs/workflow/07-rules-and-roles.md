@@ -2,7 +2,7 @@
 
 The automatic rules, the turnaround targets, the roles and examples of permissions.
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 26 November 2026 (PHT)
 
 ### Automatic rules (run once, when the LA clicks Open Loan File)
 
@@ -47,7 +47,7 @@ Decline and Return to LA: the transaction goes back to the specific Loan Associa
 
 - **Every hand-off is an item** in someone's **Inbox** (left menu): the LA's work on a transaction, a processor's job, a funds request, a package to receive. Each item has **rounds**: a round starts when someone accepts it and ends when they forward it, return it, finish it, or it is moved. Every step is kept with who and when (the item's movements).
 - **Where new work lands:** a **named person's inbox**, or the **branch pool** of that work role (LA, DP, or Finance per funds type), where anyone of that role with access to the branch can take it. **The first Accept wins**; the next person is told "Already accepted by {name} at {time}. It is in their inbox now."
-- **Find loan** (until the myloans feed exists): the LA's items arrive and are accepted at the same moment (waiting 0); their turnaround starts. The feed will put "Released, not yet in the DMS" in the branch LA pool (a hook is ready; piece 10).
+- **Find loan** (until the myloans feed exists): the LA's items arrive and are accepted at the same moment (waiting 0); their turnaround starts. The feed puts "Released, not yet in the DMS" in the branch LA pool (piece 10b); such an item has no Accept: View details opens its loan preview and Open loan file makes the loan file the opener's, with their items accepted at that moment, and closes the pool item (D-060).
 - **"Counts as accept":** Finance's Approve or Release, and the receiving LA's Receive, take the item; there is no extra click. For these the reports measure **time to act (from arrival)**, labelled so; everything else measures **turnaround time (from accept)**.
 - **Waiting is not turnaround:** time in a pool or an unaccepted inbox is **waiting**, shown on its own: "Arrived today", "Waiting 2 working days". In the pool it is **amber after 1 working day and red after 2** (Settings, `pool.amberAfterDays` and `pool.redAfterDays`). The supervisors' Home says "N items waiting in the pool too long".
 - **Due dates per round:** the target (Settings, TAT) counts from the accept day on the calendar of the item's branch; a pausing hold moves it the same way as a DP job's; a holiday or closure added late extends it; "Correct due date" works on LA items too (Inbox).

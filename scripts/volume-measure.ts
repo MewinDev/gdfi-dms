@@ -11,6 +11,8 @@ import { tatReport } from "@/lib/services/tat-report";
 import { jobRows } from "@/lib/services/job-queries";
 import { fileLogPage } from "@/lib/services/file-access-log";
 import { searchSaved } from "@/lib/services/find-local";
+import { loanListPage } from "@/lib/services/loan-list";
+import { parseListParams } from "@/lib/ui/loan-list";
 
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 async function time(f: () => Promise<unknown>): Promise<number> {
@@ -30,7 +32,12 @@ async function time(f: () => Promise<unknown>): Promise<number> {
     ["Branch pool", (u) => poolItems(u)],
     ["Open Items (Mine)", (u) => openItemsFor(u, "mine")],
     ["Open Items menu count + Home", async (u) => { await pendingOpenItemCount(u); await openItemCounts(u); }],
-    ["Loans list (All)", (u) => listLoans(u, { tab: "all" })],
+    ["Loans list (All, old Home list)", (u) => listLoans(u, { tab: "all" })],
+    // D-059: the Loans page (target under 1 s): the default list, filters, a search, sorting and a later page.
+    ["Loans page (default)", (u) => loanListPage(u, parseListParams({}))],
+    ["Loans page (needs, late, me)", (u) => loanListPage(u, parseListParams({ status: "needs,hold", late: "1", with: "me" }))],
+    ["Loans page (search 'dela', amount)", (u) => loanListPage(u, parseListParams({ q: "dela", sort: "amount" }))],
+    ["Loans page (archived, page 3, 50)", (u) => loanListPage(u, parseListParams({ status: "archived", per: "50", page: "3" }))],
     ["TAT report (all jobs)", (u) => tatReport(u, { show: "all" })],
     ["Jobs list (processor)", async () => jobRows({})],
     ["File access log (page 1)", (u) => fileLogPage(u, {}, 1)],

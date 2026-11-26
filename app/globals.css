@@ -26,6 +26,9 @@
   --hold-bg: #fff8e8; /* On hold: soft amber */
   --hold-fg: #774300;
   --hold-line: #efd29a;
+  --myloans-bg: #f4effd; /* D-060: "myloans · Not yet in DMS": a source label, its own soft violet (not a status colour) */
+  --myloans-fg: #4b2a8c;
+  --myloans-line: #d9cbf3;
   --hold-stripe: #e5a93f; /* the thin left accent of a held card or row (decoration, not text) */
   --missing-bg: #fff8e8; /* Missing paper, "needs you": same amber family */
   --missing-fg: #774300;
@@ -147,6 +150,9 @@
   --color-hold-bg: var(--hold-bg);
   --color-hold-fg: var(--hold-fg);
   --color-hold-line: var(--hold-line);
+  --color-myloans-bg: var(--myloans-bg);
+  --color-myloans-fg: var(--myloans-fg);
+  --color-myloans-line: var(--myloans-line);
   --color-hl-border: var(--highlight-border);
   --color-done-row: var(--done-row-bg);
   --color-done-border: var(--done-row-border);
@@ -329,6 +335,9 @@ body {
   }
   .c-hold {
     @apply border-hold-line bg-hold-bg text-hold-fg;
+  }
+  .c-myloans {
+    @apply border-myloans-line bg-myloans-bg text-myloans-fg;
   }
   .c-ftype-ca {
     border-color: var(--ftype-ca-line);
