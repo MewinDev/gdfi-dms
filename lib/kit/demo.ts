@@ -6,6 +6,7 @@ import { businessDate } from "@/lib/time";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { raiseHold } from "@/lib/services/holds";
 import { receiveReleasedLoan } from "@/lib/services/work-items";
+import { poolArrival } from "@/lib/work/rules";
 import { CLEAN_ACCOUNTS, CLEAN_POOL } from "./clean";
 
 /**
@@ -48,9 +49,15 @@ export async function seedDemoItems(log: (line: string) => void = console.log): 
 
   // The branch pool: released loans not yet opened (the feed's hook, piece 10b), waiting 1 and 3 working days.
   const borrower = (pn: string) => CLEAN_POOL.find((x) => x.pn === pn)?.borrower ?? "Sample borrower";
+  // D-060: a loan cannot wait in the pool from before it was released. These two are released today in the sample
+  // myloans, so their release date moves back to the arrival (in the sample myloans and its copy here) first.
   for (const [pn, waited] of [[DEMO_PNS.poolAmber, 1], [DEMO_PNS.poolRed, 3]] as const) {
-    const it = await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn, branchId: angono.id, borrowerName: borrower(pn) }));
-    await prisma.workItem.update({ where: { id: it.id }, data: { arrivedAt: at9(back(waited)) } });
+    const arrived = at9(back(waited));
+    await prisma.mockMyLoansTxn.updateMany({ where: { pnNo: pn, releaseDate: { gt: arrived } }, data: { releaseDate: arrived, updatedAt: new Date() } });
+    await prisma.sourceLoanCandidate.updateMany({ where: { pn, releaseDate: { gt: arrived } }, data: { releaseDate: arrived } });
+    const released = (await prisma.mockMyLoansTxn.findFirst({ where: { pnNo: pn }, select: { releaseDate: true } }))?.releaseDate ?? null;
+    const it = await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn, branchId: angono.id, borrowerName: borrower(pn), releasedAt: released }));
+    await prisma.workItem.update({ where: { id: it.id }, data: { arrivedAt: poolArrival(arrived, released) } });
   }
   log(`Demo items for LA Angono: ${DEMO_PNS.red} overdue (red), ${DEMO_PNS.amber} due today (amber), ${DEMO_PNS.paused} on hold (Paused). Angono LA pool: ${DEMO_PNS.poolAmber} waiting 1 working day (amber), ${DEMO_PNS.poolRed} waiting 3 (red).`);
 }

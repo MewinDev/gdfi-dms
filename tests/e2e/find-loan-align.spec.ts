@@ -66,7 +66,7 @@ test("loan found: details and questions share columns, the chosen button fills n
 
   const facts = card.locator("dl > div");
   // Rows of four (the details are checked in myloans-fields.spec.ts).
-  await expect(facts).toHaveCount(11); // D-060: + CIN, Classification, Status in myloans
+  await expect(facts).toHaveCount(10); // D-060: + CIN and Classification (not the status in myloans: the chip says it)
   const f = await Promise.all([0, 1, 2, 3].map((i) => box(facts.nth(i))));
   const q1 = await box(card.locator('[data-question="financingType"]'));
   const q2 = await box(card.locator('[data-question="orcrStatus"]'));
@@ -85,31 +85,36 @@ test("loan found: details and questions share columns, the chosen button fills n
     expect(Math.abs(right(q1) - right(f[1]))).toBeLessThanOrEqual(2);
   }
 
-  // Type scale: fact labels 12px, values 15px semi-bold, question labels 14px.
+  // Compact type scale (the user's review, 26 November 2026): fact labels 12px, values 14px semi-bold, question labels 13px.
   const px = (l: Locator) => l.evaluate((e) => getComputedStyle(e).fontSize);
   expect(await px(card.locator("dt").first())).toBe("12px");
-  expect(await px(card.locator("dd").first())).toBe("15px");
+  expect(await px(card.locator("dd").first())).toBe("14px");
   expect(await card.locator("dd").first().evaluate((e) => getComputedStyle(e).fontWeight)).toBe("600");
-  expect(await px(card.locator("legend").first())).toBe("14px");
+  expect(await px(card.locator("legend").first())).toBe("13px");
 
-  // The answer buttons: separate, 44px at least, a 1px border; the group is just the two buttons.
+  // The answer buttons and Open / Cancel: separate, a 1px border; 44px to tap on a phone, 36px from 768px.
+  const tall = width(page) < 768 ? 44 : 36;
   const pill = card.locator("[data-question] label").first();
   const open = card.getByRole("button", { name: "Open loan file" });
   const group = await box(card.locator("[data-question] [data-pills]").first());
-  expect(Math.round((await box(pill)).height)).toBeGreaterThanOrEqual(44);
+  expect(Math.round((await box(pill)).height)).toBeGreaterThanOrEqual(tall);
   expect(Math.round(group.height)).toBe(Math.round((await box(pill)).height));
   expect(await pill.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
-  expect(Math.round((await box(open)).height)).toBe(44);
-  expect(Math.round((await box(card.getByRole("link", { name: "Cancel" }))).height)).toBe(44);
+  expect(Math.round((await box(open)).height)).toBe(tall);
+  expect(Math.round((await box(card.getByRole("link", { name: "Cancel" }))).height)).toBe(tall);
 
-  // The hint: on the right end of the row (desktop), under the buttons (phone).
+  // D-060: the hint right beside Open loan file (desktop), under it (phone); Cancel at the end of the row.
   const hint = await box(card.locator("[data-open-hint]"));
+  const openBox = await box(open);
   const cancel = await box(card.getByRole("link", { name: "Cancel" }));
   if (width(page) >= 640) {
-    expect(hint.x).toBeGreaterThan(right(cancel) + 24);
-    expect(Math.abs(right(hint) - right(q2))).toBeLessThanOrEqual(2);
+    expect(hint.x - right(openBox)).toBeGreaterThanOrEqual(0);
+    expect(hint.x - right(openBox)).toBeLessThanOrEqual(16);
+    expect(Math.abs((hint.y + hint.height / 2) - (openBox.y + openBox.height / 2))).toBeLessThanOrEqual(2);
+    expect(Math.abs(right(cancel) - right(q2))).toBeLessThanOrEqual(2);
   } else {
-    expect(hint.y).toBeGreaterThan(cancel.y + cancel.height - 1);
+    expect(hint.y).toBeGreaterThan(openBox.y + openBox.height - 1);
+    expect(cancel.y).toBeGreaterThan(hint.y);
   }
   // No "Next:" line any more.
   await expect(card.locator("[data-find-next]")).toHaveCount(0);

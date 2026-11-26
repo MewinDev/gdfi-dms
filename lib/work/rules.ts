@@ -36,6 +36,22 @@ export function poolTone(waiting: number, amberAfter: number, redAfter: number):
 /** Plain words for the pool line. */
 export const waitingText = (n: number) => (n === 0 ? "Arrived today" : `Waiting ${n} working day${n === 1 ? "" : "s"}`);
 
+/**
+ * D-060: a released loan cannot enter the branch pool before it was released. The pool item's arrival is the given
+ * time, or the release time when that is later (the sync can run before the release date myloans gives, and the kit
+ * moved arrivals back without looking at it). The database holds the same rule (migration 20261119090033_pool_arrival_after_release).
+ */
+export function poolArrival(at: Date, releasedAt: Date | null | undefined): Date {
+  return releasedAt && at.getTime() < releasedAt.getTime() ? new Date(releasedAt.getTime()) : at;
+}
+
+/**
+ * D-060: the pool waiting wording everywhere a pool item shows (the loan preview, Inbox › Branch pool, the Loans
+ * table and cards): "In the branch pool since Nov 24 · 2 working days", counted from the arrival in the pool.
+ */
+export const poolSinceText = (sinceDay: string, n: number) =>
+  `In the branch pool since ${sinceDay} · ${n === 0 ? "less than a day" : `${n} working day${n === 1 ? "" : "s"}`}`;
+
 /** Plain words for a closed round (TAT report, Movements). */
 export function outcomeText(o: Outcome | string | null): string {
   return ({ FORWARDED: "Forwarded", RETURNED: "Returned", DONE: "Done", MOVED_AWAY: "Moved (away)", BACK_TO_POOL: "Back to the pool", CANCELLED: "Cancelled", PULLED_BACK: "Pulled back" } as Record<string, string>)[o ?? ""] ?? "Open";

@@ -13,6 +13,7 @@ import { dayText, deadlineChip, LA_STAGES, peso, type Tone } from "@/lib/ui/plai
 import { BORROWER_CHIP } from "@/lib/ui/borrower-chip";
 import { cleanPn, getPnFormat, isPnAttempt, parsePn, pnHeadline } from "@/lib/pn";
 import { pageInfo, type PageInfo } from "@/lib/ui/paging";
+import { poolSinceText, waitingDays } from "@/lib/work/rules";
 import { facetCounts, passes, sortRows, type FacetCounts, type LeanRow, type LoanListParams } from "@/lib/ui/loan-list";
 import { completePn } from "./find-local";
 import { lookupPn, type PnLookupResult } from "./loan-file";
@@ -59,6 +60,8 @@ export interface LoanListItem {
   viewHref: string;
   /** D-060: a released loan not yet in the DMS (the "myloans · Not yet in DMS" badge). */
   notInDms: boolean;
+  /** D-060: a loan waiting in a branch pool: "In the branch pool since Nov 24 · 2 working days" (from its arrival). */
+  poolText?: string;
 }
 
 export interface LoanListResult {
@@ -247,7 +250,7 @@ export async function loanListPage(user: CurrentUser, p: LoanListParams, now: Da
 }
 
 /** The full row for each loan of the page (one query for the loan files, one for the people). */
-async function details(user: CurrentUser, page: LeanRow[], pool: { it: { id: string; subjectId: string; state: string; holderUserId: string | null; branchId: string }; c?: { productName: string | null } | undefined }[], seesAmounts: boolean, now: Date): Promise<LoanListItem[]> {
+async function details(user: CurrentUser, page: LeanRow[], pool: { it: { id: string; subjectId: string; state: string; holderUserId: string | null; branchId: string; arrivedAt: Date }; c?: { productName: string | null } | undefined }[], seesAmounts: boolean, now: Date): Promise<LoanListItem[]> {
   const ids = page.filter((r) => r.source === "dms").map((r) => r.key);
   const [loans, borrower, cal] = await Promise.all([
     ids.length ? prisma.loan.findMany({
@@ -274,11 +277,12 @@ async function details(user: CurrentUser, page: LeanRow[], pool: { it: { id: str
     if (r.source === "pool") {
       // D-060: no Accept; View details opens the preview, where Open loan file takes it.
       const x = poolOf.get(r.key)!;
+      const poolText = poolSinceText(dayText(x.it.arrivedAt, { year: false }), waitingDays(businessDate(x.it.arrivedAt), businessDate(now), daysFor(cal, r.branchId)));
       return {
         key: r.key, source: "pool", pn: r.pn, borrowerName: r.borrowerName, branchName: r.branchName, productName: x.c?.productName?.trim() ?? "", loanType: "", classification: "",
         releasedText: `Released ${dayText(r.released)}`, releasedOn: dayText(r.released), amountText,
         statusChip: null,
-        statusText: "Released in myloans: view the details to open its loan file",
+        statusText: "Released in myloans: view the details to open its loan file", statusTip: poolText, poolText,
         flags: [], withText, due, deadline: r.deadline, viewHref: `/loans/preview/${r.pn}`, notInDms: true,
       };
     }

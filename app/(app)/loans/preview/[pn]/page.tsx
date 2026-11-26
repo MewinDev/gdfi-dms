@@ -9,12 +9,11 @@ import { lookupPn } from "@/lib/services/loan-file";
 import { accountWarnings } from "@/lib/myloans/account";
 import { getCalendar } from "@/lib/calendar/load";
 import { daysFor } from "@/lib/calendar/core";
-import { waitingDays, waitingText } from "@/lib/work/rules";
-import { businessDate, fmtDateTime, fmtShort } from "@/lib/time";
+import { poolArrival, poolSinceText, waitingDays } from "@/lib/work/rules";
+import { businessDate, fmtDateTime } from "@/lib/time";
 import { dayText, peso } from "@/lib/ui/plain";
 import { PageTop } from "@/components/loan/page-top";
 import { MyLoansResult, Preview } from "@/components/loan/myloans-result";
-import { NotInDmsBadge } from "@/components/loan/not-in-dms-badge";
 import { CopyButton } from "@/components/ui/copy-button";
 import { AlertIcon } from "@/components/ui/icons";
 
@@ -44,7 +43,7 @@ export default async function LoanPreviewPage({ params, searchParams }: { params
     if (sp.taken !== "1") redirect(`/loans/${pn}`);
     return (
       <div className="flex w-full min-w-0 flex-col gap-4" data-loan-preview={pn}>
-        <PageTop crumbs={[{ label: "Loans", href: "/loans" }, { label: pn }]} back={{ label: "Loans", href: "/loans" }} title="Loan preview" subtitle={<>Released in myloans, not yet a loan file in the DMS <NotInDmsBadge className="ml-1 align-[1px]" /></>} />
+        <PageTop crumbs={[{ label: "Loans", href: "/loans" }, { label: pn }]} back={{ label: "Loans", href: "/loans" }} title="Loan preview" subtitle="Released in myloans, not yet a loan file in the DMS" />
         <section role="alert" className="flex items-center gap-3 rounded-xl border border-act-line bg-act-bg px-4 py-3" data-preview-taken>
           <span className="text-act-fg"><AlertIcon size={18} /></span>
           <p className="min-w-0 flex-1 text-[15px] text-navy">
@@ -59,26 +58,31 @@ export default async function LoanPreviewPage({ params, searchParams }: { params
   // The branch pool item (if any): another branch's is not found.
   const item = await prisma.workItem.findFirst({ where: { kind: "LOAN_CANDIDATE", subjectId: pn, state: { in: OPEN } }, select: { branchId: true, arrivedAt: true } });
   if (item && !inScope(user, item.branchId)) notFound();
-  let waiting: string | null = null;
-  if (item) {
-    const days = daysFor(await getCalendar(), item.branchId);
-    waiting = `${waitingText(waitingDays(businessDate(item.arrivedAt), businessDate(new Date()), days))} in the branch pool · arrived ${fmtShort(item.arrivedAt)}`;
-  }
 
   // What myloans says now (one API 1 call, logged). Without the search permission: the pool's own copy only.
   const r = can(user, PERMISSIONS.LOANS_SEARCH) ? await lookupPn(user, pn) : null;
   if (r?.kind === "refused" && r.field === "branch") notFound();
   if (r?.kind === "existing") redirect(`/loans/${pn}`);
+
+  // D-060: in the pool since its arrival, counted in working days, and never before the release date: if myloans now
+  // gives a later release date than the pool item knows (corrected after the last sync), the release date is the start.
+  let waiting: string | null = null;
+  if (item) {
+    const days = daysFor(await getCalendar(), item.branchId);
+    const live = r?.kind === "preview" && r.record.releaseDate ? new Date(r.record.releaseDate) : null;
+    const since = poolArrival(item.arrivedAt, live && !Number.isNaN(live.getTime()) ? live : null);
+    waiting = poolSinceText(dayText(since, { year: false }), waitingDays(businessDate(since), businessDate(new Date()), days));
+  }
   const cand = !r || r.kind !== "preview" ? await prisma.sourceLoanCandidate.findFirst({ where: { pn }, orderBy: { lastSeenAt: "desc" } }) : null;
   if (!r && !item) notFound();
   const warnings = r?.kind === "preview" && can(user, PERMISSIONS.SOURCE_MANAGE) ? accountWarnings(r.record) : [];
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-4" data-loan-preview={pn}>
-      <PageTop crumbs={[{ label: "Loans", href: "/loans" }, { label: pn }]} back={{ label: "Loans", href: "/loans" }} title="Loan preview" subtitle={<>Released in myloans, not yet a loan file in the DMS <NotInDmsBadge className="ml-1 align-[1px]" /></>} />
-      {sp.refreshed && <p role="status" className="text-sm text-ink-2" data-preview-refreshed>Refreshed from myloans just now.</p>}
+      <PageTop crumbs={[{ label: "Loans", href: "/loans" }, { label: pn }]} back={{ label: "Loans", href: "/loans" }} title="Loan preview" subtitle="Released in myloans, not yet a loan file in the DMS" />
+      {sp.refreshed && <p role="status" className="text-[13px] text-ink-2" data-preview-refreshed>Refreshed from myloans just now.</p>}
       {r?.kind === "preview" ? (
-        <Preview r={r} warnings={warnings} waiting={waiting} refresh />
+        <Preview r={r} warnings={warnings} waiting={waiting} page />
       ) : r && r.kind !== "invalid" ? (
         // No longer released (cancelled, redone, not released), not found, or myloans busy: the reason, no Open.
         <>
@@ -89,7 +93,7 @@ export default async function LoanPreviewPage({ params, searchParams }: { params
         // No myloans search permission: the pool's own copy (from the sync), no Open.
         <section className="card min-w-0 p-4 sm:px-5" data-preview-pool-copy>
           <h2 className="text-lg font-bold text-navy">{cand?.borrowerName ?? "-"}</h2>
-          <p className="flex items-center gap-1.5"><span className="font-mono text-sm text-ink-2">{pn}</span><CopyButton text={pn} label={`Copy PN ${pn}`} /><NotInDmsBadge /></p>
+          <p className="flex items-center gap-1.5"><span className="font-mono text-sm text-ink-2">{pn}</span><CopyButton text={pn} label={`Copy PN ${pn}`} /></p>
           {waiting && <p className="mt-2 text-sm text-ink-2" data-preview-waiting>{waiting}</p>}
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 md:grid-cols-4">
             {([["CIN", cand?.cin ?? "-"], ["Branch", cand?.branchName ?? "-"], ["Product", cand?.productName ?? "-"], ["Amount released", cand?.amount ? peso(Number(cand.amount)) : "-"], ["Released on", cand ? dayText(cand.releaseDate) : "-"]] as const).map(([k, v]) => (

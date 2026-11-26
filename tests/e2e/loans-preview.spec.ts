@@ -18,7 +18,8 @@ const main = (page: Page) => page.getByRole("main");
 const RELEASED = "GD1012026901001"; // Maria Santos, Antipolo (mock myloans): Refinancing, no questions
 const CANCELLED = "GD1012026901013"; // Andres Lim: cancelled in myloans
 const OTHER = "GD3902026909911"; // an Alaminos pool item (outside the LA's branches)
-const PNS = [RELEASED, CANCELLED, OTHER];
+const FINANCING = "GD1012026901002"; // Antipolo (mock myloans): Financing, New, so the two questions
+const PNS = [RELEASED, CANCELLED, OTHER, FINANCING];
 
 async function pool(pn: string, code: string, name: string, n: number) {
   const branch = await db.branch.findUniqueOrThrow({ where: { code } });
@@ -36,6 +37,7 @@ test.beforeEach(async () => {
   await pool(RELEASED, "101", "Maria Santos", 1);
   await pool(CANCELLED, "101", "Andres Lim", 2);
   await pool(OTHER, "390", "Other Branch", 3);
+  await pool(FINANCING, "101", "Pool Financing", 4);
 });
 test.afterAll(async () => {
   await clean();
@@ -48,8 +50,13 @@ test("no Accept for pool loans anywhere: one View details; the badge only on not
   // Loans: the pool rows show with the filter; each has View details to its preview and the badge.
   await page.goto("/loans?status=new");
   const rows = main(page).locator("[data-loan-row]:visible");
-  await expect(rows).toHaveCount(2); // Alaminos is outside the LA's branches
-  for (const pn of [RELEASED, CANCELLED]) {
+  await expect(rows).toHaveCount(3); // Alaminos is outside the LA's branches
+  // D-060: the pool wording (from the arrival in the pool), as the Assigned to tooltip or the card's line.
+  const since = rows.first().locator("[data-pool-since]");
+  const SINCE = /^In the branch pool since [A-Z][a-z]{2} \d{1,2} · (\d+ working days?|less than a day)$/;
+  if (width(page) >= 1024) await expect(since).toHaveAttribute("title", SINCE); // the table: Assigned to "Branch pool", the tooltip
+  else await expect(since).toHaveText(SINCE); // the card: the line itself
+  for (const pn of [RELEASED, CANCELLED, FINANCING]) {
     const row = rows.filter({ has: page.locator("[data-pn]", { hasText: pn }) });
     await expect(row.getByRole("link", { name: /^View details of/ })).toHaveAttribute("href", `/loans/preview/${pn}`);
     await expect(row.locator("[data-not-in-dms]")).toHaveText("myloans · Not yet in DMS");
@@ -68,6 +75,7 @@ test("no Accept for pool loans anywhere: one View details; the badge only on not
   await expect(item.getByRole("link", { name: "View details" })).toHaveAttribute("href", `/loans/preview/${CANCELLED}`);
   await expect(item.locator("[data-not-in-dms]")).toBeVisible();
   await expect(item.getByRole("button", { name: "Accept" })).toHaveCount(0);
+  await expect(item.locator("[data-pool-since]")).toHaveText(/^In the branch pool since [A-Z][a-z]{2} \d{1,2} · (\d+ working days?|less than a day)$/);
   ok();
 });
 
@@ -78,11 +86,42 @@ test("preview page: the myloans data, the waiting time, Refresh from myloans; an
   await expect(card.getByRole("heading", { name: "Maria Santos" })).toBeVisible();
   await expect(card.locator("[data-find-pn]")).toHaveText(RELEASED);
   await expect(card.getByRole("button", { name: `Copy PN ${RELEASED}` })).toBeVisible();
-  await expect(card.locator("[data-not-in-dms]")).toBeVisible();
-  await expect(main(page).locator("[data-preview-waiting]")).toContainText(/Waiting 2 working days in the branch pool|Waiting \d working day/);
-  for (const k of ["CIN", "Branch", "Product", "Loan type", "Classification", "Amount released", "Released on", "Status in myloans"]) {
+  // D-060 (review): the subtitle has no badge; the card's top right has the "Loan Released" chip and the badge, once each.
+  await expect(main(page).getByText("Released in myloans, not yet a loan file in the DMS", { exact: true })).toBeVisible();
+  await expect(main(page).locator("[data-not-in-dms]")).toHaveCount(1);
+  await expect(card.getByRole("list", { name: "Loan status" }).getByRole("listitem")).toHaveText(["Loan Released", "myloans · Not yet in DMS"]);
+  // In the pool since its arrival, never before its release (both 2 days ago here).
+  await expect(main(page).locator("[data-preview-waiting]")).toHaveText(/^In the branch pool since [A-Z][a-z]{2} \d{1,2} · (\d+ working days?|less than a day)$/);
+  // Never in the pool before its release: the "since" day is on or after the Released on day shown (here myloans says
+  // a later release than the pool item's copy, as after a correction in myloans: the release day is the start).
+  const releasedOn = await card.locator("dt", { hasText: /^Released on$/ }).locator("xpath=following-sibling::dd").textContent();
+  const sinceDay = ((await main(page).locator("[data-preview-waiting]").textContent()) ?? "").match(/since ([A-Z][a-z]{2} \d{1,2})/)![1];
+  const year = releasedOn!.slice(-4);
+  expect(new Date(`${sinceDay}, ${year}`).getTime()).toBeGreaterThanOrEqual(new Date(releasedOn!).getTime());
+  for (const k of ["CIN", "Branch", "Product", "Loan type", "Classification", "Amount released", "Released on"]) {
     await expect(card.locator("dt", { hasText: new RegExp(`^${k}$`) })).toHaveCount(1);
   }
+  await expect(card.locator("dt", { hasText: /^Status in myloans$/ })).toHaveCount(0);
+  // Refresh from myloans: a compact icon button (tooltip) in the card header, at the top right (beside the name on a wide screen).
+  const refresh = card.getByRole("button", { name: "Refresh from myloans" });
+  await expect(refresh).toHaveText(""); // the icon only
+  // Its name in a popover on hover and on keyboard focus.
+  const pop = card.locator("[data-refresh-popover]");
+  await expect(pop).toBeHidden();
+  await refresh.hover();
+  await expect(pop).toBeVisible();
+  await expect(pop).toHaveText("Refresh from myloans");
+  await page.mouse.move(0, 0);
+  await expect(pop).toBeHidden();
+  await refresh.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(refresh).toBeFocused();
+  await expect(pop).toBeVisible();
+  expect(Math.round((await refresh.boundingBox())!.height)).toBe(28);
+  const [rb, nb, cb] = [(await refresh.boundingBox())!, (await card.getByRole("heading", { name: "Maria Santos" }).boundingBox())!, (await card.boundingBox())!];
+  expect(rb.y).toBeLessThan(nb.y + 60);
+  if (width(page) >= 1024) expect(cb.x + cb.width - (rb.x + rb.width)).toBeLessThanOrEqual(32);
   await expect(card.locator("dt", { hasText: /^Classification$/ }).locator("xpath=following-sibling::dd")).toHaveText(/^(Financing|Refinancing)/);
   await expect(card.getByRole("button", { name: "Open loan file" })).toBeEnabled();
   await expect.poll(() => db.pnSearchLog.count({ where: { pn: RELEASED } })).toBe(1);
@@ -141,6 +180,35 @@ test("two people open at once: one loan file; the second is told who opened it a
   await expect(taken.getByRole("link", { name: "View it" })).toHaveAttribute("href", `/loans/${RELEASED}`);
   expect(await db.loan.count({ where: { pn: RELEASED } })).toBe(1);
   await other.close();
+});
+
+test("the two questions: no warning until Open loan file is pressed; the hint right beside the disabled button", async ({ page }) => {
+  await signIn(page, "la");
+  await page.goto(`/loans/preview/${FINANCING}`);
+  const card = main(page).locator("[data-find-preview]");
+  const open = card.getByRole("button", { name: "Open loan file" });
+  await expect(open).toHaveAttribute("aria-disabled", "true");
+  await expect(card.getByText("Please pick one to continue.")).toHaveCount(0);
+  await expect(card.locator('[data-question] [role="alert"]')).toHaveCount(0);
+  for (const q of await card.locator("[data-question] label").all()) expect(await q.evaluate((e) => e.className)).not.toContain("border-act-line");
+  const hint = card.locator("[data-open-hint]");
+  await expect(hint).toHaveText("Answer both questions to open the loan file");
+  const [hb, ob] = [(await hint.boundingBox())!, (await open.boundingBox())!];
+  if (width(page) >= 640) {
+    expect(hb.x - (ob.x + ob.width)).toBeLessThanOrEqual(16); // beside the button, not at the far right
+    expect(Math.abs(hb.y + hb.height / 2 - (ob.y + ob.height / 2))).toBeLessThanOrEqual(2);
+  } else {
+    expect(hb.y).toBeGreaterThanOrEqual(ob.y + ob.height - 1); // under it on a phone
+  }
+  // Pressing it without answers (it reads disabled, so Enter on it): now the message and the warning colour.
+  await open.focus();
+  await page.keyboard.press("Enter");
+  await expect(card.getByText("Please pick one to continue.")).toHaveCount(2);
+  await card.getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
+  await expect(hint).toHaveText("Answer the OR/CR question to open the loan file");
+  await card.getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
+  await expect(hint).toHaveCount(0);
+  await expect(open).toHaveAttribute("aria-disabled", "false");
 });
 
 test("no longer released in myloans: the reason card, no Open loan file", async ({ page }) => {

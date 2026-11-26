@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { PnLookupResult } from "@/lib/services/loan-file";
 import { dayText, peso } from "@/lib/ui/plain";
 import { Avatar, ToneChip } from "@/components/ui/basics";
-import { AlertIcon, LockIcon } from "@/components/ui/icons";
+import { AlertIcon, CheckIcon, LockIcon } from "@/components/ui/icons";
 import { OpenLoanForm } from "@/components/loan/open-loan-form";
 import { statusLabel } from "@/lib/myloans/status";
 import { SOURCE_NAME } from "@/lib/myloans/types";
@@ -185,24 +185,29 @@ function NotSelectable({ r, q }: { r: Extract<PnLookupResult, { kind: "not_selec
 }
 
 /** Name and PN on the left; the chips (status, source, any amber chip) on the right, under the name below 1024px. */
-function LoanHead({ name, pn, titleId, children }: { name: string; pn: string; titleId: string; children: React.ReactNode }) {
+function LoanHead({ name, pn, titleId, children, action }: { name: string; pn: string; titleId: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4" data-find-head>
-      <div className="flex min-w-0 items-center gap-3">
-        <Avatar name={name.trim() || "?"} size={40} />
+    <div className="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between lg:gap-4" data-find-head>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <Avatar name={name.trim() || "?"} size={32} />
         <div className="min-w-0">
-          <h2 id={titleId} className="text-lg font-bold leading-tight text-navy">{name.trim() || "-"}</h2>
+          <h2 id={titleId} className="text-base font-bold leading-tight text-navy">{name.trim() || "-"}</h2>
           <p className="flex items-center gap-1.5"><span className="font-mono text-sm text-ink-2" data-find-pn>{pn}</span><CopyButton text={pn} label={`Copy PN ${pn}`} /></p>
         </div>
       </div>
-      <ul aria-label="Loan status" className="flex flex-wrap items-center gap-2" data-find-chips>{children}</ul>
+      {/* The status chip and the "myloans · Not yet in DMS" badge at the top right; on the preview page Refresh from myloans beside them (D-060). */}
+      <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
+        <ul aria-label="Loan status" className="flex flex-wrap items-center gap-1.5 empty:hidden" data-find-chips>{children}</ul>
+        {action}
+      </div>
     </div>
   );
 }
 
 /**
- * The details by name only (no codes or IDs; those are on the loan file under More loan details). D-060 adds the CIN,
- * the classification (the keyword rule; "Classified by default" when no keyword matched) and the status in myloans.
+ * The details by name only (no codes or IDs; those are on the loan file under More loan details). D-060 adds the CIN
+ * and the classification (the keyword rule; "Classified by default" when no keyword matched); the status in myloans
+ * is not repeated here (the status chip, or on the preview page its subtitle, says it).
  */
 function LoanFacts({ rec, amount, released, extra = [] }: { rec: Extract<PnLookupResult, { kind: "preview" }>["record"]; amount: string; released: string; extra?: [string, string][] }) {
   const name = (v: string | null | undefined) => v?.trim() || "-";
@@ -218,11 +223,11 @@ function LoanFacts({ rec, amount, released, extra = [] }: { rec: Extract<PnLooku
     ...extra,
   ];
   return (
-    <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 md:grid-cols-4 md:gap-x-6" data-find-facts>
+    <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 md:grid-cols-4 md:gap-x-5" data-find-facts>
       {facts.map(([k, v]) => (
         <div key={k} className="min-w-0">
-          <dt className="text-xs text-ink-2">{k}</dt>
-          <dd className="break-words text-[15px] font-semibold leading-snug text-navy">{v}</dd>
+          <dt className="text-xs leading-tight text-ink-2">{k}</dt>
+          <dd className="break-words text-sm font-semibold leading-snug text-navy">{v}</dd>
         </div>
       ))}
     </dl>
@@ -232,8 +237,12 @@ function LoanFacts({ rec, amount, released, extra = [] }: { rec: Extract<PnLooku
 export interface PreviewExtras {
   /** A branch pool item: how long it has waited since it arrived ("Waiting 2 working days · arrived Nov 24"). */
   waiting?: string | null;
-  /** The preview page: Refresh from myloans (API 1 again, past the short cache). */
-  refresh?: boolean;
+  /**
+   * The preview page (D-060, the user's review on 26 November 2026): Refresh from myloans (API 1 again, past the short
+   * cache) in the card header, at the top right beside the "Loan Released" chip and the "myloans · Not yet in DMS" badge
+   * (the badge is not repeated beside the page subtitle).
+   */
+  page?: boolean;
 }
 
 /**
@@ -241,14 +250,14 @@ export interface PreviewExtras {
  * result): name, PN with Copy and the "myloans · Not yet in DMS" badge; the myloans details; Open loan file (only for
  * people who may open loan files: the branch check already ran) and, on the page, Refresh from myloans.
  */
-export function Preview({ r, warnings, waiting = null, refresh = false }: { r: Extract<PnLookupResult, { kind: "preview" }>; warnings: string[] } & PreviewExtras) {
+export function Preview({ r, warnings, waiting = null, page = false }: { r: Extract<PnLookupResult, { kind: "preview" }>; warnings: string[] } & PreviewExtras) {
   const rec = r.record;
   const financing = r.classification === "FINANCING";
   // An amber chip only for what is not fine (no "Your branch" or "Details complete" chips). Another loan of
   // the borrower and a replaced PN already have their own line above the header, so no chip.
   const amber = warnings.length > 0 ? ["Details incomplete"] : [];
   return (
-    <section aria-labelledby="found-title" className="card min-w-0 p-4 sm:px-5 sm:py-4" data-find-preview>
+    <section aria-labelledby="found-title" className="card min-w-0 p-3 sm:px-4 sm:py-3" data-find-preview>
       {/* D-051: no "other loans of this borrower" warning now (the renewal link is Phase B); only a redo myloans names. */}
       {r.replacesPn && (
         <div className="mb-3 flex flex-col gap-1.5" data-preview-warnings>
@@ -257,16 +266,16 @@ export function Preview({ r, warnings, waiting = null, refresh = false }: { r: E
       )}
       {/* As in the old design: name and PN on the left; the status (by name, never the number) and the
           source on the right. The branch and product are in the details, so not repeated. */}
-      <LoanHead name={rec.borrowerName} pn={rec.pn} titleId="found-title">
-        <li><ToneChip tone="ok" check>{statusLabel(rec)}</ToneChip></li>
-        <li data-find-source><NotInDmsBadge className="h-7 px-2.5 text-[13px]" /></li>
+      <LoanHead name={rec.borrowerName} pn={rec.pn} titleId="found-title" action={page ? <RefreshPreviewButton pn={r.pn} /> : undefined}>
+        {/* Compact (the user's review, 26 November 2026): 24px chips, 12px text. */}
+        <li><span className="chip c-ok h-6 gap-1 px-2 text-xs"><CheckIcon size={12} strokeWidth={2.6} />{statusLabel(rec)}</span></li>
+        <li data-find-source><NotInDmsBadge className="h-6 px-2" /></li>
         {amber.map((c) => <li key={c} data-find-amber><ToneChip tone="act">{c}</ToneChip></li>)}
       </LoanHead>
-      {waiting && <p className="mt-2 text-sm text-ink-2" data-preview-waiting>{waiting}</p>}
+      {waiting && <p className="mt-1.5 text-[13px] text-ink-2" data-preview-waiting>{waiting}</p>}
       <LoanFacts rec={rec} amount={peso(r.amount)} released={dayText(rec.releaseDate)} extra={[
         ["CIN", rec.cin?.trim() || "-"],
         ["Classification", `${r.classification === "FINANCING" ? "Financing" : "Refinancing"}${r.classifiedByDefault ? " (classified by default)" : ""}`],
-        ["Status in myloans", statusLabel(rec)],
       ]} />
       {warnings.length > 0 && (
         // Admin's data check: MyLoans left these empty. A warning only; the loan file can still be opened.
@@ -274,9 +283,8 @@ export function Preview({ r, warnings, waiting = null, refresh = false }: { r: E
           <span className="font-semibold">Data check (Admin):</span> {warnings.join(" ")} Opening is not blocked.
         </p>
       )}
-      <div className="mt-4 border-t border-line-soft pt-3.5">
+      <div className="mt-3 border-t border-line-soft pt-3">
         <OpenLoanForm pn={r.pn} financing={financing} canOpen={r.canOpen} facts={{ productName: r.productName, loanType: r.loanType, amount: r.amount }} />
-        {refresh && <div className="mt-3 flex justify-end"><RefreshPreviewButton pn={r.pn} /></div>}
       </div>
     </section>
   );

@@ -90,7 +90,7 @@ async function enterPool(pn: string, r: FeedRowV1, borrowerName: string, now: Da
     if (r.branchCode) await reportUnknownBranchCode(r.branchCode, pn, r.branchName).catch(() => null);
     return "unmatched";
   }
-  await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn, branchId: branch.id, borrowerName, at: now }));
+  await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn, branchId: branch.id, borrowerName, at: now, releasedAt: r.releaseDate ? new Date(r.releaseDate) : null }));
   return "pool";
 }
 
@@ -103,7 +103,7 @@ export async function poolWaitingCandidates(now: Date = new Date()): Promise<num
     if (open.has(c.pn) || held.has(c.pn)) continue;
     const branch = await resolveLoanBranch(prisma, { myloansBranchId: c.myloansBranchId, branchCode: c.branchCode, branchName: c.branchName });
     if (!branch || !branch.active) continue;
-    await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn: c.pn, branchId: branch.id, borrowerName: c.borrowerName, at: now }));
+    await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn: c.pn, branchId: branch.id, borrowerName: c.borrowerName, at: now, releasedAt: c.releaseDate }));
     n++;
   }
   return n;

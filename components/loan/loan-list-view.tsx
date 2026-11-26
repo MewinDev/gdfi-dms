@@ -185,7 +185,7 @@ function Row({ r, seesAmounts }: { r: LoanListItem; seesAmounts: boolean }) {
       <td className={`${td} min-w-[8rem]`} data-col="status">
         <StatusChip c={r.statusChip} /><span className="leading-snug text-ink" title={r.statusTip} data-next-text>{r.statusText}</span>
       </td>
-      <td className={`${td} min-w-[6rem] min-[1440px]:whitespace-nowrap`} data-col="with">{r.withText}</td>
+      <td className={`${td} min-w-[6rem] min-[1440px]:whitespace-nowrap`} data-col="with" title={r.poolText} data-pool-since={r.poolText ? "" : undefined}>{r.withText}</td>
       <td className={`${td} whitespace-nowrap`} data-col="due" data-due>{<Due due={r.due} />}</td>
       <td className={`${td} whitespace-nowrap`} data-col="action"><Action r={r} /></td>
     </tr>
@@ -226,7 +226,8 @@ function Card({ r }: { r: LoanListItem }) {
       {/* The last row: who has it, then when it was released; View details on the right, centred on both lines. */}
       <div className="mt-1 flex min-w-0 items-center justify-between gap-3 border-t border-line-soft pt-2">
         <div className="min-w-0 text-[13px] leading-snug text-ink-2" data-card-meta>
-          <p>Assigned to <span className="font-medium text-ink">{r.withText}</span></p>
+          {/* D-060: a pool loan says how long it has been in the branch pool instead of "Assigned to Branch pool". */}
+          {r.poolText ? <p data-pool-since>{r.poolText}</p> : <p>Assigned to <span className="font-medium text-ink">{r.withText}</span></p>}
           <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1">{r.releasedText}{r.notInDms && <NotInDmsBadge />}</p>
         </div>
         <span className="shrink-0" data-card-action><Action r={r} /></span>

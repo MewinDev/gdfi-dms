@@ -11,7 +11,7 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
 import { setSetting } from "@/lib/settings";
 import { runMyLoansSync, type SyncConfig } from "@/lib/services/myloans-sync";
-import { poolItems } from "@/lib/services/work-items";
+import { poolItems, receiveReleasedLoan } from "@/lib/services/work-items";
 import { acceptWork } from "@/lib/services/inbox";
 import { openLoanFile } from "@/lib/services/loan-file";
 import { unmatchedCandidates } from "@/components/admin/branches/review-card";
@@ -116,6 +116,32 @@ describe("the branch pool (10b)", () => {
       await prisma.workItem.deleteMany({ where: { branchId: b.id } });
       await prisma.branch.delete({ where: { id: b.id } });
     }
+  });
+
+  it("D-060: a pool item never arrives before the loan's release date (the app and the database)", async () => {
+    const PN = "GD1012026970005";
+    // myloans gives a release date later than the sync (a date ahead of the clock): the item arrives at the release.
+    await released(970_005, PN, "101", -2);
+    await sync();
+    const c = await prisma.sourceLoanCandidate.findFirstOrThrow({ where: { pn: PN } });
+    expect((await item(PN))!.arrivedAt.getTime()).toBe(c.releaseDate.getTime());
+    // Any writer (the database rule): an earlier arrival is moved up to the release date.
+    const it = (await item(PN))!;
+    await prisma.workItem.update({ where: { id: it.id }, data: { arrivedAt: new Date(c.releaseDate.getTime() - 10 * DAY) } });
+    expect((await item(PN))!.arrivedAt.getTime()).toBe(c.releaseDate.getTime());
+    // The release date in the myloans copy moves later: the pool item follows it.
+    const later = new Date(c.releaseDate.getTime() + DAY);
+    await prisma.sourceLoanCandidate.update({ where: { id: c.id }, data: { releaseDate: later } });
+    expect((await item(PN))!.arrivedAt.getTime()).toBe(later.getTime());
+    // Earlier than the release is kept as it is when the arrival is later (the normal case).
+    await prisma.workItem.update({ where: { id: it.id }, data: { arrivedAt: new Date(later.getTime() + 3 * DAY) } });
+    expect((await item(PN))!.arrivedAt.getTime()).toBe(later.getTime() + 3 * DAY);
+    // The app's own rule, with no myloans copy to check against (receiveReleasedLoan with the release date).
+    const PN2 = "GD1012026970006";
+    const branch = await prisma.branch.findUniqueOrThrow({ where: { code: "101" } });
+    const rel = new Date(Date.now() + 5 * DAY);
+    const made = await prisma.$transaction((tx) => receiveReleasedLoan(tx, { pn: PN2, branchId: branch.id, borrowerName: "Early Bird", at: new Date(), releasedAt: rel }));
+    expect(made.arrivedAt.getTime()).toBe(rel.getTime());
   });
 
   it("branch scope: an LA of Antipolo and Angono does not see an Alaminos candidate", async () => {
