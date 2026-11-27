@@ -59,13 +59,13 @@ test("one row per loan: the status chip, borrower, PN, transactions as chips, br
   // Header: same size as other pages, one short line and the (i).
   await expect(page.getByRole("heading", { level: 1, name: "Inbox" })).toHaveCSS("font-size", "22px");
   await expect(page.getByRole("main")).toContainText("Your work, least time left first.");
-  await page.locator("[data-inbox-info]").hover();
-  await expect(page.locator("[data-inbox-info-tip]")).toBeVisible();
+  await page.locator("[data-info-tip=inbox]").hover();
+  await expect(page.locator("[data-info-tip-text=inbox]")).toBeVisible();
   // Two lines: My items on top, Branch pool below.
-  const tip = page.locator("[data-inbox-info-tip]");
-  await expect(tip.locator("[data-tip-mine]")).toHaveText("My items = work you've taken.");
-  await expect(tip.locator("[data-tip-pool]")).toHaveText("Branch pool = new work nobody has taken yet.");
-  expect((await tip.locator("[data-tip-pool]").boundingBox())!.y).toBeGreaterThan((await tip.locator("[data-tip-mine]").boundingBox())!.y);
+  const tip = page.locator("[data-info-tip-text=inbox]");
+  await expect(tip.locator("[data-tip-line=mine]")).toHaveText("My items = work you've taken.");
+  await expect(tip.locator("[data-tip-line=pool]")).toHaveText("Branch pool = new work nobody has taken yet.");
+  expect((await tip.locator("[data-tip-line=pool]").boundingBox())!.y).toBeGreaterThan((await tip.locator("[data-tip-line=mine]").boundingBox())!.y);
   const tb = (await tip.boundingBox())!;
   expect(tb.x).toBeGreaterThanOrEqual(0); // never off the screen (a phone too)
   expect(tb.x + tb.width).toBeLessThanOrEqual(width(page));

@@ -1,6 +1,6 @@
 # 13 DP workflow (Phase A)
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 27 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -30,6 +30,7 @@ The Document Processor accepts (or declines, or holds) each transaction sent to 
 | 18 | DP TAT 5 working days (§2.2) | ✅ Built: Notary, PPSR registration, Mortgage 5 working days each (D-056 item 9) [TO CONFIRM] | Settings, Turnaround times | `settings:tat` | Yes | TAT keys | TAT report |
 | 19 | Processor capacity and On leave; Monitoring | ✅ Built (DMS addition) | Monitoring | `monitor:dp`, `dpcapacity:manage` | Capacity | e2e `monitoring.spec.ts` | n/a |
 | 20 | "Set schedule date; group PN #" (older PNG Chart 5 only) | ✅ As decided: not built (Changed by D-020: no scheduling step) | n/a | n/a | n/a | D-020 | n/a |
+| 21 | Jobs page like the Loans page (D-064): status chips with counts (To review, In process, Forwarded, Done, Problems, On hold; default To review and In process), one search (name, part of the PN, CIN), Filters at once (Transaction, Funds, Late only, Sort), rows with Borrower and PN, Branch, Transaction and step, Funds, Sent by, Due, Time left (Amount only with "See loan amounts"), cards on a phone and tablet, the details panel with only the actions allowed now (Accept asks first), keyboard; "Jobs" 22 px with an (i) | ✅ Built | Jobs (`/jobs`) | `jobs:work`; amount: `loans:view_amounts` | Filters and sort (per visit, in the address) | e2e `jobs-compact.spec.ts` at 1440, 1366, 820, 390; unit `lib/jobs/list.test.ts` | Open Jobs: To review and In process chosen; click a row: the panel; Accept asks first |
 
 ## D. Known limits and open questions
 

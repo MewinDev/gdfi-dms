@@ -1,10 +1,15 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import type { CurrentUser } from "@/lib/auth/current-user";
+import { can, type CurrentUser } from "@/lib/auth/current-user";
+import { PERMISSIONS } from "@/lib/auth/permissions";
+import { businessDate, fmtDate } from "@/lib/time";
+import { peso } from "@/lib/ui/plain";
+import { waitingDays } from "@/lib/work/rules";
+import { timeLeft, type TimeLeft } from "@/lib/jobs/list";
 import { getTatMap } from "@/lib/settings";
 import { getCalendar } from "@/lib/calendar/load";
-import { daysFor, type Days } from "@/lib/calendar/core";
+import { daysFor, daysLeft, type Days } from "@/lib/calendar/core";
 import { stepClock, targetOf, txnStepKey } from "@/lib/workflow/tat";
 import type { FundsStatus } from "@/lib/funds/rules";
 import { doneTat, openHold, openProblem, txnFunds, txnTat, txnFundsType } from "@/lib/jobs/view";
@@ -58,11 +63,32 @@ export interface JobRow {
   incomplete: string | null;
   /** Sent back: Declined (before accepting) or Returned to LA (after). */
   returnedHow: "Declined" | "Returned" | null;
+  /**
+   * D-064 (the Jobs list and its details panel): the CIN (search), the product, the LA who sent it, the released amount
+   * (only with "See loan amounts"; never sent otherwise), the funds amounts, the working days left (0 = due today,
+   * negative = late), the "Time left" chip, the waiting time before acceptance, whether it is completed (processing
+   * recorded), its stages, the open hold's owner, and why it came back before (an earlier round returned or declined).
+   */
+  cin: string;
+  product: string;
+  sentBy: string;
+  amount: string | null;
+  fundsDetail: { requested: string | null; released: string | null; liquidationDue: string | null };
+  daysLeft: number | null;
+  timeLeft: TimeLeft | null;
+  waiting: number;
+  completed: boolean;
+  stageCount: number;
+  holdBy: string | null;
+  earlierReturn: string | null;
+  /** Money was released and is now due for liquidation (the Funds filter "To liquidate"). */
+  liquidating: boolean;
 }
 
 const include = {
-  loan: { select: { pn: true, borrowerName: true, replacesPn: true, branchId: true, branch: { select: { name: true, code: true, area: { select: { name: true } } } } } },
+  loan: { select: { pn: true, borrowerName: true, replacesPn: true, branchId: true, cin: true, productName: true, totalReleasedAmount: true, branch: { select: { name: true, code: true, area: { select: { name: true } } } } } },
   dpUser: { select: { name: true } },
+  assignedBy: { select: { name: true } },
   secondaryDpUser: { select: { name: true } },
   pasuyoEvents: { orderBy: { createdAt: "desc" }, take: 1, select: { fromLabel: true, toLabel: true } },
   ltoOffice: { select: { name: true } },
@@ -70,7 +96,9 @@ const include = {
   transaction: {
     include: {
       type: { select: { code: true, name: true } },
-      advanceLines: { include: { advance: { select: { status: true, fundsTypeCode: true, fundsTypeName: true } } } },
+      advanceLines: { include: { advance: { select: { status: true, fundsTypeCode: true, fundsTypeName: true, liquidationDueAt: true } } } },
+      // An earlier round of this transaction that came back (returned to the LA or declined): its reasons.
+      dpAssignments: { where: { status: { in: ["DECLINED", "WITHDRAWN"] } }, orderBy: { closedAt: "desc" }, take: 1, select: { id: true, status: true, returnReasons: true, declineReasons: true, closedAt: true } },
       problems: { include: { reason: { select: { name: true } } }, orderBy: { raisedAt: "desc" } },
       exceptions: { where: { type: "INCOMPLETE_PACKAGE", status: "OPEN" }, select: { reason: true, details: true }, take: 1 },
       holds: { include: { reason: { select: { name: true, pausesTat: true } } }, orderBy: { raisedAt: "desc" } },
@@ -88,7 +116,7 @@ function tabOf(a: { status: string; transaction: { status: string } }): JobTab {
 }
 
 /** Jobs as rows (TAT chip, funds, problem). `where` decides the scope (own jobs, or the Admin report). */
-export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = new Date()): Promise<JobRow[]> {
+export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = new Date(), opts: { seesAmounts?: boolean } = {}): Promise<JobRow[]> {
   const [rows, tats, cal] = await Promise.all([
     prisma.dpAssignment.findMany({ where: { AND: [where, { status: { not: "PULLED_BACK" } }] }, include, orderBy: { endorsedAt: "desc" }, take: 500 }),
     getTatMap(),
@@ -117,8 +145,39 @@ export async function jobRows(where: Prisma.DpAssignmentWhereInput, now: Date = 
       incomplete: tab === "process" && t.exceptions[0] ? ((t.exceptions[0].details as { note?: string } | null)?.note || t.exceptions[0].reason) : null,
       returnedHow: a.status === "DECLINED" ? "Declined" : a.status === "WITHDRAWN" ? "Returned" : null,
       pasuyo: a.secondaryDpUser ? (a.pasuyoEvents[0]?.fromLabel ? `from ${a.pasuyoEvents[0].fromLabel} to ${a.secondaryDpUser.name}` : `to ${a.secondaryDpUser.name}`) : null,
+      ...extras(a, tab, tat, live, h, holidays, now, cal.amberWithinDays ?? 1, !!opts.seesAmounts),
     };
   }));
+}
+
+type Assignment = Prisma.DpAssignmentGetPayload<{ include: typeof include }>;
+
+/** D-064: the Jobs list's and panel's extra fields (see JobRow). */
+function extras(a: Assignment, tab: JobTab, tat: TatChipData | null, due: string | null, h: { raisedById: string | null } | null, days: Days, now: Date, amberWithin: number, seesAmounts: boolean) {
+  const t = a.transaction;
+  const live = t.advanceLines.filter((l) => !l.denied && !["DENIED", "CANCELLED"].includes(l.advance.status));
+  const cents = (n: number) => (n > 0 ? peso(n / 100) : null);
+  const liqDue = live.map((l) => l.advance.liquidationDueAt).filter((d): d is Date => !!d).sort((x, y) => x.getTime() - y.getTime())[0];
+  const n = Number(a.loan.totalReleasedAmount);
+  const today = businessDate(now);
+  const left = due ? daysLeft(due, today, days) : null;
+  const back = t.dpAssignments.find((x) => x.id !== a.id);
+  const why = back ? (back.status === "DECLINED" ? back.declineReasons : back.returnReasons) : null;
+  return {
+    cin: a.loan.cin ?? "", product: a.loan.productName, sentBy: a.assignedBy.name,
+    amount: seesAmounts && Number.isFinite(n) && n > 0 ? peso(n) : null,
+    fundsDetail: {
+      requested: cents(live.reduce((s, l) => s + l.requestedCents, 0)),
+      released: cents(live.reduce((s, l) => s + l.releasedCents, 0)),
+      liquidationDue: liqDue ? fmtDate(businessDate(liqDue)) : null,
+    },
+    daysLeft: left,
+    timeLeft: timeLeft({ tab, tat, daysLeft: left, amberWithin }),
+    waiting: waitingDays(businessDate(a.endorsedAt), a.decidedAt ? businessDate(a.decidedAt) : today, days),
+    completed: !!a.processing, stageCount: a.stages.length, holdBy: h?.raisedById ?? null,
+    liquidating: live.some((l) => ["FOR_LIQUIDATION", "PARTIALLY_LIQUIDATED"].includes(l.advance.status)),
+    earlierReturn: why ? `${back!.status === "DECLINED" ? "Declined" : "Returned to the Loan Associate"}${back!.closedAt ? ` on ${fmtDate(businessDate(back!.closedAt))}` : ""}: ${why}` : null,
+  };
 }
 
 /** The live deadline of the job's current step (no saved due date yet: waiting for acceptance). */
@@ -140,7 +199,7 @@ export function sortByDue<R extends { dueDate: string | null; endorsedAt: Date }
  * The person's jobs: sent to them, or passed to them as the second processor (Pasuyo). Jobs they
  * declined or returned to the LA are left out: those went back to the LA who sent them.
  */
-export const myJobs = (u: CurrentUser) => jobRows({ OR: [{ dpUserId: u.id }, { secondaryDpUserId: u.id }], status: { notIn: ["DECLINED", "WITHDRAWN"] } });
+export const myJobs = (u: CurrentUser) => jobRows({ OR: [{ dpUserId: u.id }, { secondaryDpUserId: u.id }], status: { notIn: ["DECLINED", "WITHDRAWN"] } }, new Date(), { seesAmounts: can(u, PERMISSIONS.LOANS_VIEW_AMOUNTS) });
 
 /** "Do these next": problems first, then overdue, then due today, then jobs to review. */
 export function doNext(rows: JobRow[]): JobRow[] {

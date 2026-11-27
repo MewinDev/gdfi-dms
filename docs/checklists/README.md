@@ -22,7 +22,7 @@ Status values: ✅ Built · ⚠️ Partial · ❌ Missing · ⏸ Blocked (by who
 | 10 | [Open Items and Reference data changes](10-open-items-and-reference-changes.md) | 13 | 1 | 0 | 0 | 1 | 13 / 14 |
 | 11 | [Inbox, branch pool, Accept / Forward, TAT, Move work items](11-inbox-pool-and-tat.md) | 15 | 0 | 0 | 0 | 0 | 15 / 15 |
 | 12 | [LA workflow](12-la-workflow.md) (phase A) | 25 | 1 | 0 | 0 | 1 | 25 / 26 |
-| 13 | [DP workflow](13-dp-workflow.md) (phase A) | 17 | 3 | 0 | 0 | 0 | 17 / 20 |
+| 13 | [DP workflow](13-dp-workflow.md) (phase A) | 18 | 3 | 0 | 0 | 0 | 18 / 21 |
 | 14 | [Finance and funds](14-finance-funds.md) (phase A) | 16 | 2 | 0 | 0 | 0 | 16 / 18 |
 | 15 | [Liquidation](15-liquidation.md) (phase A) | 10 | 1 | 1 | 0 | 0 | 10 / 12 |
 | 16 | [Holds, problems and returns](16-holds-problems-returns.md) (phase A) | 11 | 2 | 0 | 0 | 1 | 11 / 13 |
@@ -34,7 +34,7 @@ Status values: ✅ Built · ⚠️ Partial · ❌ Missing · ⏸ Blocked (by who
 | 22 | [Backup and restore](22-backup-and-restore.md) | 7 | 0 | 0 | 2 | 0 | 7 / 9 |
 | 23 | [Operations](23-operations.md) | 8 | 2 | 1 | 4 | 0 | 8 / 15 |
 | 24 | [Test kit, seed data and demo](24-test-kit-and-demo.md) | 12 | 0 | 0 | 0 | 0 | 12 / 12 |
-| | **Total** | **256** | **25** | **8** | **14** | **15** | **256 / 303 (84%)** |
+| | **Total** | **257** | **25** | **8** | **14** | **15** | **257 / 304 (85%)** |
 
 (Module 19 counts row 0, "filters and export for all reports", as one ⚠️ besides the 19 reports.)
 

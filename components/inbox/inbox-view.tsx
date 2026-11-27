@@ -8,6 +8,7 @@ import { CorrectDueDate } from "@/components/jobs/due-date";
 import { CopyButton } from "@/components/ui/copy-button";
 import { ChevronRightIcon } from "@/components/ui/icons";
 import { Sheet } from "@/components/ui/sheet";
+import { listArrowKeys } from "@/components/ui/list-keys";
 import { NotInDmsBadge } from "@/components/loan/not-in-dms-badge";
 import { MyLoansResult, Preview } from "@/components/loan/myloans-result";
 import { RefreshIconButton } from "@/components/loan/refresh-preview";
@@ -140,22 +141,13 @@ function QuickFilters({ groups, value, onChange }: { groups: InboxGroup[]; value
   );
 }
 
-/** Moves the focus to the next / previous row of the same list (arrow keys, Home, End). */
-function arrowKeys(e: React.KeyboardEvent<HTMLButtonElement>) {
-  const rows = [...(e.currentTarget.closest("ul")?.querySelectorAll<HTMLButtonElement>("[data-inbox-row]") ?? [])];
-  const i = rows.indexOf(e.currentTarget);
-  const to = e.key === "ArrowDown" ? i + 1 : e.key === "ArrowUp" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : null;
-  if (to === null) return;
-  e.preventDefault();
-  rows[Math.max(0, Math.min(rows.length - 1, to))]?.focus();
-}
 
 function Row({ g, tab, refFn, onOpen }: { g: InboxGroup; tab: Tab; refFn: (el: HTMLButtonElement | null) => void; onOpen: () => void }) {
   const due = g.dueText; // with the year (the user's review): "Nov 28, 2026"
   const holder = tab === "away" ? g.items[0].holder : null;
   return (
     <li>
-      <button ref={refFn} type="button" onClick={onOpen} onKeyDown={arrowKeys} aria-haspopup="dialog"
+      <button ref={refFn} type="button" onClick={onOpen} onKeyDown={listArrowKeys} aria-haspopup="dialog" data-list-row
         data-inbox-row={g.key} data-state={g.items[0].state} data-status={g.status?.kind ?? "none"}
         className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 px-3 py-2 text-left hover:bg-fill-soft focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-navy sm:px-4 lg:min-h-12 ${COLS} lg:items-center lg:gap-y-0.5 lg:py-1.5`}>
         {/* Phone and tablet (the user's review): 1. the name with the PN under it; at the top right the status badge

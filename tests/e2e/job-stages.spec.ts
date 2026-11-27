@@ -332,8 +332,9 @@ test("Screens: Settings Processing stages, DP Home with On hold (a returned job 
   await expect(counts.getByRole("link", { name: /Returned/ })).toHaveCount(0);
   await shot(page, "dp-home-hold-returned");
   await noSideways(page);
-  await page.goto("/jobs?tab=process&hold=1");
-  await expect(page.locator("[data-hold-chip]")).toHaveCount(1);
+  await page.goto("/jobs?tab=process&hold=1"); // D-064: an old address, read as the In process and On hold chips
+  await expect(page).toHaveURL(/status=process%2Chold|status=process,hold/);
+  await expect(page.locator("[data-job-row] [data-flag=hold]")).toHaveCount(1);
   await page.goto(`/jobs/${p.id}`);
   await expect(page.getByRole("heading", { name: "This job is no longer with you." })).toBeVisible();
   await noSideways(page);

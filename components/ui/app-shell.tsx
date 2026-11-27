@@ -208,7 +208,8 @@ function SidebarBody({
             <Avatar name={user.name} size={40} tone="gold" />
             <span className="min-w-0 flex-1 leading-[1.35]">
               <span className="block break-words text-sm font-semibold text-white" data-nav-name>{user.name}</span>
-              <span className="block break-words text-[13px] text-white/75" data-nav-role>{user.role}</span>
+              {/* D-064: the role on one line for every role (a long one ends in "…"); the full name in the tooltip. */}
+              <span tabIndex={0} className="block truncate rounded text-[13px] text-white/75 focus-visible:outline-2 focus-visible:outline-gold" data-nav-role {...on(user.role, footPlace(false))}>{user.role}</span>
               {user.branches && (many ? (
                 <span tabIndex={0} className="block w-fit rounded text-xs text-white/75 underline decoration-dotted underline-offset-2" data-nav-branches {...on(user.branchList.join(" · "), footPlace(false))}>
                   {user.branches}<span className="sr-only">: {user.branchList.join(", ")}</span>
