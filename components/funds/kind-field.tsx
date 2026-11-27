@@ -109,26 +109,29 @@ export function OtherDescriptionField({ id, value, onChange, name = "otherDescri
 }
 
 /** The amount, read-only when the kind's amount is fixed, with grey lines saying where it came from. */
-export function AmountInput({ id, value, onChange, locked, source, startCents, name = "amount", label = "Amount (PHP)", overrideNote, invalid }: {
+export function AmountInput({ id, value, onChange, locked, source, startCents, name = "amount", label = "Amount (PHP)", overrideNote, invalid, compact = false, describedBy }: {
   id: string; value: string; onChange: (v: string) => void; locked: boolean; source: AmountSource | null; startCents: number | null; name?: string; label?: string;
   /** Shown when a person who may manage kinds can change a fixed amount for this request. */
   overrideNote?: string; invalid?: boolean;
+  /** D-065: the request panel's line: the label for screen readers only, a narrow box beside the expense's name; the hints are on the line. */
+  compact?: boolean; describedBy?: string;
 }) {
   const c = toCentsLoose(value);
   const was = startCents !== null && c !== null ? presetWas(startCents, c) : "";
+  const box = compact ? "input h-11 min-h-11 w-28 py-0 text-right tabular-nums sm:h-8 sm:min-h-8 sm:text-sm" : "input";
   return (
-    <div data-amount-field>
-      <label htmlFor={id} className="label">{label}</label>
+    <div data-amount-field className={compact ? "shrink-0" : undefined}>
+      <label htmlFor={id} className={compact ? "sr-only" : "label"}>{label}</label>
       {locked ? (
         <>
           <input type="hidden" name={name} value={value} />
-          <p id={id} className="input flex items-center bg-fill" data-locked-amount aria-readonly="true">{value}</p>
+          <p id={id} className={`${box} flex items-center bg-fill ${compact ? "justify-end" : ""}`} data-locked-amount aria-readonly="true">{value}</p>
         </>
       ) : (
-        <input id={id} name={name} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0.00" className="input" aria-invalid={invalid} />
+        <input id={id} name={name} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0.00" className={box} aria-invalid={invalid} aria-describedby={describedBy} />
       )}
-      {source && <p className="text-[12px] text-ink-2" data-amount-source>{sourceHint(source, locked)}</p>}
-      {was && <p className="text-[12px] text-ink-2" data-preset-was>{was}</p>}
+      {!compact && source && <p className="text-[12px] text-ink-2" data-amount-source>{sourceHint(source, locked)}</p>}
+      {!compact && was && <p className="text-[12px] text-ink-2" data-preset-was>{was}</p>}
       {overrideNote && <p className="text-[12px] text-ink-2">{overrideNote}</p>}
     </div>
   );

@@ -95,6 +95,8 @@ export async function requestableJobs(u: CurrentUser) {
     .filter((j) => !j.transaction.advanceLines.some((l) => !l.denied && !["DENIED", "CANCELLED"].includes(l.advance.status)))
     .map((j) => ({
       transactionId: j.transactionId, loanId: j.loanId, loanPn: j.loan.pn, borrower: j.loan.borrowerName, typeName: j.transaction.type.name,
+      // D-065 (My funds as one list): the job, its transaction code and due date.
+      jobId: j.id, typeCode: j.transaction.type.code, dueDate: j.dueDate,
       // Where the processor takes it: the approver judges transport and time from it.
       lto: j.ltoOffice ? { id: j.ltoOffice.id, name: j.ltoOffice.name, estimate: ltoEstimate(j.ltoOffice) } : null,
       kinds: sortKinds(j.transaction.fundsKinds.map((code) => ({ code, sortOrder: kinds.get(code)?.sortOrder ?? 0, name: kinds.get(code)?.name ?? code }))).map(({ code: k }) => {

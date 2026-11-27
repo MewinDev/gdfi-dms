@@ -1,174 +1,52 @@
-import { fileHref } from "@/lib/services/files";
-import { liquidationLineFor } from "@/lib/funds/liquidation";
 import type { Metadata } from "next";
-import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { redirect } from "next/navigation";
 import { requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { cashToSettleIds, notifyOverdue, requestableJobs } from "@/lib/services/funds";
-import { OPEN_ADVANCE, isOverdue, peso } from "@/lib/funds/rules";
-import { allKinds, kindOption, lineKindText } from "@/lib/services/expense-kinds";
-import { can } from "@/lib/auth/current-user";
-import { presetWas } from "@/lib/funds/kinds";
-import { businessDate } from "@/lib/time";
-import { dayText } from "@/lib/ui/plain";
-import { PageHeader, ToneChip } from "@/components/ui/basics";
-import { ConfirmReceiptForm, RequestForm, ReceiptForm, ReturnCashForm, TopUpButton } from "@/components/funds/forms";
-import { AdvanceStatusChip } from "@/components/funds/advance-status";
-import { FundsTypePill } from "@/components/funds/funds-type-pill";
-import { RecordHistory } from "@/components/funds/record-history";
-import { defaultFundsType, maskedAccount, releaseLine } from "@/lib/funds/types";
-import { ScrollFade } from "@/components/ui/scroll-fade";
+import { notifyOverdue } from "@/lib/services/funds";
+import { myFunds } from "@/lib/services/my-funds";
+import { filterFunds, fundsListUrl, parseFundsParams, type FundsRowStatus } from "@/lib/funds/my-list";
+import { InfoTip } from "@/components/ui/info-tip";
+import { MyFundsView } from "@/components/funds/my-funds-view";
 
 export const metadata: Metadata = { title: "My funds" };
 
-const TABS = [["request", "Request"], ["advances", "My advances"], ["liquidation", "Liquidation"]] as const;
+/** Old tab addresses: the same list in the new form (Request: jobs that need funds; Liquidation: what is to liquidate). */
+const OLD_TABS: Record<string, FundsRowStatus[]> = { request: ["needs"], advances: [], liquidation: ["released", "liquidate", "overdue"] };
 
-export default async function MyFundsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+/**
+ * D-065: the processor's My funds, the same design as Loans and Jobs: one list (one row per job that needs funds and
+ * per advance line) with status chips and counts (none chosen: every open one), one search, Filters that apply at once
+ * (Type, Transaction, Late only, Sort), overdue liquidation first, then the soonest due. Request funds and the details
+ * (receipt confirmation, liquidation, return) open in the side panel.
+ */
+export default async function MyFundsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePagePermission(PERMISSIONS.FUNDS_REQUEST);
   await notifyOverdue();
   const sp = await searchParams;
-  const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : "request";
-  const now = new Date();
-  const today = businessDate(now);
-  const [jobs, advances, exception, fundsTypes] = await Promise.all([
-    requestableJobs(user),
-    prisma.cashAdvance.findMany({
-      where: { requestedById: user.id },
-      orderBy: { createdAt: "desc" },
-      include: {
-        lines: { include: { transaction: { include: { loan: { select: { pn: true, borrowerName: true } }, type: { select: { name: true } } } }, receipts: true, returns: true, topUps: true, carryOvers: true } },
-        returns: true,
-        fundsType: { select: { liquidationDueDays: true, mustLiquidate: true, needsAccount: true } },
-      },
-    }),
-    prisma.fundsException.findFirst({ where: { dpUserId: user.id, usedBy: null } }),
-    prisma.fundsType.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true, needsReference: true, needsAccount: true } }),
-  ]);
-  const kindRows = await allKinds();
-  const names = new Map(kindRows.map((k) => [k.code, k.name]));
-  const audit = advances.length ? await prisma.auditLog.findMany({ where: { entityType: "CashAdvance", entityId: { in: advances.map((a) => a.id) } }, orderBy: { at: "asc" }, select: { id: true, entityId: true, summary: true, at: true } }) : [];
-  const historyOf = (id: string) => audit.filter((r) => r.entityId === id).map((r) => ({ id: r.id, text: r.summary, when: dayText(r.at) }));
-  const overdue = advances.filter((a) => isOverdue(a, now));
-  const blocked = overdue.length > 0 && !exception
-    ? `${overdue.map((a) => a.number).join(", ")} ${overdue.length === 1 ? "is" : "are"} overdue and not yet liquidated. Liquidate first, or ask Finance for a one-time exception.`
-    : undefined;
-  const lineLeft = (l: (typeof advances)[number]["lines"][number]) => l.releasedCents - l.receipts.reduce((s, r) => s + r.cents, 0) - l.returns.reduce((s, r) => s + r.cents, 0);
-  const lineLabel = (l: (typeof advances)[number]["lines"][number]) =>
-    `${lineKindText(names, l)}${l.transaction ? ` · ${l.transaction.loan.pn} ${l.transaction.type.name}` : l.note ? ` · ${l.note}` : ""}`;
-  const open = advances.filter((a) => OPEN_ADVANCE.includes(a.status));
-  // The job went back to the LA after the cash was released: still yours to settle.
-  const toSettle = await cashToSettleIds(advances);
-  const settleChip = (id: string) => toSettle.has(id) && <ToneChip tone="act" title="The job went back to the Loan Associate. Record what was spent and return the rest.">Cash to settle</ToneChip>;
+  const p = parseFundsParams(sp);
+  if (typeof sp.tab === "string" && sp.tab in OLD_TABS) redirect(fundsListUrl({ ...p, status: OLD_TABS[sp.tab] }));
+  const f = await myFunds(user);
+  const { rows, counts } = filterFunds(f.rows, p);
+  const txns = [...new Map(f.rows.filter((r) => r.txnCode).map((r) => [r.txnCode!, r.txnName ?? r.txnCode!])).entries()].map(([code, name]) => ({ code, name }));
 
   return (
-    <div className="dense funds-compact flex w-full flex-col gap-4">
-      <PageHeader title="My funds" help="Ask Finance for cash for your jobs, then liquidate with receipts and return the rest." />
-      <ScrollFade><nav aria-label="My funds tabs" className="flex overflow-x-auto border-b border-line" data-scroll-row>
-        {TABS.map(([k, l]) => (
-          <Link key={k} href={`/my-funds?tab=${k}`} aria-current={tab === k ? "page" : undefined} className="tab shrink-0">
-            {l}{k === "liquidation" && open.length > 0 && <span className="ml-1 text-ink-2">{open.length}</span>}
-          </Link>
-        ))}
-      </nav></ScrollFade>
-      {exception && overdue.length > 0 && <p role="status" className="rounded-xl bg-wait-bg px-4 py-3 text-[15px] text-wait-fg">Finance let you submit one more request while an advance is overdue.</p>}
-
-      {tab === "request" && (
-        <section aria-label="Request" className="card p-4 sm:p-5">
-          <RequestForm jobs={jobs} blocked={blocked} types={fundsTypes} defaultTypeId={defaultFundsType(fundsTypes)?.id ?? ""} kinds={kindRows.map(kindOption)} canAddKind={can(user, PERMISSIONS.FUNDS_KINDS_MANAGE)} />
-        </section>
-      )}
-
-      {tab === "advances" && (
-        <section aria-label="My advances" className="flex flex-col gap-3">
-          {advances.length === 0 && <p className="card p-5 text-[15px] text-ink-2">No cash advances yet.</p>}
-          {advances.map((a) => (
-            <article key={a.id} className="card p-4 sm:p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="mr-auto text-[17px] font-bold text-navy">{a.number}</h2>
-                <FundsTypePill code={a.fundsTypeCode} name={a.fundsTypeName} />
-                {settleChip(a.id)}
-                <AdvanceStatusChip status={a.status} overdue={isOverdue(a, now)} />
-              </div>
-              <p className="mt-1 text-[13px] text-ink-2">
-                Asked {peso(a.requestedCents)} on {dayText(a.createdAt)}
-                {a.approvedCents !== null ? ` · approved ${peso(a.approvedCents)}` : ""}
-                {a.releasedAt ? ` · ${a.transferDate || a.accountLast4 ? "sent" : "released"} ${peso(a.releasedCents)} on ${dayText(a.releasedAt)}` : ""}
-                {a.releasedAt && (a.transferDate || a.accountLast4) ? ` (${releaseLine(a)})` : ""}
-                {a.releasedAt && (OPEN_ADVANCE.includes(a.status) || a.daysLate !== null) ? ` · ${liquidationLineFor(a)}` : ""}
-              </p>
-              {!a.releasedAt && a.accountLast4 && <p className="mt-1 text-[13px] text-ink-2" data-request-account>To {a.accountProvider}, {a.accountName}, {maskedAccount(a.accountLast4)}</p>}
-              {a.deniedReason && <p className="mt-1 text-[15px] text-bad-fg">Denied: {a.deniedReason}</p>}
-              {a.fundsType?.needsAccount && a.releasedAt && OPEN_ADVANCE.includes(a.status) && !a.receiptConfirmedAt && (
-                <div className="mt-2 flex flex-col gap-2">
-                  {a.receiptMismatchAt && <p className="text-[13px] font-semibold text-bad-fg" data-receipt-mismatch>It did not match. Finance was told: {a.receiptMismatchNote}</p>}
-                  <ConfirmReceiptForm advanceId={a.id} number={a.number} />
-                </div>
-              )}
-              {a.receiptConfirmedAt && <p className="mt-1 text-[13px] text-ink-2" data-receipt-state>Receipt confirmed.</p>}
-              {a.note && <p className="mt-1 text-[13px] font-semibold text-wait-fg">{a.note}</p>}
-              {a.approvalNote && <p className="mt-1 text-[13px]">Approver&rsquo;s note: {a.approvalNote}</p>}
-              <ul className="mt-2 flex flex-col gap-1.5">
-                {a.lines.map((l) => (
-                  <li key={l.id} className="flex flex-wrap items-center gap-2 border-t border-line pt-1.5 text-[15px]">
-                    <span className="min-w-0 flex-1">{lineLabel(l)} · asked {peso(l.requestedCents)}{presetWas(l.presetCents, l.requestedCents) ? ` (${presetWas(l.presetCents, l.requestedCents)})` : ""}{l.releasedCents ? ` · released ${peso(l.releasedCents)} · left ${peso(lineLeft(l))}` : ""}{l.denied ? " · not approved" : ""}</span>
-                    {l.topUps.filter((t) => t.status === "REQUESTED" || (t.status === "APPROVED" && !t.releasedAt)).map((t) => <ToneChip key={t.id} tone="wait">Top-up {peso(t.extraCents)} {t.status === "REQUESTED" ? "waiting" : "approved"}</ToneChip>)}
-                    {l.carryOvers.filter((c) => c.status === "PENDING").map((c) => <ToneChip key={c.id} tone="wait">Carry-over waiting for approval</ToneChip>)}
-                    {OPEN_ADVANCE.includes(a.status) && !l.denied && <TopUpButton lineId={l.id} label={lineLabel(l)} />}
-                  </li>
-                ))}
-              </ul>
-              <RecordHistory rows={historyOf(a.id)} />
-            </article>
-          ))}
-        </section>
-      )}
-
-      {tab === "liquidation" && (
-        <section aria-label="Liquidation" className="flex flex-col gap-3">
-          {open.length === 0 && <p className="card p-5 text-[15px] text-ink-2">Nothing to liquidate.</p>}
-          {open.map((a) => {
-            const receipts = a.lines.flatMap((l) => l.receipts.map((r) => ({ ...r, label: lineLabel(l) })));
-            const rc = receipts.reduce((s, r) => s + r.cents, 0);
-            const ret = a.returns.reduce((s, r) => s + r.cents, 0);
-            const balance = a.releasedCents - rc - ret;
-            return (
-              <article key={a.id} className="card flex flex-col gap-3 p-4 sm:p-5" data-advance={a.number} data-cash-to-settle={toSettle.has(a.id) || undefined}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="mr-auto text-[17px] font-bold text-navy">{a.number}</h2>
-                  <FundsTypePill code={a.fundsTypeCode} name={a.fundsTypeName} />
-                  {settleChip(a.id)}
-                  <AdvanceStatusChip status={a.status} overdue={isOverdue(a, now)} />
-                </div>
-                {toSettle.has(a.id) && <p className="text-[13px] text-act-fg" data-settle-note>Cash to settle: the job went back to the Loan Associate. Record what was spent (with receipts) and return the unspent cash.</p>}
-                <dl className="grid grid-cols-2 gap-2 text-[15px] sm:grid-cols-4">
-                  <div><dt className="text-[13px] text-ink-2">Released</dt><dd className="font-semibold">{peso(a.releasedCents)}</dd></div>
-                  <div><dt className="text-[13px] text-ink-2">Receipts</dt><dd className="font-semibold">{peso(rc)}</dd></div>
-                  <div><dt className="text-[13px] text-ink-2">Returned</dt><dd className="font-semibold">{peso(ret)}</dd></div>
-                  <div><dt className="text-[13px] text-ink-2">Balance</dt><dd className="font-bold text-navy">{peso(balance)}</dd></div>
-                </dl>
-                <p className="text-[13px] text-ink-2" data-liquidation-line>{liquidationLineFor(a)}.</p>
-                {a.note && <p className="text-[13px] font-semibold text-wait-fg">{a.note}</p>}
-                {balance > 0 && <ReceiptForm lines={a.lines.filter((l) => l.releasedCents > 0).map((l) => ({ id: l.id, label: lineLabel(l), balanceCents: lineLeft(l) }))} today={today} />}
-                {balance > 0 && <ReturnCashForm advanceId={a.id} balanceCents={balance} today={today} />}
-                {receipts.length > 0 && (
-                  <ul className="border-t border-line pt-2 text-[15px]">
-                    {receipts.map((r) => (
-                      <li key={r.id} className="flex flex-wrap gap-x-2">
-                        <span>{dayText(r.date)} · {r.number} · {peso(r.cents)} · {r.label}</span>
-                        {r.fileKey && <a href={fileHref("receipt", r.id)} target="_blank" rel="noopener" className="link">View file</a>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {a.returns.length > 0 && (
-                  <p className="text-[13px] text-ink-2">Returned: {a.returns.map((r) => r.kind === "HANDOVER" ? `${peso(r.cents)} handed to the second processor (Pasuyo) on ${dayText(r.date)}` : `${peso(r.cents)} cash on ${dayText(r.date)}${r.confirmedAt ? " (confirmed)" : " (Finance to confirm)"}`).join("; ")}</p>
-                )}
-              </article>
-            );
-          })}
-        </section>
-      )}
+    <div className="dense funds-compact flex w-full min-w-0 flex-col gap-3" data-my-funds-page>
+      <header className="min-w-0">
+        <h1 className="text-[22px] font-semibold leading-tight text-navy">My funds</h1>
+        <p className="relative mt-0.5 flex items-center gap-1 text-[13px] text-ink-2">
+          Your cash for jobs: request, receive, liquidate.
+          <InfoTip label="About the funds statuses" data="funds" lines={[
+            { text: "Needs funds = a job of yours needs cash; request it.", data: "needs" },
+            { text: "Requested / Approved = Finance is deciding / will release it.", data: "requested" },
+            { text: "Released = the cash is yours; the liquidation clock starts at the LTO pickup.", data: "released" },
+            { text: "To liquidate / Overdue = add the receipts and return the change by the due date.", data: "liquidate" },
+            { text: "Liquidated = done. Returned/cancelled = not approved or cancelled.", data: "done" },
+          ]} />
+        </p>
+      </header>
+      {f.exceptionNote && <p role="status" className="rounded-lg bg-wait-bg px-3 py-2 text-[13px] text-wait-fg" data-exception-note>{f.exceptionNote}</p>}
+      <MyFundsView rows={rows} details={f.details} params={p} counts={counts} txns={txns} today={f.today}
+        request={{ jobs: f.jobs, blocked: f.blocked, types: f.types, defaultTypeId: f.defaultTypeId, kinds: f.kinds, canAddKind: f.canAddKind }} />
     </div>
   );
 }

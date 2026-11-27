@@ -185,12 +185,14 @@ test("Send, Sent card, DP Job page and funds: the office and its estimate where 
 
   // DP: request funds; the line names the office and estimate; Transport comes from the office.
   await page.goto("/my-funds");
+  await page.locator("[data-request-funds]").click(); // D-065: the request form is in the side panel
   await expect(page.locator("[data-lto-line]")).toHaveText("At Z LTO Mandaue · about 25 km · usually 1 hour · suggested transport ₱600");
   await expect(page.getByRole("textbox", { name: /Transport amount/ })).toHaveValue("600.00");
   await expect(page.getByText(/suggested ₱600\.00 \(from the LTO office\)/)).toBeVisible();
   await shot(page, "request-lto-line");
   await noSideways(page);
   await page.getByRole("button", { name: "Send to Finance" }).click();
+  await page.locator('[data-confirm-dialog="request-confirm"] [data-confirm-ok]').click(); // D-065: Send asks first
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
 
   // The office changes after the request: the approver sees both.

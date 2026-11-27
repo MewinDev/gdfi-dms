@@ -75,19 +75,21 @@ test("Settings > Expense kinds: the list, Other explained, add a kind, names uni
 test("Other needs \"What is this expense?\"; Finance adds a new kind and it is selected; a processor has no link", async ({ page }) => {
   await signInWith(page, BUTTONS.dp);
   await page.goto("/my-funds?tab=request");
+  await page.locator("[data-request-funds]").click(); // D-065: the request form is in the side panel
   const row = await addOtherExpense(page, 0, "150", "");
   const send = page.getByRole("button", { name: "Send to Finance" });
   await expect(send).toBeDisabled();
   await expect(page.locator("[data-send-why]")).toContainText("Say what this expense is");
   await expect(row.locator("[data-add-kind]")).toHaveCount(0); // no "Add and manage expense kinds" tick
-  await shot(page, "other-empty", page.getByRole("region", { name: "Request" }));
+  await shot(page, "other-empty", dialog(page));
   await row.getByLabel("What is this expense?").fill("12");
   await expect(row.getByText("Say what this expense is in at least 3 characters.")).toBeVisible();
   await row.getByLabel("What is this expense?").fill("Courier");
   await expect(row).toContainText("7/60");
   await expect(send).toBeEnabled();
-  await shot(page, "other-filled", page.getByRole("region", { name: "Request" }));
+  await shot(page, "other-filled", dialog(page));
   await send.click();
+  await page.locator('[data-confirm-dialog="request-confirm"] [data-confirm-ok]').click(); // D-065: Send asks first
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
   const line = await db.cashAdvanceLine.findFirstOrThrow({ where: { kind: "OTHER" } });
   expect(line.otherDescription).toBe("Courier");
@@ -118,8 +120,10 @@ test("Other needs \"What is this expense?\"; Finance adds a new kind and it is s
 test("Often typed as Other: the suggestion block, Add as a kind", async ({ page }) => {
   await signInWith(page, BUTTONS.dp);
   await page.goto("/my-funds?tab=request");
+  await page.locator("[data-request-funds]").click(); // D-065: the request form is in the side panel
   for (const [i, t] of ["Courier", "courier", "COURIER"].entries()) await addOtherExpense(page, i, "100", t);
   await page.getByRole("button", { name: "Send to Finance" }).click();
+  await page.locator('[data-confirm-dialog="request-confirm"] [data-confirm-ok]').click(); // D-065: Send asks first
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
 
   await signInWith(page, BUTTONS.admin);

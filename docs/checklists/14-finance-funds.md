@@ -1,6 +1,6 @@
 # 14 Finance and funds (CA / FT, approval, release, exceptions, bands)
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 27 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -28,6 +28,7 @@ The processor asks for money for LTO work as a Cash advance (CA) or a Fund trans
 | 16 | Finance TAT: CA release 1 day, FT 1 day; late release counted against Finance | ✅ Built (time to act from arrival, D-046; P3_CA_RELEASE 1 day) | TAT report | `reports:tat` | TAT | D-046 | TAT report, Finance rows |
 | 17 | Fund release report, expense breakdown (v2 §10.3) | ⚠️ Partial: Funds page lists and CSV, by type and status | Funds | Finance | No | module 19, reports 10 to 12 | Download the Funds CSV |
 | 18 | Receipts and amounts visible only with the tick | ✅ Built | Journey | `journey:view_amounts` | Yes | D-034 | An LA sees no amounts |
+| 19 | My funds as one list (D-065): a row per job that needs funds and per advance line; the statuses in Filters (All open by default; Needs funds, Requested, Approved, Released, To liquidate, Liquidation overdue, Liquidated, Returned/cancelled); one search; Filters at once (Type, Transaction, Late only, Sort); rows with Borrower and PN, Transaction, LTO office, Type, Requested, Released, Status, Liquidation due; Request funds in the side panel (several jobs at once, compact lines, Other's description only with an amount, totals, Send asks first, the overdue block and the exception); the advance's panel (FT receipt confirmation, liquidation with the change to return, Ask for more, Open job) | ✅ Built | My funds (`/my-funds`) | `funds:request` | Filters and sort (per visit, in the address) | e2e `my-funds-compact.spec.ts` at 1440, 1366, 820, 390; unit `lib/funds/my-list.test.ts` | Open My funds: All open; tick two jobs, Request funds (2); click a released row: Liquidate |
 
 ## D. Known limits and open questions
 
