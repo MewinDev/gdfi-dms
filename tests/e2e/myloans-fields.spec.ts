@@ -4,7 +4,7 @@ import { signIn, watchConsole, docShot } from "./helpers";
 
 /**
  * The MyLoans account details (docs/myloans/field-map.md): Find a loan shows the short list, names only;
- * the loan file's More loan details (collapsed) shows the full set with codes and IDs.
+ * the loan file's Loan at a glance shows what people need (D-062: no open / close; the codes and IDs for Admin only).
  * Screenshots at 1440, 820 and 390: docs/screenshots/myloans-fields/.
  */
 const DIR = "docs/screenshots/myloans-fields";
@@ -20,7 +20,7 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
-test("Find a loan: the short list, names only; More loan details: the full set with codes and IDs", async ({ page }) => {
+test("Find a loan: the short list, names only; Loan at a glance: what people need; the codes and IDs for Admin", async ({ page }) => {
   const clean = watchConsole(page);
   await signIn(page, "la");
   await page.goto(`/search?q=${PN}`);
@@ -53,40 +53,42 @@ test("Find a loan: the short list, names only; More loan details: the full set w
   await page.evaluate(() => window.scrollTo(0, 0));
   await docShot(page, { path: `${DIR}/find-loan-found-${width(page)}.png`, fullPage: true });
 
-  // Open the loan file; More loan details is collapsed, then shows everything.
+  // Open the loan file. D-062 review: Loan at a glance shows what people need, with no open / close; the codes
+  // and IDs only for people who manage the myloans link.
   await main(page).getByRole("radio", { name: "Undertaking", exact: true }).check({ force: true });
   await main(page).getByRole("radio", { name: "Transferred", exact: true }).check({ force: true });
   await main(page).getByRole("button", { name: "Open loan file" }).click();
   await expect(page).toHaveURL(new RegExp(`/loans/${PN}`));
-  const more = page.locator("[data-more-loan-details]");
-  await expect(more).not.toHaveAttribute("open", "");
-  await expect(more.getByText("Global Dominion Financing Inc.")).toBeHidden();
-  await more.getByText("More loan details").click();
-  await expect(more).toHaveAttribute("open", "");
-
-  const group = (title: string) => more.locator(`[data-more-group="${title}"]`);
-  const row = async (title: string) =>
-    Object.fromEntries(await group(title).locator("dl > div").evaluateAll((ds) => ds.map((d) => [d.querySelector("dt")!.textContent!.trim(), d.querySelector("dd")!.textContent!.trim()])));
-  expect(await row("Identity")).toEqual({ PN, "Source loan ID": "ML-202600003", CIN: "CIN-771003", CIF: "CIF-551003" });
-  expect(await row("Loan")).toEqual({ "Borrower name": "Ana Villanueva", "Amount released": "₱1,000,000", "Released on": expect.stringMatching(/2026/), "Loan type": "Renewal", "Product name": "Auto Financing", "Product code": "AF-001" });
-  expect(await row("Organization")).toEqual({ Company: "1 · Global Dominion Financing Inc.", Division: "1 · Branch Division", Area: "1 · LUZON 1 (NGMA + RIZAL)", Branch: "165 · Angono" });
-  expect(await row("Status")).toEqual({ "Status ID": "12", "Status name": "Loan Released", Active: "Yes" });
-  const src = await row("Source");
-  expect(src).toMatchObject({ Source: "MyLoans", "Opened at": expect.stringContaining("Test Loan Associate") });
-  for (const k of ["Retrieved at", "Last checked", "Last updated in MyLoans"]) expect(src[k]).toMatch(/\d/); // a time, not "-"
+  const glance = page.locator("[data-glance]");
+  await expect(page.getByText("More loan details")).toHaveCount(0);
+  await expect(glance.locator("details, summary")).toHaveCount(0);
+  const fact = (k: string) => glance.locator(`[data-glance-fact="${k}"] dd`);
+  await expect(fact("cin")).toHaveText("CIN-771003");
+  await expect(fact("cif")).toHaveText("CIF-551003");
+  await expect(fact("area")).toHaveText("LUZON 1 (NGMA + RIZAL)");
+  // The status in myloans is a chip beside the due badge in the summary card (not in Loan at a glance).
+  await expect(glance.locator('[data-glance-fact="status"]')).toHaveCount(0);
+  await expect(page.locator("[data-card-identity] [data-myloans-status]").first()).toHaveText(/Loan Released/);
+  await expect(fact("opened")).toContainText("Test Loan Associate");
   // Why this was set up: the rule's title and reason, never a rule number.
-  await expect(more.getByText("Why this was set up")).toBeVisible();
-  await expect(more.locator('[data-rule-why="MORTGAGE_THRESHOLD"]')).toHaveText("Mortgage needed · This is a Renewal loan of ₱1,000,000 or below.");
-  await expect(more).not.toContainText(/Rule \d/);
-  // Two compact columns when the panel is wide enough (34rem); one in the narrow side column. Either way no
-  // value is squeezed: each value is at least 6rem wide and a time stays on a few lines.
-  const [a, b] = [(await group("Identity").boundingBox())!, (await group("Loan").boundingBox())!];
-  const panel = (await more.boundingBox())!;
-  if (panel.width >= 34 * 16) expect(Math.abs(a.y - b.y)).toBeLessThan(2);
-  else expect(b.y).toBeGreaterThan(a.y + a.height - 1);
-  for (const dd of await more.locator("dd").all()) expect((await dd.boundingBox())!.width).toBeGreaterThanOrEqual(90);
-  const updated = (await group("Source").locator("dd").nth(3).boundingBox())!;
-  expect(updated.height).toBeLessThan(80);
+  await expect(glance.locator('[data-rule-why="MORTGAGE_THRESHOLD"]')).toHaveText("Mortgage needed · This is a Renewal loan of ₱1,000,000 or below.");
+  await expect(glance).not.toContainText(/Rule \d/);
+  // Not repeated (the header has them) and no codes for an LA.
+  for (const t of ["Source loan ID", "Product code", "Status ID", "Borrower name", "Product name"]) await expect(glance).not.toContainText(t);
+  await expect(glance.locator("[data-myloans-codes]")).toHaveCount(0);
+  for (const dd of await glance.locator("dd").all()) expect((await dd.boundingBox())!.width).toBeGreaterThanOrEqual(60);
+  await noSideways(page);
+
+  // Admin (myloans:manage): the myloans codes and IDs as well.
+  await signIn(page, "admin");
+  await page.goto(`/loans/${PN}`);
+  const codes = page.locator("[data-myloans-codes]");
+  const code = async () => Object.fromEntries(await codes.locator("dl > div").evaluateAll((ds) => ds.map((d) => [d.querySelector("dt")!.textContent!.trim(), d.querySelector("dd")!.textContent!.trim()])));
+  expect(await code()).toMatchObject({
+    "Source loan ID": "ML-202600003", "Product code": "AF-001", Branch: "165 · Angono", Area: "1 · LUZON 1 (NGMA + RIZAL)",
+    Division: "1 · Branch Division", Company: "1 · Global Dominion Financing Inc.", "Status ID": "12", Active: "Yes",
+  });
+  for (const k of ["Retrieved", "Updated in myloans"]) expect((await code())[k]).toMatch(/\d/); // a time, not "-"
   await noSideways(page);
   await page.evaluate(() => window.scrollTo(0, 0));
   await docShot(page, { path: `${DIR}/more-loan-details-${width(page)}.png`, fullPage: true });

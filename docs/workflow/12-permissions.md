@@ -63,6 +63,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
 | See loan files | Open and read loan files, Home and Updates. Which branches depends on the person's Branch access. | Loans, Loan File, Home, Updates | - | `loans:view` | SUPERADMIN, LA, Admin, DP, Finance, Vault, Digital Records, QA, ARCHIVER, LA Supervisor/Head |
+| See loan amounts | Show a loan's released amount: the loan file, the Loans table and cards, the loan preview, the PN search, Home, the Inbox and Open Items. Without it the amount is not shown and not sent to the browser; the rules that need it still run on the server. | Loan File, Loans, loan preview, PN search, Home, Inbox, Open Items | See loan files | `loans:view_amounts` | SUPERADMIN, LA, Admin, Finance, LA Supervisor/Head |
 | Find a loan | Search the loan files in the DMS, and look up a full PN in MyLoans to see the preview. | Find loan, Search | See loan files | `loans:search` | SUPERADMIN, LA, Admin, LA Supervisor/Head |
 | Open a loan file | Start a new loan file from a MyLoans loan. | Search, Open loan file | Find a loan | `loans:open` | LA, LA Supervisor/Head |
 | Change an automatic result | Supervisor override of the classification and transactions, with a reason. | Loan File, Change an automatic result | See loan files | `rules:override` | SUPERADMIN, Admin |
@@ -154,7 +155,7 @@ Every tick in Settings, Roles, by group, in the order the role editor shows them
 
 | Tick | What it lets the person do | Where it appears | Needs | Technical name | Default roles |
 |---|---|---|---|---|---|
-| See when MyLoans was last checked | Show "MyLoans · Last checked" on a loan file. | Loan File, top strip | See loan files | `myloans:view` | SUPERADMIN, LA, Admin, DP, Finance, Vault, Digital Records, QA, ARCHIVER, LA Supervisor/Head |
+| See when MyLoans was last checked | Show when myloans was last checked on a loan file: in the Refresh button's tooltip, or "myloans checked" in the summary header. | Loan File, summary header | See loan files | `myloans:view` | SUPERADMIN, LA, Admin, DP, Finance, Vault, Digital Records, QA, ARCHIVER, LA Supervisor/Head |
 | Reclassify a loan | When the keyword rules changed after a loan file was opened ("Classification changed since accepted"): apply the new Financing or Refinancing result, with remarks. Sent work never changes. | Loan File, Classification changed since accepted | See loan files | `loans:reclassify` | Admin, LA Supervisor/Head |
 | Refresh a loan from MyLoans (Change; View is See when MyLoans was last checked) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Loan File, Refresh from MyLoans | See when MyLoans was last checked | `loans:refresh` | SUPERADMIN, LA, Admin, DP, Vault, Digital Records, QA, ARCHIVER, LA Supervisor/Head |
 | Review MyLoans changes | Approve or reject Open Items on loan fields (loan type, amount, product, release date, branch, status), for the branches in your access; ask for cash back, link a replacement PN, copy reusable papers. | Loan File, Open items, MyLoans changes | See loan files | `myloans:review` | Admin, LA Supervisor/Head |
@@ -216,6 +217,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | Feature | Where it appears | Permission today | Permission after this pass | Gap |
 |---|---|---|---|---|
 | See loan files | Loans, Loan File, Home, Updates | loans:view | `loans:view` |  |
+| See loan amounts | Loan File, Loans, loan preview, PN search, Home, Inbox, Open Items | loans:view_amounts | `loans:view_amounts` |  |
 | Find a loan | Find loan, Search | loans:search | `loans:search` |  |
 | Open a loan file | Search, Open loan file | loans:open | `loans:open` |  |
 | Change an automatic result | Loan File, Change an automatic result | rules:override | `rules:override` |  |
@@ -272,7 +274,7 @@ One row per feature. **Permission today** is what decided it before the permissi
 | See reference data changes | Settings, Reference data changes | new on 18 November 2026 | `refdata:view` | Split or renamed |
 | See the audit log | Audit log | audit:view | `audit:view` |  |
 | View file access log | Audit, File access log | new on 17 November 2026 | `audit:files` | Split or renamed |
-| See when MyLoans was last checked | Loan File, top strip | loans:view | `myloans:view` | Split or renamed |
+| See when MyLoans was last checked | Loan File, summary header | loans:view | `myloans:view` | Split or renamed |
 | Reclassify a loan | Loan File, Classification changed since accepted | new on 17 November 2026 | `loans:reclassify` | Split or renamed |
 | Refresh a loan from MyLoans | Loan File, Refresh from MyLoans | none (shown to everyone who sees the loan file) | `loans:refresh` | **Gap, closed** |
 | Review MyLoans changes | Loan File, Open items, MyLoans changes | source:review (also Admin by role name) | `myloans:review` | **Gap, closed** |

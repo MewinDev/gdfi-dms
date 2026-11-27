@@ -220,6 +220,8 @@ test("sort by Borrower, Branch, Amount and Due; 25 a page with Previous / Next, 
     if (width(page) >= 1024) { // the Branch column (under 1024px the branch sits under the PN)
       await main(page).locator('[data-sort="branch"] a').click();
       await expect.poll(async () => (await pns(page))[0]).toMatch(/^GD165/); // Angono before Antipolo
+    }
+    if (width(page) >= 1440) { // the Released on column shows from 1440px
       // Released on: the newest first, then the oldest first (Ana, 12 days ago).
       await main(page).locator('[data-sort="released"] a').click();
       await expect(main(page).locator('[data-sort="released"]')).toHaveAttribute("aria-sort", "descending");

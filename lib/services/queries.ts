@@ -1,7 +1,8 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { inScope, loanRelationScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
+import { can, inScope, loanRelationScope, loanScope, type CurrentUser } from "@/lib/auth/current-user";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getTatMap } from "@/lib/settings";
 import { getCalendar } from "@/lib/calendar/load";
 import { daysFor, type WorkCalendar } from "@/lib/calendar/core";
@@ -137,7 +138,8 @@ export interface LoanRow {
   /** The branch's Area ("" when the branch has none yet). */
   area: string;
   releasedAt: Date;
-  amount: number;
+  /** Null without "See loan amounts" (D-062). */
+  amount: number | null;
   classification: string;
   stage: string;
   tat: ReturnType<typeof loanTat>;
@@ -197,7 +199,8 @@ export async function listLoans(user: CurrentUser, f: LoanListFilters, tats?: Ta
     return {
       id: l.id, pn: l.pn, borrowerName: l.borrowerName, loanType: l.loanType, productName: l.productName,
       branch: l.branch.name, branchId: l.branch.id, branchName: l.branch.name, branchCode: l.branch.code, area: l.branch.area?.name ?? "",
-      releasedAt: l.releasedAt, amount: Number(l.totalReleasedAmount),
+      // D-062: only with "See loan amounts".
+      releasedAt: l.releasedAt, amount: can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS) ? Number(l.totalReleasedAmount) : null,
       classification: l.classification, stage: l.stage, tat, nextStep: next,
       // Open problems on jobs count as problems too (red chip on Home and Loans).
       openExceptions: l._count.exceptions + l._count.problems, needsAction, archived: !!l.archivedAt,

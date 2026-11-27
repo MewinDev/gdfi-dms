@@ -1,6 +1,6 @@
 # 04 Settings and customization: the master list
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 26 November 2026 (PHT)
 
 ## A. Purpose and roles
 
@@ -94,6 +94,7 @@ Generated from the code (`VISIBLE_PERMISSION_GROUPS` and `ROLE_DEFAULTS` in `lib
 | Tick (key) | What it allows | Default roles | Where it shows |
 |---|---|---|---|
 | Loans: See loan files (`loans:view`) | Open and read loan files, Home and Updates. Which branches depends on the person's Branch access. | Superadmin, Loan Associate, Admin, Document Processor / Collateral & Mortgage, Finance, Custodian, Digicur, QA, Archiver, LA Supervisor/Head | Loans, Loan File, Home, Updates |
+| Loans: See loan amounts (`loans:view_amounts`, D-062) | Show a loan's released amount: the loan file, the Loans table and cards, the loan preview, the PN search, Home, the Inbox and Open Items. Without it the amount is not shown and not sent to the browser; the rules that need it still run on the server. | Superadmin, Loan Associate, Admin, Finance, LA Supervisor/Head (off for Document Processor, Custodian, Digicur, QA, Archiver and Monitoring) | Loan File, Loans, loan preview, PN search, Home, Inbox, Open Items |
 | Loans: Find a loan (`loans:search`) | Search the loan files in the DMS, and look up a full PN in MyLoans to see the preview. | Superadmin, Loan Associate, Admin, LA Supervisor/Head | Find loan, Search |
 | Loans: Open a loan file (`loans:open`) | Start a new loan file from a MyLoans loan. | Loan Associate, LA Supervisor/Head | Search, Open loan file |
 | Loans: Change an automatic result (`rules:override`) | Supervisor override of the classification and transactions, with a reason. | Superadmin, Admin | Loan File, Change an automatic result |
@@ -150,7 +151,7 @@ Generated from the code (`VISIBLE_PERMISSION_GROUPS` and `ROLE_DEFAULTS` in `lib
 | Reports: See reference data changes (`refdata:view`) | Renames from myloans (area, division, company, branch and product names): applied by themselves and logged, with a notice for each new one. Never an Open Item. | Superadmin, Admin, LA Supervisor/Head | Settings, Reference data changes |
 | Reports: See the audit log (`audit:view`) | Every automatic decision and user action (the technical log). | Superadmin, Admin | Audit log |
 | Reports: View file access log (`audit:files`) | Who opened or downloaded which receipt, stage evidence or LTO proof, and when; filter and export it (each export is logged too). Give it to a Data Protection Officer if needed. | Superadmin, Admin | Audit, File access log |
-| MyLoans and sync: See when MyLoans was last checked (`myloans:view`) | Show "MyLoans · Last checked" on a loan file. | Superadmin, Loan Associate, Admin, Document Processor / Collateral & Mortgage, Finance, Custodian, Digicur, QA, Archiver, LA Supervisor/Head | Loan File, top strip |
+| MyLoans and sync: See when MyLoans was last checked (`myloans:view`) | Show when myloans was last checked on a loan file (D-062: the Refresh icon's tooltip, or "myloans checked" in the summary header). | Superadmin, Loan Associate, Admin, Document Processor / Collateral & Mortgage, Finance, Custodian, Digicur, QA, Archiver, LA Supervisor/Head | Loan File, top strip |
 | MyLoans and sync: Reclassify a loan (`loans:reclassify`) | When the keyword rules changed after a loan file was opened ("Classification changed since accepted"): apply the new Financing or Refinancing result, with remarks. Sent work never changes. | Admin, LA Supervisor/Head | Loan File, Classification changed since accepted |
 | MyLoans and sync: Refresh a loan from MyLoans (`loans:refresh`) | The Refresh from MyLoans button on a loan file: ask MyLoans for the latest copy now. | Superadmin, Loan Associate, Admin, Document Processor / Collateral & Mortgage, Custodian, Digicur, QA, Archiver, LA Supervisor/Head | Loan File, Refresh from MyLoans |
 | MyLoans and sync: Review MyLoans changes (`myloans:review`) | Approve or reject Open Items on loan fields (loan type, amount, product, release date, branch, status), for the branches in your access; ask for cash back, link a replacement PN, copy reusable papers. | Admin, LA Supervisor/Head | Loan File, Open items, MyLoans changes |

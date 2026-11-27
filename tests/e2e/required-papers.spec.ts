@@ -112,7 +112,8 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   // A paper marked Missing still locks Send until its reason and remarks are saved; a paper not yet
   // answered comes first.
   const row = notary.locator("[data-paper-row]", { has: page.getByText(MISSING, { exact: true }) });
-  await row.getByRole("button", { name: "Missing", exact: true }).click();
+  await row.getByRole("button", { name: "More actions" }).click(); // D-062: the row's "⋯" menu
+  await row.getByRole("menuitem", { name: "Mark as missing" }).click();
   await expect(row).toHaveAttribute("data-state", "missing-no-remarks");
   await expect(why).toHaveText("Tick 1 more required paper");
   await notary.getByLabel(LAST).check();
@@ -164,7 +165,9 @@ test("Not ready → ready: ready check, the reason beside Send in order, funds, 
   // Everything met: Send is enabled and names the person; the summary says where it goes.
   await expect(send).toBeEnabled();
   await expect(why).toHaveText("");
-  await expect(notary.getByText(/Notary goes to .+ \(Antipolo\), processed at .+\. Funds: Needs funds \(Notary fee\)\./)).toBeVisible();
+  // D-062: the summary in two lines: where it goes, then the funds.
+  await expect(notary.locator("[data-send-where]")).toHaveText(/^Notary goes to .+ \(Antipolo\), processed at .+\.$/);
+  await expect(notary.locator("[data-send-funds]")).toHaveText(/^Funds: Needs funds \(Notary fee\)\.$/);
   await shot(page, "send-ready");
   await noSideways(page);
 

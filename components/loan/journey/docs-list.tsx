@@ -30,7 +30,7 @@ export function DocsList({ docs }: { docs: DocItem[] }) {
   }, [docs, q]);
   return (
     <section aria-labelledby="docs-h" className="card flex min-w-0 flex-col">
-      <div className="flex flex-col gap-2 border-b border-line p-3 sm:flex-row sm:items-center sm:p-4">
+      <div className="flex flex-col gap-1.5 border-b border-line px-3 py-2 sm:flex-row sm:items-center">
         <h2 id="docs-h" className="text-[17px] font-bold text-navy sm:mr-auto">Papers and who holds them</h2>
         <label className="relative block sm:w-72">
           <span className="sr-only">Find a paper by name or Document ID</span>
@@ -39,14 +39,14 @@ export function DocsList({ docs }: { docs: DocItem[] }) {
         </label>
       </div>
       <p className="sr-only" role="status">{shown.length} paper{shown.length === 1 ? "" : "s"} shown</p>
-      {shown.length === 0 && <p className="p-4 text-[15px] text-ink-2">No paper matches.</p>}
+      {shown.length === 0 && <p className="p-3 text-[13px] text-ink-2">No paper matches.</p>}
       <ul>
         {shown.map((d) => (
           <li key={d.id} className="border-t border-line first:border-t-0" data-doc={d.documentId ?? d.id}>
             <details className="group">
-              <summary className="flex min-h-12 cursor-pointer list-none flex-col gap-1 px-3 py-2.5 hover:bg-fill sm:flex-row sm:items-center sm:gap-3 sm:px-4">
+              <summary className="flex min-h-11 cursor-pointer list-none flex-col gap-0.5 px-3 py-1.5 hover:bg-fill sm:min-h-9 sm:flex-row sm:items-center sm:gap-3">
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[15px] font-semibold">{d.label} <span className="tag">{d.original ? "Original" : "Copy"}</span></span>
+                  <span className="block text-[13px] font-semibold">{d.label} <span className="tag">{d.original ? "Original" : "Copy"}</span></span>
                   <span className="block text-[13px] text-ink-2">
                     {d.documentId ? <span className="mono">{d.documentId}</span> : "No Document ID yet"}{d.txnName ? ` · ${d.txnName}` : ""}
                   </span>
@@ -56,7 +56,7 @@ export function DocsList({ docs }: { docs: DocItem[] }) {
                   <span className="block text-ink-2">{d.place ? `${d.place} · ` : ""}since {d.sinceText}</span>
                 </span>
               </summary>
-              <div className="flex flex-col gap-3 border-t border-line bg-fill px-3 py-3 sm:px-4">
+              <div className="flex flex-col gap-2 border-t border-line bg-fill px-3 py-2">
                 {d.trail.length === 0 ? <p className="text-[13px] text-ink-2">No hand-overs recorded yet.</p> : (
                   <ol aria-label={`Custody trail of ${d.label}`} className="relative flex flex-col gap-2.5 border-l-2 border-line pl-4">
                     {d.trail.map((m) => (

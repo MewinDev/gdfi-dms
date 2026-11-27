@@ -57,7 +57,8 @@ test("LA marks a paper Missing: Send blocked naming it, remarks saved, sent; DP 
 
   // Missing: the small box opens right under the row, red until the remarks are saved.
   const row = notary.locator("[data-paper-row]", { has: page.getByText(MISSING, { exact: true }) });
-  await row.getByRole("button", { name: "Missing", exact: true }).click();
+  await row.getByRole("button", { name: "More actions" }).click(); // D-062: the row's "⋯" menu
+  await row.getByRole("menuitem", { name: "Mark as missing" }).click();
   await expect(row).toHaveAttribute("data-state", "missing-no-remarks");
   await expect(row.locator("[data-missing-tag]")).toHaveText("Missing, remarks needed");
   const why = notary.locator('[id^="send-why-"]');
@@ -135,7 +136,8 @@ test("vault gate with exceptions on the loan file, and Monitoring, Has missing p
   const notary = await openNotary(page);
   for (const item of REQUIRED) await notary.getByLabel(item).check();
   const row = notary.locator("[data-paper-row]", { has: page.getByText(MISSING, { exact: true }) });
-  await row.getByRole("button", { name: "Missing", exact: true }).click();
+  await row.getByRole("button", { name: "More actions" }).click(); // D-062: the row's "⋯" menu
+  await row.getByRole("menuitem", { name: "Mark as missing" }).click();
   const form = row.locator("[data-remarks-form]");
   await form.locator("[data-reason-chips] label", { hasText: "Not yet issued by the agency" }).click();
   await form.getByLabel("Remarks", { exact: true }).fill("Waiting for the agency to issue it.");

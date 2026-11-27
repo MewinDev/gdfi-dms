@@ -17,7 +17,7 @@ test.beforeEach(async () => {
   await resetLoans();
 });
 
-const wide = (page: Page) => page.viewportSize()!.width >= 1100;
+const wide = (page: Page) => page.viewportSize()!.width >= 1280; // D-062: the side column from 1280px
 async function shot(page: Page, name: string, fullPage = true) {
   await docShot(page, { path: `${DIR}/${name}-${page.viewportSize()?.width ?? 0}.png`, fullPage });
 }
@@ -103,8 +103,9 @@ test("On hold shows the reason and the remarks everywhere, with soft colours", a
   await expect(form.getByLabel("Reason category (required)")).toBeVisible();
   await expect(form.getByLabel("Remarks (required)")).toBeVisible();
   await expect(form.locator('input[type="date"], input[type="datetime-local"]')).toHaveCount(0); // no expected resume date
-  await expect(form).toContainText("No expected resume date. The date and time are recorded by the system (PHT).");
-  await expect(form.locator("[data-now-line]")).toHaveText(/^Starts now: .+ PHT$/);
+  // D-062: no date and time line in the form (the server still records them; the summary shows them after saving).
+  await expect(form.locator("[data-now-line]")).toHaveCount(0);
+  await expect(form).not.toContainText("No expected resume date");
   await form.getByLabel("Reason category (required)").selectOption({ label: "Other" });
   await expect(save).toBeDisabled(); // a reason alone is not enough
   await form.getByLabel("Remarks (required)").fill("No D");
@@ -150,12 +151,14 @@ test("On hold shows the reason and the remarks everywhere, with soft colours", a
   await shot(page, "check-documents-held-mortgage");
   await noSideways(page);
 
-  // Loan File, To do: the calm On hold banner above the Next step card, with Resume; the clock note once.
+  // Loan File, To do: the On hold card (the problems card's pattern) above the Next step card, a row per
+  // transaction with Resume; "On hold" and the clock note once, in its heading.
   await page.goto(`/loans/${PN}?tab=todo`);
+  await expect(page.locator("#holds-h")).toContainText("On hold");
   const banner = page.locator("[data-holds-banner]");
   await expect(banner.locator("[data-hold-summary]")).toHaveCount(1);
   await expect(banner.locator("[data-hold-txn]")).toHaveText("Mortgage");
-  await expect(banner.locator("[data-hold-title]")).toHaveText("On hold: Other");
+  await expect(banner.locator("[data-hold-title]")).toHaveText("Mortgage · Other"); // D-062: a row of the On hold card
   await expect(banner.locator("blockquote[data-remarks]")).toHaveText(REMARKS);
   await expect(banner.getByRole("button", { name: "Resume" })).toBeVisible();
   await expect(page.getByText("The TAT clock keeps running")).toHaveCount(1);

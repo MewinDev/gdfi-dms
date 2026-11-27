@@ -34,7 +34,7 @@ async function openPn(page: Page, pn = PN) {
 }
 async function refresh(page: Page, pn = PN) {
   await page.goto(`/loans/${pn}?tab=todo`);
-  await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from MyLoans" }).click();
+  await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from myloans" }).click();
   await page.waitForLoadState("networkidle");
 }
 async function noSideways(page: Page) {

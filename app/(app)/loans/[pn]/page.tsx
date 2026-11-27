@@ -2,7 +2,7 @@ import type { Days } from "@/lib/calendar/core";
 import { storedRuleWording } from "@/lib/rules";
 import { ReclassifyForm } from "@/components/admin/classification-form";
 import { classificationChangedText } from "@/lib/services/classification";
-import { statusLabel } from "@/lib/myloans/status";
+import { recordStatusKind, statusLabel } from "@/lib/myloans/status";
 import type { Metadata } from "next";
 import { txnFundsType } from "@/lib/jobs/view";
 import Link from "next/link";
@@ -17,14 +17,16 @@ import { openJobCounts, processors } from "@/lib/services/monitoring";
 import { advisoryWarnings } from "@/lib/services/lto-advisories";
 import { availability, leaveText } from "@/lib/monitoring/rules";
 import { dayText, deadlineChip, liveAssignment, peso, plainMessage, timeAgo, txnName } from "@/lib/ui/plain";
-import { STEP_COUNT, stageLabel, stepperOf, type StepperAt } from "@/lib/workflow/stage-map";
+import { STEP_COUNT, stageLabel, stepName, stepperOf, type StepperAt } from "@/lib/workflow/stage-map";
 import { Banner, ToneChip } from "@/components/ui/basics";
 import { AlertIcon, PauseIcon } from "@/components/ui/icons";
-import { PageTop } from "@/components/loan/page-top";
+import { LoanIdentity, LoanSummaryHeader, type LoanSummary } from "@/components/loan/loan-summary-header";
+import { loanHolder } from "@/lib/services/loan-holder";
+import { seesReleasedAmounts } from "@/lib/services/loan-list";
 import { openedAt } from "@/lib/pn/opened-at";
 import { Stepper } from "@/components/ui/stepper";
 import { FixProblem, ReportProblem, WorkCard, type Line, type SendOptions } from "@/components/loan/work";
-import { OverrideForm, RefreshButton } from "@/components/loan/forms";
+import { OverrideForm } from "@/components/loan/forms";
 import { JourneyTab } from "@/components/loan/journey/journey-tab";
 import { DocCard, type PaperCard } from "@/components/loan/documents-tab";
 import { PAPERS_FILTERS, countText, custodyLine, emptyText, filterCounts, filterPapers, papersFilterOf, shortCode, whereOf } from "@/lib/ui/documents-tab";
@@ -120,9 +122,23 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
   const withHold = live.map((t) => openHold(t.holds)).find((h) => !!h);
   const loanHold = withHold ? { reason: holdReasonName(withHold), days: Math.max(1, holdDays([withHold], ctx.holidays)) } : null;
 
+  // D-062: the loan summary (header; on Check documents the top of the transactions card).
+  const summary: LoanSummary = {
+    pn: loan.pn, borrower: loan.borrowerName, branch: loan.branch.name, product: loan.productName?.trim() ?? "",
+    loanType: loan.loanType?.trim() ?? "", classification: loan.classification === "FINANCING" ? "Financing" : loan.classification === "REFINANCING" ? "Refinancing" : "",
+    amount: seesReleasedAmounts(user) ? peso(Number(loan.totalReleasedAmount)) : null,
+    releasedOn: dayText(loan.releasedAt), opened, replacesPn: loan.replacesPn, replacedByPn: loan.replacedByPn,
+    // Check documents' card: who has it (the Loans table's Assigned to rule).
+    holder: await loanHolder(loan),
+    status: { text: statusLabel({ statusId: loan.sourceStatusId, statusName: loan.sourceStatusName, status: loan.sourceStatus }), released: recordStatusKind({ statusId: loan.sourceStatusId, status: loan.sourceStatus }) === "released" },
+  };
+  const source = {
+    loanId: loan.id, lastChecked: fmtShort(loan.lastCheckedAt ?? loan.retrievedAt), current: loan.sourceCurrent,
+    view: can(user, PERMISSIONS.MYLOANS_VIEW), refresh: can(user, PERMISSIONS.LOANS_REFRESH), paused: await getSetting("myloans.paused"),
+  };
   return (
-    <div className="dense flex w-full flex-col gap-4 lg:-mx-2 lg:-mt-2">
-      <PageTop
+    <div className="dense loan-compact flex w-full max-w-[1440px] flex-col gap-3 text-sm lg:-mx-2 lg:-mt-2">
+      <LoanSummaryHeader
         crumbs={[
           { label: "Home", href: "/dashboard" },
           { label: "Loans", href: "/loans" },
@@ -130,12 +146,11 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
           ...(workTxn ? [{ label: "Check documents" }] : []),
         ]}
         back={workTxn ? { label: "Loan File", href: `${base}?tab=todo` } : { label: "Loans", href: "/loans" }}
-        title={workTxn ? "Check documents" : "Loan File"}
-        subtitle={workTxn
-          ? <>{txnName(workTxn.type.code, workTxn.type.name)} · {loan.borrowerName} · <span className="mono" data-pn>{loan.pn}</span></>
-          : <>{loan.borrowerName} · <span className="mono" data-pn>{loan.pn}</span> · {loan.branch.name} · {peso(Number(loan.totalReleasedAmount))} · {loan.loanType}</>}
-        note={!workTxn && opened ? <span className={opened.differs ? "font-semibold text-navy" : undefined}>{opened.text}</span> : undefined}
-        right={workTxn ? null : dl && <ToneChip tone={dl.tone}>{dl.text}</ToneChip>}
+        s={summary}
+        due={dl}
+        step={workTxn ? "Check documents" : stepTitle(loan.stage)}
+        source={source}
+        identity={!workTxn}
       />
 
       {notice && <Banner tone={notice.tone}>{notice.text}</Banner>}
@@ -148,12 +163,13 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
       )}
       {correction && <p className="-mt-1" data-borrower-chip><ToneChip tone="wait">{BORROWER_CHIP}</ToneChip></p>}
       {loan.cancelledAt && <Banner tone="bad">Closed: {loan.cancelReason ?? "Cancelled in MyLoans"} ({fmtDateTime(loan.cancelledAt)}). Nothing was deleted.</Banner>}
-      <SourceStrip loan={loan} view={can(user, PERMISSIONS.MYLOANS_VIEW)} refresh={can(user, PERMISSIONS.LOANS_REFRESH)} paused={await getSetting("myloans.paused")} />
       {!la && <Banner tone="wait">You are viewing this loan file. Your role does not include the steps on it.</Banner>}
 
       {!workTxn && <Stepper at={step} problem={loanProblem} hold={loanHold} />}
 
-      <nav aria-label="Loan file sections" className={`border-b border-line ${workTxn ? "hidden sm:flex" : "flex"}`}>
+      {/* D-062 review: the tabs stay pinned under the top bar while the page scrolls (one tap to another tab, at every
+          width, Check documents on a phone included). */}
+      <nav aria-label="Loan file sections" className="sticky top-14 z-20 -mx-4 -mt-1 flex border-b border-line bg-cream px-4 sm:mx-0 sm:px-0 md:top-[72px]" data-loan-tabs>
         {tabs.map((t) => (
           <Link key={t.key} href={`${base}?tab=${t.key}`} aria-current={tab === t.key ? "page" : undefined} className="tab flex-1 justify-center sm:flex-none">
             {t.label}
@@ -161,7 +177,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
         ))}
       </nav>
 
-      {tab === "todo" && workTxn && <WorkView loan={loan} ctx={ctx} user={user} selected={workTxn} pending={pending} />}
+      {tab === "todo" && workTxn && <WorkView loan={loan} ctx={ctx} user={user} selected={workTxn} pending={pending} identity={(id: string) => <LoanIdentity id={id} s={summary} due={dl} source={source} />} />}
       {tab === "todo" && !workTxn && (
         <>
           {copySources.map((c) => <CopyReusablePapers key={c.pn} loanId={loan.id} oldPn={c.pn} mode={c.options[0].mode} options={c.options} />)}
@@ -169,7 +185,7 @@ export default async function LoanFilePage({ params, searchParams }: { params: P
         </>
       )}
       {tab === "documents" && <DocumentsTab loan={loan} papers={sp.papers} />}
-      {tab === "journey" && <JourneyTab loan={loan} user={user} params={{ journey: sp.journey, show: sp.show, txn: sp.txn, flag: sp.flag, order: sp.order, log: sp.log, sys: sp.sys, na: sp.na, scope: sp.scope }} />}
+      {tab === "journey" && <div className="w-full min-w-0"><JourneyTab loan={loan} user={user} params={{ journey: sp.journey, show: sp.show, txn: sp.txn, flag: sp.flag, order: sp.order, log: sp.log, sys: sp.sys, na: sp.na, scope: sp.scope }} /></div>}
     </div>
   );
 }
@@ -273,8 +289,8 @@ async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; c
   const today = businessDate(now);
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_352px] xl:items-start">
-      <div className="flex min-w-0 flex-col gap-4">
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+      <div className="flex min-w-0 flex-col gap-3">
         {problems.length > 0 && (
           <section aria-labelledby="problems" className="rounded-xl border border-bad-line bg-bad-bg px-3 py-2.5 sm:px-3.5" data-problems-card>
             <h2 id="problems" className="flex items-center gap-1.5 text-sm font-bold text-bad-fg"><AlertIcon size={15} strokeWidth={2.4} />{problems.length === 1 ? "There is a problem to fix" : `There are ${problems.length} problems to fix`}</h2>
@@ -322,16 +338,22 @@ async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; c
         )}
 
         {held.length > 0 && (
-          <section aria-labelledby="holds-h" className="flex flex-col gap-2" data-holds-banner>
-            <h2 id="holds-h" className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-base font-bold text-ink">
-              <span className="inline-flex items-center gap-1.5"><span className="text-hold-fg"><PauseIcon size={16} strokeWidth={2.4} /></span>On hold{held.length > 1 ? ` (${held.length})` : ""}</span>
-              <span className="text-[13px] font-normal text-ink-2" data-clock-note>{CLOCK_NOTE}</span>
+          // D-062 review: the problems card's pattern: one soft amber card, one heading ("On hold", how many, the clock
+          // note once), then a white list with a row per transaction (its reason, remarks, who and when, Resume).
+          <section aria-labelledby="holds-h" className="rounded-xl border border-hold-line bg-hold-bg px-3 py-2.5 sm:px-3.5" data-holds-banner>
+            <h2 id="holds-h" className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-bold text-hold-fg">
+              <PauseIcon size={14} strokeWidth={2.4} />{held.length === 1 ? "On hold" : `On hold (${held.length})`}
+              <span className="text-xs font-normal text-ink-2" data-clock-note>· {CLOCK_NOTE}</span>
             </h2>
-            {held.map(({ t, h, transfer }) => (
-              <HoldSummary key={h.id} id={`open-${h.id}`} hold={holdBrief(h)} now={now.toISOString()} txnName={txnName(t.type.code, t.type.name)}
-                canResume={mayResume(user, loan, t)} canAddDetails={mayAddDetails(h, user)} transfer={transfer}
-                resumeClass={ns.waiting && held.length === 1 ? "btn-gold btn-sm" : "btn-ghost btn-sm"} />
-            ))}
+            <ul className="mt-1.5 flex flex-col divide-y divide-line overflow-hidden rounded-lg border border-line-soft bg-white">
+              {held.map(({ t, h, transfer }) => (
+                <li key={h.id} className="px-3 py-2">
+                  <HoldSummary inList id={`open-${h.id}`} hold={holdBrief(h)} now={now.toISOString()} txnName={txnName(t.type.code, t.type.name)}
+                    canResume={mayResume(user, loan, t)} canAddDetails={mayAddDetails(h, user)} transfer={transfer}
+                    resumeClass={ns.waiting && held.length === 1 ? "btn-gold btn-xs" : "btn-ghost btn-xs"} />
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 
@@ -341,13 +363,13 @@ async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; c
               <p className="text-xs font-bold uppercase tracking-[0.08em] text-ink-2">Next step</p>
               {step.current && <span className="text-xs text-ink-2">· Step {step.current} of {STEP_COUNT}</span>}
             </div>
-            <h2 id="next" className="text-[15px] font-bold leading-snug text-navy">{ns.title}</h2>
+            <h2 id="next" className="text-base font-bold leading-snug text-navy">{ns.title}</h2>
             <p className="text-[13px] text-ink-2">{ns.help}</p>
           </div>
           {la && (ns.primary || ns.secondary) && (
             <div className="flex shrink-0 flex-col gap-1 sm:items-end">
               {ns.primary && (
-                <Link href={ns.primary.href} className="btn-gold min-h-11 w-full px-4 text-sm sm:min-h-9 sm:w-auto">
+                <Link href={ns.primary.href} className="btn-gold min-h-11 w-full px-4 text-sm sm:w-auto md:min-h-9">
                   {ns.primary.label}
                 </Link>
               )}
@@ -358,7 +380,7 @@ async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; c
 
         {/* Every transaction in its fixed order; the Next step one is tagged (its text is in the card above). */}
         {live.length > 1 && (
-          <section aria-labelledby="all-txns-todo" className="card px-4 pb-1 pt-3 sm:px-5" data-all-txns>
+          <section aria-labelledby="all-txns-todo" className="card px-3 pb-1 pt-2.5 sm:px-4" data-all-txns>
             <h2 id="all-txns-todo" className="mb-1 text-base font-bold text-navy">All transactions ({live.length})</h2>
             <ul>
               {live.map((t, i) => {
@@ -367,15 +389,15 @@ async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; c
                 return (
                   <li key={t.id} className="border-t border-[rgb(12_35_64/0.1)]" data-txn-row={t.type.code} data-next={next ? "true" : undefined}>
                     <Link href={`${base}?tab=todo&tx=${t.type.code}`}
-                      className={`-mx-2 flex min-h-14 items-start gap-3 rounded-lg px-2 py-2 text-inherit no-underline ${next ? "bg-gold-soft shadow-[inset_3px_0_0_var(--gold)]" : "hover:bg-fill"}`}>
+                      className={`-mx-2 flex min-h-11 items-start gap-2.5 rounded-lg px-2 py-1.5 text-inherit no-underline ${next ? "bg-gold-soft shadow-[inset_3px_0_0_var(--gold)]" : "hover:bg-fill"}`}>
                       <span aria-hidden="true" className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${t.status === "COMPLETED" ? "bg-ok-bg text-ok-fg" : next ? "bg-gold text-navy" : "bg-fill-strong text-navy"}`}>{i + 1}</span>
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-2">
-                          <span className="text-[15px] font-semibold">{txnName(t.type.code, t.type.name)}</span>
+                          <span className="text-sm font-semibold">{txnName(t.type.code, t.type.name)}</span>
                           {next && <span className="chip c-act h-5 px-2 text-[11px]" data-next-tag>Next step</span>}
                         </span>
-                        <span className="mt-1 block"><TxnStatusChips s={s} /></span>
-                        {!next && <span className="mt-0.5 block text-[13px] text-ink-2" data-status-line>{s.line}</span>}
+                        <span className="mt-0.5 block"><TxnStatusChips s={s} /></span>
+                        {!next && <span className="block text-xs text-ink-2" data-status-line>{s.line}</span>}
                       </span>
                     </Link>
                   </li>
@@ -384,18 +406,17 @@ async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; c
             </ul>
           </section>
         )}
+        {/* D-062 review: the Supervisor's override sits in the left column under All transactions, on its own. */}
+        {can(user, PERMISSIONS.RULES_OVERRIDE) && (
+          <OverrideForm loanId={loan.id} current={{ classification: loan.classification, financingType: loan.financingType, orcrStatus: loan.orcrStatus, mortgage: loan.mortgageResult }} />
+        )}
       </div>
 
-      <aside className="flex flex-col gap-4">
+      <aside className="flex flex-col gap-3">
         <AtAGlance loan={loan} ctx={ctx} user={user} />
         {related}
-        {la && (
-          <section aria-label="Something wrong?" className="flex min-h-12 items-center gap-2.5 rounded-[14px] border border-line px-4 py-1.5">
-            <span className="text-ink-2"><AlertIcon size={18} /></span>
-            <span className="flex-1 text-[15px] text-ink">Something wrong?</span>
-            <ReportProblem loanId={loan.id} missingTxns={missingTxns} compact />
-          </section>
-        )}
+        {/* D-062 review: the whole row opens Report a problem (no separate button). */}
+        {la && <ReportProblem loanId={loan.id} missingTxns={missingTxns} row />}
       </aside>
     </div>
   );
@@ -414,84 +435,70 @@ function problemTitle(type: string) {
   }
 }
 
+/**
+ * D-062 (the user's review): Loan at a glance, one compact card with no open / close. What people need to work the
+ * loan: Type, Mortgage needed, OR/CR, Send by, CIN, CIF, Area, Opened (when, by whom) and Why this
+ * was set up. Not repeated: what the header already shows (PN, borrower, amount, release date, loan type, product).
+ * The raw myloans codes and IDs (source loan ID, product code, branch / area / division / company IDs, status ID,
+ * active, retrieved and updated times) only for people who manage the myloans link ("myloans:manage", Admin).
+ */
 function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser }) {
   const type = loan.classification === "FINANCING" ? `Financing · ${loan.financingType === "UNDERTAKING" ? "Undertaking" : "Non-Undertaking"}` : "Refinancing";
   const orcr = loan.orcrStatus ? (loan.orcrStatus === "TRANSFERRED" ? "Transferred" : "Untransferred") : "Not asked";
   const mortgage = loan.mortgageResult === "MORTGAGE" ? "Yes" : loan.mortgageResult === "NOT_MORTGAGE" ? "No" : "Not checked";
   const today = businessDate(new Date());
   const deadline = ctx.deadline === today ? `Today, ${dayText(ctx.deadline, { year: false })}` : `${dayText(ctx.deadline, { year: false })}${ctx.pastDay2 ? " (passed)" : ""}`;
-  // "Classified by default" (D-031): no keyword matched; a small label, never a block.
-  const facts: [string, string][] = [["Type", loan.classifiedByDefault ? `${type} (classified by default)` : type], ["Mortgage needed", mortgage], ["OR/CR", orcr], ["Send by", deadline]];
-  const changed = classificationChangedText(loan);
-  const snap = loan.snapshots[0];
-  const why = storedRuleWording(loan.ruleFired);
-  // The full MyLoans account set, with codes and IDs (docs/myloans/field-map.md): the one everyday place
-  // that shows branch code, area ID, division ID, company ID and status ID.
   const v = (x: string | null | undefined) => x?.trim() || "-";
-  const pair = (id: string | null, name: string | null) => (id || name ? [id, name].filter(Boolean).join(" · ") : "-");
-  const more: { title: string; rows: [string, React.ReactNode][] }[] = [
-    { title: "Identity", rows: [["PN", <span key="pn" className="mono">{loan.pn}</span>], ["Source loan ID", v(loan.sourceLoanId)], ["CIN", v(loan.cin)], ["CIF", v(loan.cif)]] },
-    { title: "Loan", rows: [
-      ["Borrower name", loan.borrowerName], ["Amount released", peso(Number(loan.totalReleasedAmount))], ["Released on", dayText(loan.releasedAt)],
-      ["Loan type", loan.loanType], ["Product name", loan.productName || "(blank)"], ["Product code", v(loan.productCode)],
-    ] },
-    { title: "Organization", rows: [
-      ["Company", pair(loan.sourceCompanyId, loan.sourceCompanyName)], ["Division", pair(loan.sourceDivisionId, loan.sourceDivisionName)],
-      ["Area", pair(loan.sourceAreaId, loan.sourceAreaName)], ["Branch", pair(loan.sourceBranchCode, loan.sourceBranchName)],
-    ] },
-    { title: "Status", rows: [
-      ["Status ID", v(loan.sourceStatusId)], ["Status name", statusLabel({ statusId: loan.sourceStatusId, statusName: loan.sourceStatusName, status: loan.sourceStatus })],
-      ["Active", loan.sourceIsActive === null ? "-" : loan.sourceIsActive ? "Yes" : "No"],
-    ] },
-    { title: "Source", rows: [
-      ["Source", loan.source], ["Retrieved at", fmtDateTime(loan.retrievedAt)], ["Last checked", loan.lastCheckedAt ? fmtDateTime(loan.lastCheckedAt) : "-"],
-      ["Last updated in MyLoans", loan.sourceUpdatedAt ? fmtDateTime(loan.sourceUpdatedAt) : "-"], ["Opened at", `${fmtDateTime(loan.openedAt)} by ${loan.openedBy.name}`],
-    ] },
+  // "Classified by default" (D-031): no keyword matched; a small label, never a block.
+  const facts: [string, string, string][] = [
+    ["Type", loan.classifiedByDefault ? `${type} (classified by default)` : type, "type"], ["Mortgage needed", mortgage, "mortgage"],
+    ["OR/CR", orcr, "orcr"], ["Send by", deadline, "send-by"],
+    ["CIN", v(loan.cin), "cin"], ["CIF", v(loan.cif), "cif"],
+    ["Area", v(loan.sourceAreaName), "area"],
+    ["Opened", `${dayText(loan.openedAt, { year: false })} · ${loan.openedBy.name}`, "opened"],
   ];
+  const changed = classificationChangedText(loan);
+  const why = storedRuleWording(loan.ruleFired);
+  // The myloans codes and IDs (docs/myloans/field-map.md): for the people who manage the myloans link only.
+  const pair = (id: string | null, name: string | null) => (id || name ? [id, name].filter(Boolean).join(" · ") : "-");
+  const codes: [string, React.ReactNode][] | null = can(user, PERMISSIONS.SOURCE_MANAGE) ? [
+    ["Source loan ID", v(loan.sourceLoanId)], ["Product code", v(loan.productCode)],
+    ["Branch", pair(loan.sourceBranchCode, loan.sourceBranchName)], ["Area", pair(loan.sourceAreaId, loan.sourceAreaName)],
+    ["Division", pair(loan.sourceDivisionId, loan.sourceDivisionName)], ["Company", pair(loan.sourceCompanyId, loan.sourceCompanyName)],
+    ["Status ID", v(loan.sourceStatusId)], ["Active", loan.sourceIsActive === null ? "-" : loan.sourceIsActive ? "Yes" : "No"],
+    ["Retrieved", fmtDateTime(loan.retrievedAt)], ["Updated in myloans", loan.sourceUpdatedAt ? fmtDateTime(loan.sourceUpdatedAt) : "-"],
+  ] : null;
   return (
-    <section aria-labelledby="glance" className="card flex flex-col gap-3 p-4 sm:p-5">
-      <h2 id="glance" className="text-[17px] font-bold text-navy">Loan at a glance</h2>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-        {facts.map(([k, v]) => (
-          <div key={k} className="min-w-0">
-            <dt className="text-[13px] text-ink-2">{k}</dt>
-            <dd className="mt-0.5 text-[15px] font-bold leading-snug text-navy">{v}</dd>
+    <section aria-labelledby="glance" className="card flex flex-col gap-2 p-3" data-glance>
+      <h2 id="glance" className="text-sm font-bold text-navy">Loan at a glance</h2>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5" data-glance-facts>
+        {facts.map(([k, val, key]) => (
+          <div key={k} className="min-w-0" data-glance-fact={key}>
+            <dt className="text-[11px] leading-[14px] text-ink-2">{k}</dt>
+            <dd className="text-[13px] font-semibold leading-[18px] text-ink [overflow-wrap:anywhere]">{val}</dd>
           </div>
         ))}
-      </dl>
-      {loan.classifiedByDefault && !changed && <p className="text-[13px] text-ink-2" data-classified-by-default>Classified by default: the product name has no Financing or Refinancing keyword (Settings, Product classification).</p>}
-      {changed && <ReclassifyForm loanId={loan.id} pn={loan.pn} text={changed} becomesFinancing={loan.classificationNow === "FINANCING"} canReclassify={can(user, PERMISSIONS.LOANS_RECLASSIFY)} />}
-      {/* Collapsed: the full set from MyLoans, grouped, two compact columns. */}
-      <details className="group @container border-t border-line pt-2" data-more-loan-details>
-        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold text-navy [&::-webkit-details-marker]:hidden">
-          More loan details
-          <span aria-hidden="true" className="text-ink-2 transition-transform group-open:rotate-180">▾</span>
-        </summary>
-        {/* Two columns when the panel is wide enough (its own width, not the screen's); one in the narrow side column. */}
-        <div className="mt-2 grid gap-x-6 gap-y-3 text-sm @[34rem]:grid-cols-2">
-          {more.map((g) => (
-            <section key={g.title} aria-label={g.title} className="min-w-0" data-more-group={g.title}>
-              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-2">{g.title}</h4>
-              <dl className="flex flex-col gap-1">
-                {g.rows.map(([k, val]) => (
-                  <div key={k} className="grid grid-cols-[minmax(6.5rem,40%)_minmax(0,1fr)] gap-x-3 border-b border-line/60 pb-1">
-                    <dt className="text-ink-2">{k}</dt>
-                    <dd className="min-w-0 [overflow-wrap:anywhere] text-right">{val}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
-          <div className="@[34rem]:col-span-2">
-            {/* The stored rule key (old records: the old sentence) in today's words: lib/rules/names.ts. */}
-            <p className="text-ink-2">Why this was set up</p>
-            <p className="mt-0.5" data-rule-why={why.key ?? ""}>{why.line.title && <><span className="font-semibold text-navy">{why.line.title}</span> · </>}{why.line.text}</p>
-            <p className="mt-1 text-xs text-ink-2">MyLoans copy saved {fmtDateTime(snap?.retrievedAt)} ({snap?.adapter ?? "-"}).</p>
-          </div>
+        {/* D-062 review: a divider line above "Why this was set up". */}
+        <div className="col-span-2 mt-0.5 min-w-0 border-t border-line pt-1.5" data-glance-fact="why">
+          {/* The stored rule key (old records: the old sentence) in today's words: lib/rules/names.ts. */}
+          <dt className="text-[11px] leading-[14px] text-ink-2">Why this was set up</dt>
+          <dd className="text-[13px] leading-[18px] text-ink" data-rule-why={why.key ?? ""}>{why.line.title && <><span className="font-semibold text-navy">{why.line.title}</span> · </>}{why.line.text}</dd>
         </div>
-      </details>
-      {can(user, PERMISSIONS.RULES_OVERRIDE) && (
-        <OverrideForm loanId={loan.id} current={{ classification: loan.classification, financingType: loan.financingType, orcrStatus: loan.orcrStatus, mortgage: loan.mortgageResult }} />
+      </dl>
+      {loan.classifiedByDefault && !changed && <p className="text-xs text-ink-2" data-classified-by-default>Classified by default: the product name has no Financing or Refinancing keyword (Settings, Product classification).</p>}
+      {changed && <ReclassifyForm loanId={loan.id} pn={loan.pn} text={changed} becomesFinancing={loan.classificationNow === "FINANCING"} canReclassify={can(user, PERMISSIONS.LOANS_RECLASSIFY)} />}
+      {codes && (
+        <section aria-label="myloans codes" className="border-t border-line pt-2" data-myloans-codes>
+          <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-2">myloans codes</h3>
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
+            {codes.map(([k, val]) => (
+              <div key={k} className="min-w-0" data-code={k}>
+                <dt className="text-[11px] leading-[14px] text-ink-2">{k}</dt>
+                <dd className="text-xs leading-4 text-ink [overflow-wrap:anywhere]">{val}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
       )}
     </section>
   );
@@ -553,7 +560,7 @@ function nextAfter(loan: LoanDetail, t: Txn): { href: string; name: string } | n
   return n ? { href: `/loans/${loan.pn}?tab=todo&tx=${n.type.code}`, name: txnName(n.type.code, n.type.name) } : null;
 }
 
-async function WorkView({ loan, ctx, user, selected, pending }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; selected: Txn; pending: Awaited<ReturnType<typeof loanOpenItems>> }) {
+async function WorkView({ loan, ctx, user, selected, pending, identity }: { loan: LoanDetail; ctx: Ctx; user: CurrentUser; selected: Txn; pending: Awaited<ReturnType<typeof loanOpenItems>>; identity: (id: string) => React.ReactNode }) {
   const la = can(user, PERMISSIONS.CHECKLIST_TICK);
   const live = loan.transactions.filter((t) => t.status !== "CANCELLED");
   const opens = openItemsFor(loan, ctx.holidays);
@@ -670,6 +677,28 @@ async function WorkView({ loan, ctx, user, selected, pending }: { loan: LoanDeta
     finish: finishTarget ? { targetId: finishTarget, edst: selected.type.code === "EDST", markDone: laCustom } : undefined,
   };
 
+  // D-062: the one-line hint in the transaction's header (the step's button is the Send panel's own, never a second one). The
+  // "Do this now" card stays only for what needs its own controls (a hold, a problem, papers handed back, the
+  // processor's findings); ticking and sending are said once, in the header.
+  const nowStep = steps.find((x) => x.state === "now") ?? null;
+  const CARD_KINDS = ["hold", "problem", "confirm", "fix", "resend"];
+  const showCard = !!nowStep && CARD_KINDS.includes(nowStep.kind);
+  const after = !finishTarget ? null : selected.type.requiresDp ? "send to DP" : laCustom ? "mark it as done" : "record the EDST reference";
+  const doneText = !finishTarget ? null : selected.type.requiresDp ? "All required papers are ticked: choose a processor below and send it to DP."
+    : laCustom ? "All required papers are ticked: mark it as done." : "All required papers are ticked: enter it in EDST and record the reference.";
+  const fixedText = (() => {
+    switch (nowStep?.kind) {
+      case "hold": return hold ? `On hold: ${holdReasonName(hold)}. Resume it above when what it waits on has arrived.` : "On hold.";
+      case "problem": return "Fix the problem above first. The TAT clock keeps running.";
+      case "confirm": return "Confirm the papers the processor handed back (above), then go on.";
+      case "fix": return "Get the returned paper, tick it again, then send it again.";
+      case "resend": return "Fix what the processor found (above), then send it again.";
+      case "missing": return doNow.missing ? `Waiting for ${doNow.missing.papers.join(", ")}. It closes by itself when ticked.` : null;
+      default: return null;
+    }
+  })();
+  const guide = steps.length === 0 || steps.every((x) => x.state === "done") ? null : { text: fixedText, after, done: doneText };
+
   // Open items: only what the card does not already say (other transactions, MyLoans changes).
   const covered = coveredOpenKinds(steps);
   const rows = [...(pending.length ? [sourceRow(loan.pn, pending)] : []), ...backRows(loan, user), ...openRows(loan, opens, user)]
@@ -691,21 +720,22 @@ async function WorkView({ loan, ctx, user, selected, pending }: { loan: LoanDeta
     : [];
 
   return (
-    <div className="grid gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_310px] min-[1100px]:items-start">
+    <div className="grid gap-3 min-[1280px]:grid-cols-[minmax(0,1fr)_320px] min-[1280px]:items-start">
       <StoredToast key={`toast-${selected.id}`} />
       <LiveToast />
       <LiveAnnouncer />
       <FocusFromUrl />
-      <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-3">
       <SelectionFocus key={`focus-${selected.id}`} headingId={`w-${selected.id}`} />
-      {steps.length > 0 && <DoThisNow key={`now-${selected.id}`} {...doNow} />}
-      {/* Tablet and phone: the transactions as a strip (only the strip scrolls sideways), then the checklist. */}
-      <div className="flex min-w-0 flex-col gap-3 min-[1100px]:hidden">
-        <TxnStrip items={items} selected={selected.type.code} summary={summary} />
+      {/* Tablet and phone: the transactions as a strip first (only the strip scrolls sideways; D-062: before the card, so
+          choosing a transaction stays near the top), then the "Do this now" card, then the checklist. */}
+      <div className="flex min-w-0 flex-col gap-2 min-[1280px]:hidden">
+        <TxnStrip items={items} selected={selected.type.code} summary={summary} details={identity("loan-id-strip")} />
         <OpenItemsCard rows={rows} selected={selected.type.code} collapsible />
       </div>
+      {showCard && <DoThisNow key={`now-${selected.id}`} {...doNow} />}
       <LockedArea locked={locked} id={`lock-${selected.id}`}>
-      <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-3">
       <WorkCard
         // Keyed on the transaction only: saving the last tick (For checklist → Ready) must not wipe the funds or processor choice.
         key={`work-${selected.id}`}
@@ -725,6 +755,7 @@ async function WorkView({ loan, ctx, user, selected, pending }: { loan: LoanDeta
         assignmentText={jobCard ? null : assignmentText}
         edstReference={selected.edstReference}
         send={send}
+        guide={guide}
       />
       {poolText && <PoolTakeBack transactionId={selected.id} text={poolText} canTake={la && can(user, PERMISSIONS.DP_SEND) && inScope(user, loan.branchId)} />}
       {jobCard && <TxnJobPanel loan={loan} txn={selected} user={user} tats={ctx.tats} cal={ctx.cal} statusText={assignmentText} />}
@@ -737,9 +768,9 @@ async function WorkView({ loan, ctx, user, selected, pending }: { loan: LoanDeta
       {/* Phone: room for the pinned Send bar, so everything below the panel can scroll above it. */}
       {send && la && PRE_SEND.includes(selected.status) && <div aria-hidden="true" className="h-36 sm:hidden" />}
       </div>
-      <aside aria-label="Transactions on this loan file" className="hidden min-w-0 flex-col gap-3 self-start min-[1100px]:flex" data-side-column>
+      <aside aria-label="Transactions on this loan file" className="hidden min-w-0 flex-col gap-3 self-start min-[1280px]:flex" data-side-column>
         <OpenItemsCard rows={rows} selected={selected.type.code} />
-        <TxnSideList items={items} selected={selected.type.code} summary={summary} />
+        <TxnSideList items={items} selected={selected.type.code} summary={summary} details={identity("loan-id-side")} />
       </aside>
     </div>
   );
@@ -756,10 +787,7 @@ async function LaHoldStrip({ txn, user }: { txn: Txn; user: CurrentUser }) {
   const reasons = await prisma.holdReason.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, code: true } });
   if (!reasons.length) return null;
   return (
-    <section aria-label="Waiting on something?" className="flex min-h-12 flex-wrap items-center gap-2.5 rounded-[14px] border border-line px-4 py-1.5">
-      <span className="flex-1 text-[15px] text-ink">Waiting on the borrower or someone else?</span>
-      <PutOnHoldForm transactionId={txn.id} reasons={reasons} />
-    </section>
+    <PutOnHoldForm transactionId={txn.id} reasons={reasons} row />
   );
 }
 
@@ -788,19 +816,23 @@ function DocumentsTab({ loan, papers }: { loan: LoanDetail; papers?: string }) {
     }];
   });
   return (
-    <div className="@container flex min-w-0 flex-col gap-3" data-documents-tab data-papers={filter}>
-      <p className="text-sm text-ink-2">{withId.length} of {loan.documents.length} papers have a Document ID.</p>
-      <div role="group" aria-label="Show papers" className="inline-flex self-start overflow-hidden rounded-lg border border-line-strong" data-papers-filter>
-        {PAPERS_FILTERS.map((f) => (
-          <Link key={f.key} href={`${base}?tab=documents${f.key === "all" ? "" : `&papers=${f.key}`}`} scroll={false} aria-current={filter === f.key ? "true" : undefined}
-            className={`inline-flex min-h-11 items-center gap-1.5 px-3 text-sm font-semibold no-underline sm:min-h-8 ${filter === f.key ? "bg-navy text-white" : "bg-white text-navy hover:bg-fill"}`} data-papers-filter-option={f.key}>
-            {f.label}<span className={`tabular-nums text-xs ${filter === f.key ? "text-white/80" : "text-ink-2"}`}>{counts[f.key]}</span>
-          </Link>
-        ))}
+    // D-062 review: the whole width; the filter and the count on one line.
+    <div className="@container flex w-full min-w-0 flex-col gap-2" data-documents-tab data-papers={filter}>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div role="group" aria-label="Show papers" className="inline-flex self-start overflow-hidden rounded-lg border border-line-strong" data-papers-filter>
+          {PAPERS_FILTERS.map((f) => (
+            <Link key={f.key} href={`${base}?tab=documents${f.key === "all" ? "" : `&papers=${f.key}`}`} scroll={false} aria-current={filter === f.key ? "true" : undefined}
+              className={`inline-flex min-h-11 items-center gap-1.5 px-3 text-[13px] font-semibold no-underline sm:min-h-8 ${filter === f.key ? "bg-navy text-white" : "bg-white text-navy hover:bg-fill"}`} data-papers-filter-option={f.key}>
+              {f.label}<span className={`tabular-nums text-xs ${filter === f.key ? "text-white/80" : "text-ink-2"}`}>{counts[f.key]}</span>
+            </Link>
+          ))}
+        </div>
+        <p className="text-[13px] text-ink-2">{withId.length} of {loan.documents.length} papers have a Document ID.</p>
       </div>
       {cards.length === 0
         ? <p className="card p-4 text-sm text-ink-2" data-papers-empty>{emptyText(filter)}</p>
-        : <div className="grid min-w-0 grid-cols-1 items-start gap-3 @min-[960px]:grid-cols-2" data-doc-grid>{cards.map((c) => <DocCard key={c.id} c={c} />)}</div>}
+        // Cards flow in balanced columns (two from 960 px of width): each sits right under the one above, no gaps.
+        : <div className="min-w-0 columns-1 gap-3 @min-[960px]:columns-2 [&>*]:mb-3 [&>*]:break-inside-avoid" data-doc-grid>{cards.map((c) => <DocCard key={c.id} c={c} />)}</div>}
     </div>
   );
 }
@@ -922,25 +954,10 @@ function sourceRow(pn: string, items: Awaited<ReturnType<typeof loanOpenItems>>)
   };
 }
 
-/**
- * "MyLoans · Last checked 2:10 PM" (myloans:view) with Refresh (loans:refresh), and the replacement links.
- * Without the ticks the strip stays tidy: no line, no button (never a dead button).
- */
-function SourceStrip({ loan, view, refresh, paused }: { loan: LoanDetail; view: boolean; refresh: boolean; paused: boolean }) {
-  const when = fmtShort(loan.lastCheckedAt ?? loan.retrievedAt);
-  if (!view && !refresh && !loan.replacesPn && !loan.replacedByPn) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]" data-source-strip>
-      {loan.replacesPn && <Link href={`/loans/${loan.replacesPn}`} className="chip c-navy h-7 no-underline" data-replaces>Replaces {loan.replacesPn}</Link>}
-      {loan.replacedByPn && <Link href={`/loans/${loan.replacedByPn}`} className="chip c-navy h-7 no-underline" data-replaced-by>Replaced by {loan.replacedByPn}</Link>}
-      <span className="flex-1" />
-      {view && paused && <span className="chip c-wait h-auto min-h-7 whitespace-normal py-1" data-myloans-paused>MyLoans calls are paused by Admin</span>}
-      {view && (loan.sourceCurrent
-        ? <span className="text-ink-2" data-last-checked>MyLoans · Last checked {when}</span>
-        : <span className="chip c-act h-auto min-h-7 whitespace-normal py-1" data-last-checked>Last checked {when}. MyLoans did not answer.</span>)}
-      {refresh && <RefreshButton loanId={loan.id} />}
-    </div>
-  );
+/** The current step for the header's small heading: the stage map's step name, or the stage's own word. */
+function stepTitle(stage: string): string {
+  const at = stepperOf(stage);
+  return at.current ? stepName(at.current) : at.word ?? stageLabel(stage);
 }
 
 /** Rows of the Open items card: words, since when, the one action, and where pressing it goes (?tx=). */

@@ -32,7 +32,7 @@ const TAG_TEXT = { REPLACES: "Replaces this loan", REPLACED_BY: "Replaced by thi
 
 export async function relatedPanel(user: CurrentUser, loan: Parameters<typeof relatedLoans>[1]): Promise<{ rows: RelatedRow[]; hidden: number }> {
   const all = await relatedLoans(prisma, loan);
-  const seesAmounts = can(user, PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
+  const seesAmounts = can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS); // D-062: the loans' amounts
   const canReview = can(user, PERMISSIONS.SOURCE_REVIEW);
   const visible = all.filter((r) => inScope(user, r.loan.branchId));
   const names = new Map((await prisma.branch.findMany({ where: { id: { in: [loan.branchId, ...visible.map((r) => r.loan.branchId)] } }, select: { id: true, name: true } })).map((b) => [b.id, b.name]));

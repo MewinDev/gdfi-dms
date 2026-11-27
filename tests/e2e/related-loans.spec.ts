@@ -73,7 +73,7 @@ test("Same borrower: Related loans says Same borrower (no guessed tag, D-051); C
   await expect(related(page)).toContainText("Related loans (1)");
   await expect(related(page).locator('[data-related-row="SAME_BORROWER"]')).toContainText(OLD);
   await expect(related(page).locator('[data-related-row="SAME_BORROWER"]')).toContainText("Same borrower");
-  await expect(related(page)).not.toContainText("₱"); // no amounts without journey:view_amounts
+  await expect(related(page)).toContainText("₱"); // D-062: an LA has "See loan amounts" (loans:view_amounts) by default
   await related(page).scrollIntoViewIfNeeded();
   await shot(page, "related-additional");
   await noSideways(page);
@@ -103,7 +103,7 @@ test("Replacement named by myloans (a redo: same CIN, the old copy cancelled): l
 
   await signInWith(page, BUTTONS.admin);
   await page.goto(`/loans/${OLD}?tab=todo`);
-  await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from MyLoans" }).click();
+  await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from myloans" }).click();
   await expect(page.getByText("Changes found: an Open Item waits for an approver.")).toBeVisible();
   // myloans redid it: a new PN with the same CIN (D-051). The old loan's status item waits; the link is made by hand.
   await newPn("GD1012026909302");

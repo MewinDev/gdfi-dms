@@ -36,7 +36,7 @@ async function openPn(page: Page, pn = PN) {
   await expect(page).toHaveURL(new RegExp(`/loans/${pn}`));
 }
 async function refresh(page: Page) {
-  await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from MyLoans" }).click();
+  await page.locator("[data-source-strip]").getByRole("button", { name: "Refresh from myloans" }).click();
 }
 
 test.beforeEach(async () => {

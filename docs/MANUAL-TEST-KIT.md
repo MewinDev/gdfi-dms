@@ -1,6 +1,6 @@
 # Manual Test Kit
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 27 November 2026 (PHT)
 
 Test GDFI DMS by hand from zero. The kit puts your own database (`gdfi_dms`) in a clean state: the settings, the branches and the sign-in accounts below, and a list of PNs that exist only in the sample MyLoans. Nothing is opened yet: you search each PN and open it yourself. The automated tests use another database (`gdfi_dms_test`).
 
@@ -185,7 +185,7 @@ Use any opened loan with a job sent to a processor. What you should see is in th
 ### MyLoans account details (11 November 2026)
 
 17. **Find a loan, account details.** As **LA Angono**, find any Angono PN from the list above and read the card: the chips and the two rows of details.
-18. **More loan details.** Open that loan file, then open **More loan details** under Loan at a glance.
+18. **Loan at a glance.** Open that loan file and read **Loan at a glance** (no open / close). Then sign in as **Admin** and open the same loan file.
 19. **Feed quality (Admin).** As **Admin**, open Settings, MyLoans sync and read **Account details missing**. Then find an Angono PN on Find a loan as Admin.
 
 ### Find a loan, local first (11 November 2026)

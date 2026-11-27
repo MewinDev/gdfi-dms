@@ -41,7 +41,7 @@ export function DocCard({ c }: { c: PaperCard }) {
   const [open, setOpen] = useState(c.openOnPhone);
   const body = useId();
   return (
-    <section aria-labelledby={`${body}-h`} className="card @container min-w-0 self-start overflow-hidden" data-doc-card={c.code} data-open={open ? "" : undefined}>
+    <section aria-labelledby={`${body}-h`} className="card @container min-w-0 overflow-hidden" data-doc-card={c.code} data-open={open ? "" : undefined}>
       {/* Phone: the header opens and closes the card; the count stays visible when closed. */}
       <h2 className="sm:hidden">
         <button type="button" aria-expanded={open} aria-controls={body} onClick={() => setOpen(!open)}
@@ -52,12 +52,12 @@ export function DocCard({ c }: { c: PaperCard }) {
         </button>
       </h2>
       {/* Tablet and desktop: a static header. */}
-      <div className="hidden min-h-11 items-center gap-2 border-b border-line px-3 py-1.5 sm:flex">
+      <div className="hidden min-h-9 items-center gap-2 border-b border-line px-3 py-1 sm:flex">
         <h2 id={`${body}-h`} className="min-w-0 truncate text-[15px] font-bold text-navy">{c.name}</h2>
         <span className="shrink-0 text-xs tabular-nums text-ink-2" data-card-count>{c.count}</span>
       </div>
       <div id={body} className={`${open ? "" : "hidden"} border-t border-line sm:block sm:border-t-0`}>
-        <div aria-hidden="true" className="hidden items-center gap-2 border-b border-line bg-fill/50 px-3 py-1 text-xs text-ink-2 sm:flex">
+        <div aria-hidden="true" className="hidden items-center gap-2 border-b border-line bg-fill/50 px-3 py-0.5 text-[11px] text-ink-2 sm:flex">
           <span className={`grid min-w-0 flex-1 items-center gap-2 ${COLS}`}>
             <span>Paper</span><span>Type</span><span className="hidden @min-[520px]:block">ID</span><span>Where</span>
           </span>
@@ -80,7 +80,7 @@ function PaperItem({ r }: { r: PaperRow }) {
   const dim = r.where.kind === "not-yet";
   return (
     <li className="border-t border-line first:border-t-0" data-paper-row data-where-kind={r.where.kind}>
-      <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-fill/60 sm:h-[34px] sm:py-0" data-paper-line>
+      <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-fill/60 sm:h-8 sm:py-0" data-paper-line>
         <button type="button" aria-expanded={open} aria-controls={`${id}-d`} onClick={() => setOpen(!open)} title={r.custody}
           className={`flex min-w-0 flex-1 flex-col gap-0.5 rounded-md text-left text-[13px] sm:grid sm:items-center sm:gap-2 ${COLS}`} data-row-toggle>
           <span className="flex min-w-0 items-center gap-1.5 sm:contents">

@@ -96,7 +96,7 @@ export default async function LoanPreviewPage({ params, searchParams }: { params
           <p className="flex items-center gap-1.5"><span className="font-mono text-sm text-ink-2">{pn}</span><CopyButton text={pn} label={`Copy PN ${pn}`} /></p>
           {waiting && <p className="mt-2 text-sm text-ink-2" data-preview-waiting>{waiting}</p>}
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 md:grid-cols-4">
-            {([["CIN", cand?.cin ?? "-"], ["Branch", cand?.branchName ?? "-"], ["Product", cand?.productName ?? "-"], ["Amount released", cand?.amount ? peso(Number(cand.amount)) : "-"], ["Released on", cand ? dayText(cand.releaseDate) : "-"]] as const).map(([k, v]) => (
+            {([["CIN", cand?.cin ?? "-"], ["Branch", cand?.branchName ?? "-"], ["Product", cand?.productName ?? "-"], ...(can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS) ? [["Amount released", cand?.amount ? peso(Number(cand.amount)) : "-"] as const] : []), ["Released on", cand ? dayText(cand.releaseDate) : "-"]] as const).map(([k, v]) => (
               <div key={k} className="min-w-0"><dt className="text-xs text-ink-2">{k}</dt><dd className="break-words text-[15px] font-semibold text-navy">{v}</dd></div>
             ))}
           </dl>

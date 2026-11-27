@@ -14,7 +14,7 @@ export function AddTransaction({ loanId, types }: { loanId: string; types: { id:
   return (
     <section aria-label="Add a transaction" className="flex flex-col gap-3">
       <button type="button" aria-expanded={open} aria-controls="add-txn-list" onClick={() => setOpen((v) => !v)}
-        className="btn-ghost btn-sm self-start gap-1.5">
+        className="btn-ghost btn-xs self-start">
         <PlusIcon size={16} /> Add a transaction
       </button>
       {open && (

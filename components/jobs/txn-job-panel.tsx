@@ -103,7 +103,7 @@ export async function TxnJobPanel({ loan, txn, user, tats, cal, statusText }: { 
         <div className="flex flex-wrap gap-2">
           {canFlag && !changeable && <FundsFlagForm transactionId={txn.id} needed={txn.fundsNeeded} kinds={txn.fundsKinds} choices={choices} />}
           {laOwns && !problem && can(user, PERMISSIONS.PROBLEMS_RAISE) && reasons.length > 0 && <RaiseProblemForm transactionId={txn.id} reasons={reasons} />}
-          {mayHold && holdReasons.length > 0 && <PutOnHoldForm transactionId={txn.id} reasons={holdReasons} />}
+          {mayHold && holdReasons.length > 0 && <PutOnHoldForm transactionId={txn.id} reasons={holdReasons} buttonClass="btn-ghost btn-xs" />}
         </div>
       )}
 

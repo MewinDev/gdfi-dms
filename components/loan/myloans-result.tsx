@@ -146,7 +146,7 @@ function StatusCard({ r, q }: { r: Extract<PnLookupResult, { kind: "status" }>; 
         </div>
         <Link href={`/loans?q=${encodeURIComponent(q)}`} className="btn-ghost h-10 min-h-10 shrink-0 bg-white px-3 text-sm">Try again</Link>
       </div>
-      <LoanFacts rec={rec} amount={Number.isFinite(amount) && amount > 0 ? peso(amount) : "-"} released={released} />
+      <LoanFacts rec={rec} amount={rec.totalReleasedAmount === null ? null : Number.isFinite(amount) && amount > 0 ? peso(amount) : "-"} released={released} />
     </section>
   );
 }
@@ -209,10 +209,10 @@ function LoanHead({ name, pn, titleId, children, action }: { name: string; pn: s
  * and the classification (the keyword rule; "Classified by default" when no keyword matched); the status in myloans
  * is not repeated here (the status chip, or on the preview page its subtitle, says it).
  */
-function LoanFacts({ rec, amount, released, extra = [] }: { rec: Extract<PnLookupResult, { kind: "preview" }>["record"]; amount: string; released: string; extra?: [string, string][] }) {
+function LoanFacts({ rec, amount, released, extra = [] }: { rec: Extract<PnLookupResult, { kind: "preview" }>["record"]; amount: string | null; released: string; extra?: [string, string][] }) {
   const name = (v: string | null | undefined) => v?.trim() || "-";
   const facts: [string, string][] = [
-    ["Amount released", amount],
+    ...(amount === null ? [] : [["Amount released", amount] as [string, string]]),
     ["Released on", released],
     ["Loan type", name(rec.loanType)],
     ["Product", name(rec.productName)],
@@ -273,7 +273,7 @@ export function Preview({ r, warnings, waiting = null, page = false }: { r: Extr
         {amber.map((c) => <li key={c} data-find-amber><ToneChip tone="act">{c}</ToneChip></li>)}
       </LoanHead>
       {waiting && <p className="mt-1.5 text-[13px] text-ink-2" data-preview-waiting>{waiting}</p>}
-      <LoanFacts rec={rec} amount={peso(r.amount)} released={dayText(rec.releaseDate)} extra={[
+      <LoanFacts rec={rec} amount={r.amount === null ? null : peso(r.amount)} released={dayText(rec.releaseDate)} extra={[
         ["CIN", rec.cin?.trim() || "-"],
         ["Classification", `${r.classification === "FINANCING" ? "Financing" : "Refinancing"}${r.classifiedByDefault ? " (classified by default)" : ""}`],
       ]} />
@@ -284,7 +284,7 @@ export function Preview({ r, warnings, waiting = null, page = false }: { r: Extr
         </p>
       )}
       <div className="mt-3 border-t border-line-soft pt-3">
-        <OpenLoanForm pn={r.pn} financing={financing} canOpen={r.canOpen} facts={{ productName: r.productName, loanType: r.loanType, amount: r.amount }} />
+        <OpenLoanForm pn={r.pn} financing={financing} canOpen={r.canOpen} facts={{ productName: r.productName, loanType: r.loanType, mortgageMet: r.mortgageMet }} />
       </div>
     </section>
   );

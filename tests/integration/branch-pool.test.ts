@@ -72,11 +72,11 @@ describe("the branch pool (10b)", () => {
     expect(it).toMatchObject({ state: "POOL", role: "LA" });
     expect(Date.now() - it!.arrivedAt.getTime()).toBeLessThan(60_000);
     const row = (await poolItems(la)).find((r) => r.pn === PN_A)!;
-    // The LA does not see cash amounts by default: the release date, no amount.
-    expect(row).toMatchObject({ waiting: 0, poolTone: "green", candidate: { releaseDate: expect.any(String), amount: null } });
-    // With "See cash amounts in the Journey", the amount shows on the card.
-    await prisma.userPermissionOverride.create({ data: { userId: la.id, key: PERMISSIONS.JOURNEY_VIEW_AMOUNTS, effect: "GRANT", note: "branch-pool test" } });
-    expect((await poolItems(await asUser("test.la@gdfi.ph"))).find((r) => r.pn === PN_A)!.candidate).toMatchObject({ amount: "₱350,000.00" });
+    // D-062: the LA has "See loan amounts" by default: the release date and the amount on the card.
+    expect(row).toMatchObject({ waiting: 0, poolTone: "green", candidate: { releaseDate: expect.any(String), amount: "₱350,000.00" } });
+    // Without it (denied for this person), no amount.
+    await prisma.userPermissionOverride.create({ data: { userId: la.id, key: PERMISSIONS.LOANS_VIEW_AMOUNTS, effect: "DENY", note: "branch-pool test" } });
+    expect((await poolItems(await asUser("test.la@gdfi.ph"))).find((r) => r.pn === PN_A)!.candidate).toMatchObject({ amount: null });
   });
 
   it("taking the item (the service; D-060 removed the Accept button) leads to the Loans search for the PN; opening the loan file closes the item and the candidate", async () => {

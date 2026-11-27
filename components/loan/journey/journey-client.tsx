@@ -31,7 +31,7 @@ export function JourneySwitch({ items, current }: { items: { key: string; label:
               else if (e.key === "Home") { e.preventDefault(); go(0); }
               else if (e.key === "End") { e.preventDefault(); go(items.length - 1); }
             }}
-            className={`inline-flex min-h-11 flex-1 items-center justify-center whitespace-nowrap rounded-[10px] px-2 text-sm font-semibold no-underline sm:min-h-9 sm:flex-none sm:px-4 ${on ? "bg-navy text-white" : "text-navy hover:bg-fill"}`}>
+            className={`inline-flex min-h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg px-2 text-xs font-semibold no-underline sm:min-h-7 sm:flex-none sm:px-3 relative before:absolute before:-inset-y-1 before:inset-x-0 before:content-[''] sm:before:hidden ${on ? "bg-navy text-white" : "text-navy hover:bg-fill"}`}>
             {x.label}
           </Link>
         );
@@ -103,15 +103,15 @@ export function LogControls({ sys: sys0, na: na0 }: { sys: boolean; na: boolean 
     setShown(count);
   }, [q, who, sys, na]);
   return (
-    <div ref={ref} className="flex flex-col gap-2 border-b border-line px-3 py-2.5 sm:px-4" data-log-controls>
+    <div ref={ref} className="flex flex-col gap-1.5 border-b border-line px-3 py-2" data-log-controls>
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5 text-xs font-semibold text-ink-2">
           Search
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="A step, a name, a word" className="input min-h-11 text-sm sm:min-h-9" data-log-search />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="A step, a name, a word" className="input min-h-11 text-sm sm:min-h-8" data-log-search />
         </label>
         <label className="flex flex-col gap-0.5 text-xs font-semibold text-ink-2" htmlFor={`${id}-who`}>
           Who
-          <select id={`${id}-who`} value={who} onChange={(e) => setWho(e.target.value)} className="input min-h-11 text-sm sm:min-h-9" data-log-who-filter>
+          <select id={`${id}-who`} value={who} onChange={(e) => setWho(e.target.value)} className="input min-h-11 text-sm sm:min-h-8" data-log-who-filter>
             {WHO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>

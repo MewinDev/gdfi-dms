@@ -39,6 +39,8 @@ export default async function OpenItemsPage({ searchParams }: { searchParams: Pr
   ]);
   const list = rows ?? (tab === "unassigned" ? unassigned : mine);
   const seesAmounts = can(user, PERMISSIONS.JOURNEY_VIEW_AMOUNTS);
+  // D-062: the loan's amount (an Open Item on the amount field) needs "See loan amounts"; cash still needs the Journey tick.
+  const seesLoanAmounts = can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS);
   const scope = scopeIds(user);
   const branches = await prisma.branch.findMany({ where: { active: true, ...(scope === null ? {} : { id: { in: scope } }) }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   const q = (t: Tab) => `/open-items?${new URLSearchParams({ tab: t, ...(sp.pn ? { pn: sp.pn } : {}), ...(sp.branch ? { branch: sp.branch } : {}), ...(sp.field ? { field: sp.field } : {}) }).toString()}`;
@@ -47,7 +49,7 @@ export default async function OpenItemsPage({ searchParams }: { searchParams: Pr
     ...(unassignedToo ? [{ key: "unassigned" as const, label: "Unassigned", n: unassigned.length, red: unassigned.filter((r) => r.tone === "bad").length }] : []),
     { key: "decided", label: "Decided" },
   ];
-  const value = (r: Pick<Row, "field" | "oldValue" | "newValue">, v: "oldValue" | "newValue") => (r.field === "amount" && !seesAmounts ? "Amount changed" : r[v] ?? "blank");
+  const value = (r: Pick<Row, "field" | "oldValue" | "newValue">, v: "oldValue" | "newValue") => (r.field === "amount" && !seesLoanAmounts ? "Amount changed" : r[v] ?? "blank");
 
   return (
     <div className="dense flex w-full flex-col gap-4" data-open-items-page>

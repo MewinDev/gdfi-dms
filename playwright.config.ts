@@ -28,6 +28,8 @@ export default defineConfig({
     { name: "desktop-1440", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
     { name: "tablet-820", use: { ...devices["Desktop Chrome"], viewport: { width: 820, height: 1180 } } },
     { name: "phone-390", use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } } },
+    // D-062: an office laptop width, only when asked (E2E_1366=1 npx playwright test --project=laptop-1366 <spec>).
+    ...(process.env.E2E_1366 === "1" ? [{ name: "laptop-1366", use: { ...devices["Desktop Chrome"], viewport: { width: 1366, height: 768 } } }] : []),
   ],
   // A production build (next build, then next start) by default: much less memory than next dev, and no
   // compiling during a test. E2E_SERVER=dev uses next dev as before. E2E_SKIP_BUILD=1 starts the build

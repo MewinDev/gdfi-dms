@@ -4,7 +4,7 @@ import { useActionState, useEffect, useId, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form-status";
 import { Sheet } from "@/components/ui/sheet";
 import { GuardedSheet, SheetCancel } from "@/components/ui/guarded-sheet";
-import { PauseIcon, PlayIcon } from "@/components/ui/icons";
+import { PauseIcon, PlayIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { announcing, NowLine, useCloseWhenDone } from "@/components/ui/live-toast";
 import { DECLINE_REASONS } from "@/lib/ui/rounds";
 import { NO_DETAILS, REMARKS_HELP, REMARKS_LIMIT_MESSAGE, REMARKS_MAX, durationText, holdSummaryText, remarksCounter } from "@/lib/ui/holds";
@@ -182,9 +182,13 @@ export function OutsideControlToggle({ problemId, on }: { problemId: string; on:
 /**
  * Put on hold: Reason category (required) and Remarks (always required, at least 5 characters, with a
  * counter). There is no expected resume date. When it starts and who put it on hold are recorded by
- * the server in Philippine time; the form only shows "Starts now" and the summary shows it after saving.
+ * the server in Philippine time; the summary shows it after saving (the form no longer shows "Starts now", D-062).
  */
-export function PutOnHoldForm({ transactionId, reasons, buttonClass = "btn-ghost btn-sm" }: { transactionId: string; reasons: Reason[]; buttonClass?: string }) {
+export function PutOnHoldForm({ transactionId, reasons, buttonClass = "btn-ghost btn-sm", row = false }: {
+  transactionId: string; reasons: Reason[]; buttonClass?: string;
+  /** D-062: one quiet row instead of a button: "Waiting on the borrower or someone else?" with a chevron; the whole row opens it. */
+  row?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState(raiseHoldAnnounced, null);
   const close = useMemo(() => () => setOpen(false), []);
@@ -192,7 +196,17 @@ export function PutOnHoldForm({ transactionId, reasons, buttonClass = "btn-ghost
   const uid = useId();
   return (
     <>
-      <button type="button" className={buttonClass} onClick={() => setOpen(true)}><PauseIcon size={16} /> Put on hold</button>
+      {row ? (
+        <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label="Waiting on the borrower or someone else? Put on hold"
+          className="group flex min-h-10 w-full items-center gap-2 rounded-xl border border-line bg-white px-3 py-1 text-left hover:bg-fill focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy"
+          data-hold-row>
+          <span aria-hidden="true" className="text-ink-2 group-hover:text-navy"><PauseIcon size={14} /></span>
+          <span className="min-w-0 flex-1 text-[13px] text-ink">Waiting on the borrower or someone else?</span>
+          <span aria-hidden="true" className="text-ink-2 group-hover:text-navy"><ChevronRightIcon size={16} /></span>
+        </button>
+      ) : (
+        <button type="button" className={buttonClass} onClick={() => setOpen(true)}><PauseIcon size={16} /> Put on hold</button>
+      )}
       <GuardedSheet open={open} onClose={close} title="Put on hold">
         <HoldForm transactionId={transactionId} reasons={reasons} action={action} state={state} uid={uid} />
       </GuardedSheet>
@@ -248,8 +262,7 @@ function HoldForm({ transactionId, reasons, action, state, uid }: { transactionI
         {!missing && reason && <p className="help" data-reason-example>{HOLD_EXAMPLE[reasons.find((r) => r.id === reason)?.code ?? ""] ?? "Say in the remarks what it is waiting on."}</p>}
       </div>
       <RemarksField id={`${uid}-n`} label="Remarks (required): what is it waiting on?" value={note} onChange={setNote} error={noteError} />
-      <NowLine label="Starts now" />
-      <p className="-mt-1 text-[13px] text-ink-2">No expected resume date. The date and time are recorded by the system (PHT).</p>
+      {/* D-062 review: no "Starts now" line here; the server still records the date and time (PHT). */}
       {state && !state.ok && state.field !== "reasonId" && state.field !== "note" && <FormMessage state={state} />}
       <div className="flex justify-end gap-2">
         <SheetCancel />
@@ -302,7 +315,7 @@ function ResumeForm({ hold, action, state, uid }: { hold: HoldBrief; action: (fd
   return (
     <form action={action} className="flex flex-col gap-3" noValidate>
       <Hidden v={{ holdId: hold.holdId }} />
-      <div className="hold-card flex flex-col gap-1 py-2.5 pl-5 pr-3" data-closing>
+      <div className="hold-card flex flex-col gap-1 px-3 py-2" data-closing>
         <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink"><span className="text-hold-fg"><PauseIcon size={16} /></span>{t.title}</p>
         {t.remarks
           ? <blockquote className="whitespace-pre-line break-words border-l-2 border-hold-line pl-3 text-[15px] text-ink" data-remarks>{t.remarks}</blockquote>
@@ -348,7 +361,7 @@ function TransferBody({ hold, candidates, action, state, uid }: { hold: HoldBrie
   return (
     <form action={action} className="flex flex-col gap-3" noValidate data-transfer-form>
       <Hidden v={{ holdId: hold.holdId }} />
-      <div className="hold-card flex flex-col gap-1 py-2.5 pl-5 pr-3" data-transfer-current>
+      <div className="hold-card flex flex-col gap-1 px-3 py-2" data-transfer-current>
         <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink"><span className="text-hold-fg"><PauseIcon size={16} /></span>On hold: {hold.reason}</p>
         {hold.note.trim()
           ? <blockquote className="whitespace-pre-line break-words border-l-2 border-hold-line pl-3 text-[15px] text-ink">{hold.note}</blockquote>

@@ -19,7 +19,7 @@ const PN = "GD1652026901003";
  * (one full-width stack, two-line rows) it was 1909 px at 1440, 2148 at 820 and 3410 at 390; the
  * compact cards measure about 758, 1202 and 1398 (1551 on a phone once a second card is opened).
  */
-const MAX_HEIGHT: Record<number, number> = { 1440: 1000, 820: 1500, 390: 1800 };
+const MAX_HEIGHT: Record<number, number> = { 1440: 1000, 1366: 1000, 820: 1500, 390: 1800 };
 
 test.beforeEach(async () => {
   await resetLoans();
@@ -92,14 +92,19 @@ test("Documents tab: compact cards, one line per paper, details, filters in the 
   await expect(page.locator('[data-doc-card="NOTARY"] [data-card-count]').filter({ visible: true })).toHaveText(/^\d+ of \d+ with you$/);
   await expect(page.locator("[data-papers-filter-option]")).toHaveText([`All${docs.length}`, `With you${withId.length}`, `Not yet${docs.length - withId.length}`]);
 
-  // Layout per width: two cards per row at 1440 (tops aligned), one column at 820, collapsible cards at 390.
-  const boxes = await Promise.all((await cards(page).all()).map((c) => c.boundingBox()));
-  if (width(page) >= 1440) {
-    expect(boxes[0]!.y).toBe(boxes[1]!.y);
-    expect(boxes[1]!.x).toBeGreaterThan(boxes[0]!.x + 100);
-    expect(boxes[2]!.y).toBeGreaterThan(boxes[0]!.y);
+  // Layout per width (D-062 review): two balanced columns at 1440 (each card right under the one above, no gaps,
+  // the columns' tops aligned), one column at 820, collapsible cards at 390.
+  const boxes = (await Promise.all((await cards(page).all()).map((c) => c.boundingBox()))).map((b) => b!);
+  const xs = [...new Set(boxes.map((b) => Math.round(b.x)))];
+  // Two columns once the tab itself is 960 px wide (1366 and 1440), one below.
+  const tabWidth = await page.locator("[data-documents-tab]").evaluate((e) => e.clientWidth);
+  if (tabWidth >= 960) {
+    expect(xs).toHaveLength(2);
+    const cols = xs.map((x) => boxes.filter((b) => Math.round(b.x) === x).sort((p, q) => p.y - q.y));
+    expect(Math.abs(cols[0][0].y - cols[1][0].y)).toBeLessThan(2);
+    for (const col of cols) for (let i = 1; i < col.length; i++) expect(col[i].y - (col[i - 1].y + col[i - 1].height)).toBeLessThanOrEqual(16);
   } else {
-    for (const b of boxes) expect(b!.x).toBe(boxes[0]!.x);
+    expect(xs).toHaveLength(1);
   }
   if (width(page) >= 640) {
     // One line per paper, at most 40 px.

@@ -89,7 +89,13 @@ export function determineMortgage(loanType: LoanTypeValue, totalReleasedAmount: 
 export interface RuleInputs {
   productName: string | null | undefined;
   loanType: LoanTypeValue;
-  totalReleasedAmount: number;
+  /** The released amount (Rule 4). The server always passes it. */
+  totalReleasedAmount?: number;
+  /**
+   * D-062: Rule 4's answer worked out on the server (amount at or under the threshold), for the browser's "What will be
+   * set up": the page never needs the amount itself. Used instead of the amount when given.
+   */
+  mortgageMet?: boolean;
   /** Financing only: picked by the LA on the preview card. */
   financingType?: FinancingType | null;
   /** Financing only: picked by the LA on the preview card. */
@@ -124,6 +130,14 @@ export class RuleInputError extends Error {
   }
 }
 
+/** Rule 4 from the amount, or from the answer the server worked out (mortgageMet). */
+function mortgageOf(input: RuleInputs): MortgageDetermination {
+  if (input.mortgageMet === undefined) return determineMortgage(input.loanType, input.totalReleasedAmount ?? Number.NaN);
+  if (!isValidLoanType(input.loanType)) throw new Error(`Loan Type must be exactly "New" or "Renewal" (got "${String(input.loanType)}")`);
+  const fired: RuleFiring = { key: "MORTGAGE_THRESHOLD", loanType: input.loanType, met: input.mortgageMet };
+  return { result: input.mortgageMet ? "MORTGAGE" : "NOT_MORTGAGE", rule: encodeFiring(fired), fired };
+}
+
 export function evaluateLoanRules(input: RuleInputs): RuleOutcome {
   const rulesFired: RuleFiring[] = [];
   const cls = classifyProductName(input.productName, input.classificationRules, input.productCode);
@@ -145,14 +159,14 @@ export function evaluateLoanRules(input: RuleInputs): RuleOutcome {
       return finish(cls.classification, input.financingType, "UNTRANSFERRED", "NOT_EVALUATED", rulesFired);
     }
     rulesFired.push({ key: "ORCR_CHECK", orcr: "TRANSFERRED" });
-    const m = determineMortgage(input.loanType, input.totalReleasedAmount);
+    const m = mortgageOf(input);
     rulesFired.push(m.fired);
     return finish(cls.classification, input.financingType, "TRANSFERRED", m.result, rulesFired);
   }
 
   // Refinancing: ORCR is skipped and Undertaking does not apply.
   rulesFired.push({ key: "ORCR_CHECK", orcr: "SKIPPED" });
-  const m = determineMortgage(input.loanType, input.totalReleasedAmount);
+  const m = mortgageOf(input);
   rulesFired.push(m.fired);
   return finish("REFINANCING", null, null, m.result, rulesFired);
 }

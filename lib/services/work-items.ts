@@ -310,7 +310,7 @@ export function sortInbox(r: InboxRow[]): InboxRow[] {
 
 /** The person's items: accepted, and named but not accepted yet. */
 export async function myItems(u: CurrentUser, now: Date = new Date()) {
-  return sortInbox(await rows(prisma, { holderUserId: u.id, state: { in: ["INBOX", "HELD"] } }, now, can(u, PERMISSIONS.JOURNEY_VIEW_AMOUNTS)));
+  return sortInbox(await rows(prisma, { holderUserId: u.id, state: { in: ["INBOX", "HELD"] } }, now, can(u, PERMISSIONS.LOANS_VIEW_AMOUNTS)));
 }
 
 /** What a person can take from their branches' pools: by work role (and funds type for Finance). */
@@ -322,7 +322,7 @@ export async function poolItems(u: CurrentUser, now: Date = new Date()) {
   // Supervisors (Move work items) see every pool of their branches, to move work on.
   const all = can(u, PERMISSIONS.WORKITEMS_MOVE);
   if (!roles.length && !all) return [];
-  const items = await rows(prisma, { state: "POOL", ...loanScope(u), ...(all ? {} : { OR: roles }) }, now, can(u, PERMISSIONS.JOURNEY_VIEW_AMOUNTS));
+  const items = await rows(prisma, { state: "POOL", ...loanScope(u), ...(all ? {} : { OR: roles }) }, now, can(u, PERMISSIONS.LOANS_VIEW_AMOUNTS));
   // Longest waiting first (the pool has no due date until someone takes it).
   return items.sort((a, b) => b.waiting - a.waiting);
 }

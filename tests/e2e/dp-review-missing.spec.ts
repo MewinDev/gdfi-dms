@@ -61,7 +61,8 @@ async function sendWithMissing(page: Page, missing: { label: string; reason: str
       await expect.poll(async () => (await db.documentItem.findFirst({ where: { label: m.label, transaction: { loan: { pn: PN }, type: { code: "NOTARY" } } } }))?.documentId ?? null, { timeout: 15_000 }).not.toBeNull();
       await notary.getByLabel(m.label).uncheck();
     }
-    await row.getByRole("button", { name: "Missing", exact: true }).click();
+    await row.getByRole("button", { name: "More actions" }).click(); // D-062: the row's "⋯" menu
+    await row.getByRole("menuitem", { name: "Mark as missing" }).click();
     const form = row.locator("[data-remarks-form]");
     await form.locator("[data-reason-chips] label", { hasText: m.reason }).click();
     await form.getByLabel("Remarks", { exact: true }).fill(m.remarks);

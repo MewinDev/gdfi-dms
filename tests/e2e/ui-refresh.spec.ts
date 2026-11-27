@@ -9,6 +9,8 @@ import { docShot, signIn, watchConsole } from "./helpers";
  * scroll from 320px up (360, 390, 820, 1024, 1440 and a landscape phone, 844 x 390).
  * Screenshots (npm run docs:screenshots): My loans, Inbox and Open Items at 390, 820 and 1440 in
  * docs/screenshots/ui-refresh/, the sidebar full and as the rail at 820 and 1440, and the phone's drawer.
+ * D-062: the loan file (To do, Check documents, Documents, Journey) in the readability walk, and its screenshots
+ * (loan-todo, loan-check-documents, loan-documents, loan-journey at 390, 820 and 1440).
  */
 const DIR = "docs/screenshots/ui-refresh";
 mkdirSync(DIR, { recursive: true });
@@ -60,6 +62,15 @@ test.afterAll(async () => {
   await clean();
   await resetLoans();
 });
+
+/** A real loan file with its transactions and papers (the sample myloans' Maria Santos, Antipolo). */
+const LOAN_PN = "GD1012026901001";
+const LOAN_PAGES = [`/loans/${LOAN_PN}`, `/loans/${LOAN_PN}?tab=todo&tx=NOTARY`, `/loans/${LOAN_PN}?tab=documents`, `/loans/${LOAN_PN}?tab=journey`];
+async function openLoanFile(page: Page) {
+  await page.goto(`/search?q=${LOAN_PN}`);
+  await main(page).getByRole("button", { name: "Open loan file" }).click();
+  await expect(page).toHaveURL(new RegExp(`/loans/${LOAN_PN}`));
+}
 
 async function noSideways(page: Page, where: string) {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -130,7 +141,8 @@ test("readability: 16px fields and 14px text on phones, 44px tap targets, no sid
   const sizes = [[320, 640], [360, 780], [390, 844], [844, 390], [820, 1180], [1024, 768], [1280, 800], [1366, 768], [1440, 900]] as const; // 1280 and 1366: common office laptops
   for (const who of ["la", "admin"] as const) {
     await signIn(page, who);
-    const pages = who === "la" ? ["/loans", "/inbox", "/inbox?tab=pool", "/dashboard"] : ["/open-items", "/loans", "/admin/users"];
+    if (who === "la") await openLoanFile(page);
+    const pages = who === "la" ? ["/loans", "/inbox", "/inbox?tab=pool", "/dashboard", ...LOAN_PAGES] : ["/open-items", "/loans", "/admin/users"];
     for (const [w, h] of sizes) {
       await page.setViewportSize({ width: w, height: h });
       for (const p of pages) {
@@ -152,7 +164,7 @@ test("readability: 16px fields and 14px text on phones, 44px tap targets, no sid
           // search button are held to 44px.
           const phone = window.innerWidth < 768;
           const sel = phone
-            ? "[data-menu-button], header a[href='/notifications'], [data-scroll-row] a, [data-search-submit], [data-status-option], [data-more-filters], [data-copy], [data-accept]"
+            ? "[data-menu-button], header a[href='/notifications'], [data-scroll-row] a, [data-search-submit], [data-status-option], [data-more-filters], [data-copy], [data-accept], [data-refresh-loan], [data-ready-go], [data-row-menu], [data-paper-row] label[id^=line-], [data-include]"
             : "header a[href='/notifications'], #main-sidebar a, #main-sidebar button, [data-scroll-row] a, [data-search-submit]";
           const tap = (e: Element) => {
             const r = e.getBoundingClientRect();
@@ -172,14 +184,45 @@ test("readability: 16px fields and 14px text on phones, 44px tap targets, no sid
             .filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => parseFloat(getComputedStyle(e).fontSize)));
           expect(fields.filter((s) => s < 16), `${where}: fields under 16px`).toEqual([]);
           // The card text that matters (name, PN, branch line, next step) is 14px or more.
-          const tiny = await page.evaluate(() => [...document.querySelectorAll("[data-loan-name], [data-pn], [data-branch-amount], [data-next-text], [data-inbox-row] a, [data-oi-borrower]")]
+          const tiny = await page.evaluate(() => [...document.querySelectorAll("[data-loan-name], [data-pn], [data-branch-amount], [data-next-text], [data-inbox-row] a, [data-oi-borrower], [data-borrower], [data-paper-name], [data-txn-hint], [data-loan-header] dd")]
             .filter((e) => (e as HTMLElement).offsetParent !== null && parseFloat(getComputedStyle(e).fontSize) < 14).map((e) => e.textContent)); // shown ones (the table is hidden on a phone)
           expect(tiny, `${where}: text under 14px`).toEqual([]);
+        }
+        // D-062: the loan file's header and paper rows: nothing cut (no "…", no text wider than its box).
+        if (p.startsWith("/loans/")) {
+          const cut = await page.evaluate(() => [...document.querySelectorAll("[data-loan-header] h1, [data-loan-header] dd, [data-loan-header] [data-pn], [data-paper-name], [data-txn-hint], [data-step-title]")]
+            .filter((e) => (e as HTMLElement).offsetParent !== null && (e.scrollWidth > e.clientWidth + 1)).map((e) => e.textContent));
+          expect(cut, `${where}: text cut`).toEqual([]);
         }
       }
     }
     await page.setViewportSize({ width: 1440, height: 900 });
   }
+});
+
+test("screenshots: the loan file (D-062): To do, Check documents, Documents and Journey", async ({ page }) => {
+  const shot = async (name: string) => {
+    await page.evaluate(() => document.fonts.ready);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.mouse.move(0, 0);
+    await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" }); // the dev server's badge (a dev run), never in the picture
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await docShot(page, { path: `${DIR}/${name}-${width(page)}.png`, fullPage: true });
+  };
+  await signIn(page, "la");
+  await openLoanFile(page);
+  await page.goto(`/loans/${LOAN_PN}`);
+  await expect(main(page).locator("[data-loan-header]")).toBeVisible();
+  await shot("loan-todo");
+  await page.goto(`/loans/${LOAN_PN}?tab=todo&tx=NOTARY`);
+  await expect(main(page).locator("[data-txn-hint]")).toBeVisible();
+  await shot("loan-check-documents");
+  await page.goto(`/loans/${LOAN_PN}?tab=documents`);
+  await expect(main(page).locator("[data-documents-tab]")).toBeVisible();
+  await shot("loan-documents");
+  await page.goto(`/loans/${LOAN_PN}?tab=journey`);
+  await expect(main(page).locator("[data-journey]")).toBeVisible();
+  await shot("loan-journey");
 });
 
 test("screenshots: My loans, Inbox and Open Items", async ({ page }) => {

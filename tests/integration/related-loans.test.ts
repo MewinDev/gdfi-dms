@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current-user";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import { getSetting, setSetting } from "@/lib/settings";
 import { lookupPn, openLoanFile } from "@/lib/services/loan-file";
 import { saveChecklist } from "@/lib/services/workflow";
@@ -113,7 +114,7 @@ describe("Replacement or additional unit", () => {
     expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "replacement_linked", pn: "GD1012026909230" } })).summary).toMatch(/\(from Related loans\)/);
   });
 
-  it("Related loans: branch scope hides details, amounts only with journey:view_amounts", async () => {
+  it("Related loans: branch scope hides details, amounts only with loans:view_amounts (D-062)", async () => {
     await open(OLD);
     await extra({ pn: "GD1012026909240", totalReleasedAmount: 700_000 });
     await open("GD1012026909240");
@@ -123,7 +124,15 @@ describe("Replacement or additional unit", () => {
     const forLa = await relatedPanel(la, await loanOf(OLD));
     expect(forLa.hidden).toBe(1);
     expect(forLa.rows.map((r) => r.pn)).toEqual(["GD1012026909240"]);
-    expect(forLa.rows[0]).toMatchObject({ amount: null, tag: "SAME_BORROWER", canLink: false });
+    // D-062: the LA has "See loan amounts" by default.
+    expect(forLa.rows[0]).toMatchObject({ amount: "₱700,000.00", tag: "SAME_BORROWER", canLink: false });
+    // Denied for this person: no amount.
+    await prisma.userPermissionOverride.create({ data: { userId: la.id, key: PERMISSIONS.LOANS_VIEW_AMOUNTS, effect: "DENY", note: "related-loans test" } });
+    try {
+      expect((await relatedPanel(await asUser("test.la@gdfi.ph"), await loanOf(OLD))).rows[0]).toMatchObject({ amount: null });
+    } finally {
+      await prisma.userPermissionOverride.deleteMany({ where: { note: "related-loans test" } });
+    }
     const forAdmin = await relatedPanel(admin, await loanOf(OLD));
     expect(forAdmin.hidden).toBe(0);
     expect(forAdmin.rows.find((r) => r.pn === "GD1012026909240")).toMatchObject({ amount: "₱700,000.00", canLink: true });
