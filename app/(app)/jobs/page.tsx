@@ -1,82 +1,59 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { requirePagePermission } from "@/lib/auth/current-user";
+import { redirect } from "next/navigation";
+import { can, requirePagePermission } from "@/lib/auth/current-user";
 import { PERMISSIONS } from "@/lib/auth/permissions";
-import { JOB_TABS, myJobs, type JobTab } from "@/lib/services/job-queries";
-import { FUNDS_LABEL, type FundsStatus } from "@/lib/funds/rules";
-import { PageHeader } from "@/components/ui/basics";
-import { JobRow } from "@/components/jobs/job-row";
-import { ScrollFade } from "@/components/ui/scroll-fade";
+import { myJobs } from "@/lib/services/job-queries";
+import { filterJobs, jobListUrl, parseJobParams } from "@/lib/jobs/list";
+import { txnName } from "@/lib/ui/plain";
+import { InfoTip } from "@/components/ui/info-tip";
+import { JobsFilterBar } from "@/components/jobs/jobs-filter-bar";
+import { JobsView } from "@/components/jobs/jobs-view";
 
 export const metadata: Metadata = { title: "Jobs" };
 
-const FUNDS_FILTERS: FundsStatus[] = ["NEEDED", "REQUESTED", "FUNDED", "SETTLED", "DENIED", "NOT_NEEDED"];
+const OLD_TABS: Record<string, string> = { review: "review", process: "process", forwarded: "forwarded", done: "done" };
 
-export default async function JobsPage({ searchParams }: { searchParams: Promise<{ tab?: string; type?: string; funds?: string; problem?: string; hold?: string; q?: string }> }) {
+/**
+ * D-064: the processor's Jobs, the same design as the Loans page and the Inbox: status chips with counts in place
+ * of the tabs (none chosen: To review and In process), one search, compact filters that apply at once (Transaction,
+ * Funds, Late only), late first then the soonest due; one row per job; the whole row opens the details panel.
+ * Everything is in the address (old ?tab= addresses are read as the matching status chip).
+ */
+export default async function JobsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePagePermission(PERMISSIONS.JOBS_WORK);
   const sp = await searchParams;
-  const tab: JobTab = (JOB_TABS.some((t) => t.key === sp.tab) ? sp.tab : "process") as JobTab;
+  const p = parseJobParams(sp);
+  // Old links (?tab=, ?problem=1, ?hold=1, the old funds values): the same list in the new form.
+  const tab = typeof sp.tab === "string" ? OLD_TABS[sp.tab] : undefined;
+  if (tab || sp.problem === "1" || sp.hold === "1") {
+    const status = [...p.status, ...(tab ? [tab] : []), ...(sp.problem === "1" ? ["problems"] : []), ...(sp.hold === "1" ? ["hold"] : [])] as typeof p.status;
+    redirect(jobListUrl({ ...p, status: [...new Set(status)] }));
+  }
   const all = await myJobs(user);
-  const q = (sp.q ?? "").trim().toLowerCase();
-  const rows = all
-    .filter((r) => r.tab === tab)
-    .filter((r) => !sp.type || r.typeCode === sp.type)
-    .filter((r) => !sp.funds || r.funds === sp.funds)
-    .filter((r) => sp.problem !== "1" || !!r.problem)
-    .filter((r) => sp.hold !== "1" || !!r.hold)
-    .filter((r) => !q || r.pn.toLowerCase().includes(q) || r.borrower.toLowerCase().includes(q));
-  const types = [...new Map(all.map((r) => [r.typeCode, r.typeName])).entries()];
-  const href = (patch: Record<string, string | undefined>) => {
-    const p = new URLSearchParams();
-    const merged = { tab, type: sp.type, funds: sp.funds, problem: sp.problem, hold: sp.hold, q: sp.q, ...patch };
-    for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
-    return `/jobs?${p.toString()}`;
-  };
+  const { rows, counts } = filterJobs(all, p);
+  const types = [...new Map(all.map((r) => [r.typeCode, txnName(r.typeCode, r.typeName)])).entries()].map(([code, name]) => ({ code, name }));
+  const filtered = p.status.length > 0 || !!p.q || !!p.type || !!p.funds || p.late;
 
   return (
-    <div className="dense flex w-full flex-col gap-4">
-      <PageHeader title="Jobs" help="Your jobs. Open one to accept it, log attempts, complete and forward it." />
-      <ScrollFade><nav aria-label="Job tabs" className="flex overflow-x-auto border-b border-line" data-scroll-row>
-        {JOB_TABS.map((t) => {
-          const n = all.filter((r) => r.tab === t.key).length;
-          return (
-            <Link key={t.key} href={href({ tab: t.key })} aria-current={tab === t.key ? "page" : undefined} className="tab shrink-0">
-              {t.label} <span className="ml-1 text-ink-2">{n}</span>
-            </Link>
-          );
-        })}
-      </nav></ScrollFade>
-      <form action="/jobs" className="grid gap-2 sm:grid-cols-2 sm:items-end lg:grid-cols-[1fr_auto_auto_auto_auto_auto]">
-        <input type="hidden" name="tab" value={tab} />
-        <div>
-          <label htmlFor="jq" className="label">Find PN or borrower</label>
-          <input id="jq" name="q" defaultValue={sp.q ?? ""} className="input" />
-        </div>
-        <div>
-          <label htmlFor="jt" className="label">Transaction</label>
-          <select id="jt" name="type" defaultValue={sp.type ?? ""} className="input">
-            <option value="">All</option>
-            {types.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="jf" className="label">Funds</label>
-          <select id="jf" name="funds" defaultValue={sp.funds ?? ""} className="input">
-            <option value="">All</option>
-            {FUNDS_FILTERS.map((f) => <option key={f} value={f}>{FUNDS_LABEL[f]}</option>)}
-          </select>
-        </div>
-        <label className="inline-flex min-h-11 items-center gap-2 text-[15px]">
-          <input type="checkbox" name="problem" value="1" defaultChecked={sp.problem === "1"} className="h-5 w-5 accent-[var(--navy)]" /> Problems only
-        </label>
-        <label className="inline-flex min-h-11 items-center gap-2 text-[15px]">
-          <input type="checkbox" name="hold" value="1" defaultChecked={sp.hold === "1"} className="h-5 w-5 accent-[var(--navy)]" /> On hold only
-        </label>
-        <button type="submit" className="btn-secondary">Filter</button>
-      </form>
-      <section aria-label={JOB_TABS.find((t) => t.key === tab)?.label} className="card overflow-hidden">
-        {rows.length === 0 ? <p className="px-4 py-5 text-[15px] text-ink-2 sm:px-5">No jobs here.</p> : rows.map((r) => <JobRow key={r.id} r={r} />)}
-      </section>
+    <div className="dense flex w-full min-w-0 flex-col gap-3" data-jobs-page>
+      {/* D-064: the same size as Loans and Inbox; one short line with an (i) about the statuses. */}
+      <header className="min-w-0">
+        <h1 className="text-[22px] font-semibold leading-tight text-navy">Jobs</h1>
+        <p className="relative mt-0.5 flex items-center gap-1 text-[13px] text-ink-2">
+          Your jobs, least time left first.
+          <InfoTip label="About the job statuses" data="jobs" lines={[
+            { text: "To review = sent to you; check the papers, then accept or decline.", data: "review" },
+            { text: "In process = yours; log attempts, complete and forward.", data: "process" },
+            { text: "Forwarded = sent back to the Loan Associate's branch.", data: "forwarded" },
+            { text: "Done = the Loan Associate received the package.", data: "done" },
+          ]} />
+        </p>
+      </header>
+      <JobsFilterBar params={p} counts={counts} types={types} />
+      <p className="text-[13px] text-ink-2" role="status" data-jobs-total>{rows.length} job{rows.length === 1 ? "" : "s"}</p>
+      <JobsView rows={rows}
+        perms={{ me: user.id, hold: can(user, PERMISSIONS.HOLDS_RAISE), loans: can(user, PERMISSIONS.LOANS_VIEW), amounts: can(user, PERMISSIONS.LOANS_VIEW_AMOUNTS) }}
+        empty={filtered ? "No jobs match these filters." : "No jobs to review or in process."} />
     </div>
   );
 }

@@ -265,8 +265,15 @@ test("names and parts of a PN are never sent to myloans; the search runs as you 
   await page.goto("/loans");
   const box = main(page).locator("#find-loan");
   await expect(box).toHaveAttribute("placeholder", "Search PN, name or CIN");
-  await box.fill("carla");
-  await expect(page).toHaveURL(/q=carla/); // after a short pause
+  // As you type, after a short pause. Typing can land before the page is interactive (the text shows, the search
+  // is not sent): type, wait for the server's answer to that search, and type again if none came.
+  await expect(async () => {
+    const answer = page.waitForResponse((r) => r.url().includes("q=carla"), { timeout: 5_000 });
+    await box.fill("");
+    await box.fill("carla");
+    await answer;
+  }).toPass({ timeout: 40_000 });
+  await expect(page).toHaveURL(/q=carla/);
   await expect.poll(() => pns(page)).toEqual(["GD1012026909603"]);
   await box.fill("10120269096");
   await box.press("Enter");

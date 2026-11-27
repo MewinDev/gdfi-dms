@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { FilterIcon, SearchIcon } from "@/components/ui/icons";
+import { CHOICE_ROW, FilterCount, PILL, PILL_OFF, PILL_ON } from "@/components/ui/filter-pills";
 import { listUrl, STATUS_KEYS, STATUS_LABELS, type FacetCounts, type LoanListParams, type StatusKey, type WithKey } from "@/lib/ui/loan-list";
 
 /** The one placeholder of the loan search box. */
@@ -70,11 +71,9 @@ export function LoansFilterBar({ params: server, counts, branches, autoFocus }: 
     go({ status: cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k] });
   };
   const anyFilter = params.status.length > 0 || !!params.branch || !!params.with || params.late;
-  // Compact (the user's review): 30px pills; on a phone an invisible margin keeps the tap area 44px tall.
-  const pill = "relative inline-flex h-[30px] items-center gap-1 rounded-full border px-2.5 text-[13px] font-medium before:absolute before:-inset-y-[7px] before:inset-x-0 before:content-[''] sm:before:hidden";
-  const on = "border-navy bg-navy text-white";
-  const off = "border-line-input bg-white text-ink hover:bg-fill";
-  const n = (x: number, sel: boolean) => <span className={`rounded-full px-1.5 text-xs font-semibold tabular-nums ${sel ? "bg-white/20 text-white" : "bg-fill text-ink-2"}`} data-filter-n>{x}</span>;
+  // Compact (the user's review): the shared pills (components/ui/filter-pills.tsx; the Jobs page uses the same).
+  const pill = PILL, on = PILL_ON, off = PILL_OFF;
+  const n = (x: number, sel: boolean) => <FilterCount n={x} on={sel} />;
 
   return (
     <div className="flex min-w-0 flex-col gap-2.5" data-loans-filters aria-busy={pending || undefined}>
@@ -126,7 +125,7 @@ function MoreFilters({ params, counts, branches, go, pill }: {
     document.addEventListener("keydown", key);
     return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key); };
   }, [open]);
-  const choice = "flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-sm hover:bg-fill sm:min-h-9";
+  const choice = CHOICE_ROW;
   return (
     <div ref={wrap} className="relative">
       <button ref={btn} type="button" aria-expanded={open} aria-controls="more-filters" onClick={() => setOpen((v) => !v)}

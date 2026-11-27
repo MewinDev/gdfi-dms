@@ -117,10 +117,13 @@ test("DP: Pasuyo pop-up asks about held cash first; Hand the balance; Jobs shows
   expect((await db.loanTransaction.findUniqueOrThrow({ where: { id: txn.id } })).statusSince).toEqual(clockBefore);
 
   // Jobs list: the Pasuyo tag.
-  await page.goto("/jobs?tab=process");
-  const row = page.locator(`[data-job="${job.id}"]`);
-  await expect(row.getByText("Pasuyo", { exact: true })).toBeVisible();
-  await expect(row).toContainText("from Test Document Processor to Grace Tan");
+  await page.goto("/jobs?status=process");
+  const row = page.locator(`[data-job-row="${job.id}"]`);
+  await expect(row.locator("[data-flag=pasuyo]")).toHaveText("Pasuyo");
+  // D-064: the row has the tag; the details panel says from whom to whom.
+  await row.click();
+  await expect(page.getByRole("dialog")).toContainText("from Test Document Processor to Grace Tan");
+  await page.keyboard.press("Escape");
   await shot(page, "jobs-pasuyo-tag");
   await noSideways(page);
 
