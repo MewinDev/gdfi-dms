@@ -184,7 +184,7 @@ test("readability: 16px fields and 14px text on phones, 44px tap targets, no sid
             .filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => parseFloat(getComputedStyle(e).fontSize)));
           expect(fields.filter((s) => s < 16), `${where}: fields under 16px`).toEqual([]);
           // The card text that matters (name, PN, branch line, next step) is 14px or more.
-          const tiny = await page.evaluate(() => [...document.querySelectorAll("[data-loan-name], [data-pn], [data-branch-amount], [data-next-text], [data-inbox-row] a, [data-oi-borrower], [data-borrower], [data-paper-name], [data-txn-hint], [data-loan-header] dd")]
+          const tiny = await page.evaluate(() => [...document.querySelectorAll("[data-loan-name], [data-pn], [data-branch-amount], [data-next-text], [data-row-name], [data-oi-borrower], [data-borrower], [data-paper-name], [data-txn-hint], [data-loan-header] dd")]
             .filter((e) => (e as HTMLElement).offsetParent !== null && parseFloat(getComputedStyle(e).fontSize) < 14).map((e) => e.textContent)); // shown ones (the table is hidden on a phone)
           expect(tiny, `${where}: text under 14px`).toEqual([]);
         }
@@ -237,7 +237,7 @@ test("screenshots: My loans, Inbox and Open Items", async ({ page }) => {
   await expect(main(page).locator("[data-loan-row]:visible")).toHaveCount(3); // 3 loan files (the pool items only with Not yet in DMS, D-060)
   await shot("my-loans");
   await page.goto("/inbox?tab=pool");
-  await expect(main(page).locator("[data-inbox-row]").first()).toBeVisible();
+  await expect(main(page).locator("[data-inbox-pane=pool] [data-inbox-row]").first()).toBeVisible();
   await shot("inbox-pool");
   await page.goto("/inbox");
   await shot("inbox-mine");

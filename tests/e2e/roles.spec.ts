@@ -51,7 +51,9 @@ test("Custom role from a copy: ticks, plain words, save, assign, sign in, then m
   await tickOf(page, "loans:search").uncheck();
   await expect(dialog(page).locator("[data-also-note]")).toHaveText("Also unticked: Open a loan file (it needs Find a loan).");
   await expect(tickOf(page, "loans:open")).not.toBeChecked();
-  await expect(dialog(page).getByText("1 of 4 ticked")).toBeVisible(); // Loans: only See loan files is ticked now (Export loans is hidden while CSV exports are off)
+  // Loans: See loan files and See loan amounts (D-062, on for the Loan Associate) are ticked now (Export loans is hidden
+  // while CSV exports are off).
+  await expect(dialog(page).getByText("2 of 5 ticked")).toBeVisible();
   await tickOf(page, "loans:open").check();
   await expect(dialog(page).locator("[data-also-note]")).toHaveText("Also ticked: Find a loan (needed by Open a loan file).");
   await tickOf(page, "loans:open").uncheck();

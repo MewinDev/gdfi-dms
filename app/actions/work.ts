@@ -11,6 +11,8 @@ import { moveItem, setAway } from "@/lib/services/work-items";
 import { takeBackFromPool } from "@/lib/services/dp-pool";
 import { prisma } from "@/lib/db";
 import { savePoolColours } from "@/lib/services/pool-colours";
+import { poolPreview, type PoolPreview } from "@/lib/services/pool-preview";
+import { forgetCached } from "@/lib/myloans/client";
 
 /** Piece 9 (D-046): Accept, Move (Give to... / Back to the pool), Away, and taking a job back from the DP pool. */
 
@@ -65,6 +67,18 @@ export async function takeBackFromPoolAction(_p: ActionState, fd: FormData): Pro
     revalidatePath("/inbox");
     return "Taken back. You can send it again.";
   });
+}
+
+/**
+ * D-063: the Inbox's Branch pool panel asks for the preview of a released loan not yet in the DMS (the same data as
+ * its preview page), so the person stays in the Inbox.
+ */
+export async function poolPreviewAction(pn: string, fresh = false): Promise<PoolPreview> {
+  const user = await requirePermission(PERMISSIONS.LOANS_VIEW);
+  const p = String(pn).trim().toUpperCase();
+  // Refresh from myloans (the panel's icon): ask API 1 again, past the short cache; needs the myloans search tick.
+  if (fresh && can(user, PERMISSIONS.LOANS_SEARCH) && /^[A-Z0-9]{6,40}$/.test(p)) forgetCached(p);
+  return poolPreview(user, p);
 }
 
 /** Settings, Inbox waiting colours (D-048): amber and red after N working days in a pool. */

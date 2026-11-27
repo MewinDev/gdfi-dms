@@ -10,12 +10,13 @@ import { andWhere, holdsWhere } from "@/lib/auth/holders";
 import { handlersOrAdmins } from "./funds-handlers";
 import { getSetting, getTatMap } from "@/lib/settings";
 import { businessDate, fmtDate, fmtShort } from "@/lib/time";
-import { daysFor, dueTone, pausedDays, type DueTone, type WorkCalendar } from "@/lib/calendar/core";
+import { daysFor, daysLeft, dueTone, pausedDays, type DueTone, type WorkCalendar } from "@/lib/calendar/core";
 import { loadCalendar } from "@/lib/calendar/load";
 import { canFunds } from "@/lib/funds/access";
 import { isAway, outcomeText, poolArrival, poolSinceText, poolTone, roundDue, roundResult, waitingDays, waitingText, type Outcome, type PoolTone } from "@/lib/work/rules";
 import { UserError } from "./errors";
-import { dayText } from "@/lib/ui/plain";
+import { dayText, peso, TXN_WORDS } from "@/lib/ui/plain";
+import { loanCount } from "@/lib/work/inbox-groups";
 
 /**
  * Piece 9 (D-014, D-015, D-046): the inbox engine. Every hand-off is a WorkItem round with its history
@@ -258,6 +259,24 @@ export interface InboxRow {
   dueDate: string | null; dueText: string | null; tone: DueTone | null; paused: boolean; measureText: string;
   /** 10b: a released loan not yet in the DMS: its release date (the waiting time is from when it entered the pool), and the amount for people who may see amounts. */
   candidate?: { releaseDate: string; amount: string | null } | null;
+  /**
+   * D-063 (one row per loan, the details panel): the loan, the borrower, the transaction (its code and name), the
+   * product, the amount (only with "See loan amounts"; never sent otherwise) and the working days left (0 = due today,
+   * negative = late by that many; null without a due date).
+   */
+  loanId?: string | null;
+  borrower?: string | null;
+  txn?: { code: string; name: string } | null;
+  product?: string | null;
+  amount?: string | null;
+  /** The loan's release date ("Nov 26, 2026"; the pool copy's for a loan not yet in the DMS). */
+  releasedOn?: string | null;
+  /**
+   * D-063 (the user's review): why an item not yet accepted came back or was handed on: a processor returned or
+   * declined it (their reason and remarks), or a supervisor moved it or put it back in the pool (their note).
+   */
+  why?: { title: string; text: string } | null;
+  daysLeft?: number | null;
 }
 
 function linkOf(it: { kind: string; subjectId: string; pn: string | null }, jobId?: string | null): string {
@@ -274,12 +293,33 @@ async function rows(db: typeof prisma, where: Prisma.WorkItemWhereInput, now: Da
     loadCalendar(db), getSetting("pool.amberAfterDays", db), getSetting("pool.redAfterDays", db),
   ]);
   const txIds = items.filter((i) => i.kind === "TRANSACTION" || i.kind === "DP_JOB").map((i) => i.subjectId);
-  const candidates = new Map((await db.sourceLoanCandidate.findMany({ where: { pn: { in: items.filter((i) => i.kind === "LOAN_CANDIDATE").map((i) => i.subjectId) } }, select: { pn: true, releaseDate: true, amount: true } })).map((c) => [c.pn, c]));
-  const [branches, jobs, holds] = await Promise.all([
+  const candidates = new Map((await db.sourceLoanCandidate.findMany({ where: { pn: { in: items.filter((i) => i.kind === "LOAN_CANDIDATE").map((i) => i.subjectId) } }, select: { pn: true, releaseDate: true, amount: true, borrowerName: true, productName: true } })).map((c) => [c.pn, c]));
+  const loanIds = [...new Set(items.map((i) => i.loanId).filter((x): x is string => !!x))];
+  const [branches, jobs, holds, loans, txns] = await Promise.all([
     db.branch.findMany({ where: { id: { in: [...new Set(items.map((i) => i.branchId))] } }, select: { id: true, name: true } }),
     db.dpAssignment.findMany({ where: { transactionId: { in: txIds }, status: { in: ["PENDING_ACCEPTANCE", "ACCEPTED"] } }, select: { id: true, transactionId: true, dueDate: true } }),
     db.hold.findMany({ where: { transactionId: { in: txIds }, resumedAt: null }, include: { reason: { select: { pausesTat: true } } } }),
+    db.loan.findMany({ where: { id: { in: loanIds } }, select: { id: true, borrowerName: true, productName: true, totalReleasedAmount: true, releasedAt: true } }),
+    // A package's subject is the DP job; a transaction's and a DP job's item is the transaction.
+    db.loanTransaction.findMany({ where: { id: { in: [...txIds, ...items.filter((i) => i.kind === "PACKAGE").map((i) => i.subjectId)] } }, select: { id: true, type: { select: { code: true, name: true } } } }),
   ]);
+  // Why an item waiting to be accepted is here: the move's note, or the processor's return (D-063).
+  const waitingIds = items.filter((i) => i.state === "INBOX" || i.state === "POOL").map((i) => i.id);
+  const waitingTx = items.filter((i) => (i.state === "INBOX" || i.state === "POOL") && i.kind === "TRANSACTION").map((i) => i.subjectId);
+  const [moves, returned] = await Promise.all([
+    waitingIds.length ? db.workMovement.findMany({ where: { workItemId: { in: waitingIds }, action: { in: ["MOVE", "BACK_TO_POOL"] } }, orderBy: { at: "desc" } }) : Promise.resolve([]),
+    waitingTx.length ? db.workItem.findMany({ where: { kind: "DP_JOB", subjectId: { in: waitingTx }, outcome: "RETURNED" }, orderBy: { doneAt: "desc" }, include: { movements: { where: { action: "RETURN" }, orderBy: { at: "desc" }, take: 1 } } }) : Promise.resolve([]),
+  ]);
+  const whyOf = (it: (typeof items)[number]): { title: string; text: string } | null => {
+    if (it.state !== "INBOX" && it.state !== "POOL") return null;
+    const mv = moves.find((m) => m.workItemId === it.id);
+    if (mv) return { title: `${mv.action === "BACK_TO_POOL" ? "Put back in the branch pool" : "Moved to you"} by ${mv.byLabel} · ${fmtShort(mv.at)}`, text: mv.remarks };
+    const back = it.kind === "TRANSACTION" ? returned.find((r) => r.subjectId === it.subjectId && r.doneAt && r.doneAt <= new Date(it.arrivedAt.getTime() + 60_000)) : undefined;
+    const ret = back?.movements[0];
+    if (ret) return { title: `Returned by ${ret.byLabel} · ${fmtShort(ret.at)}`, text: ret.remarks || back!.returnReason };
+    return null;
+  };
+  const pkgTxn = new Map((await db.dpAssignment.findMany({ where: { id: { in: items.filter((i) => i.kind === "PACKAGE").map((i) => i.subjectId) } }, select: { id: true, transaction: { select: { type: { select: { code: true, name: true } } } } } })).map((a) => [a.id, a.transaction.type]));
   const today = businessDate(now);
   return items.map((it) => {
     const days = daysFor(cal, it.branchId);
@@ -293,6 +333,23 @@ async function rows(db: typeof prisma, where: Prisma.WorkItemWhereInput, now: Da
       poolText: it.state === "POOL" ? poolSinceText(dayText(it.arrivedAt, { year: false }), waiting) : null,
       dueDate: due, dueText: due ? fmtDate(due) : null, tone: due ? dueTone(due, today, days, cal.amberWithinDays ?? 1, paused) : null, paused,
       measureText: it.measure === "WAITING" ? "Time to act (from arrival)" : "Turnaround time (from accept)",
+      ...(() => {
+        const loan = loans.find((l) => l.id === it.loanId);
+        const cand = it.kind === "LOAN_CANDIDATE" ? candidates.get(it.subjectId) : undefined;
+        const type = txns.find((t) => t.id === it.subjectId)?.type ?? pkgTxn.get(it.subjectId) ?? null;
+        const n = loan ? Number(loan.totalReleasedAmount) : cand ? Number(cand.amount) : NaN;
+        return {
+          loanId: it.loanId,
+          // The borrower: the loan file's, the pool copy's, or the label's ("PN: Name") for a released loan not yet in the DMS.
+          borrower: loan?.borrowerName ?? cand?.borrowerName ?? (it.kind === "LOAN_CANDIDATE" ? it.label.split(": ").slice(1).join(": ") || null : null),
+          txn: type ? { code: type.code, name: TXN_WORDS[type.code] ?? type.name } : null,
+          product: loan?.productName || cand?.productName || null,
+          amount: seesAmounts && Number.isFinite(n) && n > 0 ? peso(n) : null,
+          releasedOn: loan ? fmtDate(businessDate(loan.releasedAt)) : cand ? fmtDate(businessDate(cand.releaseDate)) : null,
+          why: whyOf(it),
+          daysLeft: due ? daysLeft(due, today, days) : null,
+        };
+      })(),
       candidate: it.kind === "LOAN_CANDIDATE" && candidates.has(it.subjectId) ? (() => {
         const c = candidates.get(it.subjectId)!;
         const n = Number(c.amount);
@@ -333,9 +390,10 @@ export async function supervisorWorkCounts(u: CurrentUser, now: Date = new Date(
   const today = businessDate(now);
   const [pool, held] = await Promise.all([
     rows(prisma, { state: "POOL", ...loanScope(u) }, now),
-    prisma.workItem.findMany({ where: { state: { in: ["INBOX", "HELD"] }, ...loanScope(u), holder: { awayFrom: { lte: today }, awayTo: { gte: today } } }, select: { id: true } }),
+    prisma.workItem.findMany({ where: { state: { in: ["INBOX", "HELD"] }, ...loanScope(u), holder: { awayFrom: { lte: today }, awayTo: { gte: today } } }, select: { id: true, pn: true } }),
   ]);
-  return { poolTooLong: pool.filter((p) => p.poolTone === "red").length, withAway: held.length };
+  // D-063: in loans, as the Inbox rows (a loan with two items waiting is one).
+  return { poolTooLong: loanCount(pool.filter((p) => p.poolTone === "red")), withAway: loanCount(held) };
 }
 
 /** Items held by people who are away (for the supervisor's Move list). */
@@ -384,7 +442,7 @@ export async function receiveReleasedLoan(tx: Tx, loan: { pn: string; branchId: 
 
 export { outcomeText };
 
-/** The Inbox badge: items named to the person and not accepted yet. */
+/** The Inbox badge: loans with work named to the person and not accepted yet (D-063: loans, as the Inbox rows). */
 export async function inboxCount(u: CurrentUser): Promise<number> {
-  return prisma.workItem.count({ where: { holderUserId: u.id, state: "INBOX" } });
+  return loanCount(await prisma.workItem.findMany({ where: { holderUserId: u.id, state: "INBOX" }, select: { id: true, pn: true } }));
 }

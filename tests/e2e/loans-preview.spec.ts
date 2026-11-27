@@ -69,13 +69,17 @@ test("no Accept for pool loans anywhere: one View details; the badge only on not
   await page.goto(`/loans?q=${RELEASED}`);
   await expect(main(page).locator("[data-loan-row]:visible")).toHaveCount(1);
   await expect(main(page).locator("[data-not-in-dms]")).toHaveCount(0);
-  // Inbox › Branch pool: View details, the badge, no Accept.
+  // Inbox › Branch pool: the badge, no Accept; the row opens its preview in the panel (D-063), with Refresh, no link to the page.
   await page.goto("/inbox?tab=pool");
-  const item = main(page).locator(`[data-inbox-row^="${CANCELLED}"]`);
-  await expect(item.getByRole("link", { name: "View details" })).toHaveAttribute("href", `/loans/preview/${CANCELLED}`);
+  const item = main(page).locator(`[data-inbox-row="${CANCELLED}"]`);
   await expect(item.locator("[data-not-in-dms]")).toBeVisible();
   await expect(item.getByRole("button", { name: "Accept" })).toHaveCount(0);
   await expect(item.locator("[data-pool-since]")).toHaveText(/^In the branch pool since [A-Z][a-z]{2} \d{1,2} · (\d+ working days?|less than a day)$/);
+  await item.click();
+  await expect(page.getByRole("dialog").locator("[data-refresh-preview]")).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("link", { name: /full preview/i })).toHaveCount(0);
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Accept" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   ok();
 });
 
@@ -155,7 +159,7 @@ test("Open loan file: the loan file is the opener's, their TAT starts, the item 
   // Out of the pool: the item is done; the pool and the Not yet in DMS list no longer have it.
   expect((await db.workItem.findFirstOrThrow({ where: { kind: "LOAN_CANDIDATE", subjectId: RELEASED } })).state).toBe("DONE");
   await page.goto("/inbox?tab=pool");
-  await expect(main(page).locator(`[data-inbox-row^="${RELEASED}"]`)).toHaveCount(0);
+  await expect(main(page).locator(`[data-inbox-pane=pool] [data-inbox-row^="${RELEASED}"]`)).toHaveCount(0); // (now in My items)
   await page.goto("/loans?status=new");
   await expect(main(page).locator("[data-pn]", { hasText: RELEASED })).toHaveCount(0);
   // View details of a loan in the DMS opens its loan file (the preview address too).

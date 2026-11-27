@@ -68,16 +68,20 @@ export function GuardedSheet({
       aria-labelledby={id}
       onCancel={(e) => { e.preventDefault(); requestClose(); }}
       onClick={(e) => { if (e.target === ref.current) requestClose(); }}
-      className="mb-0 mt-auto w-full max-w-none overscroll-contain rounded-t-2xl border border-line bg-white p-0 text-ink backdrop:bg-navy/40 sm:m-auto sm:w-[min(520px,calc(100vw-32px))] sm:max-w-none sm:rounded-2xl"
+      className="mb-0 mt-auto max-h-[85dvh] w-full max-w-none overflow-hidden rounded-t-2xl border border-line bg-white p-0 text-ink backdrop:bg-navy/40 open:flex open:flex-col sm:m-auto sm:max-h-[calc(100dvh-32px)] sm:w-[min(520px,calc(100vw-32px))] sm:max-w-none sm:rounded-2xl"
+      data-sheet
     >
-      <div className={`max-h-[85dvh] overflow-y-auto p-5 sm:max-h-none sm:p-6 ${dragToClose ? "max-sm:pt-2" : ""}`}>
+      {/* The user's review (27 November 2026): the header pinned with a line under it; only the body scrolls. */}
+      <div className={`shrink-0 border-b border-line px-5 pb-3 pt-5 sm:px-6 sm:pt-6 ${dragToClose ? "max-sm:pt-2" : ""}`} data-sheet-header>
         {dragToClose && <SheetHandle dragProps={dragProps} onClick={onHandleClick} />}
-        <div className={`mb-4 flex items-start justify-between gap-3 ${dragToClose ? "max-sm:touch-none" : ""}`} {...(dragToClose ? dragProps : {})}>
+        <div className={`flex items-start justify-between gap-3 ${dragToClose ? "max-sm:touch-none" : ""}`} {...(dragToClose ? dragProps : {})}>
           <h2 id={id} className="text-xl font-bold text-navy">{title}</h2>
           <button type="button" onClick={requestClose} className={`-m-2 flex h-11 w-11 items-center justify-center rounded-xl text-ink-2 hover:bg-hover ${dragToClose ? "max-sm:hidden" : ""}`} aria-label="Close">
             <XIcon />
           </button>
         </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4 sm:px-6 sm:pb-6" data-sheet-body>
         <CloseContext.Provider value={requestClose}>{open && children}</CloseContext.Provider>
       </div>
       <ConfirmDialog

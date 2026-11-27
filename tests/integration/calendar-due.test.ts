@@ -175,7 +175,9 @@ describe("the holiday CSV import follows the same rule (D-042)", () => {
     const back = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10);
     const chk = await checkImport(admin, "holidays", "h.csv", csv([
       `${back(8)},${NAME} old,Regular,,Late entry from the proclamation,Active,`,
-      `${back(2)},${NAME} noreason,Regular,,,Active,`,
+      // A recent past day that is not the fixed holiday an earlier test adds (2026-11-25): on 27 November 2026 the
+      // two were the same day and the row counted as unchanged.
+      `${[2, 3].map(back).find((d) => d !== "2026-11-25")},${NAME} noreason,Regular,,,Active,`,
       `2099-02-01,${NAME} local,Local,999,,Active,`,
     ]));
     if (!chk.ok) throw new Error(chk.error);

@@ -243,6 +243,8 @@ export interface PreviewExtras {
    * (the badge is not repeated beside the page subtitle).
    */
   page?: boolean;
+  /** D-063: another action in the card header instead of the page's form (the Inbox panel's Refresh, in place). */
+  action?: React.ReactNode;
 }
 
 /**
@@ -250,7 +252,7 @@ export interface PreviewExtras {
  * result): name, PN with Copy and the "myloans · Not yet in DMS" badge; the myloans details; Open loan file (only for
  * people who may open loan files: the branch check already ran) and, on the page, Refresh from myloans.
  */
-export function Preview({ r, warnings, waiting = null, page = false }: { r: Extract<PnLookupResult, { kind: "preview" }>; warnings: string[] } & PreviewExtras) {
+export function Preview({ r, warnings, waiting = null, page = false, action }: { r: Extract<PnLookupResult, { kind: "preview" }>; warnings: string[] } & PreviewExtras) {
   const rec = r.record;
   const financing = r.classification === "FINANCING";
   // An amber chip only for what is not fine (no "Your branch" or "Details complete" chips). Another loan of
@@ -266,7 +268,7 @@ export function Preview({ r, warnings, waiting = null, page = false }: { r: Extr
       )}
       {/* As in the old design: name and PN on the left; the status (by name, never the number) and the
           source on the right. The branch and product are in the details, so not repeated. */}
-      <LoanHead name={rec.borrowerName} pn={rec.pn} titleId="found-title" action={page ? <RefreshPreviewButton pn={r.pn} /> : undefined}>
+      <LoanHead name={rec.borrowerName} pn={rec.pn} titleId="found-title" action={page ? <RefreshPreviewButton pn={r.pn} /> : action}>
         {/* Compact (the user's review, 26 November 2026): 24px chips, 12px text. */}
         <li><span className="chip c-ok h-6 gap-1 px-2 text-xs"><CheckIcon size={12} strokeWidth={2.6} />{statusLabel(rec)}</span></li>
         <li data-find-source><NotInDmsBadge className="h-6 px-2" /></li>
