@@ -123,7 +123,7 @@ export function OpenLoanForm({ pn, financing, canOpen, facts }: { pn: string; fi
         ) : (
           <span className="basis-full text-[13px] text-ink-2 sm:basis-auto" data-open-nothing-saved>Nothing is saved until you open the loan file.</span>
         )}
-        <Link href="/loans" className="inline-flex h-11 items-center rounded-lg px-3 text-sm font-semibold text-navy no-underline hover:bg-fill sm:ml-auto md:h-9">Cancel</Link>
+        <Link href="/loans" data-open-cancel className="inline-flex h-11 items-center rounded-lg px-3 text-sm font-semibold text-navy no-underline hover:bg-fill sm:ml-auto md:h-9">Cancel</Link>
       </div>
     </form>
   );

@@ -12,11 +12,17 @@ import { RefreshIcon } from "@/components/ui/icons";
  */
 function Submit() {
   const { pending } = useFormStatus();
+  return <RefreshIconButton pending={pending} type="submit" />;
+}
+
+/** The icon button itself: in the page's form (submit), or in the Inbox's panel (D-063: a click that refreshes in place). */
+export function RefreshIconButton({ pending, type = "button", onClick }: { pending: boolean; type?: "button" | "submit"; onClick?: () => void }) {
   const label = pending ? "Asking myloans..." : "Refresh from myloans";
   return (
     <span className="group/refresh relative inline-flex">
       <button
-        type="submit"
+        type={type}
+        onClick={onClick}
         aria-label={label}
         disabled={pending}
         className="relative inline-flex h-7 w-7 items-center justify-center rounded-md border border-line-input bg-white text-navy hover:bg-fill disabled:opacity-60 before:absolute before:-inset-2 before:content-[''] md:before:hidden"

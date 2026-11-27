@@ -219,7 +219,8 @@ test("Released, not yet in the DMS (10b): the LA's branch pool shows it with the
   await page.goto("/inbox?tab=pool");
   const row = page.locator("main").getByText(pn).first();
   await expect(row).toBeVisible();
-  await expect(page.locator("[data-candidate]").first()).toContainText("released");
+  // D-063: the row has the release date (from the pool's copy).
+  await expect(page.locator(`[data-inbox-row="${pn}"] [data-row-released-on]`)).toContainText("Released");
   await expect(page.locator("[data-pool-tone]").first()).toHaveAttribute("data-pool-tone", "green");
   await shot(page, "branch-pool-candidate");
   await noSideways(page);

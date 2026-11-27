@@ -65,17 +65,29 @@ test("the LA sends to the Branch DP pool; a processor accepts it from the Inbox 
 
   await signInWith(page, BUTTONS.dp);
   await page.goto("/inbox?tab=pool");
-  const row = page.locator("[data-inbox-row]", { hasText: PN }).filter({ hasText: "Processor's job" });
+  // D-063: one row per loan; Accept is in its details panel.
+  const row = page.locator(`[data-inbox-pane=pool] [data-inbox-row="${PN}"]`);
   await expect(row).toBeVisible();
+  await expect(row.locator("[data-row-txn]")).toHaveText("Notary · Processor's job");
   await expect(row).toContainText(/In the branch pool since [A-Z][a-z]{2} \d{1,2} · less than a day/); // D-060 wording
   await shot(page, "branch-pool");
-  await row.getByRole("button", { name: "Accept" }).click();
+  await row.click();
+  await page.getByRole("dialog").getByRole("button", { name: "Accept" }).click();
+  // D-063: Accept asks first; Cancel leaves it in the pool, Accept takes it.
+  const ask = page.locator('[data-confirm-dialog="accept-confirm"]');
+  await expect(ask.getByRole("heading")).toHaveText("Accept Notary?");
+  await expect(ask).toContainText("It moves to your items and its turnaround time starts today.");
+  await ask.locator("[data-confirm-cancel]").click();
+  await expect(ask).toBeHidden();
+  await expect(page).toHaveURL(/\/inbox/); // nothing taken: still in the Inbox
+  await page.getByRole("dialog").getByRole("button", { name: "Accept" }).click();
+  await ask.locator("[data-confirm-ok]").click();
   await expect(page).toHaveURL(/\/jobs\/[a-z0-9]+$/);
   const job = await db.dpAssignment.findFirstOrThrow({ where: { transactionId: (await txnOf("NOTARY")).id }, include: { dpUser: true } });
   expect(job.status).toBe("ACCEPTED");
   expect(job.dpUser.email).toBe("test.dp@gdfi.ph");
   await page.goto("/inbox");
-  await expect(page.locator("[data-inbox-row]", { hasText: PN }).filter({ hasText: "Processor's job" })).toContainText("Due");
+  await expect(page.locator(`[data-inbox-pane=mine] [data-inbox-row="${PN}"]`)).toContainText("Due");
 });
 
 test("My items, Away, the supervisors' Home lines, pool colours and Move back to the pool", async ({ page }) => {
@@ -87,11 +99,12 @@ test("My items, Away, the supervisors' Home lines, pool colours and Move back to
   const mine = page.locator("[data-inbox-list='mine'] [data-inbox-row]", { hasText: PN });
   await expect(mine.first()).toContainText("Due");
   await shot(page, "my-items");
-  // Away: set by the person.
-  await page.locator("[data-away]").getByRole("button", { name: "I will be away" }).click();
-  await page.getByLabel("Note (optional)").fill("Sick leave");
-  await page.locator("[data-away]").getByRole("button", { name: "Save" }).click();
-  await expect(page.locator("[data-away]")).toContainText("Marked away");
+  // Away: set by the person (D-063: Set away in the header opens the form in a sheet).
+  await page.locator("[data-set-away]").click();
+  const awaySheet = page.getByRole("dialog", { name: "Set away" });
+  await awaySheet.getByLabel("Note (optional)").fill("Sick leave");
+  await awaySheet.getByRole("button", { name: "Save" }).click();
+  await expect(awaySheet.locator("[data-away]")).toContainText("Marked away");
   await expect.poll(async () => (await db.user.findUniqueOrThrow({ where: { email: "test.la@gdfi.ph" } })).awayNote).toBe("Sick leave");
 
   // A pool item that has waited long (red after 2 working days by default).
@@ -101,25 +114,37 @@ test("My items, Away, the supervisors' Home lines, pool colours and Move back to
   await signInWith(page, BUTTONS.admin);
   await page.goto("/dashboard");
   const card = page.locator("[data-work-counts]");
-  await expect(card.locator("[data-pool-too-long]")).toContainText("1 item waiting in the pool too long");
-  await expect(card.locator("[data-with-away]")).toContainText(/items? (is|are) with people who are away/);
+  await expect(card.locator("[data-pool-too-long]")).toContainText("1 loan waiting in the pool too long");
+  await expect(card.locator("[data-with-away]")).toContainText("1 loan is with people who are away"); // four items of one loan (D-063)
   await page.goto("/inbox?tab=pool");
-  await expect(page.locator("[data-inbox-row='GD9992099930001: Zz Waiting Borrower'] [data-pool-tone='red']")).toBeVisible();
+  await expect(page.locator("[data-inbox-row='GD9992099930001'] [data-pool-tone='red']")).toBeVisible();
 
   // Move one of the away LA's items back to the branch pool.
   await page.goto("/inbox?tab=away");
-  const away = page.locator("[data-inbox-list='away'] [data-inbox-row]", { hasText: PN }).first();
-  const label = (await away.getAttribute("data-inbox-row"))!;
-  await away.getByRole("button", { name: "Move" }).click();
-  const form = away.locator("[data-move-form]");
+  // D-063: one row per loan; Move is per item in the details panel.
+  const away = page.locator(`[data-inbox-list='away'] [data-inbox-row="${PN}"]`);
+  await away.click();
+  const dlg = page.getByRole("dialog");
+  const first = dlg.locator("[data-panel-item]").first();
+  const before = await dlg.locator("[data-panel-item]").count();
+  await first.getByRole("button", { name: "Move" }).click();
+  const form = first.locator("[data-move-form]");
   await form.getByLabel("Move to").selectOption({ label: "Back to the branch pool" });
   await form.getByLabel("Why").fill("Away this week");
   await shot(page, "move");
   await form.getByRole("button", { name: "Move", exact: true }).click();
   await expect(page.locator("[data-move-result]")).toContainText("Back in the branch pool.");
-  await expect(page.locator(`[data-inbox-list='away'] [data-inbox-row='${label}']`)).toHaveCount(0);
-  await expect.poll(async () => (await db.workItem.findFirst({ where: { label, state: "POOL" } }))?.id ?? null).not.toBeNull();
-  const old = await db.workItem.findFirstOrThrow({ where: { label, outcome: "BACK_TO_POOL" } });
+  await expect(dlg).toBeHidden(); // a good move closes the panel
+  await away.click();
+  await expect(dlg.locator("[data-panel-item]")).toHaveCount(before - 1);
+  const old = await db.workItem.findFirstOrThrow({ where: { pn: PN, outcome: "BACK_TO_POOL" } });
+  await expect.poll(async () => (await db.workItem.findFirst({ where: { label: old.label, state: "POOL" } }))?.id ?? null).not.toBeNull();
   expect(old.state).toBe("DONE");
   expect(await db.auditLog.count({ where: { action: "work_item_back_to_pool" } })).toBeGreaterThan(0);
+  // D-063: the pool item's panel says why it is there: who put it back and their note.
+  await page.goto("/inbox?tab=pool");
+  await page.locator(`[data-inbox-pane=pool] [data-inbox-row="${PN}"]`).click();
+  const item = page.getByRole("dialog").locator("[data-panel-why]").first();
+  await expect(item.locator("[data-panel-why-title]")).toHaveText(/^Put back in the branch pool by .+ · /);
+  await expect(item.locator("[data-panel-why-text]")).toHaveText("Away this week");
 });
