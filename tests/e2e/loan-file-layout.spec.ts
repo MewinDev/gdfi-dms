@@ -352,3 +352,34 @@ test("D-062 bottom sheets on a phone: a grab handle instead of the X; drag down 
   await page.mouse.up();
   await expect(report).toBeHidden();
 });
+
+test("D-062 review: Change how this loan is set up sits in the left column under All transactions, outside Loan at a glance", async ({ page }) => {
+  await openLoan(page);
+  await signIn(page, "admin");
+  await page.goto("/loans/GD1012026901001?tab=todo");
+  const main = page.getByRole("main");
+  const override = main.locator("[data-override]");
+  const all = main.locator("[data-all-txns]");
+  await expect(override).toBeVisible();
+  await expect(override.locator("summary")).toHaveText("Change how this loan is set up");
+  await expect(main.locator("[data-glance] [data-override], aside [data-override]")).toHaveCount(0);
+  const o = (await override.boundingBox())!, a = (await all.boundingBox())!;
+  expect(o.y).toBeGreaterThanOrEqual(a.y + a.height); // below the card, not inside it
+  expect(Math.abs(o.x - a.x)).toBeLessThan(2); // the same left edge
+  await noSideScroll(page);
+  // "Change setup" asks first. Without a reason the form's own check stops it (no question).
+  await override.locator("summary").click();
+  const apply = override.locator("[data-override-apply]");
+  const ask = page.locator('[data-confirm-dialog="override-confirm"]');
+  await apply.click();
+  await expect(ask).toBeHidden();
+  await override.getByLabel(/Reason/).fill("Checked with the branch: test only.");
+  await apply.click();
+  await expect(ask).toBeVisible();
+  await expect(ask.getByRole("heading")).toHaveText("Change how this loan is set up?");
+  await expect(ask).toContainText("Transactions already with a DP are never changed.");
+  // Cancel: nothing is applied.
+  await ask.locator("[data-confirm-cancel]").click();
+  await expect(ask).toBeHidden();
+  await expect(override.locator('[role="status"], [role="alert"]').filter({ hasText: /\S/ })).toHaveCount(0);
+});

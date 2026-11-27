@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useId, useState } from "react";
+import { useActionState, useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { RefreshIcon } from "@/components/ui/icons";
 import {
@@ -9,6 +9,7 @@ import {
   simulateAction,
 } from "@/app/actions/loan";
 import { FormMessage, SubmitButton } from "@/components/form-status";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { plainMessage } from "@/lib/ui/plain";
 
 // ---------------------------------------------------------------------------
@@ -60,14 +61,21 @@ function RefreshSubmit({ tipId, lastChecked }: { tipId: string; lastChecked: str
 // ---------------------------------------------------------------------------
 
 export function OverrideForm({ loanId, current }: { loanId: string; current: { classification: string; financingType: string | null; orcrStatus: string | null; mortgage: string } }) {
-  const [state, action] = useActionState(overrideAction, null);
+  const [state, action, pending] = useActionState(overrideAction, null);
   const [cls, setCls] = useState(current.classification);
+  // D-062 review: "Change setup" asks first (it changes the loan's transactions); the form's own checks run before.
+  const [asking, setAsking] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [orcr, setOrcr] = useState(current.orcrStatus ?? "TRANSFERRED");
   const needsMortgage = !(cls === "FINANCING" && orcr === "UNTRANSFERRED");
   return (
-    <details className="card p-4">
-      <summary className="cursor-pointer text-sm font-semibold text-navy">Override automatic result (Supervisor)</summary>
-      <form action={action} className="mt-3 grid gap-3 md:grid-cols-2">
+    // D-062 review: a quiet, rarely used tool: a dashed outline and muted text while closed; the white card only when open.
+    <details className="group/ov rounded-xl border border-dashed border-line-strong px-3 py-1 open:border-solid open:border-line open:bg-white open:py-2 sm:px-4" data-override>
+      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-navy group-open/ov:font-semibold group-open/ov:text-navy [&::-webkit-details-marker]:hidden">
+        <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3 shrink-0 transition-transform group-open/ov:rotate-90"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        Change how this loan is set up
+      </summary>
+      <form ref={formRef} action={action} className="mt-3 grid gap-3 md:grid-cols-2">
         <input type="hidden" name="loanId" value={loanId} />
         <div>
           <label htmlFor="ov-cls" className="label">Classification</label>
@@ -110,9 +118,17 @@ export function OverrideForm({ loanId, current }: { loanId: string; current: { c
         </div>
         <div className="md:col-span-2 space-y-2">
           <FormMessage state={state} />
-          <SubmitButton className="btn-danger">Apply override</SubmitButton>
+          <button type="button" className="btn-danger" disabled={pending} aria-busy={pending} data-override-apply
+            onClick={() => { if (formRef.current?.reportValidity()) setAsking(true); }}>
+            {pending ? "Changing..." : "Change setup"}
+          </button>
         </div>
       </form>
+      <ConfirmDialog open={asking} title="Change how this loan is set up?" confirmLabel="Change setup" sheetOnPhone data="override-confirm"
+        body="The automatic result is replaced and the loan's transactions change to match it."
+        detail="Transactions already with a DP are never changed. Your reason is saved in the audit log."
+        onCancel={() => setAsking(false)}
+        onConfirm={() => { setAsking(false); formRef.current?.requestSubmit(); }} />
     </details>
   );
 }

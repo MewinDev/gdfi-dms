@@ -406,6 +406,10 @@ async function TodoTab({ loan, ctx, user, step, related }: { loan: LoanDetail; c
             </ul>
           </section>
         )}
+        {/* D-062 review: the Supervisor's override sits in the left column under All transactions, on its own. */}
+        {can(user, PERMISSIONS.RULES_OVERRIDE) && (
+          <OverrideForm loanId={loan.id} current={{ classification: loan.classification, financingType: loan.financingType, orcrStatus: loan.orcrStatus, mortgage: loan.mortgageResult }} />
+        )}
       </div>
 
       <aside className="flex flex-col gap-3">
@@ -495,9 +499,6 @@ function AtAGlance({ loan, ctx, user }: { loan: LoanDetail; ctx: Ctx; user: Curr
             ))}
           </dl>
         </section>
-      )}
-      {can(user, PERMISSIONS.RULES_OVERRIDE) && (
-        <OverrideForm loanId={loan.id} current={{ classification: loan.classification, financingType: loan.financingType, orcrStatus: loan.orcrStatus, mortgage: loan.mortgageResult }} />
       )}
     </section>
   );
