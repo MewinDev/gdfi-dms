@@ -221,6 +221,7 @@ test("Return to LA with cash released and papers: liquidation notice, Cash to se
 
   // The DP still settles the cash: My funds, Liquidation, "Cash to settle".
   await page.goto("/my-funds?tab=liquidation");
+  await page.locator(`[data-advance-number="${adv.number}"]`).first().click(); // D-065: the advance's panel
   const card = page.locator(`[data-advance="${adv.number}"]`);
   await expect(card).toHaveAttribute("data-cash-to-settle", "true");
   await expect(card).toContainText("Cash to settle");

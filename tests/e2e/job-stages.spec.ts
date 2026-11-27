@@ -95,8 +95,10 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
 
   // Funds: the DP asks, Finance approves and releases.
   await page.goto("/my-funds");
+  await page.locator("[data-request-funds]").click(); // D-065: the request form is in the side panel
   await page.getByRole("textbox", { name: /LTO fee amount/ }).fill("1500.00");
   await page.getByRole("button", { name: "Send to Finance" }).click();
+  await page.locator('[data-confirm-dialog="request-confirm"] [data-confirm-ok]').click(); // D-065: Send asks first
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
   await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=approve");
@@ -198,9 +200,11 @@ test("Full path, GD1012026901001: stages with evidence, a problem at the LTO, Ch
 
   // Liquidation runs beside forwarding: receipts, then Finance closes.
   await page.goto("/my-funds?tab=liquidation");
-  await page.getByLabel("Amount (PHP)").fill("1500.00");
-  await page.getByLabel("Receipt / OR no.").fill("OR-LTO-1");
-  await page.getByRole("button", { name: "Add receipt" }).click();
+  await page.locator("[data-funds-row^='line:']").first().click(); // D-065: the liquidation is in the advance's panel
+  const receipt = page.getByRole("dialog").locator("[data-receipt-line]").first();
+  await receipt.getByLabel("Amount (PHP)").fill("1500.00");
+  await receipt.getByLabel("Receipt / OR no.").fill("OR-LTO-1");
+  await receipt.getByRole("button", { name: "Add receipt" }).click();
   await expect.poll(async () => (await db.cashAdvance.findFirstOrThrow()).status).toBe("LIQUIDATED");
   await signInWith(page, BUTTONS.fin);
   await page.goto("/funds?tab=outstanding");

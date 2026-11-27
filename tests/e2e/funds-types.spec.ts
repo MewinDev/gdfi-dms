@@ -84,6 +84,7 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
 
   // DP: the request with the type choice (default Cash advance), then Fund transfer.
   await page.goto("/my-funds");
+  await page.locator("[data-request-funds]").click(); // D-065: the request form is in the side panel
   const choice = page.locator("[data-funds-type-choice]");
   await expect(choice.getByRole("radio", { name: /CA · Cash advance/ })).toBeChecked();
   await choice.getByRole("radio", { name: /FT · Fund transfer/ }).check();
@@ -96,6 +97,7 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
   await shot(page, "dp-request-type-choice");
   await noSideways(page);
   await page.getByRole("button", { name: "Send to Finance" }).click();
+  await page.locator('[data-confirm-dialog="request-confirm"] [data-confirm-ok]').click(); // D-065: Send asks first
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
   const ft = await db.cashAdvance.findFirstOrThrow({ where: { lines: { some: { transactionId: mortgage } } } });
   expect(ft).toMatchObject({ fundsTypeCode: "FT", fundsTypeName: "Fund transfer" });
@@ -173,6 +175,7 @@ test("DP picks Fund transfer; Finance sees both pills, filters by type, and rele
   await expect(page.locator(`[data-advance="${ft.number}"]`)).not.toContainText("123456784821");
   await signInWith(page, BUTTONS.dp);
   await page.goto("/my-funds?tab=advances");
+  await page.locator(`[data-advance-number="${ft.number}"]`).first().click(); // D-065: the advance's panel
   await expect(page.locator('[data-funds-type="FT"]').first()).toBeVisible();
   // D-056: the processor confirms receipt; a wrong amount is flagged to Finance, who clears it with remarks.
   const confirm = page.locator(`[data-confirm-receipt="${ft.number}"]`);

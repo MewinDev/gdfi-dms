@@ -2,7 +2,7 @@
 
 How cash advances and fund transfers are flagged, requested, approved, released, carried over and liquidated.
 
-Last updated: 24 November 2026 (PHT)
+Last updated: 27 November 2026 (PHT)
 
 See the [colour key](README.md#colour-key).
 
@@ -50,6 +50,7 @@ flowchart TD
   classDef sys fill:#e6e8ec,stroke:#56627a,color:#14213a
 ```
 
+- **My funds (D-065).** The processor's funds in one list, the same design as Loans and Jobs: a row per job that needs funds and per advance line, with its status (Needs funds, Requested, Approved, Released, To liquidate, Liquidation overdue, Liquidated, Returned/cancelled; the status choices are in Filters, All open by default), one search and Filters (Type, Transaction, Late only, Sort), overdue liquidation first. **Request funds** opens the request in a side panel for the ticked jobs (or every job that needs funds), with one compact line per expense, totals, and Send asking first; the same rules as before (suggested amounts, the maximum with a reason, the overdue block and Finance's exception). Clicking an advance's row opens its details beside the list, with Confirm receipt (a fund transfer), the liquidation (a receipt per line, the change to return) and Ask for more.
 - **Fund transfer account and receipt (D-056):** for a type that sends to an account, the processor types the receiving account (bank or e-wallet, account name, account number) when requesting. Finance sees the full number only on the release screen and ticks "I checked the receiving account"; after the release only the last 4 digits are kept, and everywhere else it shows as "account ending 1234". The processor then confirms receipt on My funds (reference number, amount, last 4 digits); a difference is flagged to Finance (the handlers of that type and branch) with what was typed and what was recorded, and Finance clears it with remarks. "At the LTO" does not wait for this unless Settings turns on `funds.blockLtoUntilReceiptConfirmed` (to confirm with Finance).
 - **A cancelled transaction (D-056):** cash already released for it stays owed; liquidation is due the set number of working days after the later of the last LTO pickup and the cancellation.
 - The LA only flags whether funds are needed. The DP asks for the amount, one advance for several jobs, and picks the funds type: Cash advance (default) or Fund transfer.

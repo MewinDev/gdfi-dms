@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useId, useMemo, useState } from "react";
 import { FormMessage, SubmitButton } from "@/components/form-status";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Sheet } from "@/components/ui/sheet";
 import {
   addReceiptAction, changeFundsTypeAction, closeAdvanceAction, confirmReturnAction, decideAdvanceAction, decideCarryOverAction, decideTopUpAction, grantExceptionAction,
@@ -43,7 +44,14 @@ export interface RequestJob {
 
 type Other = { kind: string; amount: string; note: string; desc: string };
 
-export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kinds: kinds0 = [], canAddKind = false }: { jobs: RequestJob[]; blocked?: string; types?: FundsTypeOption[]; defaultTypeId?: string; kinds?: KindOption[]; canAddKind?: boolean }) {
+/**
+ * The processor's request (D-065: in the My funds panel). Per job a header line (borrower · PN · transaction, then the
+ * LTO office) and one compact line per expense kind: tick · name · hint ("suggested ₱1,500.00 · max ₱5,000.00") · the
+ * amount right beside it, with its problem under it (not a number, above the maximum without a reason); "What is this
+ * expense?" only when Other has an amount. A running total per job and the grand total with Cancel and Send pinned at
+ * the bottom; Send asks first. The rules are the server's (requestAdvance): presets, maximums, the overdue block.
+ */
+export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kinds: kinds0 = [], canAddKind = false, onCancel, onSent }: { jobs: RequestJob[]; blocked?: string; types?: FundsTypeOption[]; defaultTypeId?: string; kinds?: KindOption[]; canAddKind?: boolean; onCancel?: () => void; onSent?: (message?: string) => void }) {
   const [typeId, setTypeId] = useState(defaultTypeId);
   const [kinds, setKinds] = useState(kinds0);
   const init = () => Object.fromEntries(jobs.flatMap((j) => j.kinds.map((k) => [`${j.transactionId}|${k.kind}`, { on: true, amount: k.suggestedCents ? (k.suggestedCents / 100).toFixed(2) : "", reason: "", desc: "" }])));
@@ -53,12 +61,16 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kin
   const [account, setAccount] = useState({ provider: "", name: "", number: "" });
   const needsAccount = !!types.find((t) => t.id === typeId)?.needsAccount;
   // A sent request clears the form (the jobs move to My advances).
-  const [state, action] = useActionState(async (p: ActionState, fd: FormData) => {
+  const [state, action, pending] = useActionState(async (p: ActionState, fd: FormData) => {
     const r = await requestAdvanceAction(p, fd);
-    if (r?.ok) { setLines(init()); setOthers([]); }
+    if (r?.ok) { setLines(init()); setOthers([]); onSent?.(r.message); }
     return r;
   }, null);
   const uid = useId();
+  const formId = `${uid}-form`;
+  const [asking, setAsking] = useState(false);
+  const [seen, setSeen] = useState(state);
+  if (state !== seen) { setSeen(state); setAsking(false); }
   const set = (key: string, patch: Partial<{ on: boolean; amount: string; reason: string; desc: string }>) => setLines((x) => ({ ...x, [key]: { ...x[key], ...patch } }));
   const kindOf = (code: string) => kinds.find((k) => k.code === code);
   const startOf = (code: string) => { const k = kindOf(code); return startingAmount({ kind: k ? { code: k.code, amountMode: k.amountMode, amountCents: k.amountCents } : null }); };
@@ -67,56 +79,75 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kin
   const chosen = jobs.flatMap((j) => j.kinds.map((k) => ({ j, k, key: `${j.transactionId}|${k.kind}` }))).filter(({ key }) => lines[key]?.on);
   const total = chosen.reduce((s, { key }) => s + (toC(lines[key].amount) ?? 0), 0) + others.reduce((s, o) => s + (toC(o.amount) ?? 0), 0);
   // Why Send is off, in plain words (the server checks the same).
-  const missingDesc = chosen.find(({ k, key }) => k.kind === OTHER && otherDescriptionProblem(lines[key].desc)) ?? null;
+  // "What is this expense?" only when Other has an amount (D-065).
+  const missingDesc = chosen.find(({ k, key }) => k.kind === OTHER && (toC(lines[key].amount) ?? 0) > 0 && otherDescriptionProblem(lines[key].desc)) ?? null;
+  const badAmount = chosen.find(({ key }) => lines[key].amount.trim() !== "" && toC(lines[key].amount) === null) ?? null;
+  const overNoReason = chosen.find(({ k, key }) => { const c = toC(lines[key].amount); return !!(k.maxCents && c && c > k.maxCents && lines[key].reason.trim().length < 3); }) ?? null;
+  const jobTotal = (j: RequestJob) => j.kinds.reduce((s, k) => { const v = lines[`${j.transactionId}|${k.kind}`]; return s + (v?.on ? toC(v.amount) ?? 0 : 0); }, 0);
   const otherProblem = others.map((o) => (o.kind === OTHER ? otherDescriptionProblem(o.desc) : o.note.trim().length < 3 ? "Say what the other expense is for." : null)).find(Boolean) ?? null;
-  const why = blocked ? null : missingDesc ? `${missingDesc.j.loanPn}: ${otherDescriptionProblem(lines[missingDesc.key].desc)}` : otherProblem ? `Other expenses: ${otherProblem}` : total <= 0 ? "Tick at least one job or add an expense with an amount." : null;
+  const why = blocked ? null
+    : badAmount ? `${badAmount.j.loanPn} ${badAmount.k.label}: type an amount of zero or more (for example 1500 or 1500.50).`
+    : overNoReason ? `${overNoReason.j.loanPn} ${overNoReason.k.label}: above the maximum. Say why.`
+    : missingDesc ? `${missingDesc.j.loanPn}: ${otherDescriptionProblem(lines[missingDesc.key].desc)}`
+    : otherProblem ? `Other expenses: ${otherProblem}` : total <= 0 ? "Tick at least one job or add an expense with an amount." : null;
   const payload = JSON.stringify({
-    lines: chosen.map(({ j, k, key }) => ({ transactionId: j.transactionId, kind: k.kind, cents: toC(lines[key].amount) ?? 0, overMaxReason: lines[key].reason, otherDescription: k.kind === OTHER ? lines[key].desc : "" })),
+    // D-065: a ticked line left blank or at zero is not asked for (the server refuses a line at zero).
+    lines: chosen.filter(({ key }) => (toC(lines[key].amount) ?? 0) > 0).map(({ j, k, key }) => ({ transactionId: j.transactionId, kind: k.kind, cents: toC(lines[key].amount) ?? 0, overMaxReason: lines[key].reason, otherDescription: k.kind === OTHER ? lines[key].desc : "" })),
     others: others.map((o) => ({ kind: o.kind, cents: toC(o.amount) ?? 0, note: o.note, otherDescription: o.kind === OTHER ? o.desc : "" })),
     fundsTypeId: typeId || undefined,
     ...(needsAccount ? { account } : {}),
   });
 
   return (
-    <form action={action} className="flex flex-col gap-4">
+    <form id={formId} action={action} className="flex flex-col gap-3 text-sm" data-request-form>
       <Hidden v={{ json: payload }} />
-      {blocked && <p role="alert" className="rounded-xl bg-bad-bg px-4 py-3 text-[15px] text-bad-fg">{blocked}</p>}
+      {blocked && <p role="alert" className="rounded-lg bg-bad-bg px-3 py-2 text-[13px] text-bad-fg" data-request-blocked>{blocked}</p>}
       {jobs.length === 0 ? (
-        <p className="text-[15px] text-ink-2">No accepted jobs need funds right now. Jobs appear here after you accept them, when the Loan Associate flagged them as needing funds.</p>
+        // D-065: Request funds stays open with no job to fund: other expenses (not for one job) can still be asked for.
+        <p className="rounded-lg bg-fill px-3 py-2 text-[13px] text-ink" data-no-jobs-note>No jobs need funds right now. You can still request other expenses.</p>
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-2">
           {jobs.map((j) => (
-            <li key={j.transactionId} className="rounded-xl border border-line p-3">
-              <p className="text-[15px] font-semibold">{j.borrower} · {j.loanPn} · {j.typeName}</p>
-              {j.lto && <p className="text-[13px] text-ink-2" data-lto-line>At {j.lto.name} · {j.lto.estimate ?? "No estimate yet"}</p>}
-              <div className="mt-2 flex flex-col gap-2">
+            <li key={j.transactionId} className="rounded-lg border border-line px-2.5 py-2" data-request-job={j.loanPn}>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <p className="min-w-0 break-words text-[13px] font-bold text-navy" data-request-job-head>{j.borrower} · <span className="font-mono font-normal">{j.loanPn}</span> · {j.typeName}</p>
+                <p className="text-xs text-ink-2 tabular-nums" data-job-total>{peso(jobTotal(j))}</p>
+              </div>
+              {j.lto && <p className="text-xs text-ink-2" data-lto-line>At {j.lto.name} · {j.lto.estimate ?? "No estimate yet"}</p>}
+              <div className="mt-1 flex flex-col">
                 {j.kinds.map((k) => {
                   const key = `${j.transactionId}|${k.kind}`;
                   const v = lines[key];
                   const c = toC(v.amount);
+                  const bad = v.on && v.amount.trim() !== "" && c === null;
                   const over = !!(k.maxCents && c && c > k.maxCents);
+                  const hintId = `${uid}-${key}-h`;
                   return (
-                    <div key={key} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem] sm:items-start" data-request-line={k.kind}>
-                      <label className="inline-flex min-h-11 items-center gap-2 text-[15px]">
-                        <input type="checkbox" checked={v.on} onChange={(e) => set(key, { on: e.target.checked })} className="h-5 w-5 accent-[var(--navy)]" />
-                        {k.label}
-                        <span className="text-[13px] text-ink-2">{k.suggestedCents ? `${k.locked ? "fixed" : "suggested"} ${peso(k.suggestedCents)}${k.suggestedFrom === "office" ? " (from the LTO office)" : ""}` : "no suggested amount"}{k.maxCents ? ` · max ${peso(k.maxCents)}` : ""}</span>
-                      </label>
-                      <div>
+                    <div key={key} className="flex flex-col gap-1 border-t border-line-soft py-1 first:border-t-0" data-request-line={k.kind}>
+                      <div className="flex items-start gap-2">
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
+                        <label className="inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-ink sm:min-h-8">
+                          <input type="checkbox" checked={v.on} onChange={(e) => set(key, { on: e.target.checked })} className="h-5 w-5 accent-[var(--navy)] sm:h-4 sm:w-4" />
+                          {k.label}
+                        </label>
+                        <span id={hintId} className="text-xs text-ink-2" data-line-hint>{k.suggestedCents ? `${k.locked ? "fixed" : "suggested"} ${peso(k.suggestedCents)}${k.suggestedFrom === "office" ? " (from the LTO office)" : ""}` : "no suggested amount"}{k.maxCents ? ` · max ${peso(k.maxCents)}` : ""}</span>
+                        </div>
                         {v.on ? (
-                          <AmountInput id={`${uid}-${key}`} label={`${k.label} amount (PHP)`} value={v.amount} onChange={(a) => set(key, { amount: a })} locked={!!k.locked} source={k.source ?? null} startCents={k.suggestedCents} invalid={c === null} />
+                          <AmountInput compact id={`${uid}-${key}`} label={`${k.label} amount (PHP)`} value={v.amount} onChange={(a) => set(key, { amount: a })} locked={!!k.locked} source={k.source ?? null} startCents={k.suggestedCents} invalid={bad || (over && v.reason.trim().length < 3)} describedBy={hintId} />
                         ) : (
-                          <><label htmlFor={`${uid}-${key}`} className="sr-only">{k.label} amount (PHP)</label><input id={`${uid}-${key}`} disabled value={v.amount} className="input" readOnly /></>
+                          <><label htmlFor={`${uid}-${key}`} className="sr-only">{k.label} amount (PHP)</label><input id={`${uid}-${key}`} disabled value={v.amount} className="input h-11 min-h-11 w-28 py-0 text-right sm:h-8 sm:min-h-8 sm:text-sm" readOnly /></>
                         )}
                       </div>
-                      {v.on && k.kind === OTHER && (
-                        <div className="sm:col-span-2"><OtherDescriptionField id={`${uid}-${key}-d`} value={v.desc} onChange={(x) => set(key, { desc: x })} serverError={state?.field === "otherDescription" ? state.error : undefined} /></div>
-                      )}
+                      {bad && <p className="text-xs text-bad-fg" data-line-error="amount">Type an amount of zero or more (for example 1500 or 1500.50).</p>}
                       {v.on && over && (
-                        <div className="sm:col-span-2">
-                          <label htmlFor={`${uid}-${key}-r`} className="label">Above the maximum. Why?</label>
-                          <input id={`${uid}-${key}-r`} value={v.reason} onChange={(e) => set(key, { reason: e.target.value })} required minLength={3} maxLength={300} className="input" />
+                        <div className="flex flex-col gap-1" data-line-error="over-max">
+                          <p className="text-xs text-bad-fg">Above the maximum of {peso(k.maxCents!)}. Say why, or lower it.</p>
+                          <label htmlFor={`${uid}-${key}-r`} className="sr-only">Above the maximum. Why?</label>
+                          <input id={`${uid}-${key}-r`} value={v.reason} onChange={(e) => set(key, { reason: e.target.value })} required minLength={3} maxLength={300} placeholder="Why more than the maximum?" className="input h-11 min-h-11 py-0 sm:h-8 sm:min-h-8 sm:text-sm" />
                         </div>
+                      )}
+                      {v.on && k.kind === OTHER && (c ?? 0) > 0 && (
+                        <OtherDescriptionField id={`${uid}-${key}-d`} value={v.desc} onChange={(x) => set(key, { desc: x })} serverError={state?.field === "otherDescription" ? state.error : undefined} />
                       )}
                     </div>
                   );
@@ -154,29 +185,38 @@ export function RequestForm({ jobs, blocked, types = [], defaultTypeId = "", kin
         {others.map((o, i) => {
           const st = startOf(o.kind);
           return (
-            <div key={i} className="mt-2 grid gap-2 rounded-xl border border-line p-2 sm:grid-cols-[minmax(0,12rem)_9rem_minmax(0,1fr)_auto] sm:items-start" data-other-expense>
+            // D-065: the request is in a side panel (480 px): kind and amount side by side, the description under them.
+            <div key={i} className="mt-2 grid grid-cols-[minmax(0,1fr)_8rem] items-start gap-2 rounded-lg border border-line p-2" data-other-expense>
               <KindSelect id={`${uid}-ok-${i}`} name={`otherKind${i}`} label="Kind" value={o.kind} onChange={(code) => pickOtherKind(i, code)} kinds={kinds} onKindsChange={setKinds} canAdd={canAddKind} where="My funds" />
               <AmountInput id={`${uid}-oa-${i}`} value={o.amount} onChange={(a) => setOther(i, { amount: a })} locked={st.locked} source={st.source} startCents={st.cents} />
               {o.kind === OTHER ? (
-                <OtherDescriptionField id={`${uid}-od-${i}`} name={`otherDescription${i}`} value={o.desc} onChange={(x) => setOther(i, { desc: x })} />
+                <div className="col-span-2"><OtherDescriptionField id={`${uid}-od-${i}`} name={`otherDescription${i}`} value={o.desc} onChange={(x) => setOther(i, { desc: x })} /></div>
               ) : (
-                <div>
+                <div className="col-span-2">
                   <label htmlFor={`${uid}-on-${i}`} className="label">What for</label>
                   <input id={`${uid}-on-${i}`} value={o.note} onChange={(e) => setOther(i, { note: e.target.value })} className="input" required minLength={3} />
                 </div>
               )}
-              <button type="button" className="btn-ghost btn-sm sm:mt-7" onClick={() => setOthers((x) => x.filter((_, j) => j !== i))}>Remove</button>
+              <button type="button" className="btn-ghost btn-sm col-span-2 justify-self-start" onClick={() => setOthers((x) => x.filter((_, j) => j !== i))}>Remove</button>
             </div>
           );
         })}
         <button type="button" className="btn-ghost btn-sm mt-2" onClick={() => { const first = kindOptions(kinds).find((k) => k.code === "TRANSPORT") ?? kindOptions(kinds)[0]; const st = startOf(first?.code ?? "TRANSPORT"); setOthers((x) => [...x, { kind: first?.code ?? "TRANSPORT", amount: centsText(st.cents), note: "", desc: "" }]); }}>Add an expense</button>
       </fieldset>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-[17px] font-bold text-navy">Total {peso(total)}</p>
-        <SubmitButton disabled={!!blocked || !!why}>Send to Finance</SubmitButton>
-      </div>
-      {why && total > 0 && <p className="text-[13px] font-semibold text-act-fg" data-send-why>{why}</p>}
       <FormMessage state={state} />
+      {/* Pinned at the bottom of the panel: the grand total, Cancel and Send (which asks first). */}
+      <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col gap-1 border-t border-line bg-white px-4 py-2.5 sm:-mx-5 sm:-mb-5 sm:px-5" data-request-footer>
+        {why && total > 0 && <p className="text-xs font-semibold text-act-fg" data-send-why>{why}</p>}
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="mr-auto text-[15px] font-bold text-navy tabular-nums" data-grand-total>Total {peso(total)}</p>
+          {onCancel && <button type="button" className="btn-ghost min-h-11 px-3 text-[13px] sm:min-h-8" onClick={onCancel}>Cancel</button>}
+          <button type="button" className="btn-navy min-h-11 px-3 text-[13px] sm:min-h-8" disabled={!!blocked || !!why || pending} onClick={() => setAsking(true)} data-send-request>
+            {pending ? "Sending..." : "Send to Finance"}
+          </button>
+        </div>
+      </div>
+      <ConfirmDialog open={asking} title="Send this request to Finance?" body={`${peso(total)} for ${jobs.filter((j) => jobTotal(j) > 0).length || "your"} job${jobs.filter((j) => jobTotal(j) > 0).length === 1 ? "" : "s"}${others.length ? ` and ${others.length} other expense${others.length === 1 ? "" : "s"}` : ""}.`}
+        detail={types.find((t) => t.id === typeId)?.name} confirmLabel="Send" pendingLabel="Sending..." pending={pending} confirmForm={formId} sheetOnPhone data="request-confirm" onCancel={() => setAsking(false)} />
     </form>
   );
 }

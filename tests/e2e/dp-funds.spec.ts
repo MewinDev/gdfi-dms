@@ -96,10 +96,12 @@ test("Full path with GD1652026901003: flag, accept, LTO block, request, approve,
 
   // DP: My funds → Request.
   await page.goto("/my-funds");
+  await page.locator("[data-request-funds]").click(); // D-065: the request form is in the side panel
   await page.getByRole("textbox", { name: /LTO fee amount/ }).fill("1500.00");
   await shot(page, "my-funds-request");
   await noSideways(page);
   await page.getByRole("button", { name: "Send to Finance" }).click();
+  await page.locator('[data-confirm-dialog="request-confirm"] [data-confirm-ok]').click(); // D-065: Send asks first
   await expect(page.getByText(/sent to Finance for approval/)).toBeVisible();
   // A new Cash advance is numbered CA-<year>-<4 digits> (its own running number).
   expect((await db.cashAdvance.findFirstOrThrow()).number).toMatch(/^CA-\d{4}-\d{4}$/);
